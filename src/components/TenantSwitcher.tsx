@@ -53,9 +53,7 @@ export default function TenantSwitcher({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Strictly restrict multi-tenant switching to creator accessibility only
-  const isCreator = userRole === 'creator' || 
-                    username?.toLowerCase() === 'elena' || 
-                    username?.toLowerCase() === 'elena_master';
+  const isCreator = userRole === 'creator' || userRole === 'super_admin';
 
   const fetchTenants = async () => {
     if (!isCreator) return;

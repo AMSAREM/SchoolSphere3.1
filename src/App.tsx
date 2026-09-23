@@ -158,7 +158,7 @@ function AppContent() {
   }, [activeView]);
 
   useEffect(() => {
-    if (user && (user.username?.toLowerCase() === 'elena' || user.username?.toLowerCase() === 'elena_master')) {
+    if (user && (user.role === 'creator' || user.role === 'super_admin')) {
       setActiveView('creator');
       setShowGetStarted(false);
     } else if (user && user.role === 'admin') {
@@ -668,8 +668,8 @@ function AppContent() {
 
         const defaultUsers = [
           {
-            username: 'Elena',
-            fullName: 'Elena (Super Admin)',
+            username: 'super_admin',
+            fullName: 'Super Administrator',
             role: 'super_admin' as const,
           },
           {
@@ -945,7 +945,7 @@ function AppContent() {
       ];
     }
 
-    if (user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master' || (user?.role as string) === 'creator') {
+    if ((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') {
       baseItems.push({ id: 'creator', label: 'Creator Console', icon: Cpu });
       baseItems.push({ id: 'school_management', label: 'Tenants & Schools', icon: Building });
     }
@@ -996,7 +996,7 @@ function AppContent() {
     return <AuthScreens onBackToGetStarted={() => setShowGetStarted(true)} />;
   }
 
-  const isCreator = user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master';
+  const isCreator = (user?.role as string) === 'creator' || (user?.role as string) === 'super_admin';
 
   if (isCreator) {
     if (activeView !== 'creator') {
@@ -1224,7 +1224,7 @@ function AppContent() {
               </button>
 
               {/* Multi-Tenant Switcher - Restricted strictly to Creator */}
-              {((user?.role as string) === 'creator' || user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master') ? (
+              {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
                 <>
                   <TenantSwitcher 
                     currentSchoolName={schoolName}
@@ -1275,7 +1275,7 @@ function AppContent() {
 
             <div className="flex items-center gap-2 sm:gap-3.5">
               {/* Supabase Database Connection Indicator - Visible ONLY for Creator accessibility */}
-              {((user?.role as string) === 'creator' || user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master') && (
+              {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
                 <div 
                   id="supabase-status-indicator"
                   onClick={checkSupabaseConnection}
@@ -1287,35 +1287,32 @@ function AppContent() {
                         : "Supabase DB: Disconnected • Click to retry connection"
                   }
                   className={cn(
-                    "flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-semibold cursor-pointer transition-all select-none shadow-2xs",
+                    "flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all select-none shadow-2xs",
                     supabaseConnected === true 
-                      ? "bg-emerald-50/90 border-emerald-200 text-emerald-900 hover:bg-emerald-100/90" 
+                      ? "bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-100/60" 
                       : supabaseConnected === false 
-                        ? "bg-rose-50/90 border-rose-200 text-rose-900 hover:bg-rose-100/90"
-                        : "bg-slate-50 border-slate-200 text-slate-700"
+                        ? "bg-rose-50/60 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-300 hover:bg-rose-100/60"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
                   )}
                 >
-                  {/* Visual Status Dot: Green = Connected, Red = Disconnected */}
-                  <div className="relative flex items-center justify-center">
+                  {/* Status Indicator Dot */}
+                  <span className="relative flex h-2 w-2">
                     <span 
                       className={cn(
-                        "w-2.5 h-2.5 rounded-full transition-colors",
+                        "relative inline-flex rounded-full h-2 w-2",
                         supabaseConnected === true 
-                          ? "bg-emerald-500 ring-2 ring-emerald-400/40 shadow-xs" 
+                          ? "bg-emerald-500" 
                           : supabaseConnected === false 
-                            ? "bg-rose-500 ring-2 ring-rose-400/40 shadow-xs animate-pulse" 
-                            : "bg-amber-400 animate-pulse"
+                            ? "bg-rose-500" 
+                            : "bg-amber-400"
                       )} 
                     />
-                    {supabaseConnected === true && !supabaseChecking && (
-                      <span className="absolute w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping opacity-60 pointer-events-none" />
-                    )}
-                  </div>
+                  </span>
 
                   <div className="flex items-center gap-1.5">
                     <Database className={cn(
                       "w-3.5 h-3.5",
-                      supabaseConnected === true ? "text-emerald-600" : supabaseConnected === false ? "text-rose-600" : "text-slate-500"
+                      supabaseConnected === true ? "text-emerald-600 dark:text-emerald-400" : supabaseConnected === false ? "text-rose-600 dark:text-rose-400" : "text-slate-500"
                     )} />
                     <span className="hidden sm:inline font-bold tracking-tight text-[11px]">
                       Supabase
@@ -1323,10 +1320,10 @@ function AppContent() {
                     <span className={cn(
                       "text-[10px] font-bold uppercase tracking-wider",
                       supabaseConnected === true 
-                        ? "text-emerald-700" 
+                        ? "text-emerald-700 dark:text-emerald-400" 
                         : supabaseConnected === false 
-                          ? "text-rose-700 font-black" 
-                          : "text-amber-700"
+                          ? "text-rose-700 dark:text-rose-400 font-black" 
+                          : "text-amber-700 dark:text-amber-400"
                     )}>
                       {supabaseChecking 
                         ? "Checking..." 
@@ -1348,7 +1345,7 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 active:scale-[0.97] transition-all text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 active:scale-[0.98] transition-all text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 title="Synchronize with Cloud Database (Fetch Latest Updates)"
               >
                 <RefreshCcw className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 transition-transform", isSyncing && "animate-spin text-indigo-600 dark:text-indigo-400")} />
@@ -1357,28 +1354,28 @@ function AppContent() {
                 </span>
               </button>
 
-              <div className="h-8 w-[1px] bg-slate-200 hidden sm:block" />
+              <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 hidden sm:block" />
               
-              <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 sm:gap-2.5">
                 <button
                   onClick={() => setIsSecurityModalOpen(true)}
-                  className="flex items-center gap-2.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left group"
+                  className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left group"
                   title="View Profile, Permissions & Change Password"
                 >
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:ring-2 group-hover:ring-indigo-400 transition-all">
+                  <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:bg-indigo-500 transition-colors">
                     {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                   </div>
                   <div className="text-left hidden sm:block">
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight group-hover:text-indigo-600 transition-colors">{user.fullName || user.username}</p>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{user.fullName || user.username}</p>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-tight mt-0.5">{user.role?.replace('_', ' ')}</p>
                   </div>
                 </button>
                 <button 
                   onClick={handleLogout}
-                  className="w-8 h-8 sm:w-9 sm:h-9 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 rounded-xl flex items-center justify-center border border-rose-100 dark:border-rose-900/50 shrink-0 transition-colors group"
+                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-rose-50 hover:border-rose-200 dark:bg-slate-800 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-center shrink-0 transition-colors group cursor-pointer"
                   title="Log Out"
                 >
-                  <LogOut className="w-4 h-4 text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform" />
+                  <LogOut className="w-3.5 h-3.5 text-slate-500 group-hover:text-rose-600 dark:text-slate-400 dark:group-hover:text-rose-400 transition-colors" />
                 </button>
               </div>
             </div>
@@ -1422,7 +1419,7 @@ function AppContent() {
                 {activeView === 'evoting' && <EVoting />}
                 {activeView === 'inventory' && <InventoryManagement />}
                 {activeView === 'school_management' && (
-                  ((user?.role as string) === 'creator' || user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master') ? (
+                  ((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
                     <SchoolManagement 
                       onSwitchSchool={async (tenant) => {
                         try {

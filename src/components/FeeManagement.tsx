@@ -662,16 +662,15 @@ export default function FeeManagement() {
             <>
               {/* Profile Card & Stats Bento-Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 text-slate-100 rounded-2xl p-6 flex flex-col justify-between border border-slate-800 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -mr-8 -mt-8" />
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-5 flex flex-col justify-between border border-slate-800 shadow-xs relative overflow-hidden">
               <div>
-                <p className="text-[10px] uppercase font-black tracking-widest text-indigo-400">Student Profile</p>
-                <h3 className="text-lg font-black mt-2 text-white">{selectedStudent.firstName} {selectedStudent.lastName}</h3>
-                <p className="text-[10px] font-mono mt-0.5 text-slate-400">{selectedStudent.studentId} • {selectedStudent.class}</p>
+                <p className="text-[10px] uppercase font-bold tracking-widest text-indigo-400">Student Profile</p>
+                <h3 className="text-base font-bold mt-1 text-white">{selectedStudent.firstName} {selectedStudent.lastName}</h3>
+                <p className="text-[11px] font-mono mt-0.5 text-slate-400">{selectedStudent.studentId} • {selectedStudent.class}</p>
               </div>
               <div className="border-t border-slate-800 pt-3 mt-4 space-y-1 text-xs">
                 <p className="text-slate-400 truncate"><span className="font-semibold text-slate-300">Guardian:</span> {selectedStudent.guardianName}</p>
-                <p className="text-slate-400"><span className="font-semibold text-slate-300">Phone:</span> {selectedStudent.guardianPhone}</p>
+                <p className="text-slate-400 font-mono"><span className="font-semibold text-slate-300 font-sans">Phone:</span> {selectedStudent.guardianPhone}</p>
               </div>
             </div>
 
@@ -779,12 +778,12 @@ export default function FeeManagement() {
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-black text-sm text-slate-800 font-mono">{formatCurrency(p.amount)}</span>
-                              <span className="text-[9px] bg-slate-100 border text-slate-550 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                              <span className="font-bold text-sm text-slate-850 dark:text-slate-150 font-mono tabular-nums">{formatCurrency(p.amount)}</span>
+                              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-md font-mono uppercase">
                                 {p.method}
                               </span>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-medium mt-0.5">Ref: {p.ref} • {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                            <p className="text-[10px] text-slate-400 font-medium mt-0.5">Ref: <span className="font-mono">{p.ref}</span> • {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                           </div>
                         </div>
                         
@@ -817,11 +816,11 @@ export default function FeeManagement() {
               <motion.div 
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="bg-white rounded-2xl border-2 border-indigo-500 p-6 shadow-xl relative"
+                className="bg-white dark:bg-slate-900 rounded-xl border border-indigo-500/80 p-6 shadow-sm relative"
               >
-                <div className="absolute top-4 right-4 flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded-full text-[10px] font-black text-indigo-700 tracking-wider uppercase">
-                  <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse" />
-                  Secure Checkout
+                <div className="absolute top-4 right-4 inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-pulse" />
+                  <span>Secure Checkout</span>
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1">Make Secure Payment</h3>
                 <p className="text-xs text-slate-500 mb-6">Settle outstanding balances instantly via Mobile Money or Paystack.</p>
@@ -904,12 +903,12 @@ export default function FeeManagement() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl flex justify-between items-center text-slate-800">
+                    <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/40 rounded-xl flex justify-between items-center text-slate-800 dark:text-slate-200">
                       <div>
-                        <p className="text-[10px] font-bold text-rose-600 uppercase mb-0.5">Outstanding Balance</p>
-                        <p className="text-xl font-black text-rose-700 font-mono">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
+                        <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase mb-0.5">Outstanding Balance</p>
+                        <p className="text-xl font-bold text-rose-700 dark:text-rose-300 font-mono tabular-nums">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
                       </div>
-                      <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Due Now</span>
+                      <span className="text-[10px] bg-rose-100/80 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Due Now</span>
                     </div>
 
                     {/* Allocation Target Select Box */}
@@ -1431,12 +1430,12 @@ export default function FeeManagement() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="p-4 bg-rose-50 border border-rose-105 rounded-xl flex justify-between items-center text-slate-800">
+                    <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-105 dark:border-rose-900/40 rounded-xl flex justify-between items-center text-slate-800 dark:text-slate-200">
                       <div>
-                        <p className="text-[10px] font-bold text-rose-600 uppercase mb-0.5">Outstanding Balance</p>
-                        <p className="text-xl font-black text-rose-700 font-mono">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
+                        <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase mb-0.5">Outstanding Balance</p>
+                        <p className="text-xl font-bold text-rose-700 dark:text-rose-300 font-mono tabular-nums">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
                       </div>
-                      <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Due Now</span>
+                      <span className="text-[10px] bg-rose-100/80 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Due Now</span>
                     </div>
 
                     {/* List out itemized balances for the student */}

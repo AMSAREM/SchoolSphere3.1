@@ -753,7 +753,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {stats.map((stat, i) => (
           <button 
             key={i} 
@@ -762,18 +762,18 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 onViewChange(stat.view);
               }
             }}
-            className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all text-left group"
+            className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all text-left group cursor-pointer"
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`${stat.bg} p-2.5 sm:p-3 rounded-xl group-hover:scale-110 transition-transform`}>
-                <stat.icon className={`w-5 h-5 sm:w-6 sm:h-6 ${stat.color}`} />
+            <div className="flex items-center justify-between mb-3.5">
+              <div className={`${stat.bg} p-2 sm:p-2.5 rounded-lg group-hover:scale-105 transition-transform`}>
+                <stat.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${stat.color}`} />
               </div>
-              <span className="text-emerald-500 text-[10px] sm:text-xs font-bold flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                 <TrendingUp className="w-3 h-3" /> +2.4%
               </span>
             </div>
-            <p className="text-slate-500 text-xs sm:text-sm font-medium">{stat.label}</p>
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{stat.value}</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-medium tracking-tight">{stat.label}</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums font-mono">{stat.value}</h3>
           </button>
         ))}
       </div>
@@ -965,18 +965,18 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 {recentStudents?.map(student => (
                   <div key={student.id} className="flex items-center justify-between">
                     <div className="flex items-center gap-3 truncate mr-2">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
                         {student.photo ? (
                           <img src={student.photo} alt={student.firstName} className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-600 font-bold text-sm uppercase">
+                          <div className="w-full h-full flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase">
                             {student.firstName?.[0] || 'S'}
                           </div>
                         )}
                       </div>
                       <div className="truncate">
-                        <p className="text-sm font-bold text-slate-900 truncate">{student.firstName} {student.lastName}</p>
-                        <p className="text-xs text-slate-400 truncate">{student.class}</p>
+                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{student.firstName} {student.lastName}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{student.class}</p>
                       </div>
                     </div>
                     <button 

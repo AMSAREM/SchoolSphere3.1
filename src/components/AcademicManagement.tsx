@@ -184,7 +184,7 @@ function TeacherList() {
           <div key={teacher.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-start mb-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold uppercase">
+                <div className="w-11 h-11 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold uppercase text-sm">
                   {(teacher.firstName?.[0] || '')}{(teacher.lastName?.[0] || '') || 'T'}
                 </div>
                 <div className="flex gap-2">

@@ -1,6 +1,7 @@
 import { useState, FormEvent, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
+import LandingPage from './LandingPage';
 import landingIllustration from '../assets/images/landing_illustration_1783005854385.jpg';
 import { 
   Cpu, 
@@ -25,7 +26,8 @@ import {
   LockKeyhole,
   Terminal,
   FileSpreadsheet,
-  LogIn
+  LogIn,
+  School
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { db } from '../db/schema';
@@ -98,27 +100,7 @@ export default function GetStarted({
     try {
       const success = await login(creatorUser.trim(), creatorPass);
       if (success) {
-        showToast("Welcome back, Elena! Creator Master Console Authorized.", "success");
-        onActivationSuccess();
-      } else {
-        setCreatorLoginError("Invalid Creator credentials.");
-      }
-    } catch (err) {
-      setCreatorLoginError("An unexpected error occurred during authorization.");
-    } finally {
-      setCreatorLoggingIn(false);
-    }
-  };
-
-  const handleCreatorQuickLogin = async (userStr: string, passStr: string) => {
-    setCreatorLoggingIn(true);
-    setCreatorLoginError('');
-    setCreatorUser(userStr);
-    setCreatorPass(passStr);
-    try {
-      const success = await login(userStr, passStr);
-      if (success) {
-        showToast("Welcome back, Elena! Creator Master Console Authorized.", "success");
+        showToast("Creator Master Console Authorized.", "success");
         onActivationSuccess();
       } else {
         setCreatorLoginError("Invalid Creator credentials.");
@@ -532,209 +514,231 @@ export default function GetStarted({
 
 
 
-  return (
-    <div className="min-h-screen w-full flex flex-col justify-between bg-[#f4f7fc] text-slate-800 relative overflow-hidden font-sans select-none p-4 sm:p-6 md:p-8">
-      
-      {/* Background Ambience & Pastel Blobs */}
-      <div className="absolute top-[-100px] left-[-100px] w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] rounded-full bg-gradient-to-tr from-cyan-400 via-pink-400 to-indigo-400 opacity-60 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-150px] left-[-150px] w-[350px] sm:w-[450px] h-[350px] sm:h-[450px] rounded-full bg-cyan-400/50 opacity-60 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-200px] left-[30%] w-[450px] sm:w-[600px] h-[300px] rounded-full bg-lime-300/40 opacity-70 blur-3xl pointer-events-none" />
-      <div className="absolute top-[20%] right-[-100px] w-[300px] h-[500px] rounded-full bg-rose-300/30 opacity-60 blur-3xl pointer-events-none" />
+  if (currentView === 'landing') {
+    return (
+      <>
+        <LandingPage
+          onEnterSchoolPortal={onEnterSchoolPortal}
+          onOpenActivation={() => {
+            setLicenseInput('');
+            setCurrentView('activation');
+          }}
+          onOpenCreatorLogin={() => setCurrentView('creator_login')}
+          onOpenAbout={() => setShowAbout(true)}
+          onOpenContact={() => setShowContact(true)}
+          onOpenVideoTour={() => {
+            setVideoTourStep(0);
+            setShowVideoTour(true);
+          }}
+          isLicensed={isLicensed}
+        />
 
-      {/* Scattered Dotted Halftones / Grid Patterns */}
-      <div className="absolute top-10 right-10 opacity-30 pointer-events-none hidden sm:block">
-        <svg width="150" height="150" viewBox="0 0 100 100">
-          <defs>
-            <pattern id="dot-pattern-red" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.5" fill="#f43f5e" />
-            </pattern>
-          </defs>
-          <rect width="100" height="100" fill="url(#dot-pattern-red)" />
-        </svg>
-      </div>
-
-      <div className="absolute bottom-10 right-10 opacity-40 pointer-events-none hidden sm:block">
-        <svg width="200" height="200" viewBox="0 0 100 100">
-          <defs>
-            <pattern id="dot-pattern-indigo" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.2" fill="#6366f1" />
-            </pattern>
-          </defs>
-          <rect width="100" height="100" fill="url(#dot-pattern-indigo)" />
-        </svg>
-      </div>
-
-      <div className="absolute top-[40%] left-6 opacity-30 pointer-events-none hidden md:block">
-        <svg width="120" height="120" viewBox="0 0 100 100">
-          <defs>
-            <pattern id="dot-pattern-cyan" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.8" fill="#06b6d4" />
-            </pattern>
-          </defs>
-          <rect width="100" height="100" fill="url(#dot-pattern-cyan)" />
-        </svg>
-      </div>
-
-      {/* Main Container */}
-      <div className="w-full max-w-5xl mx-auto py-6 sm:py-10 relative z-10 flex-1 flex flex-col justify-center items-center">
-        
-        {/* Central White Browser Mockup Card */}
-        <div className="w-full bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100/90 overflow-hidden relative flex flex-col p-6 sm:p-10 lg:p-12 z-10 min-h-[580px] w-full">
-          
-          {/* Card Navbar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-100 pb-6 shrink-0">
-            {/* Logo */}
-            <div 
-              className="flex items-center gap-3 cursor-pointer group" 
-              onClick={() => setCurrentView('landing')}
+        {/* Interactive Modal Overlays */}
+        {showAbout && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl relative text-left"
             >
-              <img 
-                src="/sch sphere logo1.png" 
-                alt="School Sphere Logo" 
-                className="w-8 h-8 rounded-full object-cover group-hover:scale-105 transition-transform" 
-                referrerPolicy="no-referrer"
-              />
-              <span className="font-extrabold text-xl tracking-tight text-slate-850">
-                School<span className="text-indigo-600">Sphere</span>
-              </span>
-            </div>
-
-            {/* Menu Links */}
-            <div className="flex items-center gap-4 sm:gap-6 text-xs font-bold text-slate-500 flex-wrap justify-center">
-              <button 
-                onClick={() => setCurrentView('landing')}
-                className={`relative py-1 transition-colors ${currentView === 'landing' ? 'text-slate-900' : 'hover:text-slate-800'}`}
-              >
-                Home
-                {currentView === 'landing' && (
-                  <motion.div layoutId="navUnderline" className="absolute bottom-0 left-0 right-0 h-[2px] bg-slate-800" />
-                )}
-              </button>
-              <button 
-                onClick={() => setShowAbout(true)}
-                className="hover:text-slate-800 transition-colors py-1"
-              >
-                About
-              </button>
-              <button 
-                onClick={() => setShowContact(true)}
-                className="hover:text-slate-800 transition-colors py-1"
-              >
-                Contact
-              </button>
-              <button 
-                onClick={() => {
-                  setLicenseInput('');
-                  setCurrentView('activation');
-                }}
-                className={`relative py-1 transition-colors ${currentView === 'activation' ? 'text-indigo-600 font-extrabold' : 'hover:text-slate-800'}`}
-              >
-                Licensing
-                {currentView === 'activation' && (
-                  <motion.div layoutId="navUnderline" className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-600" />
-                )}
-              </button>
-            </div>
-
-            {/* CTA Portal Button */}
-            <button
-              onClick={onEnterSchoolPortal}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-xs font-bold tracking-wide transition-all shadow-md shadow-indigo-600/10 hover:shadow-indigo-600/20 active:scale-95 cursor-pointer"
-            >
-              Enter Portal
-            </button>
-          </div>
-
-          {/* Dynamic Views inside browser frame */}
-          <div className="flex-1 flex flex-col justify-center">
-            <AnimatePresence mode="wait">
-              
-              {/* VIEW 1: LANDING PAGE */}
-              {currentView === 'landing' && (
-                <motion.div
-                  key="landing"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -15 }}
-                  transition={{ duration: 0.3 }}
-                  className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center pt-8 sm:pt-10"
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">About SchoolSphere</h3>
+                <button 
+                  onClick={() => setShowAbout(false)}
+                  className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
                 >
-                  {/* Left Column Content */}
-                  <div className="lg:col-span-5 flex flex-col text-left space-y-4">
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="inline-flex items-center gap-2 bg-indigo-50/80 border border-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest self-start"
+                  ✕
+                </button>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                SchoolSphere 3.1 is an educational management suite engineered for modern schools, featuring intelligent Class Placement balancing, continuous assessment report cards, mobile money tuition reconciliation, and Supabase cloud persistence.
+              </p>
+              <div className="mt-6">
+                <button 
+                  onClick={() => setShowAbout(false)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                >
+                  Close Window
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showContact && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl relative text-left"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">Institutional Support</h3>
+                <button 
+                  onClick={() => setShowContact(false)}
+                  className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-4 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                <p>
+                  Need administrative serial keys, customized reports, or dedicated server deployment setups? Our engineering team is active and ready to assist you.
+                </p>
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Direct Support</span>
+                  <a href="mailto:akokosolutions24@gmail.com" className="text-indigo-600 dark:text-indigo-400 font-extrabold text-xs hover:underline">
+                    akokosolutions24@gmail.com
+                  </a>
+                </div>
+              </div>
+              <div className="mt-6">
+                <button 
+                  onClick={() => setShowContact(false)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                >
+                  Close Window
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showVideoTour && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl relative text-left flex flex-col"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">SchoolSphere Guided Tour</h3>
+                </div>
+                <button 
+                  onClick={() => setShowVideoTour(false)}
+                  className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="min-h-[160px] flex flex-col justify-center py-4 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                {videoTourStep === 0 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">01 / Overview</span>
+                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">Intelligent School Management</h4>
+                    <p>
+                      SchoolSphere 3.1 integrates student records, intelligent Class Placement balancing, terminal reports, and Mobile Money collections with direct Supabase cloud sync.
+                    </p>
+                  </motion.div>
+                )}
+
+                {videoTourStep === 1 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">02 / Class Creator</span>
+                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">Automated Class Placement</h4>
+                    <p>
+                      Balance academic ability, gender ratio, behavior, and special educational needs across parallel classes automatically with custom teacher logic rules.
+                    </p>
+                  </motion.div>
+                )}
+
+                {videoTourStep === 2 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">03 / Continuous Assessment</span>
+                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">Terminal Report Sheets</h4>
+                    <p>
+                      Generate print-ready terminal reports with automated 30% CA + 70% Exam calculation, class rankings, and teacher remarks in seconds.
+                    </p>
+                  </motion.div>
+                )}
+
+                {videoTourStep === 3 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">04 / Financial Control</span>
+                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">Fee Registries & MoMo</h4>
+                    <p>
+                      Collect tuition via MTN MoMo, Telecel Cash, and Paystack with instant digital receipts and automated SMS payment reminders to parents.
+                    </p>
+                  </motion.div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 mt-4 shrink-0">
+                <div className="flex gap-1.5">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <div 
+                      key={idx} 
+                      className={`h-1.5 rounded-full transition-all ${idx === videoTourStep ? 'bg-indigo-600 w-5' : 'bg-slate-200 dark:bg-slate-700 w-2'}`} 
+                    />
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  {videoTourStep > 0 && (
+                    <button
+                      onClick={() => setVideoTourStep(prev => prev - 1)}
+                      className="px-4 py-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer"
                     >
-                      <span>v1.4 Enterprise</span>
-                    </motion.div>
-
-                    <motion.h1
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 }}
-                      className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-800 tracking-tight leading-[1.05] uppercase"
+                      Back
+                    </button>
+                  )}
+                  {videoTourStep < 3 ? (
+                    <button
+                      onClick={() => setVideoTourStep(prev => prev + 1)}
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-md shadow-indigo-600/10 cursor-pointer"
                     >
-                      MANAGE <br />
-                      <span className="text-slate-900">BETTER</span>
-                    </motion.h1>
-
-                    <motion.p
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="text-slate-400 text-xs sm:text-sm leading-relaxed max-w-sm"
+                      Next
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowVideoTour(false);
+                        onEnterSchoolPortal();
+                      }}
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-600/10 cursor-pointer"
                     >
-                      Optimize administrative records, student registries, financial billing, and academic terminals in one high-performance command suite.
-                    </motion.p>
+                      Enter Portal
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </>
+    );
+  }
 
-                    {/* Action Buttons */}
-                    <motion.div
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                      className="flex items-center gap-4 pt-4 flex-wrap"
-                    >
-                      <button
-                        onClick={() => {
-                          setVideoTourStep(0);
-                          setShowVideoTour(true);
-                        }}
-                        className="px-7 py-3 border border-slate-350 hover:border-slate-800 text-slate-600 hover:text-slate-900 font-bold text-xs rounded-full uppercase tracking-wider transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center gap-2"
-                      >
-                        <span>Watch Video</span>
-                        <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-ping" />
-                      </button>
+  return (
+    <div className="min-h-screen w-full flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 relative font-sans select-none p-4 sm:p-6 md:p-8">
+      {/* Top Navbar */}
+      <div className="w-full max-w-4xl mx-auto flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+        <div 
+          className="flex items-center gap-2.5 cursor-pointer group" 
+          onClick={() => setCurrentView('landing')}
+        >
+          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+            <School className="w-4 h-4" />
+          </div>
+          <span className="font-extrabold text-lg tracking-tight text-slate-900 dark:text-slate-100">
+            School<span className="text-indigo-600 dark:text-indigo-400">Sphere</span>
+          </span>
+        </div>
 
-                      <button
-                        onClick={onEnterSchoolPortal}
-                        className="px-7 py-3 bg-gradient-to-r from-sky-450 to-cyan-400 hover:brightness-105 text-white font-extrabold text-xs rounded-full uppercase tracking-wider transition-all shadow-lg shadow-cyan-200/50 hover:shadow-cyan-350/60 active:scale-95 cursor-pointer"
-                      >
-                        Learn More
-                      </button>
-                    </motion.div>
-                  </div>
+        <button
+          onClick={() => setCurrentView('landing')}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Return to Landing Page</span>
+        </button>
+      </div>
 
-                  {/* Right Column Illustration */}
-                  <div className="lg:col-span-7 flex justify-center items-center">
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95, x: 20 }}
-                      animate={{ opacity: 1, scale: 1, x: 0 }}
-                      transition={{ delay: 0.2, duration: 0.6 }}
-                      className="relative w-full max-w-md md:max-w-lg"
-                    >
-                      <img
-                        src={landingIllustration}
-                        alt="Manage Better Illustration"
-                        className="w-full h-auto object-contain pointer-events-none drop-shadow-[0_15px_30px_rgba(0,0,0,0.06)] rounded-2xl"
-                        referrerPolicy="no-referrer"
-                      />
-                    </motion.div>
-                  </div>
-
-                </motion.div>
-              )}
-
+      {/* Main Form Views */}
+      <div className="flex-1 flex flex-col justify-center items-center py-6">
+        <AnimatePresence mode="wait">
           {/* VIEW 2: LICENSE ACTIVATION & WIZARD FORM */}
           {currentView === 'activation' && (
             <motion.div
@@ -1013,7 +1017,7 @@ export default function GetStarted({
                               setSetupAdminError('');
                             }}
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
-                            placeholder="e.g. elena"
+                            placeholder="e.g. admin_cape"
                             required
                           />
                         </div>
@@ -1581,7 +1585,7 @@ export default function GetStarted({
                       value={creatorUser}
                       onChange={(e) => setCreatorUser(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-sm font-medium text-slate-800"
-                      placeholder="elena_master"
+                      placeholder="creator_admin"
                     />
                   </div>
                 </div>
@@ -1616,42 +1620,6 @@ export default function GetStarted({
                   )}
                 </button>
               </form>
-
-              {/* Demo Portal Quick Access Shortcuts for Creator */}
-              <div className="pt-3 border-t border-slate-150 space-y-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                    Quick Master Handshake
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={creatorLoggingIn}
-                    onClick={() => handleCreatorQuickLogin('Elena_Master', 'creator_override_9922_july')}
-                    className="flex items-center gap-2 p-2.5 bg-white hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-xl text-left transition-all text-xs font-bold text-slate-700 cursor-pointer disabled:opacity-50"
-                  >
-                    <span className="text-sm">🔑</span>
-                    <div className="min-w-0">
-                      <p className="truncate leading-none text-slate-800">Master Creator</p>
-                      <span className="text-[8px] text-slate-400 font-medium">Bypass License</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={creatorLoggingIn}
-                    onClick={() => handleCreatorQuickLogin('Elena', 'july94bab')}
-                    className="flex items-center gap-2 p-2.5 bg-white hover:bg-emerald-50 hover:border-emerald-200 border border-slate-200 rounded-xl text-left transition-all text-xs font-bold text-slate-700 cursor-pointer disabled:opacity-50"
-                  >
-                    <span className="text-sm">🛡️</span>
-                    <div className="min-w-0">
-                      <p className="truncate leading-none text-slate-800">Super Admin</p>
-                      <span className="text-[8px] text-slate-400 font-medium">Elena Credentials</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
             </motion.div>
           )}
 
@@ -1659,8 +1627,7 @@ export default function GetStarted({
 
         </AnimatePresence>
 
-      </div> {/* Close Dynamic Views inside browser frame */}
-    </div> {/* Close Central White Browser Mockup Card */}
+      </div>
 
     {/* Interactive Modal Overlays */}
     {showAbout && (
@@ -1838,8 +1805,6 @@ export default function GetStarted({
         </motion.div>
       </div>
     )}
-
-      </div>
 
       {/* Footer support credits */}
       <div className="p-6 relative z-10 w-full border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-semibold tracking-wider uppercase">

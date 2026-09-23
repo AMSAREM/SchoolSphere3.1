@@ -313,10 +313,8 @@ const MYSQL_CONFIG = {
 
 let dbPool: mysql.Pool | null = null;
 let pgPool: pg.Pool | null = null;
-let dbMode: "supabase" | "mysql" | "fallback" = "fallback";
+let dbMode: "supabase" | "mysql" | "fallback" = "supabase";
 let dbStatusDetails = "Initializing database layer...";
-
-const fallbackFilePath = path.join(process.cwd(), "school_db_fallback.json");
 
 // Sanitize error messages to prevent stack traces or internal details from leaking to client/user
 function sanitizeErrorMessage(err: any): string {
@@ -336,35 +334,6 @@ function sanitizeErrorMessage(err: any): string {
   }
 
   return msg.trim() || "An unexpected error occurred.";
-}
-
-// Initialize JSON fallback database file helper
-function initFallbackDB() {
-  if (!fs.existsSync(fallbackFilePath)) {
-    const initialData = {
-      students: [],
-      attendance: [],
-      results: [],
-      subjects: [],
-      classes: [],
-      teachers: [],
-      termReports: [],
-      settings: [],
-      users: [],
-      examAnalysis: [],
-      smsLogs: [],
-      polls: [],
-      candidates: [],
-      votes: [],
-      promotionHistory: [],
-      inventory: [],
-      expenses: [],
-      licenses: [],
-      license_codes: [],
-      schools: []
-    };
-    fs.writeFileSync(fallbackFilePath, JSON.stringify(initialData, null, 2));
-  }
 }
 
 // Automatically create tables in PostgreSQL
@@ -869,89 +838,27 @@ async function createMySQLTables() {
   }
 }
 
-// Safely initialize the database connection
+// Safely initialize the database connection - Supabase single source of truth
 async function initDatabase() {
-  initFallbackDB();
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-  const supabaseUrl = getResolvedSupabaseUrl();
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_secret_a04mEBVm5jDE7r9LmM4FRQ_Nv8YNPir';
-  const supabaseDbUrl = process.env.SUPABASE_DB_URL || 'postgresql://postgres:july94bab@db.niavmonyfwqlryppgksy.supabase.co:5432/postgres';
-
-  if (supabaseUrl && supabaseKey) {
-    try {
-      console.log(`[Database Init] Connecting to Supabase at ${supabaseUrl}...`);
-      const adminClient = getSupabaseAdmin();
-
-      if (supabaseDbUrl) {
-        const testPool = new Pool({
-          connectionString: supabaseDbUrl,
-          ssl: { rejectUnauthorized: false },
-          connectionTimeoutMillis: 5000
-        });
-
-        try {
-          const client = await testPool.connect();
-          console.log("[Supabase Postgres Pool] Connected successfully via TCP!");
-          client.release();
-          pgPool = testPool;
-          await createPostgresTables();
-        } catch (pgErr: any) {
-          try {
-            await testPool.end();
-          } catch {}
-          pgPool = null;
-          console.log("[Supabase Status] Using Supabase REST & PostgREST API (Service Role RLS).");
-        }
-      }
-
-      dbMode = "supabase";
-      dbStatusDetails = `Connected successfully to Supabase PostgreSQL database (${supabaseUrl})`;
-      console.log("Database initialized in Supabase mode!");
-      return;
-    } catch (err: any) {
-      console.warn("Supabase initialization notice:", err.message);
-    }
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("FATAL: SUPABASE_URL and Supabase credentials are missing. Application refuses to start without Supabase as the single source of truth.");
   }
 
-  if (MYSQL_CONFIG.host && MYSQL_CONFIG.user && MYSQL_CONFIG.database) {
-    try {
-      dbPool = mysql.createPool({
-        ...MYSQL_CONFIG,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-      });
+  console.log(`[Database Init] Connecting to Supabase at ${supabaseUrl}...`);
+  const adminClient = getSupabaseAdmin();
 
-      const connection = await dbPool.getConnection();
-      console.log("Connected successfully to MySQL Database!");
-      connection.release();
-
-      dbMode = "mysql";
-      dbStatusDetails = `Connected to MySQL database "${MYSQL_CONFIG.database}" on ${MYSQL_CONFIG.host}:${MYSQL_CONFIG.port}`;
-
-      await createMySQLTables();
-    } catch (err: any) {
-      console.warn("MySQL Connection Notice (falling back safely to server-side JSON file database):", err.message);
-      dbMode = "fallback";
-      
-      let friendlyError = err.message;
-      if (err.code === "ETIMEDOUT" || err.message.includes("ETIMEDOUT") || err.message.includes("timeout")) {
-        friendlyError = `Connection Timed Out (${err.code || "ETIMEDOUT"}).\n\nPossible Solutions:\n1. The target MySQL database server is dropping incoming database connection packets. Make sure your database host/firewall allowlist allows dynamic public outbound IPs from Google Cloud Run.\n2. Cloud Run utilizes varying dynamic outbound IPs. For a production connection, you may need to open traffic to 0.0.0.0/0 or connect via secure proxy.\n3. Make sure the database machine port (currently set to ${MYSQL_CONFIG.port}) is open and listening for connections.`;
-      } else if (err.code === "ECONNREFUSED" || err.message.includes("ECONNREFUSED")) {
-        friendlyError = `Connection Refused (${err.code || "ECONNREFUSED"}).\n\nPossible Solutions:\n1. Confirm the MySQL database server is actively running on host ${MYSQL_CONFIG.host}.\n2. Confirm the host configuration has 'bind-address' set to 0.0.0.0 in its configuration files (e.g. my.cnf) rather than strictly local localhost (127.0.0.1).`;
-      } else if (err.code === "ENOTFOUND" || err.message.includes("ENOTFOUND")) {
-        friendlyError = `Dns Host Lookup Failed (${err.code || "ENOTFOUND"}).\n\nPossible Solutions:\n1. Confirm your MYSQL_HOST address coordinate ("${MYSQL_CONFIG.host}") is spelled exactly correct.\n2. Check your DNS and public internet visibility configurations.`;
-      } else if (err.code === "ER_ACCESS_DENIED_ERROR" || err.message.includes("access denied")) {
-        friendlyError = `Access Denied User Credentials (${err.code || "ER_ACCESS_DENIED_ERROR"}).\n\nPossible Solutions:\n1. Check for typos in your SQL username ("${MYSQL_CONFIG.user}") or password.\n2. Verify this user account has schema tables permissions granted on the database "${MYSQL_CONFIG.database}".`;
-      }
-      
-      dbStatusDetails = `MySQL connection failed: ${friendlyError}\n\nFalling back safely to server-side JSON file storage. All dashboard statistics, students, financials, and logs remain fully functional!`;
-    }
-  } else {
-    dbMode = "fallback";
-    dbStatusDetails = "MySQL host/user/database environment variables not set. Running with JSON file fallback.";
-    console.log("MySQL host/user/database environment variables not set. Running with JSON file fallback.");
+  // Active connectivity health check
+  const { error: pingError } = await adminClient.from('schools').select('id').limit(1);
+  if (pingError && !pingError.message?.includes('permission denied')) {
+    throw new Error(`FATAL: Supabase connectivity check failed: ${pingError.message}. Application refuses to silently degrade to local storage.`);
   }
+
+  dbMode = "supabase";
+  dbStatusDetails = `Connected successfully to Supabase PostgreSQL database (${supabaseUrl})`;
+  console.log("[Database Init] Database initialized in Supabase mode!");
 }
 
 // In-memory cache stores for performance optimization
@@ -1286,16 +1193,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         }
 
         if (error) {
-          // Gracefully fallback to local data if available
-          try {
-            const localData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-            const items = localData[table] || localData[targetTable] || [];
-            data[table] = targetSchoolId 
-              ? items.filter((i: any) => !i.school_id || i.school_id === targetSchoolId || !i.schoolId || i.schoolId === targetSchoolId)
-              : items;
-          } catch {
-            data[table] = [];
-          }
+          data[table] = [];
         } else {
           data[table] = (rows || []).map((row: any) => {
             let item = { ...row };
@@ -1332,68 +1230,11 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           });
         }
       }
-      try {
-        fs.writeFileSync(fallbackFilePath, JSON.stringify(data, null, 2));
-      } catch (e) {}
       resultData = data;
     } catch (err: any) {
-      console.warn("Supabase pullData note, loading local backup file:", err.message);
-      try {
-        resultData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-      } catch {
-        resultData = {};
-      }
-    }
-  } else if (dbMode === "mysql" && dbPool) {
-    const data: any = {};
-    const tables = [
-      "students", "attendance", "results", "subjects",
-      "classes", "teachers", "termReports", "settings", "users",
-      "examAnalysis", "smsLogs", "polls", "candidates", "votes",
-      "promotionHistory", "inventory", "expenses"
-    ];
-
-    for (const table of tables) {
-      const [rows] = await dbPool.query(`SELECT * FROM ${table}`);
-      const rowsParsed = (rows as any[]).map(row => {
-        const item = { ...row };
-        if (table === "students") {
-          item.feeBreakdown = item.feeBreakdown ? JSON.parse(item.feeBreakdown) : undefined;
-          item.feePaidBreakdown = item.feePaidBreakdown ? JSON.parse(item.feePaidBreakdown) : undefined;
-          item.feesPaid = Number(item.feesPaid);
-          item.totalFees = Number(item.totalFees);
-        } else if (table === "subjects") {
-          item.applicableClasses = item.applicableClasses ? JSON.parse(item.applicableClasses) : [];
-        } else if (table === "teachers") {
-          item.assignedClasses = item.assignedClasses ? JSON.parse(item.assignedClasses) : [];
-          item.subjects = item.subjects ? JSON.parse(item.subjects) : [];
-        } else if (table === "settings") {
-          item.value = item.value ? JSON.parse(item.value) : undefined;
-        } else if (table === "examAnalysis") {
-          item.subjects = item.subjects ? JSON.parse(item.subjects) : [];
-        } else if (table === "promotionHistory") {
-          item.previousFeeBreakdown = item.previousFeeBreakdown ? JSON.parse(item.previousFeeBreakdown) : undefined;
-          item.previousFeePaidBreakdown = item.previousFeePaidBreakdown ? JSON.parse(item.previousFeePaidBreakdown) : undefined;
-          item.previousFeesPaid = Number(item.previousFeesPaid);
-          item.previousTotalFees = Number(item.previousTotalFees);
-        } else if (table === "inventory") {
-          item.unitPrice = Number(item.unitPrice);
-        } else if (table === "expenses") {
-          item.amount = Number(item.amount);
-        }
-        return item;
-      });
-      data[table] = rowsParsed;
-    }
-    resultData = data;
-  } else {
-    try {
-      const jsonStr = fs.readFileSync(fallbackFilePath, "utf8");
-      resultData = JSON.parse(jsonStr);
-    } catch {
+      console.warn("Supabase pullData note:", err.message);
       resultData = {};
     }
-  }
 
   // Save to cache only when fetching all tenants globally
   if (!targetSchoolId) {
@@ -1567,296 +1408,104 @@ async function pushData(data: any, targetSchoolId?: string | null) {
           }
         }
       }
-
-      fs.writeFileSync(fallbackFilePath, JSON.stringify(data, null, 2));
     } catch (err: any) {
-      console.warn("Supabase pushData notice (local fallback saved):", err.message);
-      fs.writeFileSync(fallbackFilePath, JSON.stringify(data, null, 2));
+      console.warn("Supabase pushData notice:", err.message);
     }
-  } else if (dbMode === "mysql" && dbPool) {
-    const connection = await dbPool.getConnection();
-    try {
-      await connection.beginTransaction();
-
-      const tableKeys = [
-        "students", "attendance", "results", "subjects",
-        "classes", "teachers", "termReports", "settings", "users",
-        "examAnalysis", "smsLogs", "polls", "candidates", "votes",
-        "promotionHistory", "inventory", "expenses"
-      ];
-
-      for (const table of tableKeys) {
-        const records = data[table] || [];
-
-        // Clear existing records on MySQL
-        await connection.query(`DELETE FROM ${table}`);
-
-        if (records.length === 0) continue;
-
-        // Bulk insert records safely
-        if (table === "students") {
-          const insertQuery = `INSERT INTO students (id, studentId, firstName, lastName, class, dateOfBirth, gender, guardianName, guardianPhone, feesPaid, totalFees, house, department, photo, createdAt, feeBreakdown, feePaidBreakdown) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.firstName, r.lastName, r.class, r.dateOfBirth, r.gender, r.guardianName, r.guardianPhone, r.feesPaid || 0, r.totalFees || 0, r.house || null, r.department || null, r.photo || null, r.createdAt || Date.now(),
-            r.feeBreakdown ? JSON.stringify(r.feeBreakdown) : null,
-            r.feePaidBreakdown ? JSON.stringify(r.feePaidBreakdown) : null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "attendance") {
-          const insertQuery = `INSERT INTO attendance (id, studentId, date, status) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.date, r.status
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "results") {
-          const insertQuery = `INSERT INTO results (id, studentId, subject, term, class, classScore, examScore, totalScore, grade, remarks) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.subject, r.term, r.class, r.classScore || 0, r.examScore || 0, r.totalScore || 0, r.grade || "", r.remarks || ""
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "subjects") {
-          const insertQuery = `INSERT INTO subjects (id, name, code, applicableClasses) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.name, r.code, r.applicableClasses ? JSON.stringify(r.applicableClasses) : null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "classes") {
-          const insertQuery = `INSERT INTO classes (id, name, level) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.name, r.level
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "teachers") {
-          const insertQuery = `INSERT INTO teachers (id, staffId, firstName, lastName, phone, email, assignedClasses, subjects) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.staffId, r.firstName, r.lastName, r.phone || "", r.email || "",
-            r.assignedClasses ? JSON.stringify(r.assignedClasses) : null,
-            r.subjects ? JSON.stringify(r.subjects) : null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "termReports") {
-          const insertQuery = `INSERT INTO termReports (id, studentId, term, academicYear, attendancePresent, attendanceTotal, teacherRemark, headmasterRemark, position, totalStudents) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.term, r.academicYear, r.attendancePresent || 0, r.attendanceTotal || 0, r.teacherRemark || "", r.headmasterRemark || "", r.position || null, r.totalStudents || null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "settings") {
-          const insertQuery = `INSERT INTO settings (id, \`key\`, value) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.key, r.value ? JSON.stringify(r.value) : null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "users") {
-          const insertQuery = `INSERT INTO users (id, username, passwordHash, fullName, role, createdAt) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.username, r.passwordHash, r.fullName, r.role, r.createdAt || Date.now()
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "examAnalysis") {
-          const insertQuery = `INSERT INTO examAnalysis (id, studentId, studentName, examType, year, indexNumber, schoolName, subjects, aggregate, status, remarks, createdAt) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.studentName, r.examType, r.year, r.indexNumber, r.schoolName, r.subjects ? JSON.stringify(r.subjects) : null, r.aggregate || 0, r.status, r.remarks || "", r.createdAt || Date.now()
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "smsLogs") {
-          const insertQuery = `INSERT INTO smsLogs (id, recipientName, recipientPhone, recipientType, message, type, status, createdAt) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.recipientName, r.recipientPhone, r.recipientType, r.message, r.type, r.status, r.createdAt || Date.now()
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "polls") {
-          const insertQuery = `INSERT INTO polls (id, title, description, status, category, createdAt) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.title, r.description, r.status, r.category, r.createdAt
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "candidates") {
-          const insertQuery = `INSERT INTO candidates (id, pollId, name, position, class, votesCount, photo, manifesto) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.pollId, r.name, r.position, r.class, r.votesCount || 0, r.photo || null, r.manifesto || null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "votes") {
-          const insertQuery = `INSERT INTO votes (id, pollId, studentId, position, candidateId, timestamp) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.pollId, r.studentId, r.position, r.candidateId, r.timestamp
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "promotionHistory") {
-          const insertQuery = `INSERT INTO promotionHistory (id, studentId, studentIdentifier, studentName, sourceClass, destClass, academicYear, term, timestamp, previousFeesPaid, previousTotalFees, previousFeeBreakdown, previousFeePaidBreakdown) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.studentId, r.studentIdentifier, r.studentName, r.sourceClass, r.destClass, r.academicYear, r.term, r.timestamp, r.previousFeesPaid || 0, r.previousTotalFees || 0,
-            r.previousFeeBreakdown ? JSON.stringify(r.previousFeeBreakdown) : null,
-            r.previousFeePaidBreakdown ? JSON.stringify(r.previousFeePaidBreakdown) : null
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "inventory") {
-          const insertQuery = `INSERT INTO inventory (id, itemName, category, quantity, minQuantity, unitPrice, location, supplierName, supplierPhone, lastUpdated) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.itemName, r.category, r.quantity || 0, r.minQuantity || 0, r.unitPrice || 0, r.location || "", r.supplierName || null, r.supplierPhone || null, r.lastUpdated || Date.now()
-          ]);
-          await connection.query(insertQuery, [values]);
-        } else if (table === "expenses") {
-          const insertQuery = `INSERT INTO expenses (id, description, category, amount, date, inventoryItemId, quantityPurchased, paymentMethod, recordedBy) VALUES ?`;
-          const values = records.map((r: any) => [
-            r.id, r.description, r.category, r.amount || 0, r.date || Date.now(), r.inventoryItemId || null, r.quantityPurchased || null, r.paymentMethod, r.recordedBy
-          ]);
-          await connection.query(insertQuery, [values]);
-        }
-      }
-
-      await connection.commit();
-    } catch (err) {
-      await connection.rollback();
-      throw err;
-    } finally {
-      connection.release();
-    }
-  } else {
-    fs.writeFileSync(fallbackFilePath, JSON.stringify(data, null, 2));
-  }
 }
 
 async function startServer() {
   await initDatabase();
 
-  // API Routes
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", mode: process.env.NODE_ENV });
+  // API Routes - Live Health Check with Supabase Ping
+  app.get("/api/health", async (req, res) => {
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { error } = await adminClient.from('schools').select('id').limit(1);
+      if (error && !error.message?.includes('permission denied')) {
+        return res.status(503).json({ status: "error", database: "disconnected", error: error.message });
+      }
+      res.json({ status: "ok", database: "connected", mode: process.env.NODE_ENV || "development", dbMode: "supabase" });
+    } catch (e: any) {
+      res.status(503).json({ status: "error", database: "disconnected", error: sanitizeErrorMessage(e) });
+    }
   });
 
   // ----------------------------------------------------
-  // LICENSE VERIFICATION & CREATOR BACKDOOR ROUTING
+  // LICENSE VERIFICATION & SINGLE SOURCE OF TRUTH (SUPABASE)
   // ----------------------------------------------------
-  const licenseFilePath = path.join(process.cwd(), "license_status.json");
-  const generatedLicensesPath = path.join(process.cwd(), "generated_licenses.json");
-
-  // Valid pre-configured license keys
-  const VALID_LICENSE_KEYS = [
-    "ESEPA-SL-7842-ACCRA",
-    "ESEPA-SL-9103-KUMASI",
-    "ESEPA-SL-1149-TEMA",
-    "ESEPA-SL-3351-TAKORADI",
-    "ESEPA-MASTER-DEV-2026-AKOKO"
-  ];
-
-  const registeredUsersPath = path.join(process.cwd(), "registered_users.json");
   const customUserPasswords = new Map<string, { passwordHash: string; role?: string; fullName?: string; schoolId?: string | null; email?: string; updatedAt: number }>();
   const resetTokens = new Map<string, { username: string; email: string; token: string; code: string; expiresAt: number }>();
 
   function getRegisteredUsers(): any[] {
-    try {
-      if (!fs.existsSync(registeredUsersPath)) {
-        fs.writeFileSync(registeredUsersPath, JSON.stringify([], null, 2));
-        return [];
-      }
-      return JSON.parse(fs.readFileSync(registeredUsersPath, "utf-8"));
-    } catch (e) {
-      console.warn("Failed reading registered users file:", e);
-      return [];
-    }
+    return [];
   }
 
-  function saveRegisteredUsers(users: any[]) {
-    try {
-      fs.writeFileSync(registeredUsersPath, JSON.stringify(users, null, 2));
-    } catch (e) {
-      console.error("Failed writing registered users file:", e);
-    }
+  function saveRegisteredUsers(_users: any[]) {
+    // No-op: Supabase is single source of truth
   }
 
-  function getGeneratedLicenses() {
-    try {
-      if (!fs.existsSync(generatedLicensesPath)) {
-        fs.writeFileSync(generatedLicensesPath, JSON.stringify([], null, 2));
-        return [];
-      }
-      return JSON.parse(fs.readFileSync(generatedLicensesPath, "utf-8"));
-    } catch (e) {
-      console.warn("Failed reading generated licenses file:", e);
-      return [];
-    }
+  function getGeneratedLicenses(): any[] {
+    return [];
   }
 
-  function saveGeneratedLicenses(licenses: any[]) {
-    try {
-      fs.writeFileSync(generatedLicensesPath, JSON.stringify(licenses, null, 2));
-    } catch (e) {
-      console.error("Failed writing generated licenses file:", e);
-    }
+  function saveGeneratedLicenses(_licenses: any[]) {
+    // No-op: Supabase is single source of truth
   }
 
-  app.get("/api/license/status", async (req, res) => {
-    let local = { active: true, licenseKey: "EVALUATION-MODE-ACTIVE", lockAnnouncement: "", activeModules: undefined };
+  // Auth-gated license status endpoint
+  app.get("/api/license/status", authenticateToken, async (req: any, res) => {
     try {
-      if (!fs.existsSync(licenseFilePath)) {
-        fs.writeFileSync(licenseFilePath, JSON.stringify(local, null, 2));
-      } else {
-        local = JSON.parse(fs.readFileSync(licenseFilePath, "utf-8"));
+      const adminClient = getSupabaseAdmin();
+      const userSchoolId = req.user?.school_id || req.user?.schoolId;
+
+      let license: any = null;
+      if (userSchoolId) {
+        const { data } = await adminClient
+          .from('school_licenses')
+          .select('*')
+          .eq('school_id', userSchoolId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        license = data;
       }
-    } catch (e) {
-      console.warn("Failed reading local license file:", e);
-    }
 
-    let remoteActive = true;
-    let lockAnnouncement = local.lockAnnouncement || "License verification failed or subscription expired. Please contact Elena / Akoko Solutions.";
-
-    // Also verify if the currently active key is still active and valid in generated keys
-    const generated = getGeneratedLicenses();
-    const currentKey = local.licenseKey;
-    let activeModules = local.activeModules;
-
-    if (currentKey && currentKey !== "EVALUATION-MODE-ACTIVE" && !VALID_LICENSE_KEYS.includes(currentKey)) {
-      const dynamicMatch = generated.find((item: any) => item.key === currentKey);
-      if (dynamicMatch && dynamicMatch.status !== "active") {
-        remoteActive = false;
-        lockAnnouncement = "This serial key has been remotely revoked by Akoko Solutions.";
-      } else if (dynamicMatch && dynamicMatch.expiryDate && Date.now() > dynamicMatch.expiryDate) {
-        remoteActive = false;
-        lockAnnouncement = "This software instance license has expired. Please renew subscription.";
+      if (!license) {
+        const { data } = await adminClient
+          .from('school_licenses')
+          .select('*')
+          .eq('active_status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        license = data;
       }
-      
-      if (!activeModules && dynamicMatch && dynamicMatch.activeModules) {
-        activeModules = dynamicMatch.activeModules;
-      }
+
+      const isExpired = license?.expiry_date ? Number(license.expiry_date) < Date.now() : false;
+      const isSuspended = license?.active_status === 'suspended' || license?.active_status === 'revoked';
+      const finalActive = license ? (license.active_status === 'active' && !isExpired) : true;
+      const isSuper = req.user?.role === 'super_admin' || req.user?.role === 'creator';
+
+      const returnedKey = license?.license_key 
+        ? (isSuper ? license.license_key : "••••-••••-••••-•••• (SECURED)")
+        : "ACTIVE-LICENSED";
+
+      const activeModules = license?.active_modules || [
+        'students', 'academic', 'timetable', 'attendance', 'results',
+        'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory', 'settings', 'users'
+      ];
+
+      res.json({
+        active: finalActive && !isSuspended,
+        licenseKey: returnedKey,
+        remoteOverride: isSuspended || isExpired,
+        lockAnnouncement: isSuspended ? "This license key has been suspended." : (isExpired ? "This software instance license has expired. Please renew subscription." : ""),
+        schoolName: license?.school_name || "SCHOOL SPHERE ACADEMY",
+        activeModules
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
-
-    if (!activeModules) {
-      activeModules = [
-        'students',
-        'academic',
-        'timetable',
-        'attendance',
-        'results',
-        'exam_analysis',
-        'reports',
-        'fees',
-        'siren',
-        'evoting',
-        'inventory',
-        'settings',
-        'users'
-      ] as any;
-    }
-
-    const finalActive = local.active && remoteActive;
-
-    const requestRole = req.query.role;
-    const isSuperAdmin = requestRole === 'super_admin';
-    const returnedKey = local.licenseKey 
-      ? (local.licenseKey === "EVALUATION-MODE-ACTIVE" 
-          ? "EVALUATION-MODE-ACTIVE" 
-          : (isSuperAdmin ? local.licenseKey : "••••-••••-••••-•••• (SECURED)")) 
-      : "";
-
-    res.json({
-      active: finalActive,
-      licenseKey: returnedKey,
-      remoteOverride: !remoteActive,
-      lockAnnouncement,
-      schoolName: "SCHOOL SPHERE ACADEMY",
-      activeModules
-    });
   });
 
   app.post("/api/license/activate", async (req, res) => {
@@ -1901,20 +1550,11 @@ async function startServer() {
         console.warn("Supabase query in /api/license/activate notice:", e.message);
       }
 
-      // 2. Check local generated licenses registry
-      const generated = getGeneratedLicenses();
-      const localMatch = generated.find((item: any) => item.key === keyUpper);
-
       // Check if license is already used (single-use enforcement)
-      // A license key is strictly used only when it has previously completed client onboarding (used === true or activated_at timestamp > 0)
-      const isAlreadyUsed = matchedLicense?.used === true || 
-                            localMatch?.used === true || 
-                            (matchedLicense?.activated_at && Number(matchedLicense.activated_at) > 0) || 
-                            (localMatch?.activatedAt && Number(localMatch.activatedAt) > 0);
+      const isAlreadyUsed = matchedLicense?.used === true || (matchedLicense?.activated_at && Number(matchedLicense.activated_at) > 0);
 
-      // Only reject if it's already used by a previous client and not a master key override
-      if (isAlreadyUsed && !VALID_LICENSE_KEYS.includes(keyUpper)) {
-        const usedSchool = matchedLicense?.school_name || localMatch?.schoolName || "another school";
+      if (isAlreadyUsed) {
+        const usedSchool = matchedLicense?.school_name || "another school";
         return res.status(400).json({ 
           success: false, 
           error: `This license key has already been used and activated for "${usedSchool}". License keys can only be used once.`,
@@ -1924,16 +1564,15 @@ async function startServer() {
       }
 
       // Check if license is suspended or revoked
-      if ((matchedLicense && ['suspended', 'revoked'].includes(matchedLicense.active_status)) || 
-          (localMatch && ['suspended', 'revoked'].includes(localMatch.status))) {
+      if (matchedLicense && ['suspended', 'revoked'].includes(matchedLicense.active_status)) {
         return res.status(403).json({ 
           success: false, 
-          error: "This license key has been suspended or revoked. Please contact Akoko Solutions / Elena." 
+          error: "This license key has been suspended or revoked. Please contact administration." 
         });
       }
 
       // Check if license is expired
-      const expiryTimestamp = matchedLicense?.expiry_date || localMatch?.expiryDate;
+      const expiryTimestamp = matchedLicense?.expiry_date;
       if (expiryTimestamp && Number(expiryTimestamp) < Date.now()) {
         return res.status(403).json({ 
           success: false, 
@@ -1941,23 +1580,16 @@ async function startServer() {
         });
       }
 
-      const isFormattedKey = keyUpper.startsWith("ESEPA-") || keyUpper.startsWith("LIC-") || keyUpper.startsWith("SCH-") || keyUpper.length >= 6;
-      const isValidPreconfigured = VALID_LICENSE_KEYS.includes(keyUpper);
-
-      if (!matchedLicense && !localMatch && !isValidPreconfigured && !isFormattedKey) {
+      if (!matchedLicense) {
         return res.status(400).json({ success: false, error: "Invalid activation key. Key not recognized in license registry." });
       }
 
-      const effectiveSchoolName = (schoolName || matchedLicense?.school_name || localMatch?.schoolName || (isValidPreconfigured ? "SCHOOL SPHERE ACADEMY" : "")).trim().toUpperCase() || (() => {
-        const parts = keyUpper.split('-');
-        return parts.length > 1 && parts[1] ? `${parts[1]} ACADEMY` : "SCHOOL SPHERE ACADEMY";
-      })();
-
-      const effectiveTier = matchedLicense?.tier || localMatch?.tier || (keyUpper.includes("PRO") ? "Professional" : "Standard");
-      const effectiveModules = matchedLicense?.active_modules || localMatch?.activeModules || [
+      const effectiveSchoolName = (schoolName || matchedLicense?.school_name || "SCHOOL SPHERE ACADEMY").trim().toUpperCase();
+      const effectiveTier = matchedLicense?.tier || "Standard";
+      const effectiveModules = matchedLicense?.active_modules || [
         'students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees', 'siren', 'evoting', 'inventory'
       ];
-      const effectiveExpiry = matchedLicense?.expiry_date || localMatch?.expiryDate || null;
+      const effectiveExpiry = matchedLicense?.expiry_date || null;
       const activationTimestamp = Date.now();
 
       // 3. Update Supabase live records to active & one-time activated
@@ -2693,81 +2325,20 @@ async function startServer() {
         };
       }
 
-      // 1. Creator & Master Admin backdoors
-      if (userClean === 'elena_master' && (password === 'creator_override_9922_july' || password === 'july94bab')) {
-        const superUser = {
-          id: 9999,
-          username: 'Elena_Master',
-          fullName: 'Elena (Creator & Master Admin)',
-          role: 'super_admin',
-          status: 'active',
-          schoolId: defaultSchoolObj.id,
-          school_id: defaultSchoolObj.id,
-          createdAt: Date.now(),
-          lastLogin: Date.now()
-        };
-        const token = generateAuthToken(superUser);
-        return res.json({
-          success: true,
-          token,
-          user: superUser,
-          school: defaultSchoolObj
-        });
-      }
-
-      if (userClean === 'elena' && (password === 'july94bab' || password === 'admin123' || password === 'password123' || password === 'creator_override_9922_july')) {
-        const superUser = {
-          id: 1,
-          username: 'Elena',
-          fullName: 'Elena (Super Admin)',
-          role: 'super_admin',
-          status: 'active',
-          schoolId: defaultSchoolObj.id,
-          school_id: defaultSchoolObj.id,
-          createdAt: Date.now(),
-          lastLogin: Date.now()
-        };
-        const token = generateAuthToken(superUser);
-        return res.json({
-          success: true,
-          token,
-          user: superUser,
-          school: defaultSchoolObj
-        });
-      }
-
-      // Standard fallback passwords list
-      const isStandardMasterPass = (
-        password === 'password123' || 
-        password === 'admin123' || 
-        password === 'july94bab' || 
-        password === 'demo123' || 
-        password === 'password' || 
-        password === 'admin' ||
-        password === '123456' ||
-        password === '12345678' ||
-        password === 'secret' ||
-        password === 'school123' ||
-        password === 'creator_override_9922_july'
-      );
-
-      // Helper function to verify password candidate against stored hash/plain text
+      // Helper function to securely verify password candidate against stored hash/plain text
       const verifyPassword = async (candidatePass: string, storedHashOrPass: string | null | undefined): Promise<boolean> => {
-        if (!storedHashOrPass) return isStandardMasterPass;
+        if (!storedHashOrPass || !candidatePass) return false;
         const trimmedStored = String(storedHashOrPass).trim();
         const trimmedCand = String(candidatePass).trim();
         
-        // 1. Direct string match
-        if (trimmedStored === trimmedCand) return true;
-        
-        // 2. Bcrypt comparison
+        // 1. Bcrypt comparison
         try {
           const match = await bcrypt.compare(trimmedCand, trimmedStored);
           if (match) return true;
         } catch (e) {}
 
-        // 3. Master / Demo standard fallback password acceptance
-        if (isStandardMasterPass) return true;
+        // 2. Direct match fallback for legacy pre-migration hashes
+        if (trimmedStored === trimmedCand) return true;
 
         return false;
       };
@@ -3734,7 +3305,7 @@ async function startServer() {
         .order('created_at', { ascending: false });
 
       // Apply school tenant scoping unless super admin
-      const isSuper = user?.role === 'super_admin' || user?.role === 'creator' || user?.username?.toLowerCase() === 'elena';
+      const isSuper = user?.role === 'super_admin' || user?.role === 'creator';
       if (!isSuper && targetSchoolId) {
         query = query.eq('school_id', targetSchoolId);
       }
@@ -5069,7 +4640,7 @@ async function startServer() {
         console.warn("Notice querying license_codes:", lcErr.message);
       }
 
-      // 2. Fallback check in school_licenses / master keys
+      // 2. Check in school_licenses table
       if (!matched) {
         const { data: licRow } = await adminClient
           .from('school_licenses')
@@ -5080,9 +4651,6 @@ async function startServer() {
         if (licRow && licRow.active_status === 'active') {
           matched = true;
           matchedRecord = licRow;
-        } else if (VALID_LICENSE_KEYS.includes(targetCode)) {
-          matched = true;
-          matchedRecord = { license_key: targetCode, school_name: 'SCHOOL SPHERE ACADEMY', tier: 'Enterprise' };
         }
       }
 
@@ -5757,28 +5325,27 @@ async function startServer() {
         });
       }
 
-      // 2. Check pre-configured master keys and auto-sync to DB
-      if (VALID_LICENSE_KEYS.includes(targetKey)) {
-        const masterLic = {
-          key: targetKey,
-          schoolName: "SCHOOL SPHERE ACADEMY",
-          tier: "Enterprise",
-          durationMonths: "perpetual",
-          expiryDate: null,
-          createdAt: Date.now(),
-          status: "active",
-          used: false,
-          activatedAt: null,
-          activeModules: ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees', 'siren', 'evoting', 'inventory']
-        };
-        await syncLicenseToSupabase(masterLic);
+      // 2. Check registry of licenses in Supabase licenses table
+      const { data: altLicRow } = await adminClient
+        .from('licenses')
+        .select('*')
+        .eq('license_key', targetKey)
+        .maybeSingle();
+
+      if (altLicRow) {
+        const isExpired = altLicRow.expires_at && new Date(altLicRow.expires_at).getTime() < Date.now();
+        const isActive = (altLicRow.status === 'active' || altLicRow.active === true) && !isExpired;
         return res.json({
           success: true,
-          active: true,
-          used: false,
-          tier: 'Enterprise',
-          schoolName: 'SCHOOL SPHERE ACADEMY',
-          activeModules: masterLic.activeModules
+          active: isActive,
+          tier: altLicRow.tier || 'Enterprise',
+          schoolName: altLicRow.school_name || '',
+          schoolId: altLicRow.school_id || null,
+          expiryDate: altLicRow.expires_at || null,
+          activeModules: altLicRow.active_modules || ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees'],
+          status: isActive ? 'active' : 'expired',
+          used: !!altLicRow.used,
+          activatedAt: altLicRow.activated_at || null
         });
       }
 
@@ -6821,18 +6388,48 @@ async function startServer() {
     }
   });
 
-  app.get("/api/db/status", (req, res) => {
+  app.get("/api/db/status", async (req, res) => {
     const supabaseUrl = getResolvedSupabaseUrl();
     const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://esepa-school-portal.vercel.app';
-    const supabaseHost = supabaseUrl.replace(/^https?:\/\//, '');
+    let isConnected = false;
+    let pingLatency = 0;
+    let errorDetail = null;
+
+    try {
+      const admin = getSupabaseAdmin();
+      const t0 = Date.now();
+      const { error } = await admin.from('schools').select('id').limit(1);
+      pingLatency = Date.now() - t0;
+      if (!error || error.message?.includes('permission denied')) {
+        isConnected = true;
+      } else {
+        errorDetail = error.message;
+      }
+    } catch (e: any) {
+      errorDetail = e.message;
+    }
+
+    if (!isConnected) {
+      return res.status(503).json({
+        dbMode: "error",
+        status: "disconnected",
+        details: `Supabase connectivity error: ${errorDetail}`,
+        supabase: {
+          connected: false,
+          url: supabaseUrl,
+          error: errorDetail
+        }
+      });
+    }
 
     res.json({
-      dbMode,
-      details: dbStatusDetails,
+      dbMode: "supabase",
+      status: "connected",
+      latencyMs: pingLatency,
+      details: `Connected successfully to Supabase PostgreSQL database (${supabaseUrl})`,
       supabase: {
-        connected: dbMode === "supabase",
+        connected: true,
         url: supabaseUrl,
-        database: `postgresql://postgres:***@db.${supabaseHost}:5432/postgres`,
         licensingSync: "Active (RLS Enforced)",
         subscriptionsSync: "Active (RLS Enforced)"
       },
@@ -6840,12 +6437,6 @@ async function startServer() {
         connected: true,
         url: vercelUrl,
         environment: process.env.NODE_ENV || "production"
-      },
-      config: {
-        host: MYSQL_CONFIG.host || "",
-        port: MYSQL_CONFIG.port || 3306,
-        user: MYSQL_CONFIG.user || "",
-        database: MYSQL_CONFIG.database || ""
       }
     });
   });
@@ -7033,14 +6624,7 @@ async function startServer() {
         }
 
         if (error) {
-          // Gracefully fallback to local data if available
-          try {
-            const localData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-            const items = localData[table] || localData[targetTable] || [];
-            result[table] = items.filter((i: any) => !i.school_id || i.school_id === schoolId || !i.schoolId || i.schoolId === schoolId);
-          } catch {
-            result[table] = [];
-          }
+          result[table] = [];
         } else {
           result[table] = (data || []).map((row: any) => {
             let item = { ...row };
@@ -7218,40 +6802,15 @@ async function startServer() {
         }
       }
 
-      // 4. Always ensure saved to fallback local JSON database
-      const fallbackRecord = insertedData || {
-        ...cleanObj,
-        id: Date.now()
-      };
+      if (!insertedData) {
+        return res.status(500).json({ success: false, error: "Failed to persist student record to Supabase." });
+      }
 
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.students) fileData.students = [];
-          fileData.students.push(fallbackRecord);
-          fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2));
-        }
-      } catch (fErr) {}
-
-      // Normalize returned record fields
-      const normalized = {
-        ...fallbackRecord,
-        studentId: fallbackRecord.studentId || fallbackRecord.student_id || cleanObj.studentId,
-        firstName: fallbackRecord.firstName || fallbackRecord.first_name || cleanObj.firstName,
-        lastName: fallbackRecord.lastName || fallbackRecord.last_name || cleanObj.lastName,
-        dateOfBirth: fallbackRecord.dateOfBirth || fallbackRecord.date_of_birth || cleanObj.dateOfBirth,
-        guardianName: fallbackRecord.guardianName || fallbackRecord.guardian_name || cleanObj.guardianName,
-        guardianPhone: fallbackRecord.guardianPhone || fallbackRecord.guardian_phone || cleanObj.guardianPhone,
-        feesPaid: Number(fallbackRecord.feesPaid ?? fallbackRecord.fees_paid ?? cleanObj.feesPaid) || 0,
-        totalFees: Number(fallbackRecord.totalFees ?? fallbackRecord.total_fees ?? cleanObj.totalFees) || 0,
-        createdAt: Number(fallbackRecord.createdAt ?? fallbackRecord.created_at ?? cleanObj.createdAt) || Date.now(),
-        school_id: fallbackRecord.school_id || fallbackRecord.schoolId || schoolId
-      };
-
-      return res.json({ success: true, data: normalized });
+      const normalized = normalizeServerStudentRecord(insertedData);
+      return res.status(201).json({ success: true, data: normalized });
     } catch (err: any) {
-      console.warn("Notice in /api/students endpoint:", err?.message || err);
-      return res.json({ success: true, data: { ...req.body, id: Date.now() } });
+      console.error("Error in POST /api/students:", err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -7612,38 +7171,17 @@ async function startServer() {
         }
       }
 
-      // 4. Update fallback local JSON store if present
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.students)) {
-            const idx = fileData.students.findIndex((s: any) => 
-              String(s.id) === String(id) || 
-              (studentId && (String(s.studentId) === studentId || String(s.student_id) === studentId))
-            );
-            if (idx !== -1) {
-              fileData.students[idx] = {
-                ...fileData.students[idx],
-                ...raw,
-                ...snakePayload,
-                id: fileData.students[idx].id
-              };
-              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            }
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
 
-      const finalRecord = updatedData 
-        ? normalizeServerStudentRecord(updatedData) 
-        : normalizeServerStudentRecord({ ...raw, ...snakePayload, id: !isNaN(Number(id)) ? Number(id) : id });
+      if (!updatedData) {
+        return res.status(404).json({ success: false, error: "Student record not found or could not be updated in Supabase." });
+      }
 
+      const finalRecord = normalizeServerStudentRecord(updatedData);
       return res.json({ success: true, data: finalRecord });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerStudentRecord({ ...req.body, id: req.params.id }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -7674,20 +7212,6 @@ async function startServer() {
           await adminClient.from('students').delete().eq('student_id', identifierToDelete);
         } catch (e) {}
       }
-
-      // 3. Delete from fallback local store
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.students)) {
-            fileData.students = fileData.students.filter((s: any) => 
-              String(s.id) !== String(id) && 
-              (!identifierToDelete || (String(s.studentId) !== identifierToDelete && String(s.student_id) !== identifierToDelete))
-            );
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-          }
-        }
-      } catch (e) {}
 
       invalidateDbCache();
       return res.json({ success: true, message: "Student removed successfully from Supabase" });
@@ -7737,23 +7261,7 @@ async function startServer() {
         } catch (e) {}
       }
 
-      // 3. Delete from fallback local store
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.students)) {
-            const strListIds = listIds.map(String);
-            const strListStudentIds = listStudentIds.map(String);
-            fileData.students = fileData.students.filter((s: any) => 
-              !strListIds.includes(String(s.id)) && 
-              !strListStudentIds.includes(String(s.studentId)) && 
-              !strListStudentIds.includes(String(s.student_id))
-            );
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-          }
-        }
-      } catch (e) {}
-
+      // 3. Invalidate DB cache
       invalidateDbCache();
       return res.json({
         success: true,
@@ -7780,17 +7288,8 @@ async function startServer() {
       const parsed = (data || []).map((t: any) => normalizeServerTeacherRecord(t));
       return res.json(parsed);
     } catch (err: any) {
-      try {
-        const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
-        const localData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-        let teachers = (localData.teachers || []).map((t: any) => normalizeServerTeacherRecord(t));
-        if (schoolId) {
-          teachers = teachers.filter((t: any) => !t.schoolId || t.schoolId === schoolId || !t.school_id || t.school_id === schoolId);
-        }
-        return res.json(teachers);
-      } catch (e) {
-        return res.json([]);
-      }
+      console.warn("Notice in /api/teachers GET:", err?.message || err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -7859,26 +7358,15 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      const fallbackRecord = insertedData ? normalizeServerTeacherRecord(insertedData) : {
-        ...cleanObj,
-        id: Date.now()
-      };
-
-      // 4. Save to fallback storage
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.teachers) fileData.teachers = [];
-          fileData.teachers.push(fallbackRecord);
-          fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-        }
-      } catch (e) {}
+      if (!insertedData) {
+        return res.status(500).json({ success: false, error: "Failed to persist teacher record to Supabase." });
+      }
 
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerTeacherRecord(fallbackRecord) });
+      return res.status(201).json({ success: true, data: normalizeServerTeacherRecord(insertedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerTeacherRecord({ ...req.body, id: Date.now() }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -7961,33 +7449,16 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      // 2. In-place update in fallback JSON store without creating duplicate instances
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.teachers)) {
-            const idx = fileData.teachers.findIndex((t: any) => 
-              String(t.id) === String(id) || String(t.staffId) === String(id) || String(t.staff_id) === String(id)
-            );
-            if (idx !== -1) {
-              fileData.teachers[idx] = normalizeServerTeacherRecord({
-                ...fileData.teachers[idx],
-                ...cleanObj,
-                id: fileData.teachers[idx].id
-              });
-              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-              if (!updatedData) updatedData = fileData.teachers[idx];
-            }
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
-      const finalResult = updatedData ? normalizeServerTeacherRecord(updatedData) : normalizeServerTeacherRecord({ ...cleanObj, id });
-      return res.json({ success: true, data: finalResult });
+
+      if (!updatedData) {
+        return res.status(404).json({ success: false, error: "Teacher record not found or could not be updated in Supabase." });
+      }
+
+      return res.json({ success: true, data: normalizeServerTeacherRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerTeacherRecord({ ...req.body, id: req.params.id }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8014,23 +7485,11 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.teachers)) {
-            fileData.teachers = fileData.teachers.filter((t: any) => 
-              String(t.id) !== String(id) && String(t.staffId) !== String(id) && String(t.staff_id) !== String(id)
-            );
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
       return res.json({ success: true, message: "Teacher deleted successfully" });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, message: "Teacher deleted successfully" });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8044,23 +7503,11 @@ async function startServer() {
         query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
       }
       const { data, error } = await query.order('id', { ascending: true });
-      if (!error && data) {
-        return res.json(data.map((c: any) => normalizeServerClassRecord(c)));
-      }
-      
-      try {
-        const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
-        const localData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-        let classes = (localData.classes || []).map((c: any) => normalizeServerClassRecord(c));
-        if (schoolId) {
-          classes = classes.filter((c: any) => !c.schoolId || c.schoolId === schoolId || !c.school_id || c.school_id === schoolId);
-        }
-        return res.json(classes);
-      } catch (e) {
-        return res.json([]);
-      }
+      if (error) throw error;
+      return res.json((data || []).map((c: any) => normalizeServerClassRecord(c)));
     } catch (err: any) {
-      return res.json([]);
+      console.warn("Notice in /api/classes GET:", err?.message || err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8101,26 +7548,15 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      const fallbackRecord = insertedData ? normalizeServerClassRecord(insertedData) : {
-        ...cleanObj,
-        id: Date.now()
-      };
-
-      // 3. Save to fallback storage
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.classes) fileData.classes = [];
-          fileData.classes.push(fallbackRecord);
-          fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-        }
-      } catch (e) {}
+      if (!insertedData) {
+        return res.status(500).json({ success: false, error: "Failed to persist class record to Supabase." });
+      }
 
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerClassRecord(fallbackRecord) });
+      return res.status(201).json({ success: true, data: normalizeServerClassRecord(insertedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerClassRecord({ ...req.body, id: Date.now() }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8173,33 +7609,16 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      // 2. In-place update in fallback JSON store without creating duplicate instances
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.classes)) {
-            const idx = fileData.classes.findIndex((c: any) => 
-              String(c.id) === String(id) || String(c.name).toLowerCase() === String(id).toLowerCase()
-            );
-            if (idx !== -1) {
-              fileData.classes[idx] = normalizeServerClassRecord({
-                ...fileData.classes[idx],
-                ...cleanObj,
-                id: fileData.classes[idx].id
-              });
-              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-              if (!updatedData) updatedData = fileData.classes[idx];
-            }
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
-      const finalResult = updatedData ? normalizeServerClassRecord(updatedData) : normalizeServerClassRecord({ ...cleanObj, id });
-      return res.json({ success: true, data: finalResult });
+
+      if (!updatedData) {
+        return res.status(404).json({ success: false, error: "Class record not found or could not be updated in Supabase." });
+      }
+
+      return res.json({ success: true, data: normalizeServerClassRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerClassRecord({ ...req.body, id: req.params.id }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8226,23 +7645,11 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.classes)) {
-            fileData.classes = fileData.classes.filter((c: any) => 
-              String(c.id) !== String(id) && String(c.name).toLowerCase() !== String(id).toLowerCase()
-            );
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
       return res.json({ success: true, message: "Class deleted successfully" });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, message: "Class deleted successfully" });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8256,23 +7663,11 @@ async function startServer() {
         query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
       }
       const { data, error } = await query.order('id', { ascending: true });
-      if (!error && data) {
-        return res.json(data.map((sub: any) => normalizeServerSubjectRecord(sub)));
-      }
-      
-      try {
-        const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
-        const localData = JSON.parse(fs.readFileSync(fallbackFilePath, "utf8"));
-        let subjects = (localData.subjects || []).map((sub: any) => normalizeServerSubjectRecord(sub));
-        if (schoolId) {
-          subjects = subjects.filter((s: any) => !s.schoolId || s.schoolId === schoolId || !s.school_id || s.school_id === schoolId);
-        }
-        return res.json(subjects);
-      } catch (e) {
-        return res.json([]);
-      }
+      if (error) throw error;
+      return res.json((data || []).map((sub: any) => normalizeServerSubjectRecord(sub)));
     } catch (err: any) {
-      return res.json([]);
+      console.warn("Notice in /api/subjects GET:", err?.message || err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8327,26 +7722,15 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      const fallbackRecord = insertedData ? normalizeServerSubjectRecord(insertedData) : {
-        ...cleanObj,
-        id: Date.now()
-      };
-
-      // 4. Save to fallback storage
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.subjects) fileData.subjects = [];
-          fileData.subjects.push(fallbackRecord);
-          fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-        }
-      } catch (e) {}
+      if (!insertedData) {
+        return res.status(500).json({ success: false, error: "Failed to persist subject record to Supabase." });
+      }
 
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerSubjectRecord(fallbackRecord) });
+      return res.status(201).json({ success: true, data: normalizeServerSubjectRecord(insertedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerSubjectRecord({ ...req.body, id: Date.now() }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8419,33 +7803,16 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      // 2. In-place update in fallback JSON store without creating duplicate instances
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.subjects)) {
-            const idx = fileData.subjects.findIndex((s: any) => 
-              String(s.id) === String(id) || String(s.code).toLowerCase() === String(id).toLowerCase() || String(s.name).toLowerCase() === String(id).toLowerCase()
-            );
-            if (idx !== -1) {
-              fileData.subjects[idx] = normalizeServerSubjectRecord({
-                ...fileData.subjects[idx],
-                ...cleanObj,
-                id: fileData.subjects[idx].id
-              });
-              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-              if (!updatedData) updatedData = fileData.subjects[idx];
-            }
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
-      const finalResult = updatedData ? normalizeServerSubjectRecord(updatedData) : normalizeServerSubjectRecord({ ...cleanObj, id });
-      return res.json({ success: true, data: finalResult });
+
+      if (!updatedData) {
+        return res.status(404).json({ success: false, error: "Subject record not found or could not be updated in Supabase." });
+      }
+
+      return res.json({ success: true, data: normalizeServerSubjectRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
-      return res.json({ success: true, data: normalizeServerSubjectRecord({ ...req.body, id: req.params.id }) });
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -8472,21 +7839,13 @@ async function startServer() {
         } catch (pgErr) {}
       }
 
-      try {
-        if (fs.existsSync(fallbackFilePath)) {
-          const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (Array.isArray(fileData.subjects)) {
-            fileData.subjects = fileData.subjects.filter((s: any) => 
-              String(s.id) !== String(id) && String(s.code).toLowerCase() !== String(id).toLowerCase() && String(s.name).toLowerCase() !== String(id).toLowerCase()
-            );
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-          }
-        }
-      } catch (e) {}
-
       invalidateDbCache();
       return res.json({ success: true, message: "Subject deleted successfully" });
     } catch (err: any) {
+      invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
       invalidateDbCache();
       return res.json({ success: true, message: "Subject deleted successfully" });
     }
@@ -8822,18 +8181,24 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    // Asynchronously reconcile any orphaned schools or licenses in Supabase
-    try {
-      const adminClient = getSupabaseAdmin();
-      autoReconcileSchoolsAndLicenses(adminClient).then(() => {
-        console.log("[Supabase Sync] School <-> License relationship reconciliation complete.");
-      }).catch(err => {
-        console.warn("[Supabase Sync] Initial reconciliation note:", err.message);
-      });
-    } catch (e: any) {}
-  });
+  if (process.env.NODE_ENV !== "test") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+      // Asynchronously reconcile any orphaned schools or licenses in Supabase
+      try {
+        const adminClient = getSupabaseAdmin();
+        autoReconcileSchoolsAndLicenses(adminClient).then(() => {
+          console.log("[Supabase Sync] School <-> License relationship reconciliation complete.");
+        }).catch(err => {
+          console.warn("[Supabase Sync] Initial reconciliation note:", err.message);
+        });
+      } catch (e: any) {}
+    });
+  }
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
+
+export { app, startServer };

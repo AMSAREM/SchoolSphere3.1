@@ -542,22 +542,14 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
             db.expenses.clear()
           ]);
 
-          // Retain 'elena' and 'elena_master' accounts
+          // Retain creator and super_admin accounts
           const allUsers = await db.users.toArray();
           const creators = allUsers.filter(u => 
-            u.username.toLowerCase() === 'elena' || u.username.toLowerCase() === 'elena_master'
+            u.role === 'creator' || u.role === 'super_admin'
           );
           await db.users.clear();
           if (creators.length > 0) {
             await db.users.bulkAdd(creators);
-          } else {
-            await db.users.add({
-              username: 'Elena',
-              fullName: 'Elena (Super Admin)',
-              role: 'super_admin',
-              createdAt: Date.now(),
-              passwordHash: ''
-            });
           }
 
           showToast('Pruned & Synced! Software database is now clean and ready for clients.', 'success');

@@ -205,7 +205,7 @@ export default function SecuritySuite({
                     <span className="font-bold text-slate-800 text-xs block">{op.name}</span>
                     <span className="text-[10px] text-slate-400 font-semibold block">Role: <strong>{op.role}</strong> | Last active: {op.lastActive}</span>
                   </div>
-                  {op.name !== 'Elena Master' && (
+                  {op.role !== 'Super Admin' && (
                     <button
                       onClick={() => handleRemoveOperator(op.id)}
                       className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"

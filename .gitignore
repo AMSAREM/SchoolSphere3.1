@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+registered_users.json
+generated_licenses.json
+license_status.json
+sync_logs.json
+school_db_fallback.json

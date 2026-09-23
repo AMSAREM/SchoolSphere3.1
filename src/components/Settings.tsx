@@ -313,18 +313,10 @@ export default function Settings() {
           ]);
 
           const allUsers = await db.users.toArray();
-          const creators = allUsers.filter(u => u.username.toLowerCase() === 'elena' || u.username.toLowerCase() === 'elena_master');
+          const creators = allUsers.filter(u => u.role === 'creator' || u.role === 'super_admin');
           await db.users.clear();
           if (creators.length > 0) {
             await db.users.bulkAdd(creators);
-          } else {
-            await db.users.add({
-              username: 'Elena',
-              fullName: 'Elena (Super Admin)',
-              role: 'super_admin',
-              createdAt: Date.now(),
-              passwordHash: ''
-            });
           }
 
           setMessage({ type: 'success', text: 'Wipe complete! Local database reset completed.' });
@@ -1396,7 +1388,7 @@ export default function Settings() {
               </div>
 
               {/* Creator Controls & Licensing Section */}
-              {(user?.username?.toLowerCase() === 'elena' || user?.username?.toLowerCase() === 'elena_master') && (
+              {(user?.role === 'creator' || user?.role === 'super_admin') && (
                 <div className="pt-8 border-t border-slate-100 space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1782,7 +1774,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <h3 className="font-bold text-slate-800">Creator Console Has Moved!</h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Elena, your designer hub is now an independent portal. You can access it directly from the main sidebar navigation panel!
+                  The system creator and designer hub is now an independent portal. You can access it directly from the main navigation panel!
                 </p>
               </div>
             </div>

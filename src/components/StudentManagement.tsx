@@ -881,7 +881,7 @@ export default function StudentManagement() {
           <History className="w-4 h-4" />
           <span>Promotion History & Audits</span>
           {promotionHistory.length > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-black bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+            <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-200 dark:border-indigo-800">
               {promotionHistory.length}
             </span>
           )}
@@ -1146,56 +1146,56 @@ export default function StudentManagement() {
                       />
                     </td>
                     <td className="px-6 py-4">
-                      <span className="font-mono text-sm text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
+                      <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/50">
                         {student.studentId}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden border border-slate-200">
+                        <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
                           {student.photo ? (
                             <img src={student.photo} alt={getStudentFullName(student)} className="w-full h-full object-cover" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-600 font-bold text-xs uppercase">
+                            <div className="w-full h-full flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase">
                               {(student.firstName?.[0] || student.first_name?.[0] || '')}{(student.lastName?.[0] || student.last_name?.[0] || '') || 'S'}
                             </div>
                           )}
                         </div>
                         <div>
-                          <div className="font-medium text-slate-900">{getStudentFullName(student)}</div>
+                          <div className="font-medium text-slate-900 dark:text-slate-100 text-sm">{getStudentFullName(student)}</div>
                           <div className="text-xs text-slate-400">{student.gender || 'N/A'}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 font-medium">
+                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium">
                       {student.class || 'N/A'}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-slate-900">{student.guardianName || '—'}</div>
-                      <div className="text-xs text-slate-500">{student.guardianPhone || '—'}</div>
+                      <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{student.guardianName || '—'}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">{student.guardianPhone || '—'}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
-                        <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-sm overflow-hidden">
                           <div 
                             className={cn(
-                              "h-full rounded-full transition-all duration-500",
-                              ((student.feesPaid || 0) / (student.totalFees || 1)) >= 1 ? "bg-emerald-500" : "bg-amber-500"
+                              "h-full rounded-xs transition-all duration-500",
+                              ((student.feesPaid || 0) / (student.totalFees || 1)) >= 1 ? "bg-emerald-500" : "bg-indigo-500"
                             )}
                             style={{ width: `${Math.min(100, Math.max(0, ((student.feesPaid || 0) / (student.totalFees || 1)) * 100))}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">
+                        <span className="text-[10px] font-mono text-slate-400 tabular-nums">
                           {formatCurrency(student.feesPaid || 0)} / {formatCurrency(student.totalFees || 0)}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className={cn(
-                        "text-xs font-black px-2.5 py-1 rounded-md tracking-tight inline-block",
+                        "text-xs font-mono font-semibold tabular-nums px-2 py-0.5 rounded-md inline-block",
                         (student.totalFees || 0) - (student.feesPaid || 0) > 0 
-                          ? "text-rose-700 bg-rose-50 border border-rose-100/60" 
-                          : "text-emerald-700 bg-emerald-50 border border-emerald-100/60"
+                          ? "text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-900/40" 
+                          : "text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40"
                       )}>
                         {formatCurrency((student.totalFees || 0) - (student.feesPaid || 0))}
                       </span>
@@ -1700,13 +1700,13 @@ export default function StudentManagement() {
                     <h3 className="text-xl font-bold">{selectedProfileStudent.firstName} {selectedProfileStudent.lastName}</h3>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-indigo-200 font-mono tracking-wider">{selectedProfileStudent.studentId}</span>
-                      <span className="text-[11px] font-bold px-2 py-0.5 bg-white/20 rounded-full text-white">Active: {selectedProfileStudent.class}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 bg-white/15 rounded-md text-white border border-white/20">Active: {selectedProfileStudent.class}</span>
                     </div>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedProfileStudent(null)}
-                  className="p-1.5 px-3 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  className="p-1.5 px-3 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all cursor-pointer"
                 >
                   Close
                 </button>
@@ -1739,7 +1739,7 @@ export default function StudentManagement() {
                   <History className="w-3.5 h-3.5" />
                   <span>Class Progression</span>
                   {((selectedProfileStudent.classHistory?.length || 0) + (profileStudentPromotions?.length || 0)) > 0 && (
-                    <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 rounded-full text-[10px]">
+                    <span className="px-1.5 py-0.2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-md border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono">
                       {(selectedProfileStudent.classHistory?.length || profileStudentPromotions?.length || 0)}
                     </span>
                   )}
@@ -1757,7 +1757,7 @@ export default function StudentManagement() {
                   <Award className="w-3.5 h-3.5" />
                   <span>Results History</span>
                   {profileStudentResults.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 rounded-full text-[10px]">
+                    <span className="px-1.5 py-0.2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-md border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono">
                       {profileStudentResults.length}
                     </span>
                   )}
@@ -1859,8 +1859,9 @@ export default function StudentManagement() {
                           <p className="text-base font-black text-slate-800">{selectedProfileStudent.class}</p>
                         </div>
                       </div>
-                      <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" /> Enrolled
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span>Enrolled</span>
                       </span>
                     </div>
 

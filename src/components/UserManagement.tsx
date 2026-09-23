@@ -128,7 +128,7 @@ export default function UserManagement() {
 
   const handleToggleStatus = async (userToUpdate: User) => {
     if (!userToUpdate.id) return;
-    const isMaster = userToUpdate.username?.toLowerCase() === 'elena' || userToUpdate.username?.toLowerCase() === 'elena_master';
+    const isMaster = userToUpdate.role === 'super_admin' || userToUpdate.role === 'creator';
     if (isMaster) {
       showToast("Cannot modify status of master super admin account.", "error");
       return;
@@ -176,7 +176,7 @@ export default function UserManagement() {
     }
 
     const targetUser = users.find(u => u.id === id);
-    if (targetUser && (targetUser.username?.toLowerCase() === 'elena' || targetUser.username?.toLowerCase() === 'elena_master')) {
+    if (targetUser && (targetUser.role === 'super_admin' || targetUser.role === 'creator')) {
       showToast("This master super admin account is protected and cannot be deleted.", "error");
       return;
     }
@@ -336,7 +336,7 @@ export default function UserManagement() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {filteredUsers.map((user) => {
                 const isActive = (user.status || 'active') === 'active';
-                const isMaster = user.username?.toLowerCase() === 'elena' || user.username?.toLowerCase() === 'elena_master';
+                const isMaster = user.role === 'super_admin' || user.role === 'creator';
                 const roleInfo = getRoleInfo(user.role);
 
                 return (

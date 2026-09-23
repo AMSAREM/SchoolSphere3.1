@@ -5,8 +5,14 @@
 
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
+import dotenv from 'dotenv';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'schoolsphere-super-secure-jwt-secret-key-2026';
+dotenv.config();
+
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is missing. The application refuses to start without a securely configured JWT secret.');
+}
 const TOKEN_EXPIRY = '7d';
 
 export interface AuthJwtPayload {
@@ -110,7 +116,7 @@ export function requireRoles(...allowedRoles: string[]) {
     }
 
     const userRole = (req.user.role || '').toLowerCase();
-    const isSuper = userRole === 'super_admin' || userRole === 'creator' || req.user.username?.toLowerCase() === 'elena';
+    const isSuper = userRole === 'super_admin' || userRole === 'creator';
 
     if (isSuper || allowedRoles.map(r => r.toLowerCase()).includes(userRole)) {
       return next();
@@ -126,6 +132,7 @@ export function requireRoles(...allowedRoles: string[]) {
 /**
  * Express Middleware: Enforces tenant/school isolation.
  * Guarantees a user cannot query or mutate data belonging to another school unless they are a superadmin.
+ * Deny-by-default: automatically scopes to requesting user's own school if unspecified.
  */
 export function requireSchoolScope(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
@@ -133,19 +140,38 @@ export function requireSchoolScope(req: AuthenticatedRequest, res: Response, nex
   }
 
   const userRole = (req.user.role || '').toLowerCase();
-  const isSuper = userRole === 'super_admin' || userRole === 'creator' || req.user.username?.toLowerCase() === 'elena';
+  const isSuper = userRole === 'super_admin' || userRole === 'creator';
 
   if (isSuper) {
     return next();
   }
 
-  const targetSchoolId = req.params.schoolId || req.body?.school_id || req.body?.schoolId || req.query.school_id || req.query.schoolId;
+  if (!req.user.school_id) {
+    return res.status(403).json({
+      success: false,
+      error: 'Tenant isolation violation: User is not assigned to any school.'
+    });
+  }
 
-  if (targetSchoolId && req.user.school_id && targetSchoolId !== req.user.school_id) {
+  const headerSchoolId = req.headers['x-school-id'] as string;
+  const targetSchoolId = req.params.schoolId || req.body?.school_id || req.body?.schoolId || req.query.school_id || req.query.schoolId || headerSchoolId;
+
+  if (targetSchoolId && targetSchoolId !== req.user.school_id) {
     return res.status(403).json({
       success: false,
       error: 'Tenant isolation violation: You do not have permission to access resources belonging to a different school.'
     });
+  }
+
+  // Auto-scope request to user's school if not specified
+  if (!targetSchoolId) {
+    if (req.body && typeof req.body === 'object') {
+      req.body.school_id = req.user.school_id;
+    }
+    if (req.query) {
+      req.query.school_id = req.user.school_id;
+    }
+    req.headers['x-school-id'] = req.user.school_id;
   }
 
   next();

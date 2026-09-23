@@ -1,56 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
-import fs from 'fs';
-import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 function getEnvVar(name: string): string {
   if (process.env[name] && process.env[name]?.trim()) {
     return process.env[name]!.trim();
   }
-  try {
-    const envPaths = [
-      path.join(process.cwd(), '.env'),
-      path.join(process.cwd(), '.env.example')
-    ];
-    for (const p of envPaths) {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, 'utf-8');
-        const regex = new RegExp(`^${name}\\s*=\\s*(.+)`, 'm');
-        const match = content.match(regex);
-        if (match && match[1]?.trim()) {
-          return match[1].trim();
-        }
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
   return '';
 }
 
 export function getSupabaseAdmin() {
-  const defaultJwtKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTY5ODcwMiwiZXhwIjoyMTAxMjc0NzAyfQ.g-w4ym7W-ic1PnW8VwA6Cdn7PgJhY_FqKrw2KWfFoLU';
-
-  let supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
+  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
   if (!supabaseUrl) {
-    supabaseUrl = 'https://niavmonyfwqlryppgksy.supabase.co';
+    throw new Error('FATAL: SUPABASE_URL environment variable is missing. Supabase is required as the single source of truth.');
   }
 
   const targetRef = supabaseUrl.replace(/^https?:\/\//, '').split('.')[0];
+  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
-  if (!serviceRoleKey || !serviceRoleKey.startsWith('ey')) {
-    serviceRoleKey = defaultJwtKey;
-  } else {
+  // Verify that key matches target ref if it's a JWT
+  if (serviceRoleKey && serviceRoleKey.startsWith('ey')) {
     try {
       const parts = serviceRoleKey.split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
         if (payload && payload.ref && payload.ref !== targetRef) {
-          serviceRoleKey = defaultJwtKey;
+          // Fall back to anon key for the target project if service_role ref was mismatched
+          const anon = getEnvVar('VITE_SUPABASE_ANON_KEY');
+          if (anon) serviceRoleKey = anon;
         }
       }
     } catch {}
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error('FATAL: Supabase API Key (SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_ANON_KEY) is missing. Application refuses to run without Supabase credentials.');
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
