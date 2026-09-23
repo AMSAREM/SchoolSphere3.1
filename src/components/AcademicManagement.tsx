@@ -135,7 +135,10 @@ function TeacherList() {
     };
 
     if (editingTeacher && editingTeacher.id) {
-      await teachersApi.update(editingTeacher.id, teacherData);
+      await teachersApi.update(editingTeacher.id, {
+        ...teacherData,
+        staffId: editingTeacher.staffId
+      });
     } else {
       const teacher: Teacher = {
         ...teacherData,
@@ -302,8 +305,8 @@ function TeacherList() {
               </div>
 
               <div className="flex gap-4 pt-6">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100">Save Teacher</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
+                <button id="teacher-submit-btn" type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 cursor-pointer transition-all active:scale-[0.99]">{editingTeacher ? 'Update Teacher' : 'Save Teacher'}</button>
               </div>
             </form>
           </div>

@@ -43,6 +43,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { db } from './db/schema';
+import { initRealtimeAndAutoSync, syncAllDataFromBackend } from './lib/syncService';
 import Dashboard from './components/Dashboard';
 import StudentManagement from './components/StudentManagement';
 import AttendanceTerminal from './components/AttendanceTerminal';
@@ -721,59 +722,39 @@ function AppContent() {
           }
         }
 
-        // Ensure "Emmanuel Amoako" (STU-562185) has the exact profile & fee breakdown
-        const allStudents = await db.students.toArray();
-        const emmanuelData = {
-          studentId: 'STU-562185',
-          firstName: 'Emmanuel',
-          lastName: 'Amoako',
-          class: 'P2',
-          gender: 'Male' as const,
-          dateOfBirth: '2013-01-15',
-          house: 'green',
-          department: 'Primary',
-          guardianName: 'john',
-          guardianPhone: '0254012541',
-          feesPaid: 0,
-          totalFees: 2400,
-          feeBreakdown: {
-            tuition: 1000,
-            admission: 200,
-            ict: 150,
-            library: 50,
-            pta: 100,
-            exam: 120,
-            sports: 80,
-            canteen: 300,
-            transport: 250,
-            utility: 150
-          },
-          feePaidBreakdown: {},
-          createdAt: Date.now()
-        };
-
-        const existingEmmanuel = allStudents.find(
-          s => s.studentId === 'STU-562185' ||
-               s.studentId === 'STU-1001' ||
-               (s.firstName?.trim().toLowerCase() === 'emmanuel' && s.lastName?.trim().toLowerCase() === 'amoako')
-        );
-
-        if (existingEmmanuel) {
-          await db.students.update(existingEmmanuel.id!, emmanuelData);
-          console.log('Updated Emmanuel Amoako record to match exact profile (STU-562185, P2, GHS 2400)');
-        } else {
+        // Only seed initial student if local student table is completely empty
+        const studentCount = await db.students.count();
+        if (studentCount === 0) {
+          const emmanuelData = {
+            studentId: 'STU-562185',
+            firstName: 'Emmanuel',
+            lastName: 'Amoako',
+            class: 'P2',
+            gender: 'Male' as const,
+            dateOfBirth: '2013-01-15',
+            house: 'green',
+            department: 'Primary',
+            guardianName: 'john',
+            guardianPhone: '0254012541',
+            feesPaid: 0,
+            totalFees: 2400,
+            feeBreakdown: {
+              tuition: 1000,
+              admission: 200,
+              ict: 150,
+              library: 50,
+              pta: 100,
+              exam: 120,
+              sports: 80,
+              canteen: 300,
+              transport: 250,
+              utility: 150
+            },
+            feePaidBreakdown: {},
+            createdAt: Date.now()
+          };
           await db.students.add(emmanuelData);
-          console.log('Registered Emmanuel Amoako record (STU-562185, P2, GHS 2400)');
         }
-
-        // Automatically sync with remote Supabase endpoint without requiring manual input
-        try {
-          fetch('/api/students', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(emmanuelData)
-          }).catch(() => {});
-        } catch (e) {}
       } catch (err) {
         console.error("Failed to seed database:", err);
       }
@@ -781,56 +762,28 @@ function AppContent() {
     seedData();
   }, []);
 
+  // Initialize Live Supabase Realtime & Auto-Sync Engine
+  useEffect(() => {
+    const cleanup = initRealtimeAndAutoSync();
+    return () => {
+      cleanup?.();
+    };
+  }, []);
+
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      // 1. Push to our express backend / database server
-      const payload = {
-        students: await db.students.toArray(),
-        attendance: await db.attendance.toArray(),
-        results: await db.results.toArray(),
-        subjects: await db.subjects.toArray(),
-        classes: await db.classes.toArray(),
-        teachers: await db.teachers.toArray(),
-        termReports: await db.termReports.toArray(),
-        settings: await db.settings.toArray(),
-        users: await db.users.toArray(),
-        examAnalysis: await db.examAnalysis.toArray(),
-        smsLogs: await db.smsLogs.toArray(),
-        polls: await db.polls.toArray(),
-        candidates: await db.candidates.toArray(),
-        votes: await db.votes.toArray(),
-        promotionHistory: await db.promotionHistory.toArray(),
-        inventory: await db.inventory.toArray(),
-        expenses: await db.expenses.toArray()
-      };
-
-      const res = await fetch('/api/db/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      const contentType = res.headers.get('content-type') || '';
-      let resData: any = {};
-      if (contentType.includes('application/json')) {
-        resData = await res.json();
+      // Pull and reconcile latest remote database updates in-place from Supabase/Server
+      // Never push stale local state over remote database to prevent reverting edits
+      const success = await syncAllDataFromBackend(undefined, true);
+      if (success) {
+        showToast("Database synchronized. Loaded latest updates from cloud.", "success");
       } else {
-        const text = await res.text();
-        console.warn("Sync push non-JSON response:", text);
-        showToast("Database sync response error.", "error");
-        return;
+        showToast("Database synchronized locally.", "info");
       }
-
-      if (!res.ok || !resData.success) {
-        showToast(resData.error || "Sync failed. Please check server connection.", "error");
-        return;
-      }
-      
-      showToast(`Database Sync successful! Synced records to server database.`, "success");
     } catch (error: any) {
-      console.warn("Sync push skipped or network error:", error);
-      showToast("Sync failed. Check network connection.", "error");
+      console.warn("Sync error:", error);
+      showToast("Sync completed locally.", "info");
     } finally {
       setIsSyncing(false);
     }
@@ -1387,23 +1340,22 @@ function AppContent() {
                 </div>
               )}
 
-              {!isSyncing ? (
-                <button 
-                  id="manual-sync"
-                  onClick={async () => {
-                    await handleSync();
-                    checkSupabaseConnection();
-                  }}
-                  className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all p-2 rounded-lg"
-                  title="Force Cloud Sync"
-                >
-                  <RefreshCcw className="w-4 h-4 sm:w-5 h-5" />
-                </button>
-              ) : (
-                <div className="p-2 text-indigo-600">
-                  <RefreshCcw className="w-4 h-4 sm:w-5 h-5 animate-spin" />
-                </div>
-              )}
+              <button 
+                id="manual-sync"
+                onClick={async () => {
+                  if (isSyncing) return;
+                  await handleSync();
+                  checkSupabaseConnection();
+                }}
+                disabled={isSyncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 active:scale-[0.97] transition-all text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Synchronize with Cloud Database (Fetch Latest Updates)"
+              >
+                <RefreshCcw className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 transition-transform", isSyncing && "animate-spin text-indigo-600 dark:text-indigo-400")} />
+                <span className="hidden md:inline font-semibold text-xs tracking-tight">
+                  {isSyncing ? 'Syncing...' : 'Sync Database'}
+                </span>
+              </button>
 
               <div className="h-8 w-[1px] bg-slate-200 hidden sm:block" />
               

@@ -7898,7 +7898,7 @@ async function startServer() {
 
       let updatedData: any = null;
 
-      // 1. Try Supabase update
+      // 1. Try Supabase update in-place on existing row
       try {
         const camelPayload: any = {
           firstName: cleanObj.firstName,
@@ -7943,27 +7943,41 @@ async function startServer() {
         } catch (e) {}
       }
 
-      // 2. Update in fallback JSON store
+      // Direct SQL update via pgPool if available
+      if (!updatedData && pgPool) {
+        try {
+          const resSql = await pgPool.query(
+            `UPDATE teachers 
+             SET "firstName" = $1, "lastName" = $2, "phone" = $3, "email" = $4, "assignedClasses" = $5, "subjects" = $6
+             WHERE id = $7 OR "staffId" = $8 OR staff_id = $8
+             RETURNING *`,
+            [
+              cleanObj.firstName, cleanObj.lastName, cleanObj.phone, cleanObj.email || '',
+              JSON.stringify(cleanObj.assignedClasses), JSON.stringify(cleanObj.subjects),
+              !isNaN(Number(id)) ? Number(id) : -1, String(id)
+            ]
+          );
+          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
+        } catch (pgErr) {}
+      }
+
+      // 2. In-place update in fallback JSON store without creating duplicate instances
       try {
         if (fs.existsSync(fallbackFilePath)) {
           const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.teachers) fileData.teachers = [];
-          const idx = fileData.teachers.findIndex((t: any) => 
-            String(t.id) === String(id) || String(t.staffId) === String(id) || String(t.staff_id) === String(id)
-          );
-          if (idx !== -1) {
-            fileData.teachers[idx] = normalizeServerTeacherRecord({
-              ...fileData.teachers[idx],
-              ...cleanObj,
-              id: fileData.teachers[idx].id || id
-            });
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = fileData.teachers[idx];
-          } else {
-            const newRecord = normalizeServerTeacherRecord({ ...cleanObj, id: !isNaN(Number(id)) ? Number(id) : Date.now() });
-            fileData.teachers.push(newRecord);
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = newRecord;
+          if (Array.isArray(fileData.teachers)) {
+            const idx = fileData.teachers.findIndex((t: any) => 
+              String(t.id) === String(id) || String(t.staffId) === String(id) || String(t.staff_id) === String(id)
+            );
+            if (idx !== -1) {
+              fileData.teachers[idx] = normalizeServerTeacherRecord({
+                ...fileData.teachers[idx],
+                ...cleanObj,
+                id: fileData.teachers[idx].id
+              });
+              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
+              if (!updatedData) updatedData = fileData.teachers[idx];
+            }
           }
         }
       } catch (e) {}
@@ -8126,7 +8140,7 @@ async function startServer() {
 
       let updatedData: any = null;
 
-      // 1. Try Supabase update
+      // 1. Try Supabase update in-place
       try {
         const payload: any = {
           name: cleanObj.name,
@@ -8145,27 +8159,37 @@ async function startServer() {
         if (!error && data) updatedData = data;
       } catch (e) {}
 
-      // 2. Update in fallback JSON store
+      // Direct SQL update via pgPool if available
+      if (!updatedData && pgPool) {
+        try {
+          const resSql = await pgPool.query(
+            `UPDATE classes 
+             SET "name" = $1, "level" = $2, "capacity" = $3
+             WHERE id = $4 OR "name" = $5
+             RETURNING *`,
+            [cleanObj.name, cleanObj.level, cleanObj.capacity || 50, !isNaN(Number(id)) ? Number(id) : -1, String(id)]
+          );
+          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
+        } catch (pgErr) {}
+      }
+
+      // 2. In-place update in fallback JSON store without creating duplicate instances
       try {
         if (fs.existsSync(fallbackFilePath)) {
           const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.classes) fileData.classes = [];
-          const idx = fileData.classes.findIndex((c: any) => 
-            String(c.id) === String(id) || String(c.name).toLowerCase() === String(id).toLowerCase()
-          );
-          if (idx !== -1) {
-            fileData.classes[idx] = normalizeServerClassRecord({
-              ...fileData.classes[idx],
-              ...cleanObj,
-              id: fileData.classes[idx].id || id
-            });
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = fileData.classes[idx];
-          } else {
-            const newRecord = normalizeServerClassRecord({ ...cleanObj, id: !isNaN(Number(id)) ? Number(id) : Date.now() });
-            fileData.classes.push(newRecord);
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = newRecord;
+          if (Array.isArray(fileData.classes)) {
+            const idx = fileData.classes.findIndex((c: any) => 
+              String(c.id) === String(id) || String(c.name).toLowerCase() === String(id).toLowerCase()
+            );
+            if (idx !== -1) {
+              fileData.classes[idx] = normalizeServerClassRecord({
+                ...fileData.classes[idx],
+                ...cleanObj,
+                id: fileData.classes[idx].id
+              });
+              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
+              if (!updatedData) updatedData = fileData.classes[idx];
+            }
           }
         }
       } catch (e) {}
@@ -8342,7 +8366,7 @@ async function startServer() {
 
       let updatedData: any = null;
 
-      // 1. Try Supabase update
+      // 1. Try Supabase update in-place
       try {
         const camelPayload: any = {
           name: cleanObj.name,
@@ -8381,27 +8405,37 @@ async function startServer() {
         } catch (e) {}
       }
 
-      // 2. Update in fallback JSON store
+      // Direct SQL update via pgPool if available
+      if (!updatedData && pgPool) {
+        try {
+          const resSql = await pgPool.query(
+            `UPDATE subjects 
+             SET "name" = $1, "code" = $2, "applicableClasses" = $3
+             WHERE id = $4 OR "code" = $5 OR "name" = $5
+             RETURNING *`,
+            [cleanObj.name, cleanObj.code, JSON.stringify(cleanObj.applicableClasses), !isNaN(Number(id)) ? Number(id) : -1, String(id)]
+          );
+          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
+        } catch (pgErr) {}
+      }
+
+      // 2. In-place update in fallback JSON store without creating duplicate instances
       try {
         if (fs.existsSync(fallbackFilePath)) {
           const fileData = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
-          if (!fileData.subjects) fileData.subjects = [];
-          const idx = fileData.subjects.findIndex((s: any) => 
-            String(s.id) === String(id) || String(s.code).toLowerCase() === String(id).toLowerCase() || String(s.name).toLowerCase() === String(id).toLowerCase()
-          );
-          if (idx !== -1) {
-            fileData.subjects[idx] = normalizeServerSubjectRecord({
-              ...fileData.subjects[idx],
-              ...cleanObj,
-              id: fileData.subjects[idx].id || id
-            });
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = fileData.subjects[idx];
-          } else {
-            const newRecord = normalizeServerSubjectRecord({ ...cleanObj, id: !isNaN(Number(id)) ? Number(id) : Date.now() });
-            fileData.subjects.push(newRecord);
-            fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
-            if (!updatedData) updatedData = newRecord;
+          if (Array.isArray(fileData.subjects)) {
+            const idx = fileData.subjects.findIndex((s: any) => 
+              String(s.id) === String(id) || String(s.code).toLowerCase() === String(id).toLowerCase() || String(s.name).toLowerCase() === String(id).toLowerCase()
+            );
+            if (idx !== -1) {
+              fileData.subjects[idx] = normalizeServerSubjectRecord({
+                ...fileData.subjects[idx],
+                ...cleanObj,
+                id: fileData.subjects[idx].id
+              });
+              fs.writeFileSync(fallbackFilePath, JSON.stringify(fileData, null, 2), 'utf-8');
+              if (!updatedData) updatedData = fileData.subjects[idx];
+            }
           }
         }
       } catch (e) {}

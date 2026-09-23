@@ -1,5 +1,17 @@
 import { supabase, getCurrentSchoolId } from './supabase';
 import { db, normalizeStudentRecord } from '../db/schema';
+import { 
+  reconcileClassesInDexie, 
+  reconcileTeachersInDexie, 
+  reconcileSubjectsInDexie, 
+  reconcileStudentsInDexie,
+  reconcileAttendanceInDexie,
+  reconcileResultsInDexie,
+  reconcileTermReportsInDexie,
+  reconcileSettingsInDexie,
+  syncAllDataFromBackend,
+  broadcastLocalMutation
+} from './syncService';
 
 /**
  * SchoolSphere 1.0 - Centralized Multi-Tenant API Client
@@ -585,7 +597,7 @@ export const classesApi = {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           try {
-            await db.classes.bulkPut(data);
+            await reconcileClassesInDexie(data);
           } catch (e) {}
           return data;
         }
@@ -602,7 +614,7 @@ export const classesApi = {
 
         if (!error && data && data.length > 0) {
           try {
-            await db.classes.bulkPut(data);
+            await reconcileClassesInDexie(data);
           } catch (e) {}
           return data;
         }
@@ -642,12 +654,8 @@ export const classesApi = {
         const json = await res.json();
         if (json.data) {
           officialRecord = json.data;
-          // Update Dexie with server record / official ID
           try {
-            if (localId && localId !== officialRecord.id) {
-              await db.classes.delete(localId);
-            }
-            await db.classes.put(officialRecord);
+            await reconcileClassesInDexie([officialRecord]);
           } catch (e) {}
         }
       }
@@ -659,11 +667,12 @@ export const classesApi = {
       if (data && (!officialRecord || !officialRecord.id)) {
         officialRecord = data;
         try {
-          await db.classes.put(officialRecord);
+          await reconcileClassesInDexie([officialRecord]);
         } catch (e) {}
       }
     } catch (e) {}
 
+    broadcastLocalMutation('classes', 'create', officialRecord);
     return officialRecord;
   },
 
@@ -671,19 +680,22 @@ export const classesApi = {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate optimistic Dexie update
+    // 1. Immediate in-place optimistic Dexie update
+    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
     try {
       if (typeof id === 'number') {
         await db.classes.update(id, mergedUpdates);
+        localKey = id;
       } else {
         const found = await db.classes.where('name').equals(String(id)).first();
         if (found && found.id) {
           await db.classes.update(found.id, mergedUpdates);
+          localKey = found.id;
         }
       }
     } catch (e) {}
 
-    // 2. Persist to Backend API
+    // 2. Persist in-place to Backend API
     try {
       const res = await fetch(`/api/classes/${encodeURIComponent(String(id))}`, {
         method: 'PUT',
@@ -697,8 +709,9 @@ export const classesApi = {
         const json = await res.json();
         if (json.data) {
           try {
-            await db.classes.put(json.data);
+            await reconcileClassesInDexie([json.data]);
           } catch (e) {}
+          broadcastLocalMutation('classes', 'update', json.data);
           return json.data;
         }
       }
@@ -713,6 +726,7 @@ export const classesApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('classes', 'update', { id, ...mergedUpdates });
     return true;
   },
 
@@ -745,6 +759,7 @@ export const classesApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('classes', 'delete', { id });
     return true;
   }
 };
@@ -765,7 +780,7 @@ export const subjectsApi = {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           try {
-            await db.subjects.bulkPut(data);
+            await reconcileSubjectsInDexie(data);
           } catch (e) {}
           return data;
         }
@@ -786,7 +801,7 @@ export const subjectsApi = {
             applicableClasses: typeof sub.applicableClasses === 'string' ? JSON.parse(sub.applicableClasses || '[]') : (sub.applicableClasses || [])
           }));
           try {
-            await db.subjects.bulkPut(parsed);
+            await reconcileSubjectsInDexie(parsed);
           } catch (e) {}
           return parsed;
         }
@@ -827,10 +842,7 @@ export const subjectsApi = {
         if (json.data) {
           officialRecord = json.data;
           try {
-            if (localId && localId !== officialRecord.id) {
-              await db.subjects.delete(localId);
-            }
-            await db.subjects.put(officialRecord);
+            await reconcileSubjectsInDexie([officialRecord]);
           } catch (e) {}
         }
       }
@@ -842,11 +854,12 @@ export const subjectsApi = {
       if (data && (!officialRecord || !officialRecord.id)) {
         officialRecord = data;
         try {
-          await db.subjects.put(officialRecord);
+          await reconcileSubjectsInDexie([officialRecord]);
         } catch (e) {}
       }
     } catch (e) {}
 
+    broadcastLocalMutation('subjects', 'create', officialRecord);
     return officialRecord;
   },
 
@@ -854,19 +867,22 @@ export const subjectsApi = {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate optimistic Dexie update
+    // 1. Immediate in-place optimistic Dexie update
+    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
     try {
       if (typeof id === 'number') {
         await db.subjects.update(id, mergedUpdates);
+        localKey = id;
       } else {
-        const found = await db.subjects.where('code').equals(String(id)).first();
+        const found = await db.subjects.where('code').equals(String(id)).first() || await db.subjects.where('name').equals(String(id)).first();
         if (found && found.id) {
           await db.subjects.update(found.id, mergedUpdates);
+          localKey = found.id;
         }
       }
     } catch (e) {}
 
-    // 2. Persist to Backend API
+    // 2. Persist in-place to Backend API
     try {
       const res = await fetch(`/api/subjects/${encodeURIComponent(String(id))}`, {
         method: 'PUT',
@@ -880,8 +896,9 @@ export const subjectsApi = {
         const json = await res.json();
         if (json.data) {
           try {
-            await db.subjects.put(json.data);
+            await reconcileSubjectsInDexie([json.data]);
           } catch (e) {}
+          broadcastLocalMutation('subjects', 'update', json.data);
           return json.data;
         }
       }
@@ -896,6 +913,7 @@ export const subjectsApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('subjects', 'update', { id, ...mergedUpdates });
     return true;
   },
 
@@ -928,6 +946,7 @@ export const subjectsApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('subjects', 'delete', { id });
     return true;
   }
 };
@@ -948,7 +967,7 @@ export const teachersApi = {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           try {
-            await db.teachers.bulkPut(data);
+            await reconcileTeachersInDexie(data);
           } catch (e) {}
           return data;
         }
@@ -970,7 +989,7 @@ export const teachersApi = {
             subjects: typeof t.subjects === 'string' ? JSON.parse(t.subjects || '[]') : (t.subjects || [])
           }));
           try {
-            await db.teachers.bulkPut(parsed);
+            await reconcileTeachersInDexie(parsed);
           } catch (e) {}
           return parsed;
         }
@@ -1012,10 +1031,7 @@ export const teachersApi = {
         if (json.data) {
           officialRecord = json.data;
           try {
-            if (localId && localId !== officialRecord.id) {
-              await db.teachers.delete(localId);
-            }
-            await db.teachers.put(officialRecord);
+            await reconcileTeachersInDexie([officialRecord]);
           } catch (e) {}
         }
       }
@@ -1027,11 +1043,12 @@ export const teachersApi = {
       if (data && (!officialRecord || !officialRecord.id)) {
         officialRecord = data;
         try {
-          await db.teachers.put(officialRecord);
+          await reconcileTeachersInDexie([officialRecord]);
         } catch (e) {}
       }
     } catch (e) {}
 
+    broadcastLocalMutation('teachers', 'create', officialRecord);
     return officialRecord;
   },
 
@@ -1039,19 +1056,22 @@ export const teachersApi = {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate optimistic Dexie update
+    // 1. Immediate in-place optimistic Dexie update
+    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
     try {
       if (typeof id === 'number') {
         await db.teachers.update(id, mergedUpdates);
+        localKey = id;
       } else {
         const found = await db.teachers.where('staffId').equals(String(id)).first();
         if (found && found.id) {
           await db.teachers.update(found.id, mergedUpdates);
+          localKey = found.id;
         }
       }
     } catch (e) {}
 
-    // 2. Persist to Backend API
+    // 2. Persist in-place to Backend API
     try {
       const res = await fetch(`/api/teachers/${encodeURIComponent(String(id))}`, {
         method: 'PUT',
@@ -1065,8 +1085,9 @@ export const teachersApi = {
         const json = await res.json();
         if (json.data) {
           try {
-            await db.teachers.put(json.data);
+            await reconcileTeachersInDexie([json.data]);
           } catch (e) {}
+          broadcastLocalMutation('teachers', 'update', json.data);
           return json.data;
         }
       }
@@ -1081,6 +1102,7 @@ export const teachersApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('teachers', 'update', { id, ...mergedUpdates });
     return true;
   },
 
@@ -1113,6 +1135,7 @@ export const teachersApi = {
       }
     } catch (e) {}
 
+    broadcastLocalMutation('teachers', 'delete', { id });
     return true;
   }
 };
@@ -1127,25 +1150,13 @@ export const syncTenantAcademicData = async (targetSchoolId: string) => {
     if (res.ok) {
       const { data } = await res.json();
       if (data) {
-        // Hydrate local Dexie with tenant's records
-        if (Array.isArray(data.students) && data.students.length > 0) {
-          await db.students.bulkPut(data.students);
-        }
-        if (Array.isArray(data.teachers) && data.teachers.length > 0) {
-          await db.teachers.bulkPut(data.teachers);
-        }
-        if (Array.isArray(data.classes) && data.classes.length > 0) {
-          await db.classes.bulkPut(data.classes);
-        }
-        if (Array.isArray(data.subjects) && data.subjects.length > 0) {
-          await db.subjects.bulkPut(data.subjects);
-        }
-        if (Array.isArray(data.attendance) && data.attendance.length > 0) {
-          await db.attendance.bulkPut(data.attendance);
-        }
-        if (Array.isArray(data.results) && data.results.length > 0) {
-          await db.results.bulkPut(data.results);
-        }
+        // Hydrate local Dexie with tenant's records in-place without duplicating rows
+        if (Array.isArray(data.students)) await reconcileStudentsInDexie(data.students);
+        if (Array.isArray(data.teachers)) await reconcileTeachersInDexie(data.teachers);
+        if (Array.isArray(data.classes)) await reconcileClassesInDexie(data.classes);
+        if (Array.isArray(data.subjects)) await reconcileSubjectsInDexie(data.subjects);
+        if (Array.isArray(data.attendance)) await reconcileAttendanceInDexie(data.attendance);
+        if (Array.isArray(data.results)) await reconcileResultsInDexie(data.results);
         return true;
       }
     }
