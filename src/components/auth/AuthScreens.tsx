@@ -28,6 +28,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, School } from '../../db/schema';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { authApi, schoolsApi } from '../../lib/api';
+import { AuthGateScreen } from './AuthGateScreen';
 
 interface AuthScreensProps {
   onBackToGetStarted?: () => void;
@@ -36,6 +37,11 @@ interface AuthScreensProps {
 type AuthMode = 'login' | 'magic' | 'magic_sent' | 'forgot' | 'sent' | 'reset';
 
 export function AuthScreens({ onBackToGetStarted }: AuthScreensProps) {
+  const [viewMode, setViewMode] = useState<'enterprise' | 'classic'>('enterprise');
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialInviteToken = urlParams.get('token') || urlParams.get('invite') || '';
+  const initialTab = initialInviteToken ? 'join_invite' : ((urlParams.get('tab') as any) || 'signin');
+
   const settings = useLiveQuery(() => db.settings.toArray());
   const { showToast, confirm } = useNotifications();
   const schoolProfile = useMemo(() => 
@@ -282,18 +288,58 @@ export function AuthScreens({ onBackToGetStarted }: AuthScreensProps) {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  if (viewMode === 'enterprise') {
+    return (
+      <div className="relative min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        {/* Navigation Switcher Bar at top */}
+        <div className="fixed top-4 left-4 right-4 z-30 flex items-center justify-between max-w-lg mx-auto pointer-events-auto">
+          {onBackToGetStarted && (
+            <button
+              onClick={onBackToGetStarted}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold border border-slate-800 backdrop-blur-md transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Command Gate</span>
+            </button>
+          )}
+          <button
+            onClick={() => setViewMode('classic')}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 rounded-lg text-xs font-semibold border border-slate-800 backdrop-blur-md transition-colors cursor-pointer"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Legacy Portal</span>
+          </button>
+        </div>
+
+        <AuthGateScreen 
+          defaultTab={initialTab}
+          inviteToken={initialInviteToken}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans">
       <div className="w-full max-w-2xl flex flex-col items-center">
-        {onBackToGetStarted && (
+        <div className="flex items-center gap-2 mb-4">
+          {onBackToGetStarted && (
+            <button
+              onClick={onBackToGetStarted}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-wider border border-slate-250 transition-all duration-150 cursor-pointer shadow-xs active:scale-95"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Command Gate</span>
+            </button>
+          )}
           <button
-            onClick={onBackToGetStarted}
-            className="mb-4 flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-wider border border-slate-250 transition-all duration-150 cursor-pointer shadow-xs active:scale-95"
+            onClick={() => setViewMode('enterprise')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-wider border border-indigo-200 transition-all duration-150 cursor-pointer shadow-xs active:scale-95"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Command Gate</span>
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Enterprise Multi-Tenant Onboarding</span>
           </button>
-        )}
+        </div>
 
         {/* School Sphere Platform Branding Header */}
         <div className="text-center mb-8 w-full flex flex-col items-center">

@@ -9,10 +9,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is missing. The application refuses to start without a securely configured JWT secret.');
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'test') {
+      return 'test-suite-secure-jwt-secret-key-for-unit-tests';
+    }
+    throw new Error('FATAL: JWT_SECRET or SUPABASE_JWT_SECRET environment variable is missing. Application refuses to start.');
+  }
+  return secret;
 }
+
 const TOKEN_EXPIRY = '7d';
 
 export interface AuthJwtPayload {
@@ -22,6 +29,7 @@ export interface AuthJwtPayload {
   role: string;
   school_id?: string | null;
   schoolId?: string | null;
+  organization_id?: string | null;
   fullName?: string;
   iat?: number;
   exp?: number;
@@ -35,17 +43,19 @@ export interface AuthenticatedRequest extends Request {
  * Generate a signed JWT for a validated user session.
  */
 export function generateAuthToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp'>): string {
+  const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
   return jwt.sign(
     {
       id: payload.id,
       username: payload.username,
       email: payload.email,
       role: payload.role || 'teacher',
-      school_id: payload.school_id || payload.schoolId || null,
-      schoolId: payload.school_id || payload.schoolId || null,
+      school_id: targetOrgId,
+      schoolId: targetOrgId,
+      organization_id: targetOrgId,
       fullName: payload.fullName || payload.username
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: TOKEN_EXPIRY }
   );
 }
@@ -55,7 +65,7 @@ export function generateAuthToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp'>):
  */
 export function verifyAuthToken(token: string): AuthJwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as AuthJwtPayload;
+    return jwt.verify(token, getJwtSecret()) as AuthJwtPayload;
   } catch (err) {
     return null;
   }
@@ -146,17 +156,18 @@ export function requireSchoolScope(req: AuthenticatedRequest, res: Response, nex
     return next();
   }
 
-  if (!req.user.school_id) {
+  const userOrgId = req.user.organization_id || req.user.school_id;
+  if (!userOrgId) {
     return res.status(403).json({
       success: false,
-      error: 'Tenant isolation violation: User is not assigned to any school.'
+      error: 'Tenant isolation violation: User is not assigned to any organization or school.'
     });
   }
 
-  const headerSchoolId = req.headers['x-school-id'] as string;
-  const targetSchoolId = req.params.schoolId || req.body?.school_id || req.body?.schoolId || req.query.school_id || req.query.schoolId || headerSchoolId;
+  const headerSchoolId = req.headers['x-school-id'] as string || req.headers['x-organization-id'] as string;
+  const targetSchoolId = req.params.organizationId || req.params.schoolId || req.body?.organization_id || req.body?.school_id || req.body?.schoolId || req.query.organization_id || req.query.school_id || req.query.schoolId || headerSchoolId;
 
-  if (targetSchoolId && targetSchoolId !== req.user.school_id) {
+  if (targetSchoolId && targetSchoolId !== userOrgId) {
     return res.status(403).json({
       success: false,
       error: 'Tenant isolation violation: You do not have permission to access resources belonging to a different school.'
@@ -166,12 +177,15 @@ export function requireSchoolScope(req: AuthenticatedRequest, res: Response, nex
   // Auto-scope request to user's school if not specified
   if (!targetSchoolId) {
     if (req.body && typeof req.body === 'object') {
-      req.body.school_id = req.user.school_id;
+      req.body.school_id = userOrgId;
+      req.body.organization_id = userOrgId;
     }
     if (req.query) {
-      req.query.school_id = req.user.school_id;
+      req.query.school_id = userOrgId;
+      req.query.organization_id = userOrgId;
     }
-    req.headers['x-school-id'] = req.user.school_id;
+    req.headers['x-school-id'] = userOrgId;
+    req.headers['x-organization-id'] = userOrgId;
   }
 
   next();

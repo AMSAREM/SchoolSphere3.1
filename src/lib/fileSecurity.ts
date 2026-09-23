@@ -28,7 +28,8 @@ export async function calculateFileHash(fileOrBuffer: File | Blob | ArrayBuffer 
     
     if (typeof fileOrBuffer === 'string') {
       const encoder = new TextEncoder();
-      arrayBuffer = encoder.encode(fileOrBuffer).buffer;
+      const encoded = encoder.encode(fileOrBuffer);
+      arrayBuffer = encoded.buffer as ArrayBuffer;
     } else if (fileOrBuffer instanceof ArrayBuffer) {
       arrayBuffer = fileOrBuffer;
     } else {

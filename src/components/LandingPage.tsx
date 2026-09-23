@@ -35,6 +35,8 @@ import {
   Laptop
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { PWAInstallButton } from './PWAInstallButton';
+import { OfflineIndicator } from './OfflineIndicator';
 
 interface LandingPageProps {
   onEnterSchoolPortal: () => void;
@@ -133,8 +135,12 @@ export default function LandingPage({
           
           {/* Logo Brand */}
           <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="w-10 h-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-              <School className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-slate-200/90 dark:border-slate-700/80 flex items-center justify-center p-1 shadow-xs shrink-0">
+              <img 
+                src="/sch sphere logo1.png" 
+                alt="SchoolSphere Logo" 
+                className="w-full h-full object-contain select-none pointer-events-none" 
+              />
             </div>
             <div>
               <div className="flex items-center gap-1.5 leading-none">
@@ -157,6 +163,8 @@ export default function LandingPage({
 
           {/* Action CTAs */}
           <div className="flex items-center gap-2.5">
+            <PWAInstallButton variant="landing" />
+
             <button
               onClick={onOpenActivation}
               className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
@@ -1028,8 +1036,8 @@ export default function LandingPage({
             {/* Brand column */}
             <div className="space-y-3 md:col-span-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
-                  <School className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg overflow-hidden bg-white border border-slate-700 flex items-center justify-center p-0.5 shrink-0">
+                  <img src="/sch sphere logo1.png" alt="SchoolSphere Logo" className="w-full h-full object-contain" />
                 </div>
                 <span className="font-bold text-base text-white">SchoolSphere 3.1</span>
               </div>
@@ -1097,6 +1105,8 @@ export default function LandingPage({
         </div>
       </footer>
 
+      {/* Connectivity & Offline Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

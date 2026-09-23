@@ -184,7 +184,13 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         }
       } catch (e) {}
 
-      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`);
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setLicenseInfo(data);
@@ -282,31 +288,38 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
     });
   };
 
-  const handleRemoteActivate = async () => {
+  const handleRemoteActivate = async (targetKey?: string) => {
+    const keyToUse = (typeof targetKey === 'string' && targetKey) ? targetKey : (licensesList.length > 0 ? licensesList[0].key : '');
+    if (!keyToUse) {
+      showToast('Please select or generate a valid license key first.', 'error');
+      return;
+    }
     setLoadingLicenseAction(true);
     try {
       const res = await fetch('/api/license/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: 'ESEPA-MASTER-DEV-2026-AKOKO' })
+        body: JSON.stringify({ licenseKey: keyToUse })
       });
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (res.ok && data.success) {
-          showToast('System activated with master override key successfully!', 'success');
+          showToast('System activated successfully with valid license key!', 'success');
           fetchLicenseInfo();
+          setLoadingLicenseAction(false);
+          return;
+        } else {
+          showToast(data.error || 'Activation failed', 'error');
           setLoadingLicenseAction(false);
           return;
         }
       }
-    } catch (err) {
-      console.warn('Notice during remote activate in CreatorHub:', err);
+    } catch (err: any) {
+      showToast(err.message || 'Error during license activation', 'error');
+    } finally {
+      setLoadingLicenseAction(false);
     }
-
-    showToast('System activated with master override key successfully!', 'success');
-    fetchLicenseInfo();
-    setLoadingLicenseAction(false);
   };
 
   const handleGenerateKey = async (e: React.FormEvent) => {

@@ -4,6 +4,27 @@ import { supabase } from '../lib/supabase/client';
 import { syncTenantAcademicData } from '../lib/api';
 import bcrypt from 'bcryptjs';
 import { AppPermission, UserRole, hasPermission as checkPermission, canAccessModule as checkModuleAccess, getRoleInfo } from '../lib/permissions';
+import { recordUserLogin, mapAuthErrorMessage } from '../lib/authTelemetry';
+import { normalizeEmail } from '../lib/emailValidation';
+
+interface RegisterOrgPayload {
+  organizationName: string;
+  facilityType?: string;
+  facilityCode?: string;
+  adminFullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  address?: string;
+}
+
+interface JoinInvitePayload {
+  token: string;
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +33,9 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string, schoolId?: string) => Promise<boolean>;
   handleLogin: (username: string, password: string, schoolId?: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
+  registerOrganization: (data: RegisterOrgPayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
+  joinWithInviteToken: (data: JoinInvitePayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
   logout: () => void;
   register: (username: string, password: string, fullName: string, role: User['role'], email?: string, phone?: string) => Promise<boolean>;
   switchRole: (role: User['role']) => void;
@@ -344,18 +368,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             isPasswordValid = (password === storedPass);
           }
         }
-        if (!isPasswordValid && (
-          password === 'july94bab' || 
-          password === 'admin123' || 
-          password === 'password123' || 
-          password === 'demo123' || 
-          password === 'password' || 
-          password === 'admin' ||
-          password === '123456' ||
-          password === '12345678'
-        )) {
-          isPasswordValid = true;
-        }
 
         if (isPasswordValid) {
           // C. Check School / Tenant Status
@@ -446,8 +458,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch (e) {
             isPassMatch = (password === localUser.passwordHash);
           }
-        } else if (password === 'july94bab' || password === 'admin123') {
-          isPassMatch = true;
         }
 
         if (isPassMatch) {
@@ -466,6 +476,163 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (localErr) {}
 
     return { success: false, error: "Invalid username or password" };
+  };
+
+  const signInWithPassword = async (email: string, passwordCandidate: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+    if (!email || !passwordCandidate) {
+      return { success: false, error: "Please enter both email and password" };
+    }
+    const cleanEmail = normalizeEmail(email);
+
+    // 1. Try Supabase Auth direct client
+    try {
+      const { data: supaAuth, error: supaErr } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: passwordCandidate
+      });
+
+      if (!supaErr && supaAuth?.user) {
+        const authUser = supaAuth.user;
+        const accessToken = supaAuth.session?.access_token || null;
+        if (accessToken) {
+          setToken(accessToken);
+          localStorage.setItem('esepa_auth_token', accessToken);
+        }
+
+        let orgId = authUser.user_metadata?.organization_id || authUser.app_metadata?.organization_id;
+        let role = authUser.user_metadata?.role || 'admin';
+        let fullName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0];
+
+        try {
+          const { data: profile } = await supabase
+            .from('staff_profiles')
+            .select('*, schools(*)')
+            .eq('auth_user_id', authUser.id)
+            .maybeSingle();
+
+          if (profile) {
+            orgId = profile.organization_id || orgId;
+            role = profile.role || role;
+            fullName = profile.full_name || fullName;
+            if (profile.schools) {
+              await setSchoolContext(profile.schools);
+            }
+          }
+        } catch (e) {}
+
+        const userObj: User = {
+          id: authUser.id,
+          username: cleanEmail.split('@')[0],
+          fullName: fullName,
+          email: cleanEmail,
+          role: role,
+          status: 'active',
+          schoolId: orgId,
+          school_id: orgId,
+          createdAt: Date.now(),
+          lastLogin: Date.now()
+        };
+
+        setUser(userObj);
+        localStorage.setItem('esepa_user', JSON.stringify(userObj));
+
+        recordUserLogin({
+          auth_user_id: authUser.id,
+          organization_id: orgId,
+          email: cleanEmail,
+          status: 'success_supabase_auth'
+        });
+
+        return { success: true, user: userObj, token: accessToken || undefined };
+      }
+    } catch (e) {
+      console.warn("Supabase direct auth attempt notice:", e);
+    }
+
+    // 2. Authoritative backend sign-in
+    const result = await handleLogin(cleanEmail, passwordCandidate);
+    if (result.success && result.user) {
+      recordUserLogin({
+        auth_user_id: String(result.user.id),
+        organization_id: result.user.school_id,
+        email: cleanEmail,
+        status: 'success_api_login'
+      });
+      return result;
+    }
+
+    const friendlyError = mapAuthErrorMessage(result.error);
+    return { success: false, error: friendlyError };
+  };
+
+  const registerOrganization = async (data: RegisterOrgPayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+    try {
+      const res = await fetch('/api/auth/register-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        return { success: false, error: mapAuthErrorMessage(json.error) };
+      }
+
+      if (json.token) {
+        setToken(json.token);
+        localStorage.setItem('esepa_auth_token', json.token);
+      }
+      if (json.user) {
+        setUser(json.user);
+        localStorage.setItem('esepa_user', JSON.stringify(json.user));
+      }
+      if (json.organization) {
+        await setSchoolContext(json.organization);
+      }
+
+      return {
+        success: true,
+        user: json.user,
+        token: json.token,
+        school: json.organization
+      };
+    } catch (err: any) {
+      return { success: false, error: mapAuthErrorMessage(err.message) };
+    }
+  };
+
+  const joinWithInviteToken = async (data: JoinInvitePayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+    try {
+      const res = await fetch('/api/auth/join-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        return { success: false, error: mapAuthErrorMessage(json.error) };
+      }
+
+      if (json.token) {
+        setToken(json.token);
+        localStorage.setItem('esepa_auth_token', json.token);
+      }
+      if (json.user) {
+        setUser(json.user);
+        localStorage.setItem('esepa_user', JSON.stringify(json.user));
+      }
+      if (json.organization) {
+        await setSchoolContext(json.organization);
+      }
+
+      return {
+        success: true,
+        user: json.user,
+        token: json.token,
+        school: json.organization
+      };
+    } catch (err: any) {
+      return { success: false, error: mapAuthErrorMessage(err.message) };
+    }
   };
 
   const login = async (username: string, password: string, schoolId?: string): Promise<boolean> => {
@@ -722,6 +889,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       login,
       handleLogin,
+      signInWithPassword,
+      registerOrganization,
+      joinWithInviteToken,
       logout,
       register,
       switchRole,

@@ -11,13 +11,10 @@ function getEnvVar(name: string): string {
 }
 
 export function getSupabaseAdmin() {
-  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
-  if (!supabaseUrl) {
-    throw new Error('FATAL: SUPABASE_URL environment variable is missing. Supabase is required as the single source of truth.');
-  }
+  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://niavmonyfwqlryppgksy.supabase.co';
 
   const targetRef = supabaseUrl.replace(/^https?:\/\//, '').split('.')[0];
-  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY');
+  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
 
   // Verify that key matches target ref if it's a JWT
   if (serviceRoleKey && serviceRoleKey.startsWith('ey')) {

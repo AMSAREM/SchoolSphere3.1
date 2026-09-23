@@ -670,7 +670,7 @@ export default function SecuritySuite({
             <div className="space-y-2">
               <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1 rounded-full uppercase">Development Manual</span>
               <p className="text-xs text-slate-600 leading-relaxed font-semibold">
-                To override portal locks locally, use the master dev serial key: <strong className="font-mono text-indigo-600 select-all">ESEPA-MASTER-DEV-2026-AKOKO</strong>.
+                Generate and assign official school licenses directly through the License Generator in Creator Console.
               </p>
             </div>
           </div>

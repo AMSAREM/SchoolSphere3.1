@@ -61,6 +61,8 @@ import InventoryManagement from './components/InventoryManagement';
 import CreatorHub from './components/CreatorHub';
 import SchoolManagement from './components/SchoolManagement';
 import TenantSwitcher from './components/TenantSwitcher';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthScreens } from './components/auth/AuthScreens';
 import { SecurityProfileModal } from './components/auth/SecurityProfileModal';
@@ -118,7 +120,13 @@ function AppContent() {
         }
       } catch (e) {}
 
-      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`);
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`, { headers });
       if (res.ok) {
         const contentType = res.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
@@ -1337,6 +1345,8 @@ function AppContent() {
                 </div>
               )}
 
+              <PWAInstallButton variant="header" />
+
               <button 
                 id="manual-sync"
                 onClick={async () => {
@@ -1470,6 +1480,9 @@ function AppContent() {
         isOpen={isSecurityModalOpen} 
         onClose={() => setIsSecurityModalOpen(false)} 
       />
+
+      {/* Connectivity & Offline Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

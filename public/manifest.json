@@ -1,16 +1,37 @@
 {
+  "id": "/",
   "name": "School Sphere",
-  "short_name": "School Sphere",
+  "short_name": "SchoolSphere",
   "description": "School Management System for Ghana",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4f46e5",
   "icons": [
     {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/sch sphere logo1.png",
-      "sizes": "720x720",
-      "type": "png"
+      "sizes": "487x522",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

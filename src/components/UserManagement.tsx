@@ -33,23 +33,38 @@ import {
   Info,
   Building,
   Mail,
-  Phone
+  Phone,
+  Copy,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import bcrypt from 'bcryptjs';
+import { validateEmail, EmailValidationResult } from '../lib/emailValidation';
+import { EmailValidationFeedback } from './auth/EmailValidationFeedback';
 
 export default function UserManagement() {
-  const { user: currentUser, school } = useAuth();
+  const { user: currentUser, school, token: authToken } = useAuth();
   const { showToast, confirm } = useNotifications();
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inspectUser, setInspectUser] = useState<User | null>(null);
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
   const [newResetPassword, setNewResetPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+
+  // Invite worker state
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFullName, setInviteFullName] = useState('');
+  const [inviteRole, setInviteRole] = useState<UserRole>('teacher');
+  const [inviteEmailValidation, setInviteEmailValidation] = useState<EmailValidationResult | null>(null);
+  const [isInviting, setIsInviting] = useState(false);
+  const [generatedInvite, setGeneratedInvite] = useState<{ token: string; invite_url: string; expires_at: string } | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+  const [copiedToken, setCopiedToken] = useState(false);
 
   // New user form
   const [formData, setFormData] = useState({
@@ -65,6 +80,81 @@ export default function UserManagement() {
   useEffect(() => {
     loadUsers();
   }, [school?.id]);
+
+  useEffect(() => {
+    if (!inviteEmail) {
+      setInviteEmailValidation(null);
+      return;
+    }
+    setInviteEmailValidation(validateEmail(inviteEmail));
+  }, [inviteEmail]);
+
+  const loadPendingInvites = async () => {
+    try {
+      const token = authToken || localStorage.getItem('esepa_auth_token') || '';
+      const res = await fetch('/api/tenant/workers', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-school-id': school?.id || ''
+        }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.invitations) {
+          setPendingInvites(json.invitations);
+        }
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (isInviteModalOpen) {
+      loadPendingInvites();
+    }
+  }, [isInviteModalOpen]);
+
+  const handleCreateInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail) {
+      showToast('Please enter worker email', 'error');
+      return;
+    }
+    if (inviteEmailValidation?.isDisposable) {
+      showToast('Temporary throwaway emails are not permitted', 'error');
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      const token = authToken || localStorage.getItem('esepa_auth_token') || '';
+      const res = await fetch('/api/tenant/workers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'x-school-id': school?.id || ''
+        },
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          fullName: inviteFullName.trim()
+        })
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to generate invitation');
+      }
+
+      setGeneratedInvite(json.invitation);
+      showToast('Worker invitation generated successfully!', 'success');
+      loadPendingInvites();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to generate invitation', 'error');
+    } finally {
+      setIsInviting(false);
+    }
+  };
 
   const loadUsers = async () => {
     try {

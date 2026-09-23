@@ -110,30 +110,38 @@ export default function Settings() {
     });
   };
 
-  const handleRemoteActivate = async () => {
+  const handleRemoteActivate = async (customKey?: string) => {
+    const keyToUse = (typeof customKey === 'string' && customKey) ? customKey : (licensesList.length > 0 ? licensesList[0].key : '');
+    if (!keyToUse) {
+      showToast("Please provide or generate a valid license key first.", "error");
+      return;
+    }
     setLoadingLicenseAction(true);
-    let activated = false;
     try {
       const res = await fetch('/api/license/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: "ESEPA-MASTER-DEV-2026-AKOKO" })
+        body: JSON.stringify({ licenseKey: keyToUse })
       });
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (res.ok && data.success) {
-          activated = true;
+          showToast("System activated successfully!", "success");
+          fetchLicenseInfo();
+          setLoadingLicenseAction(false);
+          return;
+        } else {
+          showToast(data.error || "Activation failed", "error");
+          setLoadingLicenseAction(false);
+          return;
         }
       }
-    } catch (err) {
-      console.warn("Notice during remote activate:", err);
+    } catch (err: any) {
+      showToast(err.message || "Error during activation", "error");
+    } finally {
+      setLoadingLicenseAction(false);
     }
-
-    // Local fallback
-    showToast("System activated with MASTER-DEV license!", "success");
-    fetchLicenseInfo();
-    setLoadingLicenseAction(false);
   };
 
   const fetchGeneratedLicenses = async (retries = 2) => {
@@ -1465,7 +1473,7 @@ export default function Settings() {
                         </button>
                         <button
                           disabled={loadingLicenseAction}
-                          onClick={handleRemoteActivate}
+                          onClick={() => handleRemoteActivate()}
                           className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-indigo-100 cursor-pointer disabled:opacity-50"
                         >
                           {loadingLicenseAction ? "Processing..." : "Unlock (Key)"}
