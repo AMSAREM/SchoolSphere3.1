@@ -195,111 +195,15 @@ function AppContent() {
   const schoolName = schoolProfile.schoolName;
   const schoolLogo = schoolProfile.logo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png';
 
-  // Dynamic branding theme colors
+  // Uniform design tokens for SchoolSphere light theme palette (#F8FFE5 cream background)
   useEffect(() => {
-    const theme = schoolProfile.theme || 'indigo';
-    const themes: Record<string, Record<string, string>> = {
-      indigo: {
-        '--color-indigo-50': '#f5f3ff',
-        '--color-indigo-100': '#ede9fe',
-        '--color-indigo-200': '#ddd6fe',
-        '--color-indigo-300': '#c084fc',
-        '--color-indigo-400': '#a855f7',
-        '--color-indigo-500': '#6366f1',
-        '--color-indigo-600': '#4f46e5',
-        '--color-indigo-700': '#4338ca',
-        '--color-indigo-800': '#3730a3',
-        '--color-indigo-900': '#312e81',
-        '--color-indigo-950': '#1e1b4b',
-      },
-      emerald: {
-        '--color-indigo-50': '#ecfdf5',
-        '--color-indigo-100': '#d1fae5',
-        '--color-indigo-200': '#a7f3d0',
-        '--color-indigo-300': '#6ee7b7',
-        '--color-indigo-400': '#34d399',
-        '--color-indigo-500': '#10b981',
-        '--color-indigo-600': '#059669',
-        '--color-indigo-700': '#047857',
-        '--color-indigo-800': '#065f46',
-        '--color-indigo-900': '#064e3b',
-        '--color-indigo-950': '#022c22',
-      },
-      violet: {
-        '--color-indigo-50': '#faf5ff',
-        '--color-indigo-100': '#f3e8ff',
-        '--color-indigo-200': '#e9d5ff',
-        '--color-indigo-300': '#d8b4fe',
-        '--color-indigo-400': '#c084fc',
-        '--color-indigo-500': '#a855f7',
-        '--color-indigo-600': '#9333ea',
-        '--color-indigo-700': '#7e22ce',
-        '--color-indigo-800': '#6b21a8',
-        '--color-indigo-900': '#581c87',
-        '--color-indigo-950': '#3b0764',
-      },
-      rose: {
-        '--color-indigo-50': '#fff1f2',
-        '--color-indigo-100': '#ffe4e6',
-        '--color-indigo-200': '#fecdd3',
-        '--color-indigo-300': '#fda4af',
-        '--color-indigo-400': '#fb7185',
-        '--color-indigo-500': '#f43f5e',
-        '--color-indigo-600': '#e11d48',
-        '--color-indigo-700': '#be123c',
-        '--color-indigo-800': '#9f1239',
-        '--color-indigo-900': '#881337',
-        '--color-indigo-950': '#4c0519',
-      },
-      amber: {
-        '--color-indigo-50': '#fffbeb',
-        '--color-indigo-100': '#fef3c7',
-        '--color-indigo-200': '#fde68a',
-        '--color-indigo-300': '#fcd34d',
-        '--color-indigo-400': '#fbbf24',
-        '--color-indigo-500': '#f59e0b',
-        '--color-indigo-600': '#d97706',
-        '--color-indigo-700': '#b45309',
-        '--color-indigo-800': '#92400e',
-        '--color-indigo-900': '#78350f',
-        '--color-indigo-950': '#451a03',
-      },
-      teal: {
-        '--color-indigo-50': '#f0fdfa',
-        '--color-indigo-100': '#ccfbf1',
-        '--color-indigo-200': '#99f6e4',
-        '--color-indigo-300': '#5eead4',
-        '--color-indigo-400': '#2dd4bf',
-        '--color-indigo-500': '#14b8a6',
-        '--color-indigo-600': '#0d9488',
-        '--color-indigo-700': '#0f766e',
-        '--color-indigo-800': '#115e59',
-        '--color-indigo-900': '#134e4a',
-        '--color-indigo-950': '#042f2e',
-      },
-      sky: {
-        '--color-indigo-50': '#f0f9ff',
-        '--color-indigo-100': '#e0f2fe',
-        '--color-indigo-200': '#bae6fd',
-        '--color-indigo-300': '#7dd3fc',
-        '--color-indigo-400': '#38bdf8',
-        '--color-indigo-500': '#0ea5e9',
-        '--color-indigo-600': '#0284c7',
-        '--color-indigo-700': '#0369a1',
-        '--color-indigo-800': '#075985',
-        '--color-indigo-900': '#0c4a6e',
-        '--color-indigo-950': '#082f49',
-      }
-    };
-
     const root = document.documentElement;
-    const selectedTheme = themes[theme] || themes.indigo;
-    
-    // Set variables
-    Object.entries(selectedTheme).forEach(([variable, value]) => {
-      root.style.setProperty(variable, value);
-    });
-  }, [schoolProfile.theme]);
+    root.style.setProperty('--color-background', '#F8FFE5');
+    root.style.setProperty('--color-primary', '#06D6A0');
+    root.style.setProperty('--color-secondary', '#1B9AAA');
+    root.style.setProperty('--color-accent', '#EF476F');
+    root.style.setProperty('--color-highlight', '#FFC43D');
+  }, []);
 
   // State and Refs for global alarm synthesis and timetable triggers
   const isMutedSetting = settings.find(s => s.key === 'isGloballyMuted');
@@ -978,9 +882,9 @@ function AppContent() {
 
   if (authLoading || checkingLicense) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50">
-        <RefreshCcw className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
-        <p className="text-slate-400 font-bold text-sm animate-pulse tracking-widest uppercase">Initializing System...</p>
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FFE5]">
+        <RefreshCcw className="w-10 h-10 text-[#1B9AAA] animate-spin mb-4" />
+        <p className="text-slate-600 font-bold text-sm animate-pulse tracking-widest uppercase">Initializing System...</p>
       </div>
     );
   }
@@ -1031,7 +935,7 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans print:h-auto print:overflow-visible">
+    <div className="flex h-screen bg-[#F8FFE5] overflow-hidden font-sans print:h-auto print:overflow-visible">
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {mobileMenuOpen && (
@@ -1222,13 +1126,14 @@ function AppContent() {
 
         {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 shrink-0 shadow-sm">
-            <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
+          <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
+            <div className="flex items-center gap-2.5 sm:gap-4 overflow-hidden min-w-0">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2.5 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 rounded-xl transition-all"
+                className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 hover:text-[#1B9AAA] rounded-xl transition-all cursor-pointer"
+                title="Open Navigation"
               >
-                <Menu className="w-6 h-6" />
+                <Menu className="w-5 h-5" />
               </button>
 
               {/* Multi-Tenant Switcher - Restricted strictly to Creator */}
@@ -1257,34 +1162,35 @@ function AppContent() {
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
                   <div className="hidden lg:flex items-center gap-2">
-                    <div className="h-4 w-[1px] bg-slate-200 mx-1" />
-                    <span className="text-sm font-bold text-slate-400 capitalize">
+                    <div className="h-4 w-px bg-slate-200 mx-1" />
+                    <span className="px-2.5 py-0.5 rounded-lg bg-slate-100/90 text-slate-600 text-xs font-bold capitalize border border-slate-200/60">
                       {activeView.replace('-', ' ')}
                     </span>
                   </div>
                 </>
               ) : (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   {schoolLogo && (
-                    <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-100 shadow-sm bg-white p-1">
+                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-slate-200/80 shadow-2xs bg-white p-1 shrink-0 flex items-center justify-center">
                       <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   )}
-                  <h1 className="text-base sm:text-lg font-black text-slate-900 uppercase truncate tracking-tighter">
+                  <h1 className="text-sm sm:text-base font-extrabold text-slate-900 uppercase truncate tracking-tight">
                     {schoolName}
                   </h1>
-                  <div className="hidden sm:block h-4 w-[1px] bg-slate-200 mx-1" />
-                  <span className="hidden sm:inline text-sm font-bold text-slate-400 capitalize">
+                  <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
+                  <span className="hidden sm:inline-flex px-2.5 py-0.5 rounded-lg bg-slate-100/90 text-slate-600 text-xs font-bold capitalize border border-slate-200/60">
                     {activeView.replace('-', ' ')}
                   </span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3.5">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {/* Supabase Database Connection Indicator - Visible ONLY for Creator accessibility */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
-                <div 
+                <button
+                  type="button" 
                   id="supabase-status-indicator"
                   onClick={checkSupabaseConnection}
                   title={
@@ -1295,12 +1201,12 @@ function AppContent() {
                         : "Supabase DB: Disconnected • Click to retry connection"
                   }
                   className={cn(
-                    "flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all select-none shadow-2xs",
+                    "flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none shadow-2xs active:scale-95",
                     supabaseConnected === true 
-                      ? "bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-300 hover:bg-emerald-100/60" 
+                      ? "bg-[#06D6A0]/10 border-[#06D6A0]/35 text-[#047857] hover:bg-[#06D6A0]/20" 
                       : supabaseConnected === false 
-                        ? "bg-rose-50/60 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-300 hover:bg-rose-100/60"
-                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                        ? "bg-[#EF476F]/10 border-[#EF476F]/35 text-[#b91c1c] hover:bg-[#EF476F]/20"
+                        : "bg-[#FFC43D]/15 border-[#FFC43D]/40 text-[#92400e]"
                   )}
                 >
                   {/* Status Indicator Dot */}
@@ -1309,10 +1215,10 @@ function AppContent() {
                       className={cn(
                         "relative inline-flex rounded-full h-2 w-2",
                         supabaseConnected === true 
-                          ? "bg-emerald-500" 
+                          ? "bg-[#06D6A0] animate-pulse" 
                           : supabaseConnected === false 
-                            ? "bg-rose-500" 
-                            : "bg-amber-400"
+                            ? "bg-[#EF476F]" 
+                            : "bg-[#FFC43D]"
                       )} 
                     />
                   </span>
@@ -1320,19 +1226,12 @@ function AppContent() {
                   <div className="flex items-center gap-1.5">
                     <Database className={cn(
                       "w-3.5 h-3.5",
-                      supabaseConnected === true ? "text-emerald-600 dark:text-emerald-400" : supabaseConnected === false ? "text-rose-600 dark:text-rose-400" : "text-slate-500"
+                      supabaseConnected === true ? "text-[#06D6A0]" : supabaseConnected === false ? "text-[#EF476F]" : "text-[#FFC43D]"
                     )} />
-                    <span className="hidden sm:inline font-bold tracking-tight text-[11px]">
+                    <span className="hidden md:inline font-bold tracking-tight text-[11px]">
                       Supabase
                     </span>
-                    <span className={cn(
-                      "text-[10px] font-bold uppercase tracking-wider",
-                      supabaseConnected === true 
-                        ? "text-emerald-700 dark:text-emerald-400" 
-                        : supabaseConnected === false 
-                          ? "text-rose-700 dark:text-rose-400 font-black" 
-                          : "text-amber-700 dark:text-amber-400"
-                    )}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">
                       {supabaseChecking 
                         ? "Checking..." 
                         : supabaseConnected === true 
@@ -1342,7 +1241,7 @@ function AppContent() {
                             : "Connecting"}
                     </span>
                   </div>
-                </div>
+                </button>
               )}
 
               <PWAInstallButton variant="header" />
@@ -1355,37 +1254,43 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 active:scale-[0.98] transition-all text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-[#1B9AAA]/40 text-slate-700 hover:text-[#1B9AAA] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 title="Synchronize with Cloud Database (Fetch Latest Updates)"
               >
-                <RefreshCcw className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 transition-transform", isSyncing && "animate-spin text-indigo-600 dark:text-indigo-400")} />
-                <span className="hidden md:inline font-semibold text-xs tracking-tight">
+                <RefreshCcw className={cn("w-3.5 h-3.5 text-slate-500 transition-transform", isSyncing && "animate-spin text-[#1B9AAA]")} />
+                <span className="hidden md:inline text-xs tracking-tight font-bold">
                   {isSyncing ? 'Syncing...' : 'Sync Database'}
                 </span>
               </button>
 
-              <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+              <div className="h-6 w-px bg-slate-200 hidden sm:block" />
               
-              <div className="flex items-center gap-2 sm:gap-2.5">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
+                  type="button"
                   onClick={() => setIsSecurityModalOpen(true)}
-                  className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left group"
+                  className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left group cursor-pointer"
                   title="View Profile, Permissions & Change Password"
                 >
-                  <div className="w-7 h-7 rounded-md bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:bg-indigo-500 transition-colors">
+                  <div className="w-8 h-8 rounded-xl bg-[#1B9AAA] text-white flex items-center justify-center font-extrabold text-xs shadow-2xs group-hover:bg-[#14727D] transition-colors">
                     {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                   </div>
                   <div className="text-left hidden sm:block">
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{user.fullName || user.username}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-tight mt-0.5">{user.role?.replace('_', ' ')}</p>
+                    <p className="text-xs font-bold text-slate-800 leading-tight group-hover:text-[#1B9AAA] transition-colors truncate max-w-[120px]">
+                      {user.fullName || user.username}
+                    </p>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                      {user.role?.replace('_', ' ')}
+                    </p>
                   </div>
                 </button>
                 <button 
+                  type="button"
                   onClick={handleLogout}
-                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-rose-50 hover:border-rose-200 dark:bg-slate-800 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-center shrink-0 transition-colors group cursor-pointer"
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-[#EF476F]/10 hover:border-[#EF476F]/30 border border-slate-200 flex items-center justify-center shrink-0 transition-colors group cursor-pointer"
                   title="Log Out"
                 >
-                  <LogOut className="w-3.5 h-3.5 text-slate-500 group-hover:text-rose-600 dark:text-slate-400 dark:group-hover:text-rose-400 transition-colors" />
+                  <LogOut className="w-4 h-4 text-slate-500 group-hover:text-[#EF476F] transition-colors" />
                 </button>
               </div>
             </div>

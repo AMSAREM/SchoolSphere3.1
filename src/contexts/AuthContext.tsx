@@ -502,13 +502,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let orgId = authUser.user_metadata?.organization_id || authUser.app_metadata?.organization_id;
         let role = authUser.user_metadata?.role || 'admin';
         let fullName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0];
+        let profile: any = null;
 
         try {
-          const { data: profile } = await supabase
+          const res = await supabase
             .from('staff_profiles')
             .select('*, schools(*)')
             .eq('auth_user_id', authUser.id)
             .maybeSingle();
+          profile = res.data;
 
           if (profile) {
             orgId = profile.organization_id || orgId;
@@ -521,7 +523,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (e) {}
 
         const userObj: User = {
-          id: authUser.id,
+          id: (profile?.id as number) || Date.now(),
+          auth_user_id: authUser.id,
           username: cleanEmail.split('@')[0],
           fullName: fullName,
           email: cleanEmail,

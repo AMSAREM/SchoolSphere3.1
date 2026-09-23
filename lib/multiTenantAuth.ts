@@ -629,9 +629,11 @@ export function recordUserLoginActivity(activity: UserLoginActivity) {
 
   // Attempt to write to Supabase user_login_activities
   const admin = getSupabaseAdmin();
-  admin
-    .from('user_login_activities')
-    .insert([activity])
+  Promise.resolve(
+    admin
+      .from('user_login_activities')
+      .insert([activity])
+  )
     .then(() => {})
     .catch(() => {});
 }

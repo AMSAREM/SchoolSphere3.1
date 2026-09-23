@@ -8,8 +8,10 @@ export interface EmailValidationResult {
   isValid: boolean;
   normalizedEmail: string;
   syntaxError?: string;
+  error?: string;
   hasTypo: boolean;
   suggestedCorrection?: string;
+  suggestion?: string;
   suggestedDomain?: string;
   isDisposable: boolean;
   disposableWarning?: string;
@@ -168,10 +170,12 @@ export function validateEmail(rawEmail: string): EmailValidationResult {
   const rfcRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
   if (!rfcRegex.test(normalized)) {
+    const errorMsg = 'Please enter a valid email address (e.g. name@organization.com)';
     return {
       isValid: false,
       normalizedEmail: normalized,
-      syntaxError: 'Please enter a valid email address (e.g. name@organization.com)',
+      syntaxError: errorMsg,
+      error: errorMsg,
       hasTypo: false,
       isDisposable: false
     };
@@ -180,30 +184,36 @@ export function validateEmail(rawEmail: string): EmailValidationResult {
   const [localPart, domain] = normalized.split('@');
 
   if (!localPart || !domain) {
+    const errorMsg = 'Email must contain both username and domain parts';
     return {
       isValid: false,
       normalizedEmail: normalized,
-      syntaxError: 'Email must contain both username and domain parts',
+      syntaxError: errorMsg,
+      error: errorMsg,
       hasTypo: false,
       isDisposable: false
     };
   }
 
   if (localPart.length > 64) {
+    const errorMsg = 'Email username cannot exceed 64 characters';
     return {
       isValid: false,
       normalizedEmail: normalized,
-      syntaxError: 'Email username cannot exceed 64 characters',
+      syntaxError: errorMsg,
+      error: errorMsg,
       hasTypo: false,
       isDisposable: false
     };
   }
 
   if (normalized.length > 254) {
+    const errorMsg = 'Total email address cannot exceed 254 characters';
     return {
       isValid: false,
       normalizedEmail: normalized,
-      syntaxError: 'Total email address cannot exceed 254 characters',
+      syntaxError: errorMsg,
+      error: errorMsg,
       hasTypo: false,
       isDisposable: false
     };
@@ -211,10 +221,12 @@ export function validateEmail(rawEmail: string): EmailValidationResult {
 
   // Check for disposable address
   if (DISPOSABLE_DOMAINS.has(domain)) {
+    const errorMsg = 'Disposable email addresses are not permitted for enterprise security';
     return {
       isValid: false,
       normalizedEmail: normalized,
-      syntaxError: 'Disposable email addresses are not permitted for enterprise security',
+      syntaxError: errorMsg,
+      error: errorMsg,
       hasTypo: false,
       isDisposable: true,
       disposableWarning: 'Temporary throwaway email addresses are blocked. Please provide an authentic work or educational email.',
@@ -231,6 +243,7 @@ export function validateEmail(rawEmail: string): EmailValidationResult {
       normalizedEmail: normalized,
       hasTypo: true,
       suggestedCorrection: suggestedEmail,
+      suggestion: suggestedEmail,
       suggestedDomain: typoCorrection,
       isDisposable: false,
       domain
@@ -266,7 +279,8 @@ export async function verifyEmailWithBackend(email: string): Promise<EmailValida
       return {
         ...localResult,
         isValid: data.isValid !== false,
-        syntaxError: data.error || localResult.syntaxError
+        syntaxError: data.error || localResult.syntaxError,
+        error: data.error || localResult.error
       };
     }
   } catch {}

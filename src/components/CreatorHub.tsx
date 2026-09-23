@@ -36,6 +36,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { getGoogleAccessToken } from '../lib/gmailService';
+import { useAuth } from '../contexts/AuthContext';
 
 // Import our modular sub-suites
 import CoreSuite from './creator/CoreSuite';
@@ -97,6 +98,7 @@ interface CreatorHubProps {
 }
 
 export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps) {
+  const { user } = useAuth();
   const { showToast, confirm } = useNotifications();
   const [activePanel, setActivePanel] = useState<string>(() => {
     return localStorage.getItem('esepa_creator_active_panel') || 'dashboard';
@@ -832,8 +834,8 @@ Elena / Akoko Solutions (Vendor System Creator)`;
               Environment: Live Sandbox
             </span>
             <div className="text-right">
-              <span className="text-xs font-bold text-slate-700 block">Elena Akoko</span>
-              <span className="text-[9px] text-emerald-500 font-extrabold uppercase block tracking-wider leading-none">Super Admin</span>
+              <span className="text-xs font-bold text-slate-800 block">{user?.fullName || user?.username || 'Platform Creator'}</span>
+              <span className="text-[10px] text-[#06D6A0] font-black uppercase block tracking-wider leading-none mt-0.5">{user?.role?.replace('_', ' ') || 'Creator'}</span>
             </div>
             {onExit && (
               <button

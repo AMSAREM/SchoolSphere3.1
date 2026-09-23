@@ -419,11 +419,71 @@ export function broadcastLocalMutation(table: string, action: string, data: any)
   } catch (e) {}
 }
 
+export interface OfflineQueueItem {
+  id: string;
+  table: string;
+  action: 'insert' | 'update' | 'delete';
+  payload: any;
+  timestamp: number;
+}
+
+export function queueOfflineWrite(table: string, action: 'insert' | 'update' | 'delete', payload: any) {
+  try {
+    const queue: OfflineQueueItem[] = JSON.parse(localStorage.getItem('esepa_offline_queue') || '[]');
+    queue.push({
+      id: 'offline-' + Math.random().toString(36).substring(2, 9),
+      table,
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+    localStorage.setItem('esepa_offline_queue', JSON.stringify(queue));
+  } catch (e) {}
+}
+
+export async function reconcileOfflineWrites(): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  try {
+    const queueStr = localStorage.getItem('esepa_offline_queue');
+    if (!queueStr) return;
+    const queue: OfflineQueueItem[] = JSON.parse(queueStr);
+    if (!queue.length) return;
+
+    const remaining: OfflineQueueItem[] = [];
+    for (const item of queue) {
+      try {
+        if (item.action === 'insert') {
+          const { error } = await supabase.from(item.table).insert(item.payload);
+          if (error) throw error;
+        } else if (item.action === 'update') {
+          const { id, ...data } = item.payload;
+          const { error } = await supabase.from(item.table).update(data).eq('id', id);
+          if (error) throw error;
+        } else if (item.action === 'delete') {
+          const { error } = await supabase.from(item.table).delete().eq('id', item.payload.id);
+          if (error) throw error;
+        }
+      } catch (err) {
+        remaining.push(item);
+      }
+    }
+
+    if (remaining.length) {
+      localStorage.setItem('esepa_offline_queue', JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem('esepa_offline_queue');
+    }
+  } catch (e) {}
+}
+
 /**
  * Initialize Realtime Supabase + Polling Synchronizer
  */
 export function initRealtimeAndAutoSync() {
   let isSubscribed = false;
+
+  // Reconcile pending offline writes on initialization if online
+  reconcileOfflineWrites().catch(() => {});
 
   // 1. Initial Pull immediately
   syncAllDataFromBackend(undefined, true).catch(() => {});
@@ -503,19 +563,27 @@ export function initRealtimeAndAutoSync() {
     syncAllDataFromBackend(undefined, false).catch(() => {});
   }, 5000);
 
-  // 4. Instant sync on window focus & tab visibility change
+  // 4. Instant sync on window focus, tab visibility change, or network reconnect
   const onFocusOrVisible = () => {
     if (document.visibilityState === 'visible') {
+      reconcileOfflineWrites().catch(() => {});
       syncAllDataFromBackend(undefined, true).catch(() => {});
     }
   };
 
+  const onOnline = () => {
+    reconcileOfflineWrites().catch(() => {});
+    syncAllDataFromBackend(undefined, true).catch(() => {});
+  };
+
   window.addEventListener('focus', onFocusOrVisible);
   document.addEventListener('visibilitychange', onFocusOrVisible);
+  window.addEventListener('online', onOnline);
 
   return () => {
     clearInterval(pollInterval);
     window.removeEventListener('focus', onFocusOrVisible);
     document.removeEventListener('visibilitychange', onFocusOrVisible);
+    window.removeEventListener('online', onOnline);
   };
 }

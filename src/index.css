@@ -9,17 +9,49 @@
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
 
-  --color-indigo-50: var(--color-indigo-50, #f5f3ff);
-  --color-indigo-100: var(--color-indigo-100, #ede9fe);
-  --color-indigo-200: var(--color-indigo-200, #ddd6fe);
-  --color-indigo-300: var(--color-indigo-300, #c084fc);
-  --color-indigo-400: var(--color-indigo-400, #a855f7);
-  --color-indigo-500: var(--color-indigo-500, #6366f1);
-  --color-indigo-600: var(--color-indigo-600, #4f46e5);
-  --color-indigo-700: var(--color-indigo-700, #4338ca);
-  --color-indigo-800: var(--color-indigo-800, #3730a3);
-  --color-indigo-900: var(--color-indigo-900, #312e81);
-  --color-indigo-950: var(--color-indigo-950, #1e1b4b);
+  --color-background: #F8FFE5;
+  --color-primary: #06D6A0;
+  --color-primary-dark: #059669;
+  --color-primary-darker: #064e3b;
+  --color-primary-contrast: #022c22;
+  --color-secondary: #1B9AAA;
+  --color-secondary-dark: #14727D;
+  --color-secondary-contrast: #ffffff;
+  --color-accent: #EF476F;
+  --color-accent-dark: #D8224E;
+  --color-accent-contrast: #ffffff;
+  --color-highlight: #FFC43D;
+  --color-highlight-dark: #D97706;
+  --color-highlight-contrast: #451a03;
+
+  --color-indigo-50: #f0fdf9;
+  --color-indigo-100: #e0fbf2;
+  --color-indigo-200: #c2f6e5;
+  --color-indigo-300: #8eeccc;
+  --color-indigo-400: #34d399;
+  --color-indigo-500: #06D6A0;
+  --color-indigo-600: #1B9AAA;
+  --color-indigo-700: #14727D;
+  --color-indigo-800: #115962;
+  --color-indigo-900: #0d4147;
+  --color-indigo-950: #08282c;
+}
+
+:root {
+  --color-background: #F8FFE5;
+  --color-primary: #06D6A0;
+  --color-primary-dark: #059669;
+  --color-primary-darker: #064e3b;
+  --color-primary-contrast: #022c22;
+  --color-secondary: #1B9AAA;
+  --color-secondary-dark: #14727D;
+  --color-secondary-contrast: #ffffff;
+  --color-accent: #EF476F;
+  --color-accent-dark: #D8224E;
+  --color-accent-contrast: #ffffff;
+  --color-highlight: #FFC43D;
+  --color-highlight-dark: #D97706;
+  --color-highlight-contrast: #451a03;
 }
 
 /* Custom Scrollbar for modern feel */
@@ -283,10 +315,13 @@
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
+    background-color: var(--color-background);
   }
   
   body {
-    @apply antialiased text-slate-900;
+    background-color: var(--color-background);
+    color: #1e293b;
+    @apply antialiased;
   }
 }
 

@@ -290,23 +290,23 @@ export function AuthScreens({ onBackToGetStarted }: AuthScreensProps) {
 
   if (viewMode === 'enterprise') {
     return (
-      <div className="relative min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+      <div className="relative min-h-screen bg-[#F8FFE5] flex flex-col items-center justify-center p-3 sm:p-6 lg:p-8 font-sans">
         {/* Navigation Switcher Bar at top */}
-        <div className="fixed top-4 left-4 right-4 z-30 flex items-center justify-between max-w-lg mx-auto pointer-events-auto">
-          {onBackToGetStarted && (
+        <div className="w-full max-w-5xl mx-auto mb-3 flex items-center justify-between pointer-events-auto">
+          {onBackToGetStarted ? (
             <button
               onClick={onBackToGetStarted}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold border border-slate-800 backdrop-blur-md transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-slate-700 rounded-xl text-xs font-semibold border border-slate-200/80 shadow-xs backdrop-blur-md transition-all cursor-pointer hover:shadow-sm"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
               <span>Command Gate</span>
             </button>
-          )}
+          ) : <div />}
           <button
             onClick={() => setViewMode('classic')}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 rounded-lg text-xs font-semibold border border-slate-800 backdrop-blur-md transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-[#1B9AAA] hover:text-[#14727D] rounded-xl text-xs font-bold border border-slate-200/80 shadow-xs backdrop-blur-md transition-all cursor-pointer hover:shadow-sm"
           >
-            <Building2 className="w-3.5 h-3.5" />
+            <Building2 className="w-3.5 h-3.5 text-[#1B9AAA]" />
             <span>Legacy Portal</span>
           </button>
         </div>
@@ -320,7 +320,7 @@ export function AuthScreens({ onBackToGetStarted }: AuthScreensProps) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans">
+    <div className="min-h-screen bg-[#F8FFE5] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans">
       <div className="w-full max-w-2xl flex flex-col items-center">
         <div className="flex items-center gap-2 mb-4">
           {onBackToGetStarted && (
