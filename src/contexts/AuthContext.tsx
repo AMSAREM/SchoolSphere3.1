@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { db, User, School } from '../db/schema';
 import { supabase } from '../lib/supabase/client';
 import { syncTenantAcademicData } from '../lib/api';
@@ -31,12 +31,13 @@ interface AuthContextType {
   user: User | null;
   school: School | null;
   token: string | null;
+  refreshToken: string | null;
   isLoading: boolean;
   login: (username: string, password: string, schoolId?: string) => Promise<boolean>;
-  handleLogin: (username: string, password: string, schoolId?: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
-  signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
-  registerOrganization: (data: RegisterOrgPayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
-  joinWithInviteToken: (data: JoinInvitePayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }>;
+  handleLogin: (username: string, password: string, schoolId?: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }>;
+  registerOrganization: (data: RegisterOrgPayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }>;
+  joinWithInviteToken: (data: JoinInvitePayload) => Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }>;
   logout: () => void;
   register: (username: string, password: string, fullName: string, role: User['role'], email?: string, phone?: string) => Promise<boolean>;
   switchRole: (role: User['role']) => void;
@@ -56,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [school, setSchool] = useState<School | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('esepa_auth_token'));
+  const [refreshToken, setRefreshToken] = useState<string | null>(() => localStorage.getItem('esepa_refresh_token'));
   const [isLoading, setIsLoading] = useState(true);
 
   const setSchoolContext = async (targetSchool: School) => {
@@ -143,6 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = async () => {
     const savedToken = localStorage.getItem('esepa_auth_token');
+    const savedRefreshToken = localStorage.getItem('esepa_refresh_token');
+    
     if (!savedToken) return;
 
     try {
@@ -155,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.user) {
-          setUser(prev => ({ ...(prev || {}), ...data.user }));
+          setUser((prev: User | null) => ({ ...(prev || {}), ...data.user }));
           localStorage.setItem('esepa_user', JSON.stringify(data.user));
           if (data.school) {
             setSchool(data.school);
@@ -164,6 +168,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else if (res.status === 401 || res.status === 403) {
         console.warn("Session token expired or revoked.");
+        
+        // Try to refresh using refresh token
+        if (savedRefreshToken) {
+          try {
+            const refreshRes = await fetch('/api/auth/refresh-token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: savedRefreshToken })
+            });
+
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              if (refreshData.success && refreshData.token) {
+                setToken(refreshData.token);
+                localStorage.setItem('esepa_auth_token', refreshData.token);
+                
+                // Retry the original request with new token
+                const retryRes = await fetch('/api/auth/me', {
+                  headers: {
+                    'Authorization': `Bearer ${refreshData.token}`
+                  }
+                });
+
+                if (retryRes.ok) {
+                  const retryData = await retryRes.json();
+                  if (retryData.success && retryData.user) {
+                    setUser(prev => ({ ...(prev || {}), ...retryData.user }));
+                    localStorage.setItem('esepa_user', JSON.stringify(retryData.user));
+                    if (retryData.school) {
+                      setSchool(retryData.school);
+                      localStorage.setItem('esepa_active_school', JSON.stringify(retryData.school));
+                    }
+                  }
+                }
+              }
+            } else {
+              // Refresh token also expired, clear session
+              logout();
+            }
+          } catch (refreshErr) {
+            console.warn("Token refresh failed:", refreshErr);
+            logout();
+          }
+        } else {
+          logout();
+        }
       }
     } catch (err) {
       console.warn("Notice refreshing session from server:", err);
@@ -183,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const parsedUser = JSON.parse(storedUser);
         if (parsedUser?.id) {
-          db.users.get(parsedUser.id).then(dbUser => {
+          db.users.get(parsedUser.id).then((dbUser: User | undefined) => {
             if (dbUser) {
               setUser(dbUser);
             } else {
@@ -265,7 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const handleLogin = async (username: string, password: string, schoolId?: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+  const handleLogin = async (username: string, password: string, schoolId?: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {
     if (!username || !password) {
       return { success: false, error: "Please enter both username and password" };
     }
@@ -304,6 +354,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setToken(data.token);
             localStorage.setItem('esepa_auth_token', data.token);
           }
+          if (data.refreshToken) {
+            setRefreshToken(data.refreshToken);
+            localStorage.setItem('esepa_refresh_token', data.refreshToken);
+          }
 
           // Cache verified user locally in Dexie (without any credentials)
           try {
@@ -327,7 +381,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Update Context and local storage session
           setUser(verifiedUser);
           localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
-          return { success: true, user: verifiedUser, token: data.token, school: data.school };
+          return { success: true, user: verifiedUser, token: data.token, refreshToken: data.refreshToken, school: data.school };
         } else if (data.error) {
           return { success: false, error: data.error };
         }
@@ -339,7 +393,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithPassword = async (email: string, passwordCandidate: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+  const signInWithPassword = async (email: string, passwordCandidate: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {
     if (!email || !passwordCandidate) {
       return { success: false, error: "Please enter both email and password" };
     }
@@ -422,14 +476,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: cleanEmail,
         status: 'success_api_login'
       });
-      return result;
+      return { success: true, user: result.user, token: result.token, refreshToken: result.refreshToken, school: result.school };
     }
 
     const friendlyError = mapAuthErrorMessage(result.error);
     return { success: false, error: friendlyError };
   };
 
-  const registerOrganization = async (data: RegisterOrgPayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+  const registerOrganization = async (data: RegisterOrgPayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {
     try {
       const res = await fetch('/api/auth/register-org', {
         method: 'POST',
@@ -445,6 +499,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(json.token);
         localStorage.setItem('esepa_auth_token', json.token);
       }
+      if (json.refreshToken) {
+        setRefreshToken(json.refreshToken);
+        localStorage.setItem('esepa_refresh_token', json.refreshToken);
+      }
       if (json.user) {
         setUser(json.user);
         localStorage.setItem('esepa_user', JSON.stringify(json.user));
@@ -457,6 +515,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         success: true,
         user: json.user,
         token: json.token,
+        refreshToken: json.refreshToken,
         school: json.organization
       };
     } catch (err: any) {
@@ -464,7 +523,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const joinWithInviteToken = async (data: JoinInvitePayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
+  const joinWithInviteToken = async (data: JoinInvitePayload): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {
     try {
       const res = await fetch('/api/auth/join-invite', {
         method: 'POST',
@@ -480,6 +539,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(json.token);
         localStorage.setItem('esepa_auth_token', json.token);
       }
+      if (json.refreshToken) {
+        setRefreshToken(json.refreshToken);
+        localStorage.setItem('esepa_refresh_token', json.refreshToken);
+      }
       if (json.user) {
         setUser(json.user);
         localStorage.setItem('esepa_user', JSON.stringify(json.user));
@@ -492,6 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         success: true,
         user: json.user,
         token: json.token,
+        refreshToken: json.refreshToken,
         school: json.organization
       };
     } catch (err: any) {
@@ -507,8 +571,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     setToken(null);
+    setRefreshToken(null);
     localStorage.removeItem('esepa_user');
     localStorage.removeItem('esepa_auth_token');
+    localStorage.removeItem('esepa_refresh_token');
   };
 
   const register = async (

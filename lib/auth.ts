@@ -11,16 +11,27 @@ dotenv.config();
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+  
   if (!secret) {
     if (process.env.NODE_ENV === 'test') {
       return 'test-suite-secure-jwt-secret-key-for-unit-tests';
     }
+    
+    // In production, JWT secret must be provided via environment variables
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET or SUPABASE_JWT_SECRET environment variable must be set in production');
+    }
+    
+    // Development fallback with warning
+    console.warn('⚠️  WARNING: Using fallback JWT secret for development. Set JWT_SECRET or SUPABASE_JWT_SECRET environment variable for proper security.');
     return 'schoolsphere-dev-fallback-jwt-secret-key-3.1';
   }
+  
   return secret;
 }
 
 const TOKEN_EXPIRY = '7d';
+const REFRESH_TOKEN_EXPIRY = '30d';
 
 export interface AuthJwtPayload {
   id: number | string;
@@ -33,6 +44,7 @@ export interface AuthJwtPayload {
   fullName?: string;
   iat?: number;
   exp?: number;
+  type?: 'access' | 'refresh';
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -69,6 +81,67 @@ export function verifyAuthToken(token: string): AuthJwtPayload | null {
   } catch (err) {
     return null;
   }
+}
+
+/**
+ * Generate a refresh token for long-term session management.
+ */
+export function generateRefreshToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp' | 'type'>): string {
+  const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
+  return jwt.sign(
+    {
+      id: payload.id,
+      username: payload.username,
+      email: payload.email,
+      role: payload.role || 'teacher',
+      school_id: targetOrgId,
+      schoolId: targetOrgId,
+      organization_id: targetOrgId,
+      fullName: payload.fullName || payload.username,
+      type: 'refresh'
+    },
+    getJwtSecret(),
+    { expiresIn: REFRESH_TOKEN_EXPIRY }
+  );
+}
+
+/**
+ * Verify and decode a refresh token.
+ */
+export function verifyRefreshToken(token: string): AuthJwtPayload | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as AuthJwtPayload;
+    if (decoded.type !== 'refresh') {
+      return null;
+    }
+    return decoded;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Refresh an access token using a valid refresh token.
+ */
+export function refreshAccessToken(refreshToken: string): { success: boolean; newAccessToken?: string; error?: string } {
+  const decoded = verifyRefreshToken(refreshToken);
+  if (!decoded) {
+    return { success: false, error: 'Invalid or expired refresh token' };
+  }
+
+  // Generate new access token
+  const newAccessToken = generateAuthToken({
+    id: decoded.id,
+    username: decoded.username,
+    email: decoded.email,
+    role: decoded.role,
+    school_id: decoded.school_id,
+    schoolId: decoded.schoolId,
+    organization_id: decoded.organization_id,
+    fullName: decoded.fullName
+  });
+
+  return { success: true, newAccessToken };
 }
 
 /**

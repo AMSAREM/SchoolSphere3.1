@@ -481,6 +481,24 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_school ON public.audit_logs (school_id, timestamp);
 
+-- Table: public.two_factor_settings (2FA/TOTP settings)
+CREATE TABLE IF NOT EXISTS public.two_factor_settings (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  secret VARCHAR(255) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  backup_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  verified BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  last_used_at BIGINT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_two_factor_user ON public.two_factor_settings (user_id);
+CREATE INDEX IF NOT EXISTS idx_two_factor_school ON public.two_factor_settings (school_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_two_factor_user_unique ON public.two_factor_settings (user_id);
+
 -- ==============================================================================
 -- 16. ROW LEVEL SECURITY (RLS) POLICIES ENFORCEMENT
 -- ==============================================================================
@@ -505,6 +523,7 @@ ALTER TABLE public.inventory_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.school_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sms_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.two_factor_settings ENABLE ROW LEVEL SECURITY;
 
 -- Policy helper: Super Admin & Service Role bypass
 DROP POLICY IF EXISTS "Super admin full access on licenses" ON public.school_licenses;
@@ -600,6 +619,10 @@ CREATE POLICY "Tenant isolation for sms_logs" ON public.sms_logs
 
 DROP POLICY IF EXISTS "Tenant isolation for audit_logs" ON public.audit_logs;
 CREATE POLICY "Tenant isolation for audit_logs" ON public.audit_logs
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+DROP POLICY IF EXISTS "Tenant isolation for two_factor_settings" ON public.two_factor_settings;
+CREATE POLICY "Tenant isolation for two_factor_settings" ON public.two_factor_settings
   FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 -- ==============================================================================

@@ -8,7 +8,18 @@ import dns from "dns";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./lib/supabase/server.js";
-import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, type AuthenticatedRequest } from "./lib/auth.js";
+import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth.js";
+import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.js";
+import { Request, Response, NextFunction } from 'express';
+import { 
+  setupTwoFactorAuth, 
+  verifyAndEnableTwoFactorAuth, 
+  disableTwoFactorAuth, 
+  verifyTwoFactorDuringLogin, 
+  isTwoFactorEnabled,
+  getTwoFactorSettings,
+  generateQRCodeDataURL 
+} from "./lib/twoFactorAuth.js";
 import { 
   registerOrganization, 
   createWorkerInvitation, 
@@ -42,7 +53,7 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/(.*\.)?web\.app$/
 ];
 
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
   if (origin) {
     const isAllowed = ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
@@ -61,7 +72,7 @@ app.use((req, res, next) => {
 });
 
 // Secure production headers middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -113,7 +124,7 @@ const serverRateLimiter = new ServerRateLimiter();
 setInterval(() => serverRateLimiter.cleanup(), 60000);
 
 // Global & Endpoint-Specific Rate Limiting Middleware
-app.use("/api", (req, res, next) => {
+app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   // Allow OPTIONS pre-flight without rate-limiting
   if (req.method === "OPTIONS") return next();
 
@@ -1786,9 +1797,23 @@ async function startServer() {
         };
 
         const token = generateAuthToken(creatorUser);
+        const refreshToken = generateRefreshToken(creatorUser);
+        
+        // Audit log for creator login
+        createAuditLog({
+          userId: creatorUser.id,
+          schoolId: null,
+          action: AuditAction.USER_LOGIN,
+          entityType: EntityType.USER,
+          entityId: String(creatorUser.id),
+          details: { username: creatorUser.username, role: creatorUser.role },
+          ipAddress: extractIpAddress(req)
+        }).catch(err => console.error('Audit log failed:', err));
+        
         return res.json({
           success: true,
           token,
+          refreshToken,
           user: creatorUser,
           school: defaultSchoolObj
         });
@@ -1889,10 +1914,12 @@ async function startServer() {
               };
 
               const token = generateAuthToken(userObj);
+              const refreshToken = generateRefreshToken(userObj);
 
               return res.json({
                 success: true,
                 token,
+                refreshToken,
                 user: userObj,
                 school: formattedSchool
               });
@@ -2049,7 +2076,7 @@ async function startServer() {
           console.warn("Notice syncing demo user to Supabase:", demoSyncErr.message);
         }
 
-        const demoUserObj = {
+        const demoUserObj: any = {
           id: savedId,
           username: userClean,
           fullName: demo.fullName,
@@ -2081,7 +2108,7 @@ async function startServer() {
   });
 
   // School Resolution API - Auto-detects school from user handle or domain for preview
-  app.get("/api/auth/resolve-school", async (req, res) => {
+  app.get("/api/auth/resolve-school", async (req: Request, res: Response) => {
     try {
       const input = ((req.query.input as string) || '').trim().toLowerCase();
       if (!input || input.length < 2) {
@@ -2618,6 +2645,90 @@ async function startServer() {
     }
   });
 
+  // Audit Logs Endpoint - Get audit logs for a school
+  app.get("/api/audit/logs", authenticateToken, requireRoles('admin', 'super_admin', 'creator'), requireSchoolScope, async (req: any, res) => {
+    try {
+      const schoolId = req.user?.school_id || req.user?.organization_id;
+      const { limit, offset, action, entityType, userId } = req.query;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "School ID required" });
+      }
+
+      const result = await getAuditLogs({
+        schoolId,
+        limit: limit ? parseInt(limit as string) : 50,
+        offset: offset ? parseInt(offset as string) : 0,
+        action: action as AuditAction,
+        entityType: entityType as EntityType,
+        userId: userId as string | number
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ success: false, error: result.error });
+      }
+
+      return res.json({
+        success: true,
+        data: result.data,
+        count: result.data?.length || 0
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Security Alerts Endpoint - Get security alerts for a school
+  app.get("/api/audit/security-alerts", authenticateToken, requireRoles('admin', 'super_admin', 'creator'), requireSchoolScope, async (req: any, res) => {
+    try {
+      const schoolId = req.user?.school_id || req.user?.organization_id;
+      const { limit } = req.query;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "School ID required" });
+      }
+
+      const result = await getSecurityAlerts({
+        schoolId,
+        limit: limit ? parseInt(limit as string) : 20
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ success: false, error: result.error });
+      }
+
+      return res.json({
+        success: true,
+        data: result.data,
+        count: result.data?.length || 0
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Token Refresh Endpoint - Refresh access token using refresh token
+  app.post("/api/auth/refresh-token", async (req, res) => {
+    try {
+      const { refreshToken } = req.body || {};
+      if (!refreshToken) {
+        return res.status(400).json({ success: false, error: "Refresh token is required" });
+      }
+
+      const result = refreshAccessToken(refreshToken);
+      if (!result.success) {
+        return res.status(401).json({ success: false, error: result.error });
+      }
+
+      return res.json({
+        success: true,
+        token: result.newAccessToken
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Record User Login & Telemetry Audit Tracking
   app.post("/api/auth/record-login", async (req, res) => {
     try {
@@ -2747,6 +2858,173 @@ async function startServer() {
     }
   });
 
+  // Setup 2FA for user
+  app.post("/api/auth/2fa/setup", authenticateToken, async (req: any, res) => {
+    try {
+      const authUser = req.user;
+      const schoolId = authUser?.school_id || authUser?.organization_id;
+
+      // Only admins and super admins can enable 2FA
+      const userRole = (authUser.role || '').toLowerCase();
+      if (userRole !== 'admin' && userRole !== 'super_admin' && userRole !== 'creator') {
+        return res.status(403).json({ success: false, error: "2FA is only available for administrators" });
+      }
+
+      const result = await setupTwoFactorAuth({
+        userId: authUser.id,
+        schoolId
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      // Generate QR code as data URL
+      let qrCodeDataURL = '';
+      try {
+        qrCodeDataURL = await generateQRCodeDataURL(result.qrCodeUri!);
+      } catch (qrError) {
+        console.error('QR code generation failed:', qrError);
+      }
+
+      // Audit log for 2FA setup initiation
+      createAuditLog({
+        userId: authUser.id,
+        schoolId,
+        action: AuditAction.SYSTEM_CONFIG_CHANGED,
+        entityType: EntityType.USER,
+        entityId: String(authUser.id),
+        details: { action: '2fa_setup_initiated' },
+        ipAddress: extractIpAddress(req)
+      }).catch(err => console.error('Audit log failed:', err));
+
+      return res.json({
+        success: true,
+        secret: result.secret,
+        qrCodeDataURL,
+        backupCodes: result.backupCodes
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Verify and enable 2FA
+  app.post("/api/auth/2fa/verify", authenticateToken, async (req: any, res) => {
+    try {
+      const authUser = req.user;
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ success: false, error: "Verification token is required" });
+      }
+
+      const result = await verifyAndEnableTwoFactorAuth({
+        userId: authUser.id,
+        token
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      // Audit log for 2FA enablement
+      createAuditLog({
+        userId: authUser.id,
+        schoolId: authUser.school_id,
+        action: AuditAction.SYSTEM_CONFIG_CHANGED,
+        entityType: EntityType.USER,
+        entityId: String(authUser.id),
+        details: { action: '2fa_enabled' },
+        ipAddress: extractIpAddress(req)
+      }).catch(err => console.error('Audit log failed:', err));
+
+      return res.json({
+        success: true,
+        message: "2FA has been successfully enabled"
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Disable 2FA
+  app.post("/api/auth/2fa/disable", authenticateToken, async (req: any, res) => {
+    try {
+      const authUser = req.user;
+      const { password } = req.body;
+
+      const result = await disableTwoFactorAuth({
+        userId: authUser.id,
+        password
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      // Audit log for 2FA disablement
+      createAuditLog({
+        userId: authUser.id,
+        schoolId: authUser.school_id,
+        action: AuditAction.SYSTEM_CONFIG_CHANGED,
+        entityType: EntityType.USER,
+        entityId: String(authUser.id),
+        details: { action: '2fa_disabled' },
+        ipAddress: extractIpAddress(req)
+      }).catch(err => console.error('Audit log failed:', err));
+
+      return res.json({
+        success: true,
+        message: "2FA has been successfully disabled"
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Check 2FA status
+  app.get("/api/auth/2fa/status", authenticateToken, async (req: any, res) => {
+    try {
+      const authUser = req.user;
+      const isEnabled = await isTwoFactorEnabled(authUser.id);
+
+      return res.json({
+        success: true,
+        enabled: isEnabled
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Verify 2FA during login
+  app.post("/api/auth/2fa/verify-login", async (req, res) => {
+    try {
+      const { userId, token } = req.body;
+
+      if (!userId || !token) {
+        return res.status(400).json({ success: false, error: "User ID and token are required" });
+      }
+
+      const result = await verifyTwoFactorDuringLogin({
+        userId,
+        token
+      });
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      return res.json({
+        success: true,
+        message: "2FA verification successful"
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Change Password Endpoint for Authenticated Users (Requires current password verification)
   app.post("/api/auth/change-password", authenticateToken, async (req: any, res) => {
     try {
@@ -2784,6 +3062,17 @@ async function startServer() {
       }
 
       if (!isCurrentValid) {
+        // Audit log for failed password change attempt
+        createAuditLog({
+          userId: authUser.id,
+          schoolId: authUser.school_id,
+          action: AuditAction.PASSWORD_CHANGE,
+          entityType: EntityType.USER,
+          entityId: String(authUser.id),
+          details: { success: false, reason: 'invalid_current_password' },
+          ipAddress: extractIpAddress(req)
+        }).catch(err => console.error('Audit log failed:', err));
+        
         return res.status(400).json({ success: false, error: "Current password does not match our records." });
       }
 
@@ -2801,6 +3090,17 @@ async function startServer() {
       if (updateErr) {
         return res.status(500).json({ success: false, error: updateErr.message });
       }
+
+      // Audit log for successful password change
+      createAuditLog({
+        userId: authUser.id,
+        schoolId: authUser.school_id,
+        action: AuditAction.PASSWORD_CHANGE,
+        entityType: EntityType.USER,
+        entityId: String(authUser.id),
+        details: { success: true },
+        ipAddress: extractIpAddress(req)
+      }).catch(err => console.error('Audit log failed:', err));
 
       return res.json({
         success: true,
@@ -7667,7 +7967,7 @@ async function startServer() {
   });
 
   // Explicit API 404 fallback - ensures any unmatched /api/* route returns clean JSON instead of HTML
-  app.all("/api/*", (req, res) => {
+  app.all("/api/*", (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.path}` });
   });
 
