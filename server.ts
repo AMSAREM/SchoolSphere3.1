@@ -2378,9 +2378,10 @@ async function startServer() {
         'parent': { role: 'parent', fullName: 'Guardian Parent', email: 'parent@schoolsphere.xyz' }
       };
 
-      // Check demo users matching clean username or email prefix
-      const demoKey = DEMO_USERS[userClean] ? userClean : Object.keys(DEMO_USERS).find(k => userClean.startsWith(k));
-      if (demoKey && (isStandardMasterPass || password.length >= 3)) {
+      // Check demo users matching clean username or email prefix (strictly in non-production when explicitly allowed)
+      const isDemoAllowed = process.env.ALLOW_DEMO_USERS === 'true' && process.env.NODE_ENV !== 'production';
+      const demoKey = isDemoAllowed && (DEMO_USERS[userClean] ? userClean : Object.keys(DEMO_USERS).find(k => userClean.startsWith(k)));
+      if (demoKey && password && password.length >= 6) {
         const demo = DEMO_USERS[demoKey];
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
@@ -2449,52 +2450,6 @@ async function startServer() {
           token,
           user: demoUserObj,
           school: effectiveSchool
-        });
-      }
-
-      // 6. Universal Auto-Provisioning for detected institution:
-      // If a school was auto-detected and user provides a valid credential set, allow access as institutional user
-      if (targetSchoolHint && isStandardMasterPass) {
-        const resolvedSchool = await resolveSchoolRecord(targetSchoolHint) || defaultSchoolObj;
-        const role = userClean.includes('teach') ? 'teacher' : userClean.includes('acc') ? 'accountant' : userClean.includes('stud') ? 'student' : 'admin';
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(password, salt);
-
-        const newUserObj = {
-          id: Date.now(),
-          username: userClean,
-          fullName: userClean.charAt(0).toUpperCase() + userClean.slice(1),
-          email: userClean.includes('@') ? userClean : `${userClean}@${resolvedSchool.slug || 'school'}.edu.gh`,
-          role,
-          status: 'active',
-          schoolId: resolvedSchool.id,
-          school_id: resolvedSchool.id,
-          schoolName: resolvedSchool.name,
-          createdAt: Date.now(),
-          lastLogin: Date.now()
-        };
-
-        try {
-          await adminClient.from('users').insert([{
-            username: newUserObj.username,
-            full_name: newUserObj.fullName,
-            email: newUserObj.email,
-            password_hash: passwordHash,
-            role: newUserObj.role,
-            status: 'active',
-            school_id: resolvedSchool.id,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-            last_login: Date.now()
-          }]);
-        } catch (e) {}
-
-        const token = generateAuthToken(newUserObj);
-        return res.json({
-          success: true,
-          token,
-          user: newUserObj,
-          school: resolvedSchool
         });
       }
 

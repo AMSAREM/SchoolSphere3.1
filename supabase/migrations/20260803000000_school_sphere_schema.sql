@@ -250,12 +250,7 @@ INSERT INTO subjects ("name", "code", "applicableClasses") VALUES
 ('French', 'FREN-07', '["All"]'::jsonb)
 ON CONFLICT ("name") DO NOTHING;
 
-INSERT INTO users ("username", "passwordHash", "fullName", "role", "createdAt") VALUES
-('admin', '$2a$10$fV38pUaT.Jv.3Kz/p0LpIe2uF0S8Y17jS8mZtM9N4Wn.M6vO8Ujbe', 'System Administrator', 'super_admin', 1700000000000),
-('headteacher', '$2a$10$fV38pUaT.Jv.3Kz/p0LpIe2uF0S8Y17jS8mZtM9N4Wn.M6vO8Ujbe', 'Head Teacher', 'headteacher', 1700000000000),
-('teacher', '$2a$10$fV38pUaT.Jv.3Kz/p0LpIe2uF0S8Y17jS8mZtM9N4Wn.M6vO8Ujbe', 'Staff Teacher', 'teacher', 1700000000000),
-('accountant', '$2a$10$fV38pUaT.Jv.3Kz/p0LpIe2uF0S8Y17jS8mZtM9N4Wn.M6vO8Ujbe', 'Finance Clerk', 'accountant', 1700000000000)
-ON CONFLICT ("username") DO NOTHING;
+-- Note: Initial administrator accounts are provisioned out-of-band via Supabase Auth or the onboarding wizard, never seeded with hardcoded credentials in migrations.
 
 INSERT INTO settings ("key", "value") VALUES
 ('timetable_slots', '[]'::jsonb),

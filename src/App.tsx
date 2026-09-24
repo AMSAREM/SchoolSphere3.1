@@ -619,13 +619,13 @@ function AppContent() {
           }
         ];
 
-        const salt = await (await import('bcryptjs')).genSalt(10);
-        const passwordHash = await (await import('bcryptjs')).hash('july94bab', salt);
-
         const allExistingUsers = await db.users.toArray();
-        for (const u of defaultUsers) {
-          const existing = allExistingUsers.find(ex => ex.username?.toLowerCase() === u.username.toLowerCase());
-          if (!existing) {
+        const initialAdminPassword = import.meta.env.VITE_INITIAL_ADMIN_PASSWORD;
+        if (allExistingUsers.length === 0 && initialAdminPassword && import.meta.env.DEV) {
+          const salt = await (await import('bcryptjs')).genSalt(10);
+          const passwordHash = await (await import('bcryptjs')).hash(initialAdminPassword, salt);
+
+          for (const u of defaultUsers) {
             await db.users.add({
               username: u.username.toLowerCase(),
               passwordHash,
@@ -633,12 +633,7 @@ function AppContent() {
               role: u.role,
               createdAt: Date.now()
             });
-            console.log(`Seeded missing default portal user: ${u.username}`);
-          } else if (u.role === 'super_admin' || u.username === 'super_admin') {
-            await db.users.update(existing.id!, {
-              passwordHash,
-              role: 'super_admin'
-            });
+            console.log(`Initialized development portal user: ${u.username}`);
           }
         }
 

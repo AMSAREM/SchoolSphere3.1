@@ -31,25 +31,27 @@ Data synchronizes with a remote server database or structured cloud endpoints, e
 
 ---
 
-## 🔒 Default Administrator Credentials
+## 🔒 Initial Administrator Setup & Authentication
 
-Use these credentials to gain access when launching the workspace application for the first time:
+SchoolSphere utilizes enterprise role-based access control backed by Supabase Authentication and server-side JWT session tokens.
 
-- **Username**: `Elena`
-- **Password**: `july94bab`
-- **Role**: Administrator (`admin`)
+To initialize the primary administrator account for a new deployment:
 
-*Note: Once logged in, navigate to **User Management** in the sidebar to provision or restrict accounts for academic staff.*
+1. Launch the application and click **Get Started** on the welcome screen.
+2. Complete the institution registration wizard by providing your school name, institutional domain/slug, and establishing your unique, secure master administrator credentials.
+3. If provisioning via Supabase directly, create an initial user record in the `users` table or invoke the `POST /api/auth/register` endpoint with your organization details.
+
+> ⚠️ **Security Notice**: No default credentials are pre-seeded in the public repository. All administrative accounts must use strong, unique passwords with mandatory rotation enabled. For self-hosted instances, configure `JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` in your `.env` file prior to starting the service.
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Client Runtime**: React 18, TypeScript, Dexie.js (IndexedDB library), Lucide Icons, Recharts (D3 reports metadata).
-- **Backend Service**: Express.js (v4 framework), tsx runner, CJS esbuild production bundler.
-- **Data Tier**: Flexible hybrid database architecture:
-  - **Local Layer**: IndexedDB client storage cache.
-  - **Server Layer**: Automated REST proxy to **MySQL Connection Pool** (Production) or structured **fallback JSON storage file** (Development sandbox).
+- **Client Runtime**: React 18, TypeScript, Tailwind CSS, Dexie.js (client IndexedDB offline cache), Lucide Icons, Recharts (institutional analytics).
+- **Backend Service**: Express.js (v4), Node.js 22, tsx runner, JWT session authentication, and REST API proxy.
+- **Data Tier**: 
+  - **Cloud Database (Single Source of Truth)**: Supabase PostgreSQL with Multi-Tenant Row Level Security (RLS) policies.
+  - **Client Resilience Layer**: IndexedDB local cache via Dexie.js for transparent offline-first usability and bidirectional sync.
 
 ---
 
