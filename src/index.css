@@ -22,6 +22,18 @@
   --color-primary-dark: #059669;
   --color-secondary: #1c4a59;
   --color-accent: #EF476F;
+
+  --color-indigo-50: #f0f4f5;
+  --color-indigo-100: #e1e9eb;
+  --color-indigo-200: #c4d4d8;
+  --color-indigo-300: #9cb8be;
+  --color-indigo-400: #6a7f84;
+  --color-indigo-500: #265f70;
+  --color-indigo-600: #1c4a59;
+  --color-indigo-700: #163b47;
+  --color-indigo-800: #112d37;
+  --color-indigo-900: #0b1e25;
+  --color-indigo-950: #061115;
 }
 
 :root {
@@ -37,6 +49,11 @@
   --color-primary: #06D6A0;
   --color-secondary: #1c4a59;
   --color-accent: #EF476F;
+}
+
+body {
+  background-color: #f6f8f7;
+  color: #1f2a2e;
 }
 
 /* Custom Scrollbar for modern feel */

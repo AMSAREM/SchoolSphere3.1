@@ -71,7 +71,6 @@ import GetStarted from './components/GetStarted';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
-import { MobileBottomNav } from './components/MobileBottomNav';
 import { DoodleBackground } from './components/DoodleBackground';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
@@ -198,14 +197,16 @@ function AppContent() {
   const schoolName = schoolProfile.schoolName;
   const schoolLogo = schoolProfile.logo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png';
 
-  // Uniform design tokens for SchoolSphere light theme palette (#F8FFE5 cream background)
+  // Uniform design tokens for SchoolSphere palette (#f6f8f7 canvas background, #1c4a59 institutional surface, #faae57 CTA)
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty('--color-background', '#F8FFE5');
-    root.style.setProperty('--color-primary', '#06D6A0');
-    root.style.setProperty('--color-secondary', '#1B9AAA');
-    root.style.setProperty('--color-accent', '#EF476F');
-    root.style.setProperty('--color-highlight', '#FFC43D');
+    root.style.setProperty('--color-background', '#f6f8f7');
+    root.style.setProperty('--color-primary-surface', '#1c4a59');
+    root.style.setProperty('--color-cta', '#faae57');
+    root.style.setProperty('--color-muted', '#6a7f84');
+    root.style.setProperty('--color-body', '#1f2a2e');
+    root.style.setProperty('--color-border', '#bac4c6');
+    root.style.setProperty('--color-secondary-accent', '#e4ae67');
   }, []);
 
   // State and Refs for global alarm synthesis and timetable triggers
@@ -1247,7 +1248,7 @@ function AppContent() {
         {/* View Container */}
         <div className={cn(
           "flex-1 relative print:p-0 print:overflow-visible print:h-auto print:block",
-          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 lg:pb-8"
+          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-8"
         )}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -1326,13 +1327,6 @@ function AppContent() {
           </AnimatePresence>
         </div>
       </main>
-
-      {/* Floating Bottom Navigation Bar (matches template mobile design) */}
-      <MobileBottomNav
-        activeView={activeView}
-        onNavigate={(view) => setActiveView(view)}
-        onOpenQuickReminder={() => setActiveView('timetable')}
-      />
 
       {/* Security & Role Privileges Modal */}
       <SecurityProfileModal 

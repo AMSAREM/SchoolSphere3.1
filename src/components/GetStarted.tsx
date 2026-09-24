@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import LandingPage from './LandingPage';
 import landingIllustration from '../assets/images/landing_illustration_1783005854385.jpg';
+import { DoodleBackground } from './DoodleBackground';
 import { 
   Cpu, 
   Key, 
@@ -686,24 +687,26 @@ export default function GetStarted({
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 relative font-sans select-none p-4 sm:p-6 md:p-8">
+    <div className="min-h-screen w-full flex flex-col justify-between bg-[#f6f8f7] text-[#1f2a2e] relative font-sans select-none p-4 sm:p-6 md:p-8 overflow-hidden">
+      <DoodleBackground opacity={0.06} />
+
       {/* Top Navbar */}
-      <div className="w-full max-w-4xl mx-auto flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+      <div className="w-full max-w-4xl mx-auto flex items-center justify-between pb-4 border-b border-[#bac4c6] shrink-0 relative z-10">
         <div 
-          className="flex items-center gap-2.5 cursor-pointer group" 
+          className="flex items-center gap-2.5 cursor-pointer select-none" 
           onClick={() => setCurrentView('landing')}
         >
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
-            <School className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-xl bg-white border border-[#bac4c6] p-1 flex items-center justify-center shadow-xs">
+            <img src="/sch sphere logo1.png" alt="Logo" className="w-full h-full object-contain pointer-events-none select-none" />
           </div>
-          <span className="font-extrabold text-lg tracking-tight text-slate-900 dark:text-slate-100">
-            School<span className="text-indigo-600 dark:text-indigo-400">Sphere</span>
+          <span className="font-bold text-lg tracking-tight text-[#1c4a59]">
+            School<span className="text-[#faae57]">Sphere</span>
           </span>
         </div>
 
         <button
           onClick={() => setCurrentView('landing')}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6a7f84] hover:text-[#1c4a59] transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Return to Landing Page</span>
@@ -711,7 +714,7 @@ export default function GetStarted({
       </div>
 
       {/* Main Form Views */}
-      <div className="flex-1 flex flex-col justify-center items-center py-6">
+      <div className="flex-1 flex flex-col justify-center items-center py-6 relative z-10">
         <AnimatePresence mode="wait">
           {/* VIEW 2: LICENSE ACTIVATION & WIZARD FORM */}
           {currentView === 'activation' && (
@@ -721,14 +724,14 @@ export default function GetStarted({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.25 }}
-              className="w-full max-w-2xl bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 relative z-10 flex flex-col space-y-6 text-left"
+              className="w-full max-w-2xl bg-white border border-[#bac4c6] rounded-3xl p-6 sm:p-8 shadow-sm relative z-10 flex flex-col space-y-6 text-left"
             >
               
               {/* Back Button */}
               {!isSettingUp && (
                 <button
                   onClick={() => setCurrentView('landing')}
-                  className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 hover:text-slate-800 transition-colors cursor-pointer self-start"
+                  className="flex items-center gap-2 text-xs font-bold text-[#6a7f84] hover:text-[#1c4a59] transition-colors cursor-pointer self-start"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Back to Gateways</span>
