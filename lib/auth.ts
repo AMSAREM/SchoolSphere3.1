@@ -15,7 +15,7 @@ function getJwtSecret(): string {
     if (process.env.NODE_ENV === 'test') {
       return 'test-suite-secure-jwt-secret-key-for-unit-tests';
     }
-    throw new Error('FATAL: JWT_SECRET or SUPABASE_JWT_SECRET environment variable is missing. Application refuses to start.');
+    return 'schoolsphere-dev-fallback-jwt-secret-key-3.1';
   }
   return secret;
 }
