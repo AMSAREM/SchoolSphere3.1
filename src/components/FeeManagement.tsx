@@ -629,12 +629,12 @@ export default function FeeManagement() {
           </div>
 
           {/* View Switcher Tabs */}
-          <div className="flex bg-slate-100 p-1 rounded-xl self-start print:hidden">
+          <div className="flex bg-slate-100 p-1 rounded-xl self-start print:hidden max-w-full overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setActiveTab('dashboard')}
               className={cn(
-                "px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider",
+                "px-3 sm:px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider whitespace-nowrap",
                 activeTab === 'dashboard'
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-800"
@@ -646,7 +646,7 @@ export default function FeeManagement() {
               type="button"
               onClick={() => setActiveTab('ledger')}
               className={cn(
-                "px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider",
+                "px-3 sm:px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider whitespace-nowrap",
                 activeTab === 'ledger'
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-800"

@@ -633,5 +633,21 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(teacherRecord).not.toBeNull();
       expect(teacherRecord?.staffId).toBe(testStaffId);
     });
+
+    it('GET /robots.txt serves crawler directives with valid text/plain content', async () => {
+      const res = await request(app).get('/robots.txt');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/plain/);
+      expect(res.text).toContain('User-agent:');
+      expect(res.text).toContain('Sitemap:');
+    });
+
+    it('GET /sitemap.xml serves valid XML sitemap with indexable URLs', async () => {
+      const res = await request(app).get('/sitemap.xml');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/xml/);
+      expect(res.text).toContain('urlset');
+      expect(res.text).toContain('schoolsphere.app');
+    });
   });
 });

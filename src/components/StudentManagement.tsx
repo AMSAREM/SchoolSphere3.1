@@ -957,7 +957,7 @@ export default function StudentManagement() {
             </AnimatePresence>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isAdmin && (
               <>
                 <button 
@@ -1426,14 +1426,14 @@ export default function StudentManagement() {
 
       {/* Add Student Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col"
           >
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <h3 className="text-xl font-bold text-slate-900">
+            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900">
                 {editingStudent ? 'Edit Student Details' : 'New Student Registration'}
               </h3>
               <button 
@@ -1449,7 +1449,7 @@ export default function StudentManagement() {
               </button>
             </div>
             
-            <form onSubmit={handleStudentSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
+            <form onSubmit={handleStudentSubmit} className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 sm:space-y-8">
               {/* Profile Photo Section */}
               <div className="flex flex-col items-center gap-4 py-6 bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
                 <div className="relative group">

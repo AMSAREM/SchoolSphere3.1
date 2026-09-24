@@ -67,7 +67,7 @@ export default function GetStarted({
   const { login, register } = useAuth();
   const { showToast } = useNotifications();
 
-  const [currentView, setCurrentView] = useState<'landing' | 'activation' | 'creator_login'>(
+  const [currentView, setCurrentView] = useState<'landing' | 'activation'>(
     !isLicensed ? 'activation' : 'landing'
   );
 
@@ -78,39 +78,13 @@ export default function GetStarted({
         window.location.hash === '#creator-login' || 
         window.location.search.includes('creator=true')
       ) {
-        setCurrentView('creator_login');
+        onEnterSchoolPortal();
       }
     };
     checkHash();
     window.addEventListener('hashchange', checkHash);
     return () => window.removeEventListener('hashchange', checkHash);
-  }, []);
-
-  // Creator login states
-  const [creatorUser, setCreatorUser] = useState<string>('');
-  const [creatorPass, setCreatorPass] = useState<string>('');
-  const [creatorLoggingIn, setCreatorLoggingIn] = useState<boolean>(false);
-  const [creatorLoginError, setCreatorLoginError] = useState<string>('');
-
-  const handleCreatorLogin = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!creatorUser.trim() || !creatorPass) return;
-    setCreatorLoggingIn(true);
-    setCreatorLoginError('');
-    try {
-      const success = await login(creatorUser.trim(), creatorPass);
-      if (success) {
-        showToast("Creator Master Console Authorized.", "success");
-        onActivationSuccess();
-      } else {
-        setCreatorLoginError("Invalid Creator credentials.");
-      }
-    } catch (err) {
-      setCreatorLoginError("An unexpected error occurred during authorization.");
-    } finally {
-      setCreatorLoggingIn(false);
-    }
-  };
+  }, [onEnterSchoolPortal]);
 
   // Activation & Wizard Setup States
   const [licenseInput, setLicenseInput] = useState<string>('');
@@ -523,7 +497,7 @@ export default function GetStarted({
             setLicenseInput('');
             setCurrentView('activation');
           }}
-          onOpenCreatorLogin={() => setCurrentView('creator_login')}
+          onOpenCreatorLogin={onEnterSchoolPortal}
           onOpenAbout={() => setShowAbout(true)}
           onOpenContact={() => setShowContact(true)}
           onOpenVideoTour={() => {
@@ -1538,93 +1512,6 @@ export default function GetStarted({
 
             </motion.div>
           )}
-
-          {/* VIEW 3: CREATOR PORTAL LOGIN */}
-          {currentView === 'creator_login' && (
-            <motion.div
-              key="creator_login"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: 0.25 }}
-              className="w-full max-w-md mx-auto bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 relative z-10 flex flex-col space-y-6 text-left"
-            >
-              {/* Back Button */}
-              <button
-                onClick={() => setCurrentView('landing')}
-                className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 hover:text-slate-800 transition-colors cursor-pointer self-start"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Gateways</span>
-              </button>
-
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-600">
-                  <Cpu className="w-5 h-5 animate-pulse" />
-                </div>
-                <div>
-                  <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Creator Portal Log In</h2>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Access V2 Master Control Hub</p>
-                </div>
-              </div>
-
-              {creatorLoginError && (
-                <div className="p-3 rounded-xl text-xs font-bold transition-colors bg-rose-50 text-rose-600">
-                  {creatorLoginError}
-                </div>
-              )}
-
-              <form onSubmit={handleCreatorLogin} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block ml-1">Creator Username</label>
-                  <div className="relative group">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                    <input 
-                      required
-                      type="text"
-                      value={creatorUser}
-                      onChange={(e) => setCreatorUser(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-sm font-medium text-slate-800"
-                      placeholder="creator_admin"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block ml-1">Master Password</label>
-                  <div className="relative group">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                    <input 
-                      required
-                      type="password"
-                      value={creatorPass}
-                      onChange={(e) => setCreatorPass(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-sm font-medium text-slate-800"
-                      placeholder="••••••••"
-                    />
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={creatorLoggingIn}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 cursor-pointer"
-                >
-                  {creatorLoggingIn ? (
-                    <RefreshCcw className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <LogIn className="w-5 h-5" />
-                      <span className="text-xs uppercase tracking-wider font-extrabold">Log In to Creator Portal</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            </motion.div>
-          )}
-
-
-
         </AnimatePresence>
 
       </div>
@@ -1809,9 +1696,9 @@ export default function GetStarted({
       {/* Footer support credits */}
       <div className="p-6 relative z-10 w-full border-t border-slate-200/60 flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
         <span 
-          onClick={() => setCurrentView('creator_login')} 
+          onClick={onEnterSchoolPortal} 
           className="cursor-pointer hover:text-indigo-600 transition-colors"
-          title="Click to access Creator Portal login"
+          title="Click to access login portal"
         >
           Instance ID: schoolsphere-academy-live-prod
         </span>

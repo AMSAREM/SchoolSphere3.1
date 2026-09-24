@@ -143,21 +143,21 @@ export function SecurityProfileModal({ isOpen, onClose }: SecurityProfileModalPr
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
       >
         {/* Modal Header */}
-        <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/40">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Account & Access Control</h2>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Account & Access Control</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">Manage security credentials, sessions, and view role authorization</p>
             </div>
           </div>
@@ -170,11 +170,11 @@ export function SecurityProfileModal({ isOpen, onClose }: SecurityProfileModalPr
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-white dark:bg-slate-900 gap-6">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 bg-white dark:bg-slate-900 gap-4 sm:gap-6 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('profile')}
             className={cn(
-              "py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-colors",
+              "py-3 text-xs sm:text-sm font-medium border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap",
               activeTab === 'profile'
                 ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
                 : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -187,7 +187,7 @@ export function SecurityProfileModal({ isOpen, onClose }: SecurityProfileModalPr
           <button
             onClick={() => setActiveTab('permissions')}
             className={cn(
-              "py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-colors",
+              "py-3 text-xs sm:text-sm font-medium border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap",
               activeTab === 'permissions'
                 ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
                 : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -203,7 +203,7 @@ export function SecurityProfileModal({ isOpen, onClose }: SecurityProfileModalPr
           <button
             onClick={() => setActiveTab('security')}
             className={cn(
-              "py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-colors",
+              "py-3 text-xs sm:text-sm font-medium border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap",
               activeTab === 'security'
                 ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
                 : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -215,7 +215,7 @@ export function SecurityProfileModal({ isOpen, onClose }: SecurityProfileModalPr
         </div>
 
         {/* Tab Contents */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
           {activeTab === 'profile' && (
             <div className="space-y-6">
               {/* User Identity Banner */}

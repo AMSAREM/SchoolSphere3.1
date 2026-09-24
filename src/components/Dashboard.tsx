@@ -39,10 +39,11 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts';
-import { formatCurrency, triggerPrint } from '../lib/utils';
+import { formatCurrency, triggerPrint, cn } from '../lib/utils';
+import { ProductivePlannerTemplate } from './ProductivePlannerTemplate';
 
 interface DashboardProps {
-  onViewChange: (view: 'students' | 'academic' | 'fees' | 'attendance' | 'results') => void;
+  onViewChange: (view: any) => void;
 }
 
 interface Announcement {
@@ -113,6 +114,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
   }, [user, students]);
 
   const [selectedWardId, setSelectedWardId] = useState<string>('');
+  const [dashboardLayout, setDashboardLayout] = useState<'planner' | 'metrics' | 'both'>('planner');
 
   useEffect(() => {
     if (parentWards.length > 0 && !selectedWardId) {
@@ -739,46 +741,100 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between print:hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Overview</h2>
         </div>
-        <button 
-          onClick={triggerPrint}
-          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm active:scale-95 h-11"
-        >
-          <Printer className="w-4 h-4 text-indigo-600" />
-          <span>Print Summary</span>
-        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Layout Toggle */}
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setDashboardLayout('planner')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg transition-all cursor-pointer",
+                dashboardLayout === 'planner'
+                  ? "bg-white text-[#163840] shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              Productivity Planner
+            </button>
+            <button
+              type="button"
+              onClick={() => setDashboardLayout('metrics')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg transition-all cursor-pointer",
+                dashboardLayout === 'metrics'
+                  ? "bg-white text-[#163840] shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              KPI Metrics
+            </button>
+            <button
+              type="button"
+              onClick={() => setDashboardLayout('both')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg transition-all cursor-pointer hidden md:block",
+                dashboardLayout === 'both'
+                  ? "bg-white text-[#163840] shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              Combined View
+            </button>
+          </div>
+
+          <button 
+            onClick={triggerPrint}
+            className="flex items-center gap-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs active:scale-95 h-9 text-xs"
+          >
+            <Printer className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Print</span>
+          </button>
+        </div>
       </div>
+
+      {/* Productivity Planner Template (from uploaded template design) */}
+      {(dashboardLayout === 'planner' || dashboardLayout === 'both') && (
+        <div className="my-2">
+          <ProductivePlannerTemplate onNavigateView={onViewChange} />
+        </div>
+      )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {stats.map((stat, i) => (
-          <button 
-            key={i} 
-            onClick={() => {
-              if (stat.view) {
-                onViewChange(stat.view);
-              }
-            }}
-            className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all text-left group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-3.5">
-              <div className={`${stat.bg} p-2 sm:p-2.5 rounded-lg group-hover:scale-105 transition-transform`}>
-                <stat.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${stat.color}`} />
+      {(dashboardLayout === 'metrics' || dashboardLayout === 'both') && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+          {stats.map((stat, i) => (
+            <button 
+              key={i} 
+              onClick={() => {
+                if (stat.view) {
+                  onViewChange(stat.view);
+                }
+              }}
+              className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all text-left group cursor-pointer"
+            >
+              <div className="flex items-center justify-between mb-3.5">
+                <div className={`${stat.bg} p-2 sm:p-2.5 rounded-lg group-hover:scale-105 transition-transform`}>
+                  <stat.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${stat.color}`} />
+                </div>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <TrendingUp className="w-3 h-3" /> +2.4%
+                </span>
               </div>
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                <TrendingUp className="w-3 h-3" /> +2.4%
-              </span>
-            </div>
-            <p className="text-slate-500 dark:text-slate-400 text-xs font-medium tracking-tight">{stat.label}</p>
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums font-mono">{stat.value}</h3>
-          </button>
-        ))}
-      </div>
+              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium tracking-tight">{stat.label}</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums font-mono">{stat.value}</h3>
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+      {(dashboardLayout === 'metrics' || dashboardLayout === 'both') && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Main Analytics Chart */}
         <div className={`bg-white p-4 sm:p-8 rounded-2xl border border-slate-200 shadow-sm overflow-hidden ${
           (user?.role === 'student' || user?.role === 'parent') ? 'lg:col-span-3' : 'lg:col-span-2'
@@ -1619,6 +1675,8 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

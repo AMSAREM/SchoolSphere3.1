@@ -14,6 +14,8 @@ interface RegisterOrgPayload {
   adminFullName: string;
   email: string;
   password: string;
+  subdomain?: string;
+  slug?: string;
   phone?: string;
   address?: string;
 }

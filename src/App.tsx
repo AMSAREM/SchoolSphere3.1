@@ -70,6 +70,8 @@ import { PermissionGuard } from './components/auth/PermissionGuard';
 import GetStarted from './components/GetStarted';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
@@ -1175,7 +1177,7 @@ function AppContent() {
                       <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   )}
-                  <h1 className="text-sm sm:text-base font-extrabold text-slate-900 uppercase truncate tracking-tight">
+                  <h1 className="text-xs sm:text-base font-extrabold text-slate-900 uppercase truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none tracking-tight">
                     {schoolName}
                   </h1>
                   <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
@@ -1186,7 +1188,7 @@ function AppContent() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
               {/* Supabase Database Connection Indicator - Visible ONLY for Creator accessibility */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
                 <button
@@ -1201,7 +1203,7 @@ function AppContent() {
                         : "Supabase DB: Disconnected • Click to retry connection"
                   }
                   className={cn(
-                    "flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none shadow-2xs active:scale-95",
+                    "flex items-center gap-1.5 sm:gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none shadow-2xs active:scale-95",
                     supabaseConnected === true 
                       ? "bg-[#06D6A0]/10 border-[#06D6A0]/35 text-[#047857] hover:bg-[#06D6A0]/20" 
                       : supabaseConnected === false 
@@ -1231,7 +1233,7 @@ function AppContent() {
                     <span className="hidden md:inline font-bold tracking-tight text-[11px]">
                       Supabase
                     </span>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                    <span className="hidden sm:inline text-[10px] font-extrabold uppercase tracking-wider">
                       {supabaseChecking 
                         ? "Checking..." 
                         : supabaseConnected === true 
@@ -1254,7 +1256,7 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-[#1B9AAA]/40 text-slate-700 hover:text-[#1B9AAA] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-[#1B9AAA]/40 text-slate-700 hover:text-[#1B9AAA] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 title="Synchronize with Cloud Database (Fetch Latest Updates)"
               >
                 <RefreshCcw className={cn("w-3.5 h-3.5 text-slate-500 transition-transform", isSyncing && "animate-spin text-[#1B9AAA]")} />
@@ -1300,7 +1302,7 @@ function AppContent() {
         {/* View Container */}
         <div className={cn(
           "flex-1 relative print:p-0 print:overflow-visible print:h-auto print:block",
-          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8"
+          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 lg:pb-8"
         )}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -1380,6 +1382,13 @@ function AppContent() {
         </div>
       </main>
 
+      {/* Floating Bottom Navigation Bar (matches template mobile design) */}
+      <MobileBottomNav
+        activeView={activeView}
+        onNavigate={(view) => setActiveView(view)}
+        onOpenQuickReminder={() => setActiveView('timetable')}
+      />
+
       {/* Security & Role Privileges Modal */}
       <SecurityProfileModal 
         isOpen={isSecurityModalOpen} 
@@ -1397,6 +1406,7 @@ export default function App() {
     <NotificationProvider>
       <AuthProvider>
         <AppContent />
+        <CookieConsentBanner />
       </AuthProvider>
     </NotificationProvider>
   );

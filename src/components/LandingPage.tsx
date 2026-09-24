@@ -37,6 +37,10 @@ import {
 import { cn } from '../lib/utils';
 import { PWAInstallButton } from './PWAInstallButton';
 import { OfflineIndicator } from './OfflineIndicator';
+import { PrivacyPolicyModal } from './legal/PrivacyPolicyModal';
+import { TermsOfServiceModal } from './legal/TermsOfServiceModal';
+import { SiteMapModal } from './legal/SiteMapModal';
+import { openCookiePreferences } from './legal/CookieConsentBanner';
 
 interface LandingPageProps {
   onEnterSchoolPortal: () => void;
@@ -57,6 +61,11 @@ export default function LandingPage({
   onOpenVideoTour,
   isLicensed
 }: LandingPageProps) {
+  // Legal & Site Map Modals
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showSiteMapModal, setShowSiteMapModal] = useState(false);
+
   // Active demo sandbox tab
   const [activeTab, setActiveTab] = useState<'class_creator' | 'terminal' | 'fees' | 'attendance'>('class_creator');
 
@@ -1060,8 +1069,41 @@ export default function LandingPage({
                 <li><a href="#class-creator" className="hover:text-white transition-colors">Class Placement Engine</a></li>
                 <li><a href="#terminals" className="hover:text-white transition-colors">Continuous Assessment</a></li>
                 <li><a href="#billing" className="hover:text-white transition-colors">MoMo Fee Collection</a></li>
+                <li><button onClick={() => setShowSiteMapModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">Interactive Site Map</button></li>
                 <li><button onClick={onOpenAbout} className="hover:text-white transition-colors cursor-pointer text-left">About System</button></li>
                 <li><button onClick={onOpenContact} className="hover:text-white transition-colors cursor-pointer text-left">Support & Contacts</button></li>
+              </ul>
+            </div>
+
+            {/* Legal & Governance */}
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Compliance & Legal</h4>
+              <ul className="space-y-2 text-[11px]">
+                <li>
+                  <button onClick={() => setShowPrivacyModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">
+                    Privacy Policy (Act 843)
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => setShowTermsModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">
+                    Terms of Service
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => openCookiePreferences()} className="hover:text-white transition-colors cursor-pointer text-left">
+                    Cookie & Storage Preferences
+                  </button>
+                </li>
+                <li>
+                  <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
+                    Sitemap XML (<span className="font-mono text-[10px]">sitemap.xml</span>)
+                  </a>
+                </li>
+                <li>
+                  <a href="/robots.txt" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
+                    Robots Directives (<span className="font-mono text-[10px]">robots.txt</span>)
+                  </a>
+                </li>
               </ul>
             </div>
 
@@ -1093,17 +1135,32 @@ export default function LandingPage({
 
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
             <p>© {new Date().getFullYear()} SchoolSphere 3.1 & Akoko Solutions. All rights reserved.</p>
-            <div className="flex items-center gap-4">
-              <button onClick={onOpenAbout} className="hover:text-slate-300 transition-colors cursor-pointer">Security Policy</button>
+            <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+              <button onClick={() => setShowPrivacyModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Privacy Policy</button>
               <span>•</span>
-              <button onClick={onOpenContact} className="hover:text-slate-300 transition-colors cursor-pointer">Terms of Service</button>
+              <button onClick={() => setShowTermsModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Terms of Service</button>
               <span>•</span>
-              <span className="text-emerald-500">v3.1.0-Supabase-R1</span>
+              <button onClick={() => openCookiePreferences()} className="hover:text-slate-300 transition-colors cursor-pointer">Cookie Settings</button>
+              <span>•</span>
+              <button onClick={() => setShowSiteMapModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Site Map</button>
+              <span>•</span>
+              <span className="text-[#06D6A0] font-mono">v3.1.0-Supabase-R1</span>
             </div>
           </div>
 
         </div>
       </footer>
+
+      {/* Legal & Site Map Modals */}
+      <PrivacyPolicyModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} />
+      <TermsOfServiceModal isOpen={showTermsModal} onClose={() => setShowTermsModal(false)} />
+      <SiteMapModal
+        isOpen={showSiteMapModal}
+        onClose={() => setShowSiteMapModal(false)}
+        onOpenPrivacy={() => setShowPrivacyModal(true)}
+        onOpenTerms={() => setShowTermsModal(true)}
+        onOpenCookies={() => openCookiePreferences()}
+      />
 
       {/* Connectivity & Offline Status Indicator */}
       <OfflineIndicator />

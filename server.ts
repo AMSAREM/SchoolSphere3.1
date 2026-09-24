@@ -1215,6 +1215,35 @@ async function startServer() {
     }
   });
 
+  // SEO & Crawler Endpoints
+  app.get("/robots.txt", (req, res) => {
+    const robotsPath = path.join(process.cwd(), 'public', 'robots.txt');
+    if (fs.existsSync(robotsPath)) {
+      res.setHeader('Content-Type', 'text/plain');
+      return res.sendFile(robotsPath);
+    }
+    res.setHeader('Content-Type', 'text/plain');
+    res.send("User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /creator\nSitemap: https://schoolsphere.app/sitemap.xml\n");
+  });
+
+  app.get("/sitemap.xml", (req, res) => {
+    const sitemapPath = path.join(process.cwd(), 'public', 'sitemap.xml');
+    if (fs.existsSync(sitemapPath)) {
+      res.setHeader('Content-Type', 'application/xml');
+      return res.sendFile(sitemapPath);
+    }
+    res.setHeader('Content-Type', 'application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://schoolsphere.app/</loc><priority>1.0</priority></url>
+  <url><loc>https://schoolsphere.app/login</loc><priority>0.8</priority></url>
+  <url><loc>https://schoolsphere.app/portal</loc><priority>0.8</priority></url>
+  <url><loc>https://schoolsphere.app/sitemap</loc><priority>0.5</priority></url>
+  <url><loc>https://schoolsphere.app/privacy</loc><priority>0.5</priority></url>
+  <url><loc>https://schoolsphere.app/terms</loc><priority>0.5</priority></url>
+</urlset>`);
+  });
+
   // ----------------------------------------------------
   // LICENSE VERIFICATION & SINGLE SOURCE OF TRUTH (SUPABASE)
   // ----------------------------------------------------
@@ -2489,6 +2518,17 @@ async function startServer() {
         searchSlugOrDomain = parts[1] ? parts[1].replace(/\.(com|org|net|edu|gh|xyz|io|app).*$/, '') : parts[0];
       }
 
+      const sanitizePublicSchool = (sch: any) => {
+        if (!sch) return null;
+        return {
+          id: sch.id,
+          name: sch.name || sch.schoolName,
+          slug: sch.slug,
+          logo_url: sch.logo_url || sch.logo || null,
+          theme: sch.theme || 'indigo'
+        };
+      };
+
       // 2. Check if username or email matches a registered user in users table
       try {
         const { data: userMatch } = await adminClient
@@ -2498,11 +2538,11 @@ async function startServer() {
           .maybeSingle();
 
         if (userMatch?.schools) {
-          return res.json({ success: true, school: userMatch.schools });
+          return res.json({ success: true, school: sanitizePublicSchool(userMatch.schools) });
         } else if (userMatch?.school_id) {
           const { data: sch } = await adminClient.from('schools').select('*').eq('id', userMatch.school_id).maybeSingle();
           if (sch) {
-            return res.json({ success: true, school: sch });
+            return res.json({ success: true, school: sanitizePublicSchool(sch) });
           }
         }
       } catch (uErr: any) {}
@@ -2516,11 +2556,11 @@ async function startServer() {
           .maybeSingle();
 
         if (teacherMatch?.schools) {
-          return res.json({ success: true, school: teacherMatch.schools });
+          return res.json({ success: true, school: sanitizePublicSchool(teacherMatch.schools) });
         } else if (teacherMatch?.school_id) {
           const { data: sch } = await adminClient.from('schools').select('*').eq('id', teacherMatch.school_id).maybeSingle();
           if (sch) {
-            return res.json({ success: true, school: sch });
+            return res.json({ success: true, school: sanitizePublicSchool(sch) });
           }
         }
       } catch (tErr: any) {}
@@ -2534,7 +2574,7 @@ async function startServer() {
           .maybeSingle();
 
         if (schoolMatch) {
-          return res.json({ success: true, school: schoolMatch });
+          return res.json({ success: true, school: sanitizePublicSchool(schoolMatch) });
         }
       } catch (sErr: any) {}
 

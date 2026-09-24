@@ -351,7 +351,8 @@ export default function Settings() {
   const fetchDbStatus = async () => {
     try {
       const res = await fetch('/api/db/status');
-      if (res.ok) {
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
         const data = await res.json();
         setDbStatus(data);
       }
@@ -990,57 +991,57 @@ export default function Settings() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
-        {/* Sidebar Nav */}
-        <div className="w-full md:w-64 bg-slate-50 border-r border-slate-200 p-2 space-y-1">
+        {/* Sidebar Nav / Mobile Tab Bar */}
+        <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 flex md:flex-col overflow-x-auto gap-1 md:space-y-1 no-scrollbar shrink-0">
           <button 
             onClick={() => setActiveTab('profile')}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left",
+              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
               activeTab === 'profile' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
             )}
           >
-            <Building2 className="w-4 h-4" />
-            <span className="text-sm">School Profile</span>
+            <Building2 className="w-4 h-4 shrink-0" />
+            <span className="text-xs sm:text-sm">School Profile</span>
           </button>
           <button 
             onClick={() => setActiveTab('academic')}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left",
+              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
               activeTab === 'academic' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
             )}
           >
-            <Calendar className="w-4 h-4" />
-            <span className="text-sm">Academic Config</span>
+            <Calendar className="w-4 h-4 shrink-0" />
+            <span className="text-xs sm:text-sm">Academic Config</span>
           </button>
           <button 
             onClick={() => setActiveTab('database')}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left",
+              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
               activeTab === 'database' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
             )}
           >
-            <Database className="w-4 h-4" />
-            <span className="text-sm">Data & Backup</span>
+            <Database className="w-4 h-4 shrink-0" />
+            <span className="text-xs sm:text-sm">Data & Backup</span>
           </button>
           <button 
             onClick={() => setActiveTab('fees')}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left",
+              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
               activeTab === 'fees' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
             )}
           >
-            <CreditCard className="w-4 h-4" />
-            <span className="text-sm">Fees Configuration</span>
+            <CreditCard className="w-4 h-4 shrink-0" />
+            <span className="text-xs sm:text-sm">Fees Configuration</span>
           </button>
           <button 
             onClick={() => setActiveTab('theme')}
             className={cn(
-              "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-left",
+              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
               activeTab === 'theme' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
             )}
           >
-            <Palette className="w-4 h-4" />
-            <span className="text-sm">Branding & Themes</span>
+            <Palette className="w-4 h-4 shrink-0" />
+            <span className="text-xs sm:text-sm">Branding & Themes</span>
           </button>
         </div>
 

@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { triggerPrint } from '../lib/utils';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
+import { ProductivePlannerTemplate } from './ProductivePlannerTemplate';
 
 // Standard timetable slot structure
 interface TimetableSlot {
@@ -44,8 +45,8 @@ export default function TimetableManagement() {
   const { user } = useAuth();
   const { showToast, confirm } = useNotifications();
   
-  // Tab states: View Timetable, Edit Slots, Conflict Diagnostics, Period Suggestions
-  const [activeTab, setActiveTab] = useState<'view' | 'class_view' | 'manage' | 'diagnose' | 'suggestions'>('view');
+  // Tab states: View Timetable, Edit Slots, Conflict Diagnostics, Period Suggestions, Daily Timeline
+  const [activeTab, setActiveTab] = useState<'view' | 'class_view' | 'manage' | 'diagnose' | 'suggestions' | 'timeline'>('timeline');
   
   // Selected filter states
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('All');
@@ -616,6 +617,17 @@ export default function TimetableManagement() {
       <div className="flex border-b border-slate-250 items-center justify-between overflow-x-auto print:hidden">
         <div className="flex gap-4">
           <button
+            onClick={() => setActiveTab('timeline')}
+            className={`pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'timeline' 
+                ? 'border-[#163840] text-[#163840]' 
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-[#F6A854]" />
+            Timeline & Daily Plan
+          </button>
+          <button
             onClick={() => setActiveTab('view')}
             className={`pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'view' 
@@ -698,6 +710,13 @@ export default function TimetableManagement() {
           Print Timetable
         </button>
       </div>
+
+      {/* Interactive Daily Timeline & Productivity Planner (Template Mode) */}
+      {activeTab === 'timeline' && (
+        <div className="my-4 print:hidden">
+          <ProductivePlannerTemplate />
+        </div>
+      )}
 
       {/* Grid view layout Filter Row */}
       {activeTab === 'view' && (

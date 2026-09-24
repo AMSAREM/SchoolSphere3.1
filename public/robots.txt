@@ -1,0 +1,19 @@
+# SchoolSphere 3.1 Robots Configuration
+# https://schoolsphere.app
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /portal
+Allow: /sitemap.xml
+Allow: /privacy
+Allow: /terms
+
+# Disallow internal administrative and private endpoints
+Disallow: /api/
+Disallow: /creator
+Disallow: /admin/
+Disallow: /*?token=*
+Disallow: /*?invite=*
+
+# XML Sitemap
+Sitemap: https://schoolsphere.app/sitemap.xml

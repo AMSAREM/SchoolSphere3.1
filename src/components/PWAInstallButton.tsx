@@ -42,14 +42,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           variant === 'landing' &&
             "px-3.5 py-2 text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98]",
           variant === 'header' &&
-            "px-2.5 sm:px-3 py-1.5 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-2xs",
+            "p-1.5 sm:px-3 sm:py-1.5 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-2xs",
           variant === 'banner' &&
             "px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md",
           className
         )}
       >
         <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-        <span>{isIOS ? 'Install App (iOS)' : 'Install App'}</span>
+        <span className={cn(variant === 'header' && "hidden sm:inline")}>{isIOS ? 'Install App (iOS)' : 'Install App'}</span>
       </button>
 
       {/* iOS Safari Installation Guide Modal */}
