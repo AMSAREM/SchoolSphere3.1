@@ -2159,18 +2159,45 @@ async function startServer() {
         // 2. Direct match fallback for legacy pre-migration hashes
         if (trimmedStored === trimmedCand) return true;
 
-        // 3. Demo pass fallback for seeded accounts
-        if (isStandardMasterPass) {
-          try {
-            const matchAdmin = await bcrypt.compare('admin123', trimmedStored);
-            if (matchAdmin) return true;
-            const matchJuly = await bcrypt.compare('july94bab', trimmedStored);
-            if (matchJuly) return true;
-          } catch (e) {}
-        }
-
         return false;
       };
+
+      // 1. Authoritative Server-Side Creator Verification
+      const configuredCreatorUser = (process.env.CREATOR_USERNAME || 'creator').trim().toLowerCase();
+      const configuredCreatorEmail = (process.env.CREATOR_EMAIL || 'creator@schoolsphere.app').trim().toLowerCase();
+      const serverCreatorPassword = process.env.CREATOR_PASSWORD;
+
+      const isCreatorLogin = (
+        userClean === configuredCreatorUser || 
+        userClean === configuredCreatorEmail || 
+        userClean === 'super_admin' || 
+        userClean === 'creator'
+      );
+
+      if (isCreatorLogin && serverCreatorPassword && password === serverCreatorPassword) {
+        const creatorUser = {
+          id: '00000000-0000-0000-0000-000000000000',
+          username: configuredCreatorUser,
+          fullName: 'Platform Creator',
+          email: configuredCreatorEmail,
+          phone: '',
+          role: 'creator',
+          status: 'active',
+          schoolId: null,
+          school_id: null,
+          schoolName: 'Platform Global Scope',
+          createdAt: Date.now(),
+          lastLogin: Date.now()
+        };
+
+        const token = generateAuthToken(creatorUser);
+        return res.json({
+          success: true,
+          token,
+          user: creatorUser,
+          school: defaultSchoolObj
+        });
+      }
 
       // 2. Query Supabase users table across ALL schools (do NOT filter out users by school_id immediately!)
       try {
@@ -2361,8 +2388,6 @@ async function startServer() {
 
       // 5. Demo & Standard Institutional Role Accounts
       const DEMO_USERS: Record<string, { role: string, fullName: string, email: string }> = {
-        'super_admin': { role: 'super_admin', fullName: 'Super Administrator', email: 'creator@schoolsphere.xyz' },
-        'creator': { role: 'creator', fullName: 'Platform Creator', email: 'creator@schoolsphere.xyz' },
         'school_admin': { role: 'admin', fullName: 'School Administrator', email: 'admin@schoolsphere.xyz' },
         'admin': { role: 'admin', fullName: 'Head Administrator', email: 'headadmin@schoolsphere.xyz' },
         'headmaster': { role: 'admin', fullName: 'Headmaster', email: 'headmaster@schoolsphere.xyz' },
@@ -3450,40 +3475,40 @@ async function startServer() {
         }
       }
 
-      // Ensure default users are populated in Supabase
-      const defaultSchoolId = schools?.[0]?.id || null;
-      const defaultHash = await bcrypt.hash('admin123', 10);
-      const teacherHash = await bcrypt.hash('teacher123', 10);
-      const studentHash = await bcrypt.hash('student123', 10);
+      // Server-side Creator Account Synchronization
+      const creatorPassword = process.env.CREATOR_PASSWORD;
+      const creatorUsername = (process.env.CREATOR_USERNAME || 'creator').trim().toLowerCase();
+      const creatorEmail = process.env.CREATOR_EMAIL || 'creator@schoolsphere.app';
 
-      const SEED_USERS = [
-        { username: 'creator', full_name: 'Platform Creator', email: 'creator@schoolsphere.xyz', role: 'creator', status: 'active', password_hash: defaultHash },
-        { username: 'creator_admin', full_name: 'Akoko Solutions Creator', email: 'creator_admin@schoolsphere.xyz', role: 'creator', status: 'active', password_hash: defaultHash },
-        { username: 'school_admin', full_name: 'School Administrator', email: 'admin@schoolsphere.xyz', role: 'admin', status: 'active', password_hash: defaultHash },
-        { username: 'admin', full_name: 'Head Administrator', email: 'headadmin@schoolsphere.xyz', role: 'admin', status: 'active', password_hash: defaultHash },
-        { username: 'ebenezer', full_name: 'Ebenezer Mensah', email: 'ebenezer@schoolsphere.xyz', role: 'teacher', status: 'active', password_hash: teacherHash },
-        { username: 'alice', full_name: 'Alice Quarshie', email: 'alice@schoolsphere.xyz', role: 'accountant', status: 'active', password_hash: defaultHash },
-        { username: 'kofi', full_name: 'Kofi Manu', email: 'kofi@schoolsphere.xyz', role: 'student', status: 'active', password_hash: studentHash },
-        { username: 'ama', full_name: 'Ama Serwaa', email: 'ama@schoolsphere.xyz', role: 'parent', status: 'active', password_hash: defaultHash }
-      ];
-
-      for (const u of SEED_USERS) {
+      if (creatorPassword) {
         try {
-          const { data: existing } = await adminClient.from('users').select('id, school_id').eq('username', u.username).maybeSingle();
-          if (existing) {
-            if (!existing.school_id && defaultSchoolId) {
-              await adminClient.from('users').update({ school_id: defaultSchoolId, updated_at: Date.now() }).eq('id', existing.id);
-            }
+          const creatorSalt = await bcrypt.genSalt(12);
+          const creatorHash = await bcrypt.hash(creatorPassword, creatorSalt);
+          const { data: existingCreator } = await adminClient.from('users').select('id').eq('username', creatorUsername).maybeSingle();
+          if (existingCreator) {
+            await adminClient.from('users').update({
+              password_hash: creatorHash,
+              role: 'creator',
+              status: 'active',
+              updated_at: Date.now()
+            }).eq('id', existingCreator.id);
+            console.log(`[Security] Server-side Creator account synchronized for @${creatorUsername}`);
           } else {
             await adminClient.from('users').insert([{
-              ...u,
-              school_id: defaultSchoolId,
+              username: creatorUsername,
+              full_name: 'Platform Creator',
+              email: creatorEmail,
+              password_hash: creatorHash,
+              role: 'creator',
+              status: 'active',
+              school_id: null,
               created_at: Date.now(),
               updated_at: Date.now()
             }]);
+            console.log(`[Security] Server-side Creator account initialized for @${creatorUsername}`);
           }
-        } catch (uErr: any) {
-          console.warn(`Notice seeding user ${u.username}:`, uErr.message);
+        } catch (cErr: any) {
+          console.warn("[Security] Notice bootstrapping creator account in Supabase:", cErr.message);
         }
       }
     } catch (e: any) {

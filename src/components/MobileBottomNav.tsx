@@ -35,21 +35,21 @@ export function MobileBottomNav({
     <>
       {/* Floating Bottom Bar Container - visible on mobile and tablet (hidden on desktop or print) */}
       <div className="fixed bottom-3 inset-x-0 z-40 px-2 sm:px-4 flex justify-center pointer-events-none print:hidden lg:hidden">
-        <div className="bg-white/95 backdrop-blur-md rounded-full shadow-2xl border border-slate-200/90 py-2 px-3 sm:px-5 flex items-center justify-around sm:justify-between gap-2 sm:gap-6 pointer-events-auto max-w-md w-full relative">
+        <div className="bg-white rounded-full shadow-lg border border-[#bac4c6] py-2 px-3 sm:px-5 flex items-center justify-around sm:justify-between gap-2 sm:gap-6 pointer-events-auto max-w-md w-full relative">
           
           {/* Tab 1: Dashboard */}
           <button
             type="button"
             onClick={() => onNavigate('dashboard')}
             className={cn(
-              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative",
-              activeView === 'dashboard' ? "text-[#163840]" : "text-slate-400 hover:text-slate-700"
+              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative min-h-[44px] min-w-[44px]",
+              activeView === 'dashboard' ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
             )}
             title="Productivity Dashboard"
           >
             <LayoutGrid className="w-5 h-5" />
             {activeView === 'dashboard' && (
-              <span className="w-1.5 h-1.5 bg-[#F6A854] rounded-full absolute -bottom-0.5" />
+              <span className="w-1.5 h-1.5 bg-[#faae57] rounded-full absolute bottom-0.5" />
             )}
           </button>
 
@@ -58,14 +58,14 @@ export function MobileBottomNav({
             type="button"
             onClick={() => onNavigate('timetable')}
             className={cn(
-              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative",
-              activeView === 'timetable' ? "text-[#163840]" : "text-slate-400 hover:text-slate-700"
+              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative min-h-[44px] min-w-[44px]",
+              activeView === 'timetable' ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
             )}
             title="Schedule & Calendar"
           >
             <CalendarIcon className="w-5 h-5" />
             {activeView === 'timetable' && (
-              <span className="w-1.5 h-1.5 bg-[#F6A854] rounded-full absolute -bottom-0.5" />
+              <span className="w-1.5 h-1.5 bg-[#faae57] rounded-full absolute bottom-0.5" />
             )}
           </button>
 
@@ -75,8 +75,8 @@ export function MobileBottomNav({
               type="button"
               onClick={() => setShowQuickMenu(prev => !prev)}
               className={cn(
-                "w-12 h-12 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 flex items-center justify-center shadow-xl border-4 border-white transition-all transform active:scale-90 cursor-pointer",
-                showQuickMenu && "rotate-45 bg-slate-900 text-white"
+                "w-12 h-12 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] flex items-center justify-center shadow-lg border-4 border-white transition-all transform active:scale-95 cursor-pointer min-h-[48px] min-w-[48px]",
+                showQuickMenu && "rotate-45 bg-[#1c4a59] text-white"
               )}
               title="Quick Actions"
             >
@@ -89,14 +89,14 @@ export function MobileBottomNav({
             type="button"
             onClick={() => onNavigate('results')}
             className={cn(
-              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative",
-              activeView === 'results' || activeView === 'exam_analysis' ? "text-[#163840]" : "text-slate-400 hover:text-slate-700"
+              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative min-h-[44px] min-w-[44px]",
+              activeView === 'results' || activeView === 'exam_analysis' ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
             )}
             title="Academic Results"
           >
             <BarChart3 className="w-5 h-5" />
             {(activeView === 'results' || activeView === 'exam_analysis') && (
-              <span className="w-1.5 h-1.5 bg-[#F6A854] rounded-full absolute -bottom-0.5" />
+              <span className="w-1.5 h-1.5 bg-[#faae57] rounded-full absolute bottom-0.5" />
             )}
           </button>
 
@@ -105,14 +105,14 @@ export function MobileBottomNav({
             type="button"
             onClick={() => onNavigate('settings')}
             className={cn(
-              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative",
-              activeView === 'settings' ? "text-[#163840]" : "text-slate-400 hover:text-slate-700"
+              "flex flex-col items-center justify-center transition-all p-1.5 rounded-xl cursor-pointer relative min-h-[44px] min-w-[44px]",
+              activeView === 'settings' ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
             )}
             title="Profile & Settings"
           >
             <User className="w-5 h-5" />
             {activeView === 'settings' && (
-              <span className="w-1.5 h-1.5 bg-[#F6A854] rounded-full absolute -bottom-0.5" />
+              <span className="w-1.5 h-1.5 bg-[#faae57] rounded-full absolute bottom-0.5" />
             )}
           </button>
 
@@ -122,21 +122,21 @@ export function MobileBottomNav({
       {/* Quick Action Drawer / Menu */}
       <AnimatePresence>
         {showQuickMenu && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-slate-950/50 backdrop-blur-xs pb-20">
+          <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-slate-900/40 pb-20">
             <motion.div
               initial={{ opacity: 0, y: 30, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 30, scale: 0.95 }}
-              className="bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl max-w-sm w-full space-y-3 relative"
+              className="bg-white rounded-3xl p-5 border border-[#bac4c6] shadow-xl max-w-sm w-full space-y-3 relative"
             >
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-500">
+              <div className="flex items-center justify-between pb-2 border-b border-[#bac4c6]">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#6a7f84]">
                   Quick Actions
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowQuickMenu(false)}
-                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors"
+                  className="p-1.5 rounded-full hover:bg-[#f6f8f7] text-[#6a7f84] transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -150,14 +150,14 @@ export function MobileBottomNav({
                     setShowQuickMenu(false);
                     onNavigate('attendance');
                   }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200/60 text-emerald-900 transition-all text-left"
+                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#06d6a0]/10 hover:bg-[#06d6a0]/20 border border-[#06d6a0]/30 text-[#1f2a2e] transition-all text-left min-h-[44px]"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#06d6a0] text-white flex items-center justify-center shrink-0">
                     <CheckSquare className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="text-xs font-bold leading-tight">Take Attendance</h5>
-                    <span className="text-[10px] text-emerald-600">Daily roll</span>
+                    <span className="text-[10px] text-[#059669]">Daily roll</span>
                   </div>
                 </button>
 
@@ -172,14 +172,14 @@ export function MobileBottomNav({
                       onNavigate('timetable');
                     }
                   }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-amber-50 hover:bg-amber-100/70 border border-amber-200/60 text-amber-900 transition-all text-left"
+                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#e1c594]/30 hover:bg-[#e1c594]/50 border border-[#e4ae67]/40 text-[#1f2a2e] transition-all text-left min-h-[44px]"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-[#F6A854] text-slate-950 flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#faae57] text-[#1f2a2e] flex items-center justify-center shrink-0 font-bold">
                     <Clock className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="text-xs font-bold leading-tight">Set Reminder</h5>
-                    <span className="text-[10px] text-amber-700">Add to day</span>
+                    <span className="text-[10px] text-[#807654]">Add to day</span>
                   </div>
                 </button>
 
@@ -191,14 +191,14 @@ export function MobileBottomNav({
                       setShowQuickMenu(false);
                       onNavigate('fees');
                     }}
-                    className="flex items-center gap-2.5 p-3 rounded-2xl bg-teal-50 hover:bg-teal-100/70 border border-teal-200/60 text-teal-900 transition-all text-left"
+                    className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#1c4a59]/10 hover:bg-[#1c4a59]/20 border border-[#1c4a59]/30 text-[#1f2a2e] transition-all text-left min-h-[44px]"
                   >
-                    <div className="w-8 h-8 rounded-xl bg-[#163840] text-white flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center shrink-0">
                       <Wallet className="w-4 h-4" />
                     </div>
                     <div>
                       <h5 className="text-xs font-bold leading-tight">Record Fees</h5>
-                      <span className="text-[10px] text-teal-600">MoMo / Cash</span>
+                      <span className="text-[10px] text-[#1c4a59]">MoMo / Cash</span>
                     </div>
                   </button>
                 )}
@@ -210,14 +210,14 @@ export function MobileBottomNav({
                     setShowQuickMenu(false);
                     onNavigate('results');
                   }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100/70 border border-indigo-200/60 text-indigo-900 transition-all text-left"
+                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#f6f8f7] hover:bg-white border border-[#bac4c6] text-[#1f2a2e] transition-all text-left min-h-[44px]"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center shrink-0">
                     <Award className="w-4 h-4" />
                   </div>
                   <div>
                     <h5 className="text-xs font-bold leading-tight">Enter Scores</h5>
-                    <span className="text-[10px] text-indigo-600">Term assess</span>
+                    <span className="text-[10px] text-[#6a7f84]">Term assess</span>
                   </div>
                 </button>
               </div>

@@ -340,27 +340,8 @@ export function AuthScreens({
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">
+    <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">
       <DoodleBackground opacity={0.06} />
-      
-      {/* Top Bar Navigation */}
-      <div className="w-full max-w-md mx-auto flex items-center justify-between pt-2 pb-4">
-        {onBackToGetStarted ? (
-          <button
-            type="button"
-            onClick={onBackToGetStarted}
-            className="inline-flex items-center gap-2 px-3 py-2 bg-white text-[#1c4a59] hover:text-[#1f2a2e] rounded-xl text-xs font-bold border border-[#bac4c6] shadow-xs active:scale-[0.97] transition-all min-h-[44px]"
-          >
-            <ArrowLeft className="w-4 h-4 text-[#1c4a59]" />
-            <span>Command Gate</span>
-          </button>
-        ) : <div />}
-
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold text-[#1c4a59] shadow-xs">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#06d6a0]" />
-          <span>Institutional Portal</span>
-        </div>
-      </div>
 
       {/* Main Centered Auth Form Container */}
       <div className="w-full max-w-md mx-auto my-auto">

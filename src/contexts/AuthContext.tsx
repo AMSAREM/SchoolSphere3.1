@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { db, User, School } from '../db/schema';
 import { supabase } from '../lib/supabase/client';
 import { syncTenantAcademicData } from '../lib/api';
-import bcrypt from 'bcryptjs';
 import { AppPermission, UserRole, hasPermission as checkPermission, canAccessModule as checkModuleAccess, getRoleInfo } from '../lib/permissions';
 import { recordUserLogin, mapAuthErrorMessage } from '../lib/authTelemetry';
 import { normalizeEmail } from '../lib/emailValidation';
@@ -273,7 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanUser = username.trim().toLowerCase();
 
     // 1. Authoritative query against backend /api/auth/login
-    // This executes password hashing, issues signed JWT token, resolves school tenant, and auto-provisions Supabase users
+    // All credential hashing, validation, role scoping and JWT issuance is handled strictly on the server
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -287,8 +286,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const verifiedUser: User = {
             id: data.user.id,
             username: data.user.username || cleanUser,
-            passwordHash: data.user.passwordHash || '',
-            password_hash: data.user.passwordHash || '',
+            passwordHash: '',
+            password_hash: '',
             fullName: data.user.fullName || data.user.full_name || username,
             full_name: data.user.fullName || data.user.full_name || username,
             email: data.user.email,
@@ -306,7 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('esepa_auth_token', data.token);
           }
 
-          // Cache verified user locally in Dexie
+          // Cache verified user locally in Dexie (without any credentials)
           try {
             const allDbUsers = await db.users.toArray();
             const existing = allDbUsers.find(u => u.username?.trim().toLowerCase() === cleanUser);
@@ -333,151 +332,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { success: false, error: data.error };
         }
       }
+      return { success: false, error: "Invalid username or password" };
     } catch (apiErr: any) {
-      console.warn("Backend Supabase auth error, testing direct database query:", apiErr);
+      console.warn("Backend auth error:", apiErr);
+      return { success: false, error: "Unable to reach the authentication service. Please check your network connection." };
     }
-
-    // 2. Direct verification against Supabase database users table
-    try {
-      let query = supabase
-        .from('users')
-        .select('*, schools(*)');
-
-      query = query.or(`username.ilike.${cleanUser},email.ilike.${cleanUser}`);
-
-      const { data: dbUsers, error: dbErr } = await query;
-      const dbUser = Array.isArray(dbUsers) && dbUsers.length > 0 ? (
-        schoolId ? (dbUsers.find(u => u.school_id === schoolId) || dbUsers[0]) : dbUsers[0]
-      ) : null;
-
-      if (!dbErr && dbUser) {
-        // A. Check Active Status
-        const userStatus = (dbUser.status || 'active').toLowerCase();
-        if (userStatus === 'inactive' || userStatus === 'suspended' || userStatus === 'disabled') {
-          return {
-            success: false,
-            error: "Your account is currently inactive or suspended. Please contact the administrator."
-          };
-        }
-
-        // B. Check Password Hash with bcrypt or plain text
-        let isPasswordValid = false;
-        const storedPass = dbUser.password_hash || dbUser.passwordHash;
-        if (storedPass) {
-          try {
-            isPasswordValid = await bcrypt.compare(password, storedPass);
-          } catch (e) {
-            isPasswordValid = (password === storedPass);
-          }
-        }
-
-        if (isPasswordValid) {
-          // C. Check School / Tenant Status
-          if (dbUser.schools && (dbUser.schools.status === 'suspended' || dbUser.schools.status === 'expired')) {
-            return {
-              success: false,
-              error: `Institutional access for ${dbUser.schools.name || 'this school'} is currently ${dbUser.schools.status}. Please contact support.`
-            };
-          }
-
-          // D. Update last_login timestamp and updated_at in Supabase users table
-          try {
-            await supabase
-              .from('users')
-              .update({ last_login: Date.now(), updated_at: Date.now() })
-              .eq('id', dbUser.id);
-          } catch (upErr) {
-            console.warn("Notice updating user last_login in Supabase:", upErr);
-          }
-
-          // E. Hydrate verified user object
-          const verifiedUser: User = {
-            id: dbUser.id,
-            username: dbUser.username || cleanUser,
-            passwordHash: dbUser.password_hash || '',
-            password_hash: dbUser.password_hash || '',
-            fullName: dbUser.full_name || dbUser.fullName || username,
-            full_name: dbUser.full_name || dbUser.fullName || username,
-            email: dbUser.email,
-            phone: dbUser.phone,
-            role: dbUser.role || 'admin',
-            status: dbUser.status || 'active',
-            schoolId: dbUser.school_id,
-            school_id: dbUser.school_id,
-            createdAt: dbUser.created_at || Date.now(),
-            lastLogin: Date.now()
-          };
-
-          // Cache in local Dexie database
-          try {
-            const allDbUsers = await db.users.toArray();
-            const existing = allDbUsers.find(u => u.username?.trim().toLowerCase() === cleanUser);
-            if (existing && existing.id) {
-              await db.users.update(existing.id, verifiedUser);
-              verifiedUser.id = existing.id;
-            } else {
-              const newId = await db.users.add(verifiedUser);
-              verifiedUser.id = typeof dbUser.id === 'number' ? dbUser.id : newId as number;
-            }
-          } catch (e) {
-            console.warn("Local Dexie cache notice:", e);
-          }
-
-          if (dbUser.schools) {
-            await setSchoolContext(dbUser.schools);
-          } else if (dbUser.school_id) {
-            const { data: sch } = await supabase.from('schools').select('*').eq('id', dbUser.school_id).maybeSingle();
-            if (sch) {
-              await setSchoolContext(sch);
-            }
-          }
-
-          setUser(verifiedUser);
-          localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
-          return { success: true, user: verifiedUser, school: dbUser.schools };
-        } else {
-          return { success: false, error: "Invalid username or password" };
-        }
-      }
-    } catch (directQueryErr) {
-      console.warn("Direct Supabase query notice:", directQueryErr);
-    }
-
-    // 3. Fallback offline Dexie database check
-    try {
-      const allDbUsers = await db.users.toArray();
-      const localUser = allDbUsers.find(u => u.username?.trim().toLowerCase() === cleanUser);
-      if (localUser) {
-        const localStatus = (localUser.status || 'active').toLowerCase();
-        if (localStatus === 'inactive' || localStatus === 'suspended') {
-          return { success: false, error: "Your account is currently inactive or suspended. Please contact the administrator." };
-        }
-
-        let isPassMatch = false;
-        if (localUser.passwordHash) {
-          try {
-            isPassMatch = await bcrypt.compare(password, localUser.passwordHash);
-          } catch (e) {
-            isPassMatch = (password === localUser.passwordHash);
-          }
-        }
-
-        if (isPassMatch) {
-          const updatedUser: User = {
-            ...localUser,
-            lastLogin: Date.now()
-          };
-          if (localUser.id) {
-            await db.users.update(localUser.id, { lastLogin: Date.now() });
-          }
-          setUser(updatedUser);
-          localStorage.setItem('esepa_user', JSON.stringify(updatedUser));
-          return { success: true, user: updatedUser };
-        }
-      }
-    } catch (localErr) {}
-
-    return { success: false, error: "Invalid username or password" };
   };
 
   const signInWithPassword = async (email: string, passwordCandidate: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; school?: School }> => {
@@ -661,71 +520,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     phone?: string
   ): Promise<boolean> => {
     const cleanUser = username.trim().toLowerCase();
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
     const activeSchoolId = school?.id || '00000000-0000-0000-0000-000000000001';
 
-    const userPayload: User = {
-      username: cleanUser,
-      passwordHash,
-      password_hash: passwordHash,
-      fullName: fullName.trim() || cleanUser,
-      full_name: fullName.trim() || cleanUser,
-      email: email || `${cleanUser}@schoolsphere.xyz`,
-      phone: phone || '',
-      role,
-      status: 'active',
-      schoolId: role === 'super_admin' ? undefined : activeSchoolId,
-      school_id: role === 'super_admin' ? undefined : activeSchoolId,
-      createdAt: Date.now(),
-      lastLogin: Date.now()
-    };
-
-    // 1. Insert into Dexie
-    let savedLocalId: number | undefined;
-    try {
-      const allDbUsers = await db.users.toArray();
-      const existing = allDbUsers.find(u => u.username?.trim().toLowerCase() === cleanUser);
-
-      if (existing && existing.id) {
-        await db.users.update(existing.id, userPayload);
-        savedLocalId = existing.id;
-      } else {
-        const id = await db.users.add(userPayload);
-        savedLocalId = id as number;
-      }
-    } catch (e) {
-      console.warn("Notice saving user to Dexie:", e);
-    }
-
-    // 2. Insert/Upsert into Supabase database users table
-    try {
-      const { data: dbData, error: sbErr } = await supabase
-        .from('users')
-        .upsert([{
-          username: cleanUser,
-          full_name: userPayload.fullName,
-          password_hash: passwordHash,
-          role,
-          status: 'active',
-          email: userPayload.email,
-          phone: userPayload.phone,
-          school_id: role === 'super_admin' ? null : activeSchoolId,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-          last_login: Date.now()
-        }], { onConflict: 'username' })
-        .select()
-        .single();
-
-      if (!sbErr && dbData) {
-        userPayload.id = dbData.id;
-      }
-    } catch (sbEx) {
-      console.warn("Notice inserting user directly into Supabase:", sbEx);
-    }
-
-    // 3. Ensure server backend records the user in Supabase
     try {
       const resp = await fetch('/api/auth/register', {
         method: 'POST',
@@ -733,32 +529,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           username: cleanUser,
           password,
-          fullName: userPayload.fullName,
+          fullName: fullName.trim() || cleanUser,
           role,
-          email: userPayload.email,
-          phone: userPayload.phone,
+          email: email || `${cleanUser}@schoolsphere.xyz`,
+          phone: phone || '',
           schoolId: activeSchoolId,
           status: 'active'
         })
       });
+
       if (resp.ok) {
         const respData = await resp.json();
+        const activeUser: User = {
+          id: respData.user?.id || Date.now(),
+          username: cleanUser,
+          passwordHash: '',
+          password_hash: '',
+          fullName: fullName.trim() || cleanUser,
+          full_name: fullName.trim() || cleanUser,
+          email: email || `${cleanUser}@schoolsphere.xyz`,
+          phone: phone || '',
+          role,
+          status: 'active',
+          schoolId: role === 'super_admin' ? undefined : activeSchoolId,
+          school_id: role === 'super_admin' ? undefined : activeSchoolId,
+          createdAt: Date.now(),
+          lastLogin: Date.now()
+        };
+
         if (respData.token) {
           setToken(respData.token);
           localStorage.setItem('esepa_auth_token', respData.token);
         }
-        if (respData.user?.id) {
-          userPayload.id = respData.user.id;
-        }
+
+        setUser(activeUser);
+        localStorage.setItem('esepa_user', JSON.stringify(activeUser));
+        return true;
       }
+      return false;
     } catch (apiErr) {
       console.warn("Notice calling /api/auth/register:", apiErr);
+      return false;
     }
-
-    const activeUser = { ...userPayload, id: userPayload.id || savedLocalId || Date.now() };
-    setUser(activeUser);
-    localStorage.setItem('esepa_user', JSON.stringify(activeUser));
-    return true;
   };
 
   const switchRole = (role: User['role']) => {

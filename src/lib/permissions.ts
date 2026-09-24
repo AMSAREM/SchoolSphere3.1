@@ -115,10 +115,10 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     category: 'Platform Leadership',
     description: 'Complete unrestricted platform and multi-tenant administrative authority across all registered schools, licenses, and databases.',
     badgeColor: {
-      bg: 'bg-purple-100 dark:bg-purple-950/50',
-      text: 'text-purple-800 dark:text-purple-300',
-      border: 'border-purple-300 dark:border-purple-800',
-      iconColor: 'text-purple-600 dark:text-purple-400'
+      bg: 'bg-[#faae57]/20',
+      text: 'text-[#1f2a2e]',
+      border: 'border-[#faae57]/40',
+      iconColor: 'text-[#807654]'
     },
     permissions: [
       'dashboard:view', 'analytics:view',

@@ -370,6 +370,40 @@ describe('Security & API Endpoints Test Suite', () => {
 
       expect(nextCalled).toBe(true);
     });
+
+    it('authenticates creator using server-side CREATOR_PASSWORD environment variable', async () => {
+      process.env.CREATOR_USERNAME = 'platform_creator';
+      process.env.CREATOR_PASSWORD = 'ServerOnlyCreatorSecret2026!';
+      process.env.CREATOR_EMAIL = 'creator@schoolsphere.app';
+
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: 'platform_creator',
+          password: 'ServerOnlyCreatorSecret2026!'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.user.role).toBe('creator');
+      expect(res.body.user.username).toBe('platform_creator');
+      expect(res.body.token).toBeDefined();
+    });
+
+    it('rejects creator login when invalid password is supplied', async () => {
+      process.env.CREATOR_USERNAME = 'platform_creator';
+      process.env.CREATOR_PASSWORD = 'ServerOnlyCreatorSecret2026!';
+
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: 'platform_creator',
+          password: 'WrongPassword123'
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+    });
   });
 
   describe('Requirement 3: Multi-Tenant Isolation & RLS Enforcement', () => {

@@ -38,7 +38,6 @@ import {
   Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import bcrypt from 'bcryptjs';
 import { validateEmail, EmailValidationResult } from '../lib/emailValidation';
 import { EmailValidationFeedback } from './auth/EmailValidationFeedback';
 
@@ -185,17 +184,13 @@ export default function UserManagement() {
         return;
       }
 
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(formData.password, salt);
-
-      const newUser: User = {
+      const newUser: any = {
         username: cleanUsername,
         fullName: formData.fullName.trim() || cleanUsername,
         full_name: formData.fullName.trim() || cleanUsername,
         email: formData.email.trim() || `${cleanUsername}@schoolsphere.xyz`,
         phone: formData.phone.trim() || '',
-        passwordHash,
-        password_hash: passwordHash,
+        password: formData.password,
         role: formData.role,
         status: formData.status || 'active',
         schoolId: formData.role === 'super_admin' ? undefined : school?.id,
@@ -245,9 +240,7 @@ export default function UserManagement() {
 
     setIsLoading(true);
     try {
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(newResetPassword, salt);
-      await usersApi.update(resetPasswordUser.id, { passwordHash, password: newResetPassword });
+      await usersApi.update(resetPasswordUser.id, { password: newResetPassword });
       showToast(`Password successfully reset for @${resetPasswordUser.username}`, "success");
       setResetPasswordUser(null);
       setNewResetPassword('');

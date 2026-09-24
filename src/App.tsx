@@ -581,62 +581,6 @@ function AppContent() {
           ]);
         }
 
-        const defaultUsers = [
-          {
-            username: 'super_admin',
-            fullName: 'Super Administrator',
-            role: 'super_admin' as const,
-          },
-          {
-            username: 'school_admin',
-            fullName: 'School Admin',
-            role: 'admin' as const,
-          },
-          {
-            username: 'admin',
-            fullName: 'Head Administrator',
-            role: 'admin' as const,
-          },
-          {
-            username: 'ebenezer',
-            fullName: 'Ebenezer Mensah (Teacher)',
-            role: 'teacher' as const,
-          },
-          {
-            username: 'alice',
-            fullName: 'Alice Quarshie (Accountant)',
-            role: 'accountant' as const,
-          },
-          {
-            username: 'kofi',
-            fullName: 'Kofi Manu (Student)',
-            role: 'student' as const,
-          },
-          {
-            username: 'ama',
-            fullName: 'Ama Serwaa (Parent)',
-            role: 'parent' as const,
-          }
-        ];
-
-        const allExistingUsers = await db.users.toArray();
-        const initialAdminPassword = import.meta.env.VITE_INITIAL_ADMIN_PASSWORD;
-        if (allExistingUsers.length === 0 && initialAdminPassword && import.meta.env.DEV) {
-          const salt = await (await import('bcryptjs')).genSalt(10);
-          const passwordHash = await (await import('bcryptjs')).hash(initialAdminPassword, salt);
-
-          for (const u of defaultUsers) {
-            await db.users.add({
-              username: u.username.toLowerCase(),
-              passwordHash,
-              fullName: u.fullName,
-              role: u.role,
-              createdAt: Date.now()
-            });
-            console.log(`Initialized development portal user: ${u.username}`);
-          }
-        }
-
         // Only seed initial student if local student table is completely empty
         const studentCount = await db.students.count();
         if (studentCount === 0) {
@@ -963,12 +907,12 @@ function AppContent() {
             x: (windowWidth < 1024 && !mobileMenuOpen) ? -290 : 0
           }}
           className={cn(
-            "bg-slate-900 text-white flex flex-col z-50 fixed lg:static h-full",
+            "bg-white border-r border-[#bac4c6] text-[#1f2a2e] flex flex-col z-50 fixed lg:static h-full shadow-xs",
             windowWidth < 1024 && !mobileMenuOpen ? "pointer-events-none" : "pointer-events-auto"
           )}
         >
           <div className={cn(
-            "flex flex-col gap-4 border-b border-slate-800/40 shrink-0 transition-all duration-300 relative",
+            "flex flex-col gap-4 border-b border-[#bac4c6] shrink-0 transition-all duration-300 relative",
             (sidebarOpen || mobileMenuOpen) ? "p-6 items-center" : "p-4 items-center"
           )}>
             <div className={cn(
@@ -988,18 +932,18 @@ function AppContent() {
                     <img 
                       src="/sch sphere logo1.png" 
                       alt="School Sphere Logo" 
-                      className="w-14 h-14 rounded-full object-cover pointer-events-none mb-3 select-none filter drop-shadow-md animate-pulse-subtle sharpen-image" 
+                      className="w-14 h-14 rounded-full object-cover pointer-events-none mb-3 select-none filter drop-shadow-xs sharpen-image" 
                       referrerPolicy="no-referrer" 
                     />
-                    <span className="font-extrabold text-2xl tracking-tight leading-none text-white select-none">
-                      School<span className="text-indigo-400">Sphere</span>
+                    <span className="font-bold text-2xl tracking-tight leading-none text-[#1c4a59] select-none">
+                      School<span className="text-[#faae57]">Sphere</span>
                     </span>
-                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mt-2 select-none">
+                    <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-widest mt-2 select-none">
                       Manager Suite
                     </span>
                   </motion.div>
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700/40 flex items-center justify-center p-1 shadow-sm shadow-slate-950/20 hover:bg-slate-750 transition-colors">
+                  <div className="w-12 h-12 rounded-full bg-[#f6f8f7] border border-[#bac4c6] flex items-center justify-center p-1 shadow-xs hover:bg-white transition-colors">
                     <img 
                       src="/sch sphere logo1.png" 
                       alt="School Sphere Logo" 
@@ -1012,7 +956,7 @@ function AppContent() {
               {mobileMenuOpen && (
                 <button 
                   onClick={() => setMobileMenuOpen(false)}
-                  className="lg:hidden p-2 text-slate-400 hover:text-white transition-colors absolute top-4 right-4"
+                  className="lg:hidden p-2 text-[#6a7f84] hover:text-[#1c4a59] transition-colors absolute top-4 right-4"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1020,37 +964,35 @@ function AppContent() {
             </div>
 
             {(sidebarOpen || mobileMenuOpen) && (
-              <div className="flex items-center gap-3 bg-slate-800/30 p-2.5 rounded-xl border border-slate-800/40">
-                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center overflow-hidden shrink-0 border border-slate-700/50">
+              <div className="flex items-center gap-3 bg-[#f6f8f7] p-2.5 rounded-xl border border-[#bac4c6] w-full">
+                <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center overflow-hidden shrink-0 border border-[#bac4c6]">
                   {schoolLogo ? (
                     <img src={schoolLogo} alt={schoolName} className="w-full h-full object-contain p-0.5" />
                   ) : (
-                    <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                    <BookOpen className="w-3.5 h-3.5 text-[#1c4a59]" />
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider truncate leading-none">
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider truncate leading-none">
                     {schoolName}
                   </p>
-                  <p className="text-[9px] text-indigo-400 font-bold tracking-wide mt-1 uppercase leading-none">Active Worksite</p>
+                  <p className="text-[9px] text-[#807654] font-bold tracking-wide mt-1 uppercase leading-none">Active Worksite</p>
                 </div>
               </div>
             )}
-
-
           </div>
 
-          <nav className="flex-1 mt-6 px-3 space-y-1.5 overflow-y-auto no-scrollbar">
+          <nav className="flex-1 mt-4 px-3 space-y-1.5 overflow-y-auto no-scrollbar">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 id={`nav-${item.id}`}
                 onClick={() => handleNavClick(item.id as View)}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative",
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative min-h-[44px]",
                   activeView === item.id 
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" 
-                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    ? "bg-[#1c4a59] text-white shadow-xs font-bold" 
+                    : "text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] font-medium"
                 )}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -1064,7 +1006,7 @@ function AppContent() {
                   </motion.span>
                 )}
                 {!sidebarOpen && windowWidth >= 1024 && !mobileMenuOpen && (
-                  <div className="absolute left-16 bg-slate-800 text-white px-3 py-2 rounded-lg text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold">
+                  <div className="absolute left-16 bg-[#1c4a59] text-white px-3 py-2 rounded-lg text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold shadow-md">
                     {item.label}
                   </div>
                 )}
@@ -1072,11 +1014,11 @@ function AppContent() {
             ))}
           </nav>
 
-          <div className="p-4 border-t border-slate-800 hidden lg:block shrink-0">
+          <div className="p-4 border-t border-[#bac4c6] hidden lg:block shrink-0">
             <button 
               id="toggle-sidebar"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-slate-800 text-slate-400 transition-colors"
+              className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-[#f6f8f7] text-[#6a7f84] transition-colors min-h-[44px]"
             >
               <ChevronRight className={cn("w-5 h-5 transition-transform duration-300", sidebarOpen && "rotate-180")} />
             </button>
@@ -1131,11 +1073,11 @@ function AppContent() {
 
         {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
+          <header className="h-16 bg-white border-b border-[#bac4c6] flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
             <div className="flex items-center gap-2.5 sm:gap-4 overflow-hidden min-w-0">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 hover:text-[#1B9AAA] rounded-xl transition-all cursor-pointer"
+                className="lg:hidden p-2 text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] rounded-xl transition-all cursor-pointer min-h-[44px]"
                 title="Open Navigation"
               >
                 <Menu className="w-5 h-5" />
@@ -1167,8 +1109,8 @@ function AppContent() {
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
                   <div className="hidden lg:flex items-center gap-2">
-                    <div className="h-4 w-px bg-slate-200 mx-1" />
-                    <span className="px-2.5 py-0.5 rounded-lg bg-slate-100/90 text-slate-600 text-xs font-bold capitalize border border-slate-200/60">
+                    <div className="h-4 w-px bg-[#bac4c6] mx-1" />
+                    <span className="px-2.5 py-0.5 rounded-lg bg-[#f6f8f7] text-[#1c4a59] text-xs font-bold capitalize border border-[#bac4c6]">
                       {activeView.replace('-', ' ')}
                     </span>
                   </div>
@@ -1176,15 +1118,15 @@ function AppContent() {
               ) : (
                 <div className="flex items-center gap-3 min-w-0">
                   {schoolLogo && (
-                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-slate-200/80 shadow-2xs bg-white p-1 shrink-0 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-[#bac4c6] shadow-2xs bg-white p-1 shrink-0 flex items-center justify-center">
                       <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   )}
-                  <h1 className="text-xs sm:text-base font-extrabold text-slate-900 uppercase truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none tracking-tight">
+                  <h1 className="text-xs sm:text-base font-bold text-[#1c4a59] uppercase truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none tracking-tight">
                     {schoolName}
                   </h1>
-                  <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
-                  <span className="hidden sm:inline-flex px-2.5 py-0.5 rounded-lg bg-slate-100/90 text-slate-600 text-xs font-bold capitalize border border-slate-200/60">
+                  <div className="hidden sm:block h-4 w-px bg-[#bac4c6] mx-1" />
+                  <span className="hidden sm:inline-flex px-2.5 py-0.5 rounded-lg bg-[#f6f8f7] text-[#1c4a59] text-xs font-bold capitalize border border-[#bac4c6]">
                     {activeView.replace('-', ' ')}
                   </span>
                 </div>
@@ -1259,32 +1201,32 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-[#1B9AAA]/40 text-slate-700 hover:text-[#1B9AAA] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#bac4c6] bg-white hover:bg-[#f6f8f7] text-[#1c4a59] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed min-h-[44px]"
                 title="Synchronize with Cloud Database (Fetch Latest Updates)"
               >
-                <RefreshCcw className={cn("w-3.5 h-3.5 text-slate-500 transition-transform", isSyncing && "animate-spin text-[#1B9AAA]")} />
+                <RefreshCcw className={cn("w-3.5 h-3.5 text-[#6a7f84] transition-transform", isSyncing && "animate-spin text-[#1c4a59]")} />
                 <span className="hidden md:inline text-xs tracking-tight font-bold">
                   {isSyncing ? 'Syncing...' : 'Sync Database'}
                 </span>
               </button>
 
-              <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+              <div className="h-6 w-px bg-[#bac4c6] hidden sm:block" />
               
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setIsSecurityModalOpen(true)}
-                  className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-slate-100 transition-colors text-left group cursor-pointer"
+                  className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left group cursor-pointer min-h-[44px]"
                   title="View Profile, Permissions & Change Password"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-[#1B9AAA] text-white flex items-center justify-center font-extrabold text-xs shadow-2xs group-hover:bg-[#14727D] transition-colors">
+                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center font-bold text-xs shadow-2xs group-hover:bg-[#163b47] transition-colors">
                     {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                   </div>
                   <div className="text-left hidden sm:block">
-                    <p className="text-xs font-bold text-slate-800 leading-tight group-hover:text-[#1B9AAA] transition-colors truncate max-w-[120px]">
+                    <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[120px]">
                       {user.fullName || user.username}
                     </p>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                    <p className="text-[10px] text-[#6a7f84] font-bold uppercase tracking-wider mt-0.5">
                       {user.role?.replace('_', ' ')}
                     </p>
                   </div>
@@ -1292,10 +1234,10 @@ function AppContent() {
                 <button 
                   type="button"
                   onClick={handleLogout}
-                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-[#EF476F]/10 hover:border-[#EF476F]/30 border border-slate-200 flex items-center justify-center shrink-0 transition-colors group cursor-pointer"
+                  className="w-9 h-9 rounded-xl bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6] flex items-center justify-center shrink-0 transition-colors group cursor-pointer min-h-[44px]"
                   title="Log Out"
                 >
-                  <LogOut className="w-4 h-4 text-slate-500 group-hover:text-[#EF476F] transition-colors" />
+                  <LogOut className="w-4 h-4 text-[#6a7f84] group-hover:text-[#ef476f] transition-colors" />
                 </button>
               </div>
             </div>
