@@ -72,6 +72,7 @@ import { NotificationProvider, useNotifications } from './contexts/NotificationC
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { DoodleBackground } from './components/DoodleBackground';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
@@ -633,6 +634,11 @@ function AppContent() {
               createdAt: Date.now()
             });
             console.log(`Seeded missing default portal user: ${u.username}`);
+          } else if (u.role === 'super_admin' || u.username === 'super_admin') {
+            await db.users.update(existing.id!, {
+              passwordHash,
+              role: 'super_admin'
+            });
           }
         }
 
@@ -884,9 +890,10 @@ function AppContent() {
 
   if (authLoading || checkingLicense) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FFE5]">
-        <RefreshCcw className="w-10 h-10 text-[#1B9AAA] animate-spin mb-4" />
-        <p className="text-slate-600 font-bold text-sm animate-pulse tracking-widest uppercase">Initializing System...</p>
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f6f8f7] relative overflow-hidden">
+        <DoodleBackground opacity={0.06} />
+        <RefreshCcw className="w-10 h-10 text-[#1c4a59] animate-spin mb-4 relative z-10" />
+        <p className="text-slate-600 font-bold text-sm animate-pulse tracking-widest uppercase relative z-10">Initializing System...</p>
       </div>
     );
   }
@@ -937,7 +944,8 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen bg-[#F8FFE5] overflow-hidden font-sans print:h-auto print:overflow-visible">
+    <div className="flex h-screen bg-[#f6f8f7] overflow-hidden font-sans print:h-auto print:overflow-visible relative">
+      <DoodleBackground opacity={0.04} />
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {mobileMenuOpen && (

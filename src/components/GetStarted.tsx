@@ -521,7 +521,7 @@ export default function GetStarted({
                   onClick={() => setShowAbout(false)}
                   className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
                 >
-                  ✕
+                  X
                 </button>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -552,7 +552,7 @@ export default function GetStarted({
                   onClick={() => setShowContact(false)}
                   className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
                 >
-                  ✕
+                  X
                 </button>
               </div>
               <div className="space-y-4 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -594,7 +594,7 @@ export default function GetStarted({
                   onClick={() => setShowVideoTour(false)}
                   className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
                 >
-                  ✕
+                  X
                 </button>
               </div>
 
@@ -1167,7 +1167,7 @@ export default function GetStarted({
                       </div>
 
                       <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-[11px] text-emerald-700 text-center font-bold">
-                        ✔ Local database schema and master directories partitions generated successfully.
+                         Local database schema and master directories partitions generated successfully.
                       </div>
 
                       <div className="pt-4 flex justify-between border-t border-slate-100">
@@ -1325,14 +1325,14 @@ export default function GetStarted({
                           {licenseValidation.checked && licenseValidation.valid && !licenseValidation.used && (
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl mt-1">
                               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>✓ Verified Valid & Unused License Key ({licenseValidation.tier})</span>
+                              <span> Verified Valid & Unused License Key ({licenseValidation.tier})</span>
                             </div>
                           )}
                           {licenseValidation.checked && licenseValidation.used && (
                             <div className="flex items-start gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-3 py-2 rounded-xl mt-1">
                               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                               <div>
-                                <span className="block font-black">⚠️ License Key Already Used</span>
+                                <span className="block font-black"> License Key Already Used</span>
                                 <span className="text-[10px] font-medium text-amber-700">
                                   This serial key has already been activated for "{licenseValidation.schoolName || 'another institution'}". License keys are strictly single-use and cannot be activated again.
                                 </span>
@@ -1530,7 +1530,7 @@ export default function GetStarted({
               onClick={() => setShowAbout(false)}
               className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
             >
-              ✕
+              X
             </button>
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
@@ -1563,7 +1563,7 @@ export default function GetStarted({
               onClick={() => setShowContact(false)}
               className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
             >
-              ✕
+              X
             </button>
           </div>
           <div className="space-y-4 text-xs text-slate-600 leading-relaxed">
@@ -1605,7 +1605,7 @@ export default function GetStarted({
               onClick={() => setShowVideoTour(false)}
               className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
             >
-              ✕
+              X
             </button>
           </div>
 

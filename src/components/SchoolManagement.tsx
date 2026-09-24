@@ -190,7 +190,7 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
 
   const handleRevokeSchool = (key: string, schoolName: string) => {
     confirm({
-      title: '⚠️ SUSPEND TENANT INSTANCE',
+      title: 'SUSPEND TENANT INSTANCE',
       message: `Are you sure you want to suspend the subscription for ${schoolName}? All users associated with this tenant will be restricted.`,
       confirmLabel: 'Suspend Tenant',
       onConfirm: async () => {

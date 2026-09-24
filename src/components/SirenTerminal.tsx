@@ -581,7 +581,7 @@ export default function SirenTerminal() {
 
     // For critical lockdown/fire alarms, enforce confirmation prompt
     if (config.severity === 'critical') {
-      const isConfirmed = window.confirm(`🚨 EMERGENCY ALARM TRIGGER ACTION REQUIRED 🚨\n\nAre you sure you want to sound the absolute "${config.label}" alarm campus-wide?\n\nThis will trigger visual warning alerts throughout the school and activate local warning synthesizers.`);
+      const isConfirmed = window.confirm(` EMERGENCY ALARM TRIGGER ACTION REQUIRED \n\nAre you sure you want to sound the absolute "${config.label}" alarm campus-wide?\n\nThis will trigger visual warning alerts throughout the school and activate local warning synthesizers.`);
       if (!isConfirmed) return;
     }
 
@@ -1021,7 +1021,7 @@ export default function SirenTerminal() {
 
                 {/* Operational Note clue */}
                 <div className="p-3.5 bg-indigo-50/55 border border-indigo-100 rounded-xl flex items-start gap-2 text-[11px] text-indigo-900 leading-relaxed font-semibold">
-                  <span className="text-indigo-600 text-sm">💡</span>
+                  <span className="text-indigo-600 text-sm"></span>
                   <span>
                     <strong>Automatic Intercom Trigger Engine:</strong> The School Sphere core background scanner scans active timetable items continuously. If a bell's checked weekdays and target time match the server/local clock, the alert chimes globally in all active tabs instantly.
                   </span>
@@ -1083,16 +1083,16 @@ export default function SirenTerminal() {
                             className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800 bg-white"
                           >
                             <optgroup label="Core Alarm Sirens & Chimes">
-                              <option value="bell">🛎 Standard Period Bell Strike</option>
-                              <option value="allclear">🎵 Musical Comfort Chord (Recess/Play)</option>
-                              <option value="weather">🌪 Severe Weather Warning Drone</option>
-                              <option value="fire">🚨 Piercing Emergency Sweep (Fire Alert)</option>
+                              <option value="bell"> Standard Period Bell Strike</option>
+                              <option value="allclear"> Musical Comfort Chord (Recess/Play)</option>
+                              <option value="weather"> Severe Weather Warning Drone</option>
+                              <option value="fire"> Piercing Emergency Sweep (Fire Alert)</option>
                             </optgroup>
                             {recordedAudios.length > 0 && (
                               <optgroup label="Your Custom Recorded Announcements">
                                 {recordedAudios.map(audio => (
                                   <option key={audio.id} value={`recorded:${audio.id}`}>
-                                    🎙 {audio.name}
+                                     {audio.name}
                                   </option>
                                 ))}
                               </optgroup>
@@ -1217,7 +1217,7 @@ export default function SirenTerminal() {
                                   b.alarmType === 'weather' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
                                   'bg-teal-50 text-teal-700 border border-teal-100'
                                 }`}>
-                                  {b.alarmType.startsWith('recorded:') ? '🎙 Recorded Voice' : b.alarmType}
+                                  {b.alarmType.startsWith('recorded:') ? ' Recorded Voice' : b.alarmType}
                                 </span>
                               </div>
                               
@@ -1324,7 +1324,7 @@ export default function SirenTerminal() {
 
                 {/* Practical info banner */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2 text-[11px] text-slate-800 leading-relaxed font-semibold">
-                  <span className="text-indigo-600 text-sm">💡</span>
+                  <span className="text-indigo-600 text-sm"></span>
                   <span>
                     <strong>Voice Intercom Broadcast:</strong> You can record announcements directly from your browser microphone or upload any standard classroom audio message. These custom sounds can then be played live across all client computers instantly or automated through the bell scheduler!
                   </span>
@@ -1454,7 +1454,7 @@ export default function SirenTerminal() {
                     </div>
 
                     <div className="text-[10px] text-slate-500 leading-relaxed font-semibold bg-indigo-50/40 p-3 rounded-lg border border-indigo-100/40">
-                      💡 <strong>Format Note:</strong> For maximum browser interoperability and loud audio transmission, standard MP3 or high quality WAV files are highly recommended.
+                       <strong>Format Note:</strong> For maximum browser interoperability and loud audio transmission, standard MP3 or high quality WAV files are highly recommended.
                     </div>
                   </div>
                 </div>
@@ -1573,15 +1573,15 @@ export default function SirenTerminal() {
 
             <ul className="mt-4 space-y-2.5 text-xs text-slate-300 font-medium">
               <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">✔</span>
+                <span className="text-emerald-400 font-bold"></span>
                 <span>Sirens run purely on dynamic hardware osc limits, requiring no internet connectivity to serve files.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">✔</span>
+                <span className="text-emerald-400 font-bold"></span>
                 <span>Active states are broadcast instantly to other opened teacher desktop panels in real-time.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-emerald-400 font-bold">✔</span>
+                <span className="text-emerald-400 font-bold"></span>
                 <span>Use <strong>"All Clear"</strong> to cleanly reset lockdown warning stroboscopes safely.</span>
               </li>
             </ul>

@@ -249,7 +249,7 @@ export function ProductivePlannerTemplate({
           className={cn(
             "flex-1 py-2 px-2.5 sm:px-3 rounded-xl text-xs font-black transition-all cursor-pointer text-center",
             activeScreenMode === 'dashboard'
-              ? "bg-[#163840] text-white shadow-sm"
+              ? "bg-[#1c4a59] text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900"
           )}
         >
@@ -261,7 +261,7 @@ export function ProductivePlannerTemplate({
           className={cn(
             "flex-1 py-2 px-2.5 sm:px-3 rounded-xl text-xs font-black transition-all cursor-pointer text-center",
             activeScreenMode === 'calendar'
-              ? "bg-[#163840] text-white shadow-sm"
+              ? "bg-[#1c4a59] text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900"
           )}
         >
@@ -273,7 +273,7 @@ export function ProductivePlannerTemplate({
           className={cn(
             "hidden sm:block flex-1 py-2 px-2.5 sm:px-3 rounded-xl text-xs font-black transition-all cursor-pointer text-center",
             activeScreenMode === 'both'
-              ? "bg-[#163840] text-white shadow-sm"
+              ? "bg-[#1c4a59] text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900"
           )}
         >
@@ -292,7 +292,7 @@ export function ProductivePlannerTemplate({
             SCREEN 1: "LET'S BECOME MORE PRODUCTIVE" + DASHBOARD SCHEDULE
             ========================================================================= */}
         <div className={cn(
-          "bg-[#FDFAF4] border border-slate-200/90 rounded-3xl sm:rounded-[36px] lg:rounded-[40px] p-4 xs:p-5 sm:p-6 lg:p-7 shadow-xl relative flex flex-col justify-between overflow-hidden w-full",
+          "bg-[#ffffff] border border-slate-200/90 rounded-3xl sm:rounded-[36px] lg:rounded-[40px] p-4 xs:p-5 sm:p-6 lg:p-7 shadow-xl relative flex flex-col justify-between overflow-hidden w-full",
           activeScreenMode === 'calendar' && "hidden"
         )}>
           {/* Top Bar / Header */}
@@ -300,21 +300,21 @@ export function ProductivePlannerTemplate({
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight">
                 Let's become <br />
-                more <span className="text-[#F6A854]">Productive</span>
+                more <span className="text-[#faae57]">Productive</span>
               </h2>
             </div>
             
             {/* User Profile Avatar with badge */}
             <div className="relative">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#163840] text-white flex items-center justify-center font-bold border-2 border-white shadow-md">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#1c4a59] text-white flex items-center justify-center font-bold border-2 border-white shadow-md">
                 {user?.fullName?.charAt(0) || 'U'}
               </div>
-              <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-[#F6A854] border-2 border-white rounded-full"></span>
+              <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-[#faae57] border-2 border-white rounded-full"></span>
             </div>
           </div>
 
           {/* Hero Teal Card */}
-          <div className="bg-[#163840] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-white relative overflow-hidden shadow-lg mb-5 sm:mb-7">
+          <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-white relative overflow-hidden shadow-lg mb-5 sm:mb-7">
             {/* Decorative background circle */}
             <div className="absolute -right-8 -bottom-8 w-36 h-36 rounded-full border-8 border-white/5 pointer-events-none" />
             <div className="absolute -right-16 -bottom-16 w-52 h-52 rounded-full border-8 border-white/5 pointer-events-none" />
@@ -330,7 +330,7 @@ export function ProductivePlannerTemplate({
                     setActiveScreenMode('calendar');
                     if (onNavigateView) onNavigateView('timetable');
                   }}
-                  className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-slate-950 font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
                 >
                   <span>View Task</span>
                 </button>
@@ -353,7 +353,7 @@ export function ProductivePlannerTemplate({
                     cx="50"
                     cy="50"
                     r="40"
-                    stroke="#F6A854"
+                    stroke="#faae57"
                     strokeWidth="9"
                     fill="transparent"
                     strokeDasharray={2 * Math.PI * 40}
@@ -378,7 +378,7 @@ export function ProductivePlannerTemplate({
               <button
                 type="button"
                 onClick={() => setActiveScreenMode('calendar')}
-                className="text-xs font-bold text-[#F6A854] hover:text-[#d8892f] transition-colors cursor-pointer"
+                className="text-xs font-bold text-[#faae57] hover:text-[#e4ae67] transition-colors cursor-pointer"
               >
                 See all
               </button>
@@ -406,7 +406,7 @@ export function ProductivePlannerTemplate({
                   </h5>
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 mt-2">
-                  <Clock className="w-3 h-3 text-[#F6A854]" />
+                  <Clock className="w-3 h-3 text-[#faae57]" />
                   <span>07:00 - 08:00</span>
                 </div>
               </div>
@@ -414,14 +414,14 @@ export function ProductivePlannerTemplate({
               {/* Card 2: Meeting with designer (Warm Peach + Illustration) */}
               <div 
                 onClick={() => toggleTask('task-2')}
-                className="bg-[#FFF4E8] border border-[#FFE2C2] rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between min-h-[130px] shadow-xs cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
+                className="bg-[#f6f8f7] border border-[#e1c594] rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between min-h-[130px] shadow-xs cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
               >
                 <div>
                   <h5 className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-2">
                     Meeting with designer
                   </h5>
                   <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 mt-1">
-                    <Clock className="w-3 h-3 text-[#F6A854]" />
+                    <Clock className="w-3 h-3 text-[#faae57]" />
                     <span>09:00 - 10:00</span>
                   </div>
                 </div>
@@ -429,8 +429,8 @@ export function ProductivePlannerTemplate({
                 {/* Minimalist vector illustration */}
                 <div className="flex justify-end items-end mt-2">
                   <div className="w-14 sm:w-16 h-10 sm:h-12 relative flex items-center justify-center">
-                    <div className="absolute inset-0 bg-[#F6A854]/20 rounded-xl"></div>
-                    <Presentation className="w-5 h-5 sm:w-6 sm:h-6 text-[#163840]" />
+                    <div className="absolute inset-0 bg-[#faae57]/20 rounded-xl"></div>
+                    <Presentation className="w-5 h-5 sm:w-6 sm:h-6 text-[#1c4a59]" />
                   </div>
                 </div>
               </div>
@@ -438,14 +438,14 @@ export function ProductivePlannerTemplate({
               {/* Card 3: Create a plan for business (Warm Peach + Illustration) */}
               <div 
                 onClick={() => toggleTask('task-3')}
-                className="bg-[#FFF4E8] border border-[#FFE2C2] rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between min-h-[130px] shadow-xs cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
+                className="bg-[#f6f8f7] border border-[#e1c594] rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between min-h-[130px] shadow-xs cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
               >
                 <div>
                   <h5 className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-2">
                     Create a plan for business
                   </h5>
                   <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 mt-1">
-                    <Clock className="w-3 h-3 text-[#F6A854]" />
+                    <Clock className="w-3 h-3 text-[#faae57]" />
                     <span>11:00 - 12:00</span>
                   </div>
                 </div>
@@ -453,8 +453,8 @@ export function ProductivePlannerTemplate({
                 {/* Minimalist vector illustration */}
                 <div className="flex justify-end items-end mt-2">
                   <div className="w-14 sm:w-16 h-10 sm:h-12 relative flex items-center justify-center">
-                    <div className="absolute inset-0 bg-[#163840]/10 rounded-xl"></div>
-                    <Laptop className="w-5 h-5 sm:w-6 sm:h-6 text-[#F6A854]" />
+                    <div className="absolute inset-0 bg-[#1c4a59]/10 rounded-xl"></div>
+                    <Laptop className="w-5 h-5 sm:w-6 sm:h-6 text-[#faae57]" />
                   </div>
                 </div>
               </div>
@@ -462,12 +462,12 @@ export function ProductivePlannerTemplate({
               {/* Card 4: Click to view more (Deep Teal) */}
               <div 
                 onClick={() => setActiveScreenMode('calendar')}
-                className="bg-[#163840] hover:bg-[#122e35] text-white rounded-2xl p-3.5 sm:p-4 flex flex-col justify-center items-center text-center min-h-[130px] shadow-md cursor-pointer transition-all active:scale-95 group"
+                className="bg-[#1c4a59] hover:bg-[#163b47] text-white rounded-2xl p-3.5 sm:p-4 flex flex-col justify-center items-center text-center min-h-[130px] shadow-md cursor-pointer transition-all active:scale-95 group"
               >
                 <span className="text-xs sm:text-sm font-bold text-white group-hover:underline">
                   Click to <br />view more
                 </span>
-                <span className="text-[11px] font-medium text-[#F6A854] mt-2 block">
+                <span className="text-[11px] font-medium text-[#faae57] mt-2 block">
                   +{timetableSlots.length > 0 ? timetableSlots.length : 5} schedule
                 </span>
               </div>
@@ -479,14 +479,14 @@ export function ProductivePlannerTemplate({
             <button 
               type="button"
               onClick={() => setActiveScreenMode('dashboard')}
-              className="p-2 text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
-              <LayoutGrid className="w-5 h-5 text-[#163840]" />
+              <LayoutGrid className="w-5 h-5 text-[#1c4a59]" />
             </button>
             <button 
               type="button"
               onClick={() => setActiveScreenMode('calendar')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <CalendarIcon className="w-5 h-5" />
             </button>
@@ -494,21 +494,21 @@ export function ProductivePlannerTemplate({
             <button 
               type="button"
               onClick={() => setIsReminderModalOpen(true)}
-              className="w-11 h-11 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 flex items-center justify-center shadow-lg -mt-5 border-2 border-white transition-transform active:scale-95 cursor-pointer"
+              className="w-11 h-11 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-slate-950 flex items-center justify-center shadow-lg -mt-5 border-2 border-white transition-transform active:scale-95 cursor-pointer"
             >
               <Plus className="w-6 h-6 stroke-[3]" />
             </button>
             <button 
               type="button"
               onClick={() => onNavigateView && onNavigateView('results')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <BarChart3 className="w-5 h-5" />
             </button>
             <button 
               type="button"
               onClick={() => onNavigateView && onNavigateView('users')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <User className="w-5 h-5" />
             </button>
@@ -520,11 +520,11 @@ export function ProductivePlannerTemplate({
             SCREEN 2: CALENDAR TIMELINE & "SET REMINDER" VIEW
             ========================================================================= */}
         <div className={cn(
-          "bg-[#FDFAF4] border border-slate-200/90 rounded-3xl sm:rounded-[36px] lg:rounded-[40px] p-4 xs:p-5 sm:p-6 lg:p-7 shadow-xl relative flex flex-col justify-between overflow-hidden w-full",
+          "bg-[#ffffff] border border-slate-200/90 rounded-3xl sm:rounded-[36px] lg:rounded-[40px] p-4 xs:p-5 sm:p-6 lg:p-7 shadow-xl relative flex flex-col justify-between overflow-hidden w-full",
           activeScreenMode === 'dashboard' && "hidden"
         )}>
           {/* Top Deep Teal Calendar Header */}
-          <div className="bg-[#163840] rounded-3xl p-5 sm:p-6 text-white shadow-xl relative overflow-hidden mb-6">
+          <div className="bg-[#1c4a59] rounded-3xl p-5 sm:p-6 text-white shadow-xl relative overflow-hidden mb-6">
             {/* Concentric circle graphics */}
             <div className="absolute -right-6 -bottom-6 w-36 h-36 rounded-full border-8 border-white/5 pointer-events-none" />
             <div className="absolute -right-14 -bottom-14 w-52 h-52 rounded-full border-8 border-white/5 pointer-events-none" />
@@ -570,7 +570,7 @@ export function ProductivePlannerTemplate({
                     <div className={cn(
                       "w-8 h-8 xs:w-9 xs:h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-xs font-black transition-all",
                       isSelected 
-                        ? "bg-[#F6A854] text-slate-950 shadow-md scale-105" 
+                        ? "bg-[#faae57] text-slate-950 shadow-md scale-105" 
                         : "text-white/90 hover:bg-white/10"
                     )}>
                       {dayNumber}
@@ -585,7 +585,7 @@ export function ProductivePlannerTemplate({
               <button
                 type="button"
                 onClick={() => setIsReminderModalOpen(true)}
-                className="w-full py-2.5 sm:py-3 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer text-center"
+                className="w-full py-2.5 sm:py-3 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-slate-950 font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer text-center"
               >
                 Set Reminder
               </button>
@@ -611,7 +611,7 @@ export function ProductivePlannerTemplate({
                 <span className="text-xs font-bold text-slate-400 block mt-8">09:00</span>
               </div>
               <div className="relative flex-1 min-w-0">
-                <div className="bg-[#FFF4E8] border border-[#FFE2C2] rounded-2xl p-3.5 sm:p-4 shadow-xs relative overflow-hidden">
+                <div className="bg-[#f6f8f7] border border-[#e1c594] rounded-2xl p-3.5 sm:p-4 shadow-xs relative overflow-hidden">
                   <h5 className="text-xs sm:text-sm font-bold text-slate-800">
                     Zoom meet with client from New York
                   </h5>
@@ -621,10 +621,10 @@ export function ProductivePlannerTemplate({
 
                   {/* Overlapping Attendees Avatars */}
                   <div className="flex items-center -space-x-2 mt-3">
-                    <div className="w-6 h-6 rounded-full bg-[#163840] text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
+                    <div className="w-6 h-6 rounded-full bg-[#1c4a59] text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
                       AK
                     </div>
-                    <div className="w-6 h-6 rounded-full bg-[#F6A854] text-slate-950 text-[9px] font-black flex items-center justify-center border-2 border-white">
+                    <div className="w-6 h-6 rounded-full bg-[#faae57] text-slate-950 text-[9px] font-black flex items-center justify-center border-2 border-white">
                       EL
                     </div>
                     <div className="w-6 h-6 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
@@ -645,8 +645,8 @@ export function ProductivePlannerTemplate({
               </div>
               <div className="relative flex-1 flex items-center">
                 {/* Orange Dot on timeline axis */}
-                <div className="w-2.5 h-2.5 rounded-full bg-[#F6A854] -ml-[19px] shrink-0 border-2 border-white shadow-xs z-10" />
-                <div className="h-0.5 bg-[#F6A854] flex-1 rounded-full" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#faae57] -ml-[19px] shrink-0 border-2 border-white shadow-xs z-10" />
+                <div className="h-0.5 bg-[#faae57] flex-1 rounded-full" />
               </div>
             </div>
 
@@ -674,36 +674,36 @@ export function ProductivePlannerTemplate({
             <button 
               type="button"
               onClick={() => setActiveScreenMode('dashboard')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <LayoutGrid className="w-5 h-5" />
             </button>
             <button 
               type="button"
               onClick={() => setActiveScreenMode('calendar')}
-              className="p-2 text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
-              <CalendarIcon className="w-5 h-5 text-[#163840]" />
+              <CalendarIcon className="w-5 h-5 text-[#1c4a59]" />
             </button>
             {/* Center Floating Plus FAB */}
             <button 
               type="button"
               onClick={() => setIsReminderModalOpen(true)}
-              className="w-11 h-11 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 flex items-center justify-center shadow-lg -mt-5 border-2 border-white transition-transform active:scale-95 cursor-pointer"
+              className="w-11 h-11 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-slate-950 flex items-center justify-center shadow-lg -mt-5 border-2 border-white transition-transform active:scale-95 cursor-pointer"
             >
               <Plus className="w-6 h-6 stroke-[3]" />
             </button>
             <button 
               type="button"
               onClick={() => onNavigateView && onNavigateView('results')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <BarChart3 className="w-5 h-5" />
             </button>
             <button 
               type="button"
               onClick={() => onNavigateView && onNavigateView('users')}
-              className="p-2 text-slate-400 hover:text-[#163840] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-[#1c4a59] hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               <User className="w-5 h-5" />
             </button>
@@ -726,7 +726,7 @@ export function ProductivePlannerTemplate({
             >
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-[#163840] text-[#F6A854] flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-2xl bg-[#1c4a59] text-[#faae57] flex items-center justify-center font-bold">
                     <Bell className="w-5 h-5" />
                   </div>
                   <div>
@@ -754,7 +754,7 @@ export function ProductivePlannerTemplate({
                     value={reminderTitle}
                     onChange={(e) => setReminderTitle(e.target.value)}
                     placeholder="e.g. Meeting with developer / Math Class"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#163840]"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                   />
                 </div>
 
@@ -767,7 +767,7 @@ export function ProductivePlannerTemplate({
                       type="time"
                       value={reminderStartTime}
                       onChange={(e) => setReminderStartTime(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#163840]"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                     />
                   </div>
                   <div>
@@ -778,7 +778,7 @@ export function ProductivePlannerTemplate({
                       type="time"
                       value={reminderEndTime}
                       onChange={(e) => setReminderEndTime(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#163840]"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                     />
                   </div>
                 </div>
@@ -800,7 +800,7 @@ export function ProductivePlannerTemplate({
                         onClick={() => setReminderCategory(cat.id as any)}
                         className={cn(
                           "py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                          reminderCategory === cat.id ? "bg-[#163840] text-white border-[#163840]" : cat.color
+                          reminderCategory === cat.id ? "bg-[#1c4a59] text-white border-[#1c4a59]" : cat.color
                         )}
                       >
                         {cat.label}
@@ -812,7 +812,7 @@ export function ProductivePlannerTemplate({
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full py-3 rounded-full bg-[#F6A854] hover:bg-[#e2933f] text-slate-950 font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                    className="w-full py-3 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-slate-950 font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer"
                   >
                     Save to Schedule
                   </button>

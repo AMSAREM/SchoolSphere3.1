@@ -29,6 +29,7 @@ import { SiteMapModal } from '../legal/SiteMapModal';
 import { openCookiePreferences } from '../legal/CookieConsentBanner';
 import { authApi } from '../../lib/api';
 import { cn } from '../../lib/utils';
+import { DoodleBackground } from '../DoodleBackground';
 
 export interface AuthScreensProps {
   onBackToGetStarted?: () => void;
@@ -339,7 +340,8 @@ export function AuthScreens({
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e]">
+    <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">
+      <DoodleBackground opacity={0.06} />
       
       {/* Top Bar Navigation */}
       <div className="w-full max-w-md mx-auto flex items-center justify-between pt-2 pb-4">

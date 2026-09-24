@@ -501,7 +501,7 @@ export default function EVoting() {
                     </div>
 
                     <p className="text-[10px] text-slate-400 bg-slate-50 p-3 rounded-xl border border-slate-200/50 leading-relaxed font-medium">
-                      🔒 <b className="text-slate-600 font-bold">Double-voting blocks:</b> High level student card hashes guarantee a single cast ballot outcome per poll.
+                       <b className="text-slate-600 font-bold">Double-voting blocks:</b> High level student card hashes guarantee a single cast ballot outcome per poll.
                     </p>
 
                     <button
@@ -1158,7 +1158,7 @@ export default function EVoting() {
                                       : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-850 border-indigo-300'
                                   }`}
                                 >
-                                  🔄 Status: {p.status}
+                                   Status: {p.status}
                                 </button>
                                 <button
                                   onClick={() => handleDeletePoll(p.id!)}

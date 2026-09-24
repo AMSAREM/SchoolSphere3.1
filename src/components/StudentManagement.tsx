@@ -549,7 +549,7 @@ export default function StudentManagement() {
         const dupCheck = await checkIsFileDuplicate(fileHash, contentSig, targetSchoolId, 'students');
         if (dupCheck.isDuplicate) {
           showToast(
-            `⛔ Duplicate File Blocked: ${dupCheck.reason || 'This exact file has already been imported.'} To protect school data, duplicate file imports are strictly blocked.`,
+            ` Duplicate File Blocked: ${dupCheck.reason || 'This exact file has already been imported.'} To protect school data, duplicate file imports are strictly blocked.`,
             "error"
           );
           setIsImporting(false);
@@ -575,7 +575,7 @@ export default function StudentManagement() {
         const { uniqueStudents, duplicateCount } = filterDuplicateStudentRows(newStudents, allStudents || []);
         
         if (uniqueStudents.length === 0) {
-          showToast(`⛔ All ${newStudents.length} student records in this file already exist in your school database. Import cancelled to avoid duplicates.`, "error");
+          showToast(` All ${newStudents.length} student records in this file already exist in your school database. Import cancelled to avoid duplicates.`, "error");
           setIsImporting(false);
           e.target.value = '';
           return;
@@ -1918,7 +1918,7 @@ export default function StudentManagement() {
                               <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
                               <div className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-sm font-bold text-slate-700">{promo.sourceClass} ➔ {promo.destClass}</span>
+                                  <span className="text-sm font-bold text-slate-700">{promo.sourceClass} &rarr; {promo.destClass}</span>
                                   <span className="text-[11px] font-bold text-slate-500 font-mono">{promo.academicYear}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100">
@@ -2171,7 +2171,7 @@ export default function StudentManagement() {
                 {/* Academic Year Timing Alert */}
                 {academicConfig.currentTerm !== 'Term 3' ? (
                   <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex gap-3">
-                    <span className="text-xl">⚠️</span>
+                    <span className="text-xl"></span>
                     <div className="space-y-1">
                       <p className="text-sm font-bold text-amber-900 leading-snug">
                         Early Academic Year Promotion Notice
@@ -2185,7 +2185,7 @@ export default function StudentManagement() {
                   </div>
                 ) : (
                   <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex gap-3">
-                    <span className="text-xl">🎓</span>
+                    <span className="text-xl"></span>
                     <div className="space-y-1">
                       <p className="text-sm font-bold text-emerald-950 leading-snug">
                         End of Academic Year Reached ({academicConfig.academicYear})

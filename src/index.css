@@ -9,49 +9,34 @@
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
 
-  --color-background: #F8FFE5;
+  --color-background: #f6f8f7;
+  --color-primary-surface: #1c4a59;
+  --color-cta: #faae57;
+  --color-muted: #6a7f84;
+  --color-body: #1f2a2e;
+  --color-border: #bac4c6;
+  --color-secondary-accent: #e4ae67;
+  --color-secondary-light: #e1c594;
+  --color-tertiary-accent: #807654;
   --color-primary: #06D6A0;
   --color-primary-dark: #059669;
-  --color-primary-darker: #064e3b;
-  --color-primary-contrast: #022c22;
-  --color-secondary: #1B9AAA;
-  --color-secondary-dark: #14727D;
-  --color-secondary-contrast: #ffffff;
+  --color-secondary: #1c4a59;
   --color-accent: #EF476F;
-  --color-accent-dark: #D8224E;
-  --color-accent-contrast: #ffffff;
-  --color-highlight: #FFC43D;
-  --color-highlight-dark: #D97706;
-  --color-highlight-contrast: #451a03;
-
-  --color-indigo-50: #f0fdf9;
-  --color-indigo-100: #e0fbf2;
-  --color-indigo-200: #c2f6e5;
-  --color-indigo-300: #8eeccc;
-  --color-indigo-400: #34d399;
-  --color-indigo-500: #06D6A0;
-  --color-indigo-600: #1B9AAA;
-  --color-indigo-700: #14727D;
-  --color-indigo-800: #115962;
-  --color-indigo-900: #0d4147;
-  --color-indigo-950: #08282c;
 }
 
 :root {
-  --color-background: #F8FFE5;
+  --color-background: #f6f8f7;
+  --color-primary-surface: #1c4a59;
+  --color-cta: #faae57;
+  --color-muted: #6a7f84;
+  --color-body: #1f2a2e;
+  --color-border: #bac4c6;
+  --color-secondary-accent: #e4ae67;
+  --color-secondary-light: #e1c594;
+  --color-tertiary-accent: #807654;
   --color-primary: #06D6A0;
-  --color-primary-dark: #059669;
-  --color-primary-darker: #064e3b;
-  --color-primary-contrast: #022c22;
-  --color-secondary: #1B9AAA;
-  --color-secondary-dark: #14727D;
-  --color-secondary-contrast: #ffffff;
+  --color-secondary: #1c4a59;
   --color-accent: #EF476F;
-  --color-accent-dark: #D8224E;
-  --color-accent-contrast: #ffffff;
-  --color-highlight: #FFC43D;
-  --color-highlight-dark: #D97706;
-  --color-highlight-contrast: #451a03;
 }
 
 /* Custom Scrollbar for modern feel */

@@ -468,7 +468,7 @@ export default function SalesSuite({
   if (activePanel === 'subscription_billing') {
     return (
       <div className="space-y-6">
-        {/* Vercel Frontend ⚡ Supabase Cloud Database Bridge Banner */}
+        {/* Vercel Frontend  Supabase Cloud Database Bridge Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-indigo-900/50 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-indigo-900/60">
             <div className="flex items-center gap-3">
@@ -477,7 +477,7 @@ export default function SalesSuite({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-black tracking-wide text-white">Vercel Frontend ⚡ Supabase Cloud Database Link</h2>
+                  <h2 className="text-sm font-black tracking-wide text-white">Vercel Frontend  Supabase Cloud Database Link</h2>
                   <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-500/30 uppercase tracking-widest">
                     ACTIVE & SYNCED
                   </span>
@@ -512,19 +512,19 @@ export default function SalesSuite({
             <div className="p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Frontend Origin</span>
               <span className="text-xs font-mono font-bold text-indigo-300 block truncate mt-0.5">https://esepa-school-portal.vercel.app</span>
-              <span className="text-[9px] text-emerald-400 font-bold block mt-1">🟢 Connected (Vercel Edge)</span>
+              <span className="text-[9px] text-emerald-400 font-bold block mt-1"> Connected (Vercel Edge)</span>
             </div>
 
             <div className="p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Supabase PostgreSQL DB</span>
               <span className="text-xs font-mono font-bold text-emerald-300 block truncate mt-0.5">niavmonyfwqlryppgksy.supabase.co</span>
-              <span className="text-[9px] text-emerald-400 font-bold block mt-1">🟢 Connected (Port 5432 / REST)</span>
+              <span className="text-[9px] text-emerald-400 font-bold block mt-1"> Connected (Port 5432 / REST)</span>
             </div>
 
             <div className="p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Licensing & Subscriptions</span>
               <span className="text-xs font-bold text-white block mt-0.5">RLS Security Enforced</span>
-              <span className="text-[9px] text-indigo-300 font-bold block mt-1">⚡ Instant Sync Enabled</span>
+              <span className="text-[9px] text-indigo-300 font-bold block mt-1"> Instant Sync Enabled</span>
             </div>
           </div>
         </div>
@@ -638,7 +638,7 @@ export default function SalesSuite({
                 </div>
               </div>
               <div className="text-[10px] text-slate-500 bg-white border border-slate-100 p-2.5 rounded-lg font-semibold mt-4">
-                💡 <strong>Ghana Collection Tip:</strong> Most local schools prefer paying per term (e.g. quarterly) to align with school fees collections timelines.
+                 <strong>Ghana Collection Tip:</strong> Most local schools prefer paying per term (e.g. quarterly) to align with school fees collections timelines.
               </div>
             </div>
           </div>
@@ -927,17 +927,17 @@ export default function SalesSuite({
   if (activePanel === 'marketing') {
     const marketingPitches = [
       {
-        title: '🌟 Pitch 1: Standard Academic Compliance Pitch',
+        title: ' Pitch 1: Standard Academic Compliance Pitch',
         subject: 'Modernize Grading & Instant Terminal Reports compliance for Academic Year',
         body: 'Provide headteachers with one-click automatic class marks summaries, WASSCE cumulative records compliance grading tables, and instant student WhatsApp terminal results cards.'
       },
       {
-        title: '⚡ Pitch 2: Financial Efficiency & Fee Invoicing',
+        title: ' Pitch 2: Financial Efficiency & Fee Invoicing',
         subject: 'Stop fee leakages. Instant parent tuition payment SMS invoices.',
         body: 'Local banks integration setup, instant printed billing sheets for class levels, real-time parent mobile transaction notifications, and automatic outstanding arrears statements logs.'
       },
       {
-        title: '🔒 Pitch 3: Parent Engagement & Crisis Siren Alert',
+        title: ' Pitch 3: Parent Engagement & Crisis Siren Alert',
         subject: 'Emergency Parent Broadcaster & Public School Bells automation.',
         body: 'Direct computerized school horn bells synchronizations, instant SMS portal triggers, automatic attendance biometric parent alerts, and public election portals.'
       }
@@ -1524,7 +1524,7 @@ export default function SalesSuite({
                     <div className="flex justify-between items-center pb-1 border-b border-slate-100">
                       <span className="font-bold text-slate-500">Dispatch Status:</span>
                       <span className="font-mono uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {emailSentMethod === 'gmail' ? '⚡ Sent via Gmail API' : (emailSentMethod || 'Direct Delivery Ready')}
+                        {emailSentMethod === 'gmail' ? ' Sent via Gmail API' : (emailSentMethod || 'Direct Delivery Ready')}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">

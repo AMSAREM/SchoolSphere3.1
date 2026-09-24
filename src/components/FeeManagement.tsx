@@ -948,7 +948,7 @@ export default function FeeManagement() {
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                          📱 MoMo
+                           MoMo
                         </button>
                         <button
                           type="button"
@@ -960,7 +960,7 @@ export default function FeeManagement() {
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                          💳 Paystack
+                           Paystack
                         </button>
                       </div>
                     </div>
@@ -1399,7 +1399,7 @@ export default function FeeManagement() {
                             }}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm"
                           >
-                            🟢 Enter PIN & Pay
+                             Enter PIN & Pay
                           </button>
                           <button
                             onClick={() => {
@@ -1408,7 +1408,7 @@ export default function FeeManagement() {
                             }}
                             className="bg-rose-600 hover:bg-rose-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm"
                           >
-                            🔴 Decline Payment
+                             Decline Payment
                           </button>
                         </div>
                       </div>
@@ -1499,7 +1499,7 @@ export default function FeeManagement() {
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                          💵 Cash
+                           Cash
                         </button>
                         <button
                           type="button"
@@ -1511,7 +1511,7 @@ export default function FeeManagement() {
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                          📱 MoMo
+                           MoMo
                         </button>
                         <button
                           type="button"
@@ -1523,7 +1523,7 @@ export default function FeeManagement() {
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                          💳 Paystack
+                           Paystack
                         </button>
                       </div>
                     </div>

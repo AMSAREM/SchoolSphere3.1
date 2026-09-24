@@ -55,37 +55,37 @@ interface SmsTemplate {
 const SMS_TEMPLATES: SmsTemplate[] = [
   {
     id: 'fee_reminder',
-    name: '💰 School Fees Reminder',
+    name: 'School Fees Reminder',
     category: 'Fee Reminder',
     text: 'Dear {parentName}, this is a gentle reminder that school fees for your ward {studentName} ({className}) is outstanding. Total balance: J$ {feesOwed}. Kindly settle before holidays. Thank you, ESEPA ACADEMY.'
   },
   {
     id: 'absentee_alert',
-    name: '🚪 Attendance Warning',
+    name: 'Attendance Warning',
     category: 'Attendance Alert',
     text: 'Urgent: Dear {parentName}, please be informed that your ward {studentName} ({className}) was marked ABSENT today, {date}. If you are unaware of this absence, please contact the class teacher immediately. Respectfully, JHS Coordinator.'
   },
   {
     id: 'exam_report',
-    name: '📊 Academic Report card',
+    name: 'Academic Report Card',
     category: 'Exam Report',
     text: 'Hello {parentName}, Terminal academic reports for {studentName} are now finalized. Ward achieved {totalSubjects} subjects graded. Current balance is updated. Report cards can be picked up at the administrative office, ESEPA ACADEMY.'
   },
   {
     id: 'pta_invite',
-    name: '🏫 PTA Meeting Invitation',
+    name: 'PTA Meeting Invitation',
     category: 'Notification',
     text: 'Dear Parents/Guardians, you are cordially invited to our Emergency PTA Meeting on Friday {date} at 2:00 PM. High-priority matters including computer school-placement options (BECE/WASSCE) and fees billing structures will be discussed. Don\'t miss out.'
   },
   {
     id: 'emergency_siren',
-    name: '🚨 School Safety Siren Alert',
+    name: 'School Safety Siren Alert',
     category: 'Siren Emergency',
     text: 'IMPORTANT SAFETY SIREN: Dear Guardians and Staff, This is an automatic safety broadcast from ESEPA incident logger. Please remain calm. Safe lock-down drill has been initiated. Further notices will follow shortly.'
   },
   {
     id: 'holiday_notice',
-    name: '🌴 Vacation / Holiday Notice',
+    name: 'Vacation / Holiday Notice',
     category: 'Notification',
     text: 'Dear Parents, please note that school closes for vacation on {date} and resumes on {nextDate}. Ensure JHS/SHS candidates study during holidays. Wishing you safe travels. Management, ESEPA.'
   }
@@ -938,7 +938,7 @@ export default function SmsModule() {
                             Server is successfully configured with Arkesel API key ending in <span className="font-mono font-bold">{serverArkeselConfig?.apiKeyAbbrev || 'Active'}</span>.
                           </p>
                           <p className="text-[9px] text-indigo-600/80">
-                            ✓ Outbound SMS will deliver live to MTN, Telecel, AirtelTigo and international devices.
+                            Outbound SMS will deliver live to MTN, Telecel, AirtelTigo and international devices.
                           </p>
                         </div>
                       ) : (

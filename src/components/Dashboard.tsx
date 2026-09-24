@@ -859,7 +859,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                               : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                           }`}
                         >
-                          👤 {ward.firstName} {ward.lastName}
+                           {ward.firstName} {ward.lastName}
                         </button>
                       ))}
                     </div>
@@ -1557,7 +1557,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                   : 'bg-white hover:bg-indigo-50 border-slate-200 text-indigo-600'
               }`}
             >
-              🏫 school announcement ({categoryCounts.school})
+               school announcement ({categoryCounts.school})
             </button>
             <button
               onClick={() => setActiveAnnouncementTab('parent notices')}
@@ -1567,7 +1567,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                   : 'bg-white hover:bg-emerald-50 border-slate-200 text-emerald-600'
               }`}
             >
-              🛡️ parent notices ({categoryCounts.parent})
+               parent notices ({categoryCounts.parent})
             </button>
             <button
               onClick={() => setActiveAnnouncementTab('PTA notices')}
@@ -1577,7 +1577,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                   : 'bg-white hover:bg-purple-50 border-slate-200 text-purple-600'
               }`}
             >
-              👥 PTA notices ({categoryCounts.ptaNotices})
+               PTA notices ({categoryCounts.ptaNotices})
             </button>
             <button
               onClick={() => setActiveAnnouncementTab('PTA notification')}
@@ -1587,7 +1587,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                   : 'bg-white hover:bg-pink-50 border-slate-200 text-pink-600'
               }`}
             >
-              📢 PTA notification ({categoryCounts.ptaNotification})
+               PTA notification ({categoryCounts.ptaNotification})
             </button>
           </div>
 

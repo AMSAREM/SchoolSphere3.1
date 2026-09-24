@@ -263,7 +263,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
 
   const handleRemoteDeactivate = async () => {
     confirm({
-      title: '⚠️ CRITICAL: Remotely Lock Instance',
+      title: ' CRITICAL: Remotely Lock Instance',
       message: 'Are you sure you want to remotely lock this school portal? Every student dashboard and admin login screen will immediately be replaced by a locked block notice requiring activation.',
       confirmLabel: 'Lock Portal Now',
       onConfirm: async () => {
@@ -538,7 +538,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
 
   const handlePrepareHandover = async () => {
     confirm({
-      title: '🚨 SECURE SCHOOL HANDOVER WIPE',
+      title: ' SECURE SCHOOL HANDOVER WIPE',
       message: `You are about to permanently erase all ${totalDemoRecords} transactional demo entries. This keeps underlying master configuration fields (class levels, academic subjects, teacher lists, master login credentials) intact, preparing a pristine delivery database for your client. This operation is non-reversible. Proceed?`,
       confirmLabel: 'Wipe & Initialize Handoff',
       onConfirm: async () => {

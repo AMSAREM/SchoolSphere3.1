@@ -299,7 +299,7 @@ export default function Settings() {
 
   const handlePrepareHandover = async () => {
     confirm({
-      title: "⚠️ SECURE SCHOOL HANDOVER WIPE",
+      title: " SECURE SCHOOL HANDOVER WIPE",
       message: "WARNING: This tool will permanently clear all demo/test records (Students, Attendance, Academic Results, e-Votes, Fees, Expenses, and Stock Logs) on this database. It keeps class levels, subjects, teacher assigned profiles, and master admin accounts. A fresh cloud sync backup is pushed immediately. This cannot be undone. Proceed?",
       confirmLabel: "Yes, Initialize Handover",
       onConfirm: async () => {
@@ -1215,7 +1215,7 @@ export default function Settings() {
               {academicConfig.currentTerm === 'Term 3' && (
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4">
                   <div className="flex gap-3">
-                    <span className="text-xl">🎓</span>
+                    <span className="text-xl"></span>
                     <div>
                       <p className="text-sm font-bold text-emerald-950">End of Academic Year (Term 3)</p>
                       <p className="text-xs text-emerald-700 font-medium">
@@ -1757,7 +1757,7 @@ export default function Settings() {
               </div>
 
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-500 flex items-center gap-3">
-                <span className="text-lg">✨</span>
+                <span className="text-lg"></span>
                 <p>The chosen theme colors are dynamically compiled and compiled on-the-fly to all action buttons, links, widgets, headers, graphs, and system dashboards across the entire SchoolSphere instance.</p>
               </div>
 

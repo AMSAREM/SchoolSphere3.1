@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, calculateGrade, type Result, type Student } from '../db/schema';
-import { Save, FileSpreadsheet, Calculator, Search, CheckCircle2, Eye, X, Download, RefreshCcw, FileText, Printer } from 'lucide-react';
+import { Save, FileSpreadsheet, Calculator, Search, CheckCircle2, Eye, X, Download, RefreshCcw, FileText, Printer, AlertCircle, Lock, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../contexts/NotificationContext';
 import { calculateFileHash, calculateContentFingerprint, checkIsFileDuplicate, recordImportedFile, validateCsvFile } from '../lib/fileSecurity';
@@ -300,7 +300,7 @@ export default function ResultsTerminal() {
 
         const dupCheck = await checkIsFileDuplicate(fileHash, contentSig, targetSchoolId, 'results');
         if (dupCheck.isDuplicate) {
-          showToast(`⛔ Duplicate File Blocked: ${dupCheck.reason || 'This exact results CSV file has already been imported.'}`, "error");
+          showToast(`Duplicate File Blocked: ${dupCheck.reason || 'This exact results CSV file has already been imported.'}`, "error");
           e.target.value = '';
           return;
         }
@@ -554,8 +554,8 @@ export default function ResultsTerminal() {
     if (parentWards.length === 0) {
       return (
         <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center max-w-2xl mx-auto space-y-4">
-          <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto text-2xl font-black">
-            ⚠️
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+            <AlertCircle className="w-8 h-8" />
           </div>
           <h3 className="text-lg font-black text-slate-800">No Registered Wards Found</h3>
           <p className="text-slate-500 text-sm">
@@ -571,16 +571,16 @@ export default function ResultsTerminal() {
     return (
       <div className="space-y-6">
         {/* Parent Welcome & Ward Selector */}
-        <div className="bg-gradient-to-r from-indigo-900 to-indigo-950 p-6 sm:p-8 rounded-2xl border border-slate-800 text-white shadow-xl relative overflow-hidden">
+        <div className="bg-[#1c4a59] p-6 sm:p-8 rounded-2xl border border-slate-800 text-white shadow-xl relative overflow-hidden">
           <div className="relative z-10 space-y-4 max-w-xl">
-            <span className="px-3 py-1 bg-indigo-500/30 border border-indigo-500/20 rounded-lg text-[10px] font-black uppercase tracking-wider text-indigo-300">
-              🔒 PARENT PORTAL
+            <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-lg text-[10px] font-black uppercase tracking-wider text-[#e1c594] inline-flex items-center gap-1.5">
+              <Lock className="w-3 h-3" /> PARENT PORTAL
             </span>
             <div className="space-y-1">
               <h2 className="text-xl sm:text-2xl font-black tracking-tight">
                 Academic Results Terminal
               </h2>
-              <p className="text-indigo-200 text-sm font-medium">
+              <p className="text-slate-200 text-sm font-medium">
                 Welcome back! View subject grades, class assessments, and generate official terminal report cards for your wards.
               </p>
             </div>
@@ -588,19 +588,19 @@ export default function ResultsTerminal() {
             {/* Ward selector chips/pills */}
             {parentWards.length > 1 ? (
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-indigo-300 uppercase tracking-wider block">Select Ward to View</label>
+                <label className="text-[10px] font-black text-[#e1c594] uppercase tracking-wider block">Select Ward to View</label>
                 <div className="flex flex-wrap gap-2">
                   {parentWards.map(ward => (
                     <button
                       key={ward.id || ward.studentId}
                       onClick={() => setSelectedWardId(ward.studentId)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
                         selectedWardId === ward.studentId
-                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm'
-                          : 'bg-white/10 hover:bg-white/15 border-white/10 text-indigo-100'
+                          ? 'bg-[#faae57] border-[#faae57] text-[#1f2a2e] shadow-sm font-black'
+                          : 'bg-white/10 hover:bg-white/15 border-white/10 text-white'
                       }`}
                     >
-                      👤 {ward.firstName} {ward.lastName} ({ward.class})
+                      <User className="w-3.5 h-3.5" /> {ward.firstName} {ward.lastName} ({ward.class})
                     </button>
                   ))}
                 </div>
@@ -784,8 +784,8 @@ export default function ResultsTerminal() {
     if (!studentRecord) {
       return (
         <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center max-w-2xl mx-auto space-y-4">
-          <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto text-2xl font-black">
-            ⚠️
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+            <AlertCircle className="w-8 h-8" />
           </div>
           <h3 className="text-lg font-black text-slate-800">Student Profile Not Linked</h3>
           <p className="text-slate-500 text-sm">
@@ -801,16 +801,16 @@ export default function ResultsTerminal() {
     return (
       <div className="space-y-6">
         {/* Student Welcome & Quick Actions Card */}
-        <div className="bg-gradient-to-r from-indigo-900 to-indigo-950 p-6 sm:p-8 rounded-2xl border border-slate-800 text-white shadow-xl relative overflow-hidden">
+        <div className="bg-[#1c4a59] p-6 sm:p-8 rounded-2xl border border-slate-800 text-white shadow-xl relative overflow-hidden">
           <div className="relative z-10 space-y-4 max-w-xl">
-            <span className="px-3 py-1 bg-indigo-500/30 border border-indigo-500/20 rounded-lg text-[10px] font-black uppercase tracking-wider text-indigo-300">
-              🔒 STUDENT PORTAL
+            <span className="px-3 py-1 bg-white/10 border border-white/20 rounded-lg text-[10px] font-black uppercase tracking-wider text-[#e1c594] inline-flex items-center gap-1.5">
+              <Lock className="w-3 h-3" /> STUDENT PORTAL
             </span>
             <div className="space-y-1">
               <h2 className="text-xl sm:text-2xl font-black tracking-tight">
                 Academic Results Terminal
               </h2>
-              <p className="text-indigo-200 text-sm font-medium">
+              <p className="text-slate-200 text-sm font-medium">
                 Welcome back, <b>{studentRecord.firstName} {studentRecord.lastName}</b>! View your subject grades, class assessments, and generate your official terminal report card.
               </p>
             </div>

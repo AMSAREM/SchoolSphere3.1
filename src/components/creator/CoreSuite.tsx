@@ -180,7 +180,7 @@ export default function CoreSuite({
     const confirmText = newStatus === 'suspended' ? 'Suspend & Lockout' : 'Reactivate Portal';
     
     confirm({
-      title: `⚠️ ${confirmText} school?`,
+      title: ` ${confirmText} school?`,
       message: `Are you sure you want to ${newStatus === 'suspended' ? 'SUSPEND and block all user access' : 'REACTIVATE'} for ${selectedManageSchool.schoolName}?`,
       confirmLabel: confirmText,
       onConfirm: async () => {
@@ -220,7 +220,7 @@ export default function CoreSuite({
     }
 
     confirm({
-      title: '💼 Manage School Portal',
+      title: ' Manage School Portal',
       message: `Do you want to switch the system's active tenant to ${school.schoolName}? This will configure the server to run as this school's portal.`,
       confirmLabel: 'Switch Tenant Portal',
       onConfirm: async () => {
@@ -255,11 +255,11 @@ export default function CoreSuite({
     setDiagnosticsLogs([`[${new Date().toLocaleTimeString()}] Starting client diagnostics suite for: ${selectedManageSchool.schoolName}`]);
 
     const steps = [
-      { prg: 25, log: '🔑 Checking serial key structure and cryptographic validity...' },
-      { prg: 45, log: '🔥 Scanning database nodes and schema compliance...' },
-      { prg: 65, log: '📡 Validating active tenant API route permissions and token scopes...' },
-      { prg: 85, log: '🎛️ Analyzing Active modules count and memory load allocations...' },
-      { prg: 100, log: '✅ Diagnostics check completed. 0 fatal, minor advisory warnings detected.' }
+      { prg: 25, log: ' Checking serial key structure and cryptographic validity...' },
+      { prg: 45, log: ' Scanning database nodes and schema compliance...' },
+      { prg: 65, log: ' Validating active tenant API route permissions and token scopes...' },
+      { prg: 85, log: ' Analyzing Active modules count and memory load allocations...' },
+      { prg: 100, log: ' Diagnostics check completed. 0 fatal, minor advisory warnings detected.' }
     ];
 
     steps.forEach((step, idx) => {
@@ -276,14 +276,14 @@ export default function CoreSuite({
 
   const handleFixIssue = (issueId: string, issueLabel: string) => {
     confirm({
-      title: `⚡ Resolve ${issueLabel}?`,
+      title: ` Resolve ${issueLabel}?`,
       message: `Do you want the automated manager to patch and optimize this issue for ${selectedManageSchool.schoolName}?`,
       confirmLabel: 'Apply Auto-Fix',
       onConfirm: () => {
         setFixedIssues(prev => [...prev, issueId]);
         showToast(`Successfully resolved: ${issueLabel}!`, 'success');
         // Add log entry
-        setDiagnosticsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ FIXED: ${issueLabel} has been successfully optimized.`]);
+        setDiagnosticsLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}]  FIXED: ${issueLabel} has been successfully optimized.`]);
       }
     });
   };
@@ -662,7 +662,7 @@ export default function CoreSuite({
                     {/* Detected Problems & Advisories Section */}
                     <div className="space-y-3">
                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        🔧 Detected Tenant Issues & Configuration Drift
+                         Detected Tenant Issues & Configuration Drift
                       </h4>
 
                       <div className="grid grid-cols-1 gap-3">
@@ -876,7 +876,7 @@ export default function CoreSuite({
 
                     {/* Section 1: Tenant Licensing & Routing */}
                     <div className="space-y-2">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🔒 Tenant Access & Routing Overrides</h4>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider"> Tenant Access & Routing Overrides</h4>
                       <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/50 text-left">
                         {/* Activate Switch Portal */}
                         <div className="p-4 flex items-center justify-between gap-4">
@@ -923,7 +923,7 @@ export default function CoreSuite({
 
                     {/* Section 2: Administrative Announcement Broadcast */}
                     <div className="space-y-2">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">📢 Lockout / Security Announcement Banner</h4>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider"> Lockout / Security Announcement Banner</h4>
                       <div className="p-4 border border-slate-100 rounded-2xl bg-slate-50/50 space-y-3">
                         <div className="space-y-1">
                           <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Banner Announcement Message</label>
@@ -950,7 +950,7 @@ export default function CoreSuite({
 
                     {/* Section 3: Advanced Maintenance Tasks */}
                     <div className="space-y-2">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">⚡ Advanced Maintenance Routines</h4>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider"> Advanced Maintenance Routines</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <button
                           onClick={() => handleRunMaintenance('optimize_indices')}
@@ -985,7 +985,7 @@ export default function CoreSuite({
                     {maintenanceOutputLogs.length > 0 && (
                       <div className="space-y-1.5">
                         <div className="flex justify-between items-center">
-                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">💻 Procedure Execution Terminal</h4>
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider"> Procedure Execution Terminal</h4>
                           {activeMaintenanceAction && (
                             <span className="text-[9px] font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-bold animate-pulse">
                               RUNNING PIPELINE...

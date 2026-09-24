@@ -390,7 +390,7 @@ export default function TimetableManagement() {
 
     if (directClashes.length > 0) {
       const confirmForce = await confirm({
-        title: "⚠️ Timetable Slot Overlap Found",
+        title: "Timetable Slot Overlap Found",
         message: `Scheduling this slot will create ${directClashes.length} collision warning(s) in your timetable:\n\n${directClashes.map(d => `• ${d.message}`).join('\n')}\n\nDo you want to ignore and schedule this slot anyway?`,
         confirmLabel: "Force Add Overlap Cluster"
       });
@@ -724,13 +724,13 @@ export default function TimetableManagement() {
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Filter By Class</label>
             {isStudent ? (
-              <div className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-indigo-700 bg-indigo-50/50 flex items-center gap-1.5">
-                🏫 {studentClass} (My Class)
-              </div>
+               <div className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-indigo-700 bg-indigo-50/50 flex items-center gap-1.5">
+                 {studentClass} (My Class)
+               </div>
             ) : isParent ? (
               classesList.length <= 1 ? (
                 <div className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-indigo-700 bg-indigo-50/50 flex items-center gap-1.5">
-                  🏫 {classesList[0] || 'No Ward Class'} (My Ward's Class)
+                  {classesList[0] || 'No Ward Class'} (My Ward's Class)
                 </div>
               ) : (
                 <select
@@ -738,7 +738,7 @@ export default function TimetableManagement() {
                   onChange={(e) => setSelectedClassFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
                 >
-                  <option value="All">🏫 All My Wards' Classes</option>
+                  <option value="All">All My Wards' Classes</option>
                   {classesList.map(cls => (
                     <option key={cls} value={cls}>{cls}</option>
                   ))}
@@ -750,7 +750,7 @@ export default function TimetableManagement() {
                 onChange={(e) => setSelectedClassFilter(e.target.value)}
                 className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
               >
-                <option value="All">🏫 All Classes / Grades</option>
+                <option value="All">All Classes / Grades</option>
                 {classesList.map(cls => (
                   <option key={cls} value={cls}>{cls}</option>
                 ))}
@@ -767,7 +767,7 @@ export default function TimetableManagement() {
                   onChange={(e) => setSelectedTeacherFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
                 >
-                  <option value="All">👨‍🏫 All Teachers</option>
+                  <option value="All">All Teachers</option>
                   {teachersList.map(tch => (
                     <option key={tch} value={tch}>{tch}</option>
                   ))}
@@ -781,7 +781,7 @@ export default function TimetableManagement() {
                   onChange={(e) => setSelectedRoomFilter(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
                 >
-                  <option value="All">🏢 All Buildings / Rooms</option>
+                  <option value="All">All Buildings / Rooms</option>
                   {roomsList.map(rm => (
                     <option key={rm} value={rm}>{rm}</option>
                   ))}
@@ -861,17 +861,17 @@ export default function TimetableManagement() {
                                         {slot.subjectName}
                                       </h5>
                                       <p className="text-[10px] text-slate-500 font-extrabold mt-1 flex items-center gap-1">
-                                        👩‍🏫 {slot.teacherName}
+                                        {slot.teacherName}
                                       </p>
                                     </div>
 
                                     <div className="mt-2.5 pt-2 border-t border-indigo-50 flex items-center justify-between text-[9px] font-bold text-slate-400">
                                       <span className="flex items-center gap-0.5 bg-slate-100 text-slate-600 px-1 rounded">
-                                        🏫 {slot.room}
+                                        {slot.room}
                                       </span>
                                       {slot.notes && (
                                         <span className="truncate max-w-[80px]" title={slot.notes}>
-                                          📝 {slot.notes}
+                                          {slot.notes}
                                         </span>
                                       )}
                                     </div>
@@ -930,7 +930,7 @@ export default function TimetableManagement() {
                               : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
                           }`}
                         >
-                          🏫 {cls}
+                          {cls}
                         </button>
                       ))}
                     </div>
@@ -939,9 +939,9 @@ export default function TimetableManagement() {
                   <div className="space-y-3">
                     <div className="bg-indigo-50/40 border border-indigo-100/70 p-3 rounded-2xl text-xs text-indigo-950 font-extrabold tracking-wide flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5">
-                        👪 Showing Timetable for My Ward(s): <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{parentWards.length > 0 ? parentWards.map(w => `${w.firstName} (${w.class})`).join(', ') : 'None'}</b>
+                        Showing Timetable for My Ward(s): <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{parentWards.length > 0 ? parentWards.map(w => `${w.firstName} (${w.class})`).join(', ') : 'None'}</b>
                       </span>
-                      <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">🔒 Protected Parent Access</span>
+                      <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Protected Parent Access</span>
                     </div>
                     {classesList.length > 1 && (
                       <div className="flex flex-wrap items-center gap-2 print:hidden bg-slate-50 p-3 rounded-2xl border border-slate-200">
@@ -957,7 +957,7 @@ export default function TimetableManagement() {
                                   : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
                               }`}
                             >
-                              🏫 {cls}
+                              {cls}
                             </button>
                           ))}
                         </div>
@@ -967,9 +967,9 @@ export default function TimetableManagement() {
                 ) : (
                   <div className="bg-indigo-50/40 border border-indigo-100/70 p-3 rounded-2xl text-xs text-indigo-950 font-extrabold tracking-wide flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      🏫 Showing Timetable for My Class: <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{studentClass}</b>
+                      Showing Timetable for My Class: <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{studentClass}</b>
                     </span>
-                    <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">🔒 Standard Student Access</span>
+                    <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Standard Student Access</span>
                   </div>
                 )}
 
@@ -1065,9 +1065,9 @@ export default function TimetableManagement() {
                                             </h5>
                                             
                                             <div className="mt-1 text-[9px] font-bold text-slate-500 space-y-0.5">
-                                              <p className="truncate">👨‍🏫 {slot.teacherName}</p>
+                                              <p className="truncate"> {slot.teacherName}</p>
                                               <p className="text-indigo-600 font-black tracking-tight bg-indigo-50/55 px-1 rounded inline-block">
-                                                🏫 {slot.room}
+                                                 {slot.room}
                                               </p>
                                             </div>
 
@@ -1267,7 +1267,7 @@ export default function TimetableManagement() {
                               </td>
                               <td className="p-4">
                                 <div className="font-extrabold text-slate-800">{sug.subjectName}</div>
-                                <div className="text-[10px] text-indigo-600 font-bold mt-0.5">🏫 {sug.room}</div>
+                                <div className="text-[10px] text-indigo-600 font-bold mt-0.5"> {sug.room}</div>
                               </td>
                               <td className="p-4">
                                 <span className="text-slate-900 font-extrabold">
@@ -1286,7 +1286,7 @@ export default function TimetableManagement() {
                                 ) : (
                                   <div className="text-emerald-600 text-[10px] flex items-center gap-1">
                                     <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                    <span>✓ No collisions found</span>
+                                    <span> No collisions found</span>
                                   </div>
                                 )}
                               </td>
@@ -1464,7 +1464,7 @@ export default function TimetableManagement() {
                   className="p-1 bg-slate-200/60 hover:bg-slate-200 rounded-full text-slate-600 transition-colors"
                 >
                   <span className="sr-only">Close</span>
-                  ✕
+                  X
                 </button>
               </div>
 

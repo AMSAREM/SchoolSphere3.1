@@ -1,46 +1,25 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   GraduationCap, 
-  Users, 
-  Layers, 
-  ShieldCheck, 
   FileText, 
   CreditCard, 
   ArrowRight, 
   Check, 
-  Sparkles, 
-  CheckCircle2, 
-  ChevronRight, 
-  Star, 
-  Sliders, 
-  UserCheck, 
-  BarChart3, 
-  Database, 
-  Bell, 
-  Phone, 
   Mail, 
-  MapPin, 
-  Lock, 
   Key, 
-  RefreshCcw, 
-  ArrowUpRight,
-  School,
-  Split,
-  BookOpen,
-  CalendarCheck,
-  Zap,
-  HelpCircle,
-  Clock,
-  Laptop
+  CheckCircle, 
+  Building2,
+  ChevronDown,
+  Menu,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { PWAInstallButton } from './PWAInstallButton';
-import { OfflineIndicator } from './OfflineIndicator';
 import { PrivacyPolicyModal } from './legal/PrivacyPolicyModal';
 import { TermsOfServiceModal } from './legal/TermsOfServiceModal';
 import { SiteMapModal } from './legal/SiteMapModal';
 import { openCookiePreferences } from './legal/CookieConsentBanner';
+import { DoodleBackground } from './DoodleBackground';
 
 interface LandingPageProps {
   onEnterSchoolPortal: () => void;
@@ -61,170 +40,240 @@ export default function LandingPage({
   onOpenVideoTour,
   isLicensed
 }: LandingPageProps) {
+  // Mobile / Tablet Navigation Menu State
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   // Legal & Site Map Modals
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showSiteMapModal, setShowSiteMapModal] = useState(false);
 
-  // Active demo sandbox tab
-  const [activeTab, setActiveTab] = useState<'class_creator' | 'terminal' | 'fees' | 'attendance'>('class_creator');
-
-  // Simulated live class balancing state
-  const [balanceMetric, setBalanceMetric] = useState<'balanced' | 'rebalancing'>('balanced');
-  const [classFilter, setClassFilter] = useState<'5A' | '5B'>('5A');
-
-  // Interactive FAQ Accordion
+  // FAQ Accordion State
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-
-  const handleRunRebalance = () => {
-    setBalanceMetric('rebalancing');
-    setTimeout(() => {
-      setBalanceMetric('balanced');
-    }, 600);
-  };
 
   const faqs = [
     {
       q: "How does the Intelligent Class Placement algorithm work?",
-      a: "Just like Class Creator, SchoolSphere uses educator-crafted 'Teacher Logic' to evaluate academic performance, gender balance, behavioral compatibility, and special educational needs (IEP). It automatically enforces student separations (e.g. separating disruptive peer pairings) and accommodates twin or friendship requests while ensuring equal distribution across all classes."
+      a: "SchoolSphere uses educator-crafted Teacher Logic to evaluate academic performance, gender parity, behavioral compatibility, and special educational needs. It automatically prevents disruptive peer groupings and accommodates twin or friendship requests while ensuring equal distribution across all class streams."
     },
     {
-      q: "Can we import our existing student and teacher lists from Excel / CSV?",
-      a: "Yes. SchoolSphere includes a 1-click CSV and Excel roster importer. You can upload your current student rolls with Guardian contact info, previous academic scores, and class histories. The system maps fields automatically and validates data before committing to the database."
+      q: "Can our school import existing student and teacher rolls from Excel / CSV?",
+      a: "Yes. SchoolSphere includes a 1-click roster importer. You can upload student rolls with guardian contact numbers, previous academic scores, and class histories. The system maps fields automatically and validates data before committing to the database."
     },
     {
-      q: "Does SchoolSphere work offline if our school loses internet connectivity?",
-      a: "Yes. Built with local IndexedDB client caching and Supabase background reconciliation, your teachers can take attendance, record grades, and print report cards even during network blackouts. As soon as connectivity returns, all records sync seamlessly to the cloud."
+      q: "Does SchoolSphere work offline if our campus internet drops?",
+      a: "Yes. Built with offline-resilient local caching and automatic Supabase cloud reconciliation, teachers can take attendance, record grades, and print report cards even during network outages. As soon as connectivity returns, records sync seamlessly to the cloud."
     },
     {
-      q: "How are school fees collected and tracked?",
-      a: "SchoolSphere integrates directly with Mobile Money (MTN MoMo, Telecel Cash, AT Money) and Paystack. Guardians receive automated SMS notifications with direct payment links, and paid amounts are immediately credited to the student's ledger with instant digital receipts."
+      q: "How are school tuition fees collected and reconciled?",
+      a: "SchoolSphere integrates directly with Mobile Money (MTN MoMo, Telecel Cash, AT Money) and Paystack. Guardians receive automated SMS notifications with payment instructions, and paid amounts are immediately credited to the student's ledger with digital receipts."
     },
     {
       q: "How is student data protected and isolated between schools?",
-      a: "Every school tenant is strictly isolated using PostgreSQL Row Level Security (RLS) on Supabase. Administrators and staff can only access data belonging to their verified school_id, meeting international FERPA and data privacy standards."
+      a: "Every school tenant is strictly isolated using PostgreSQL Row Level Security (RLS) on Supabase. Administrators and staff can only access data belonging to their verified school_id, meeting strict international educational data privacy standards."
     }
   ];
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
-      
-      {/* Top Global Announcement Banner */}
-      <div className="w-full bg-slate-900 text-white text-xs py-2 px-4 border-b border-slate-800 flex items-center justify-between text-center relative z-20">
-        <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 mx-auto sm:mx-0">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 font-semibold text-[11px] border border-indigo-500/30">
-              <Sparkles className="w-3 h-3 text-indigo-400" />
-              SchoolSphere 3.1
-            </span>
-            <span className="hidden sm:inline text-slate-300 text-[11px]">
-              Intelligent Class Creator & WAEC Standard Terminals Powered by Supabase Cloud.
-            </span>
-          </div>
-          
-          <div className="hidden md:flex items-center gap-4 text-[11px] font-semibold text-slate-400">
-            <button 
-              onClick={onOpenVideoTour} 
-              className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              Watch 2-Min Tour <ArrowRight className="w-3 h-3" />
-            </button>
-            <span className="text-slate-600">|</span>
-            <span className="text-emerald-400 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              System Operational
-            </span>
-          </div>
-        </div>
-      </div>
-
+    <div className="min-h-screen w-full bg-[#f6f8f7] text-[#1f2a2e] font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative">
       {/* Main Sticky Navigation Header */}
-      <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-40 w-full bg-white border-b border-[#bac4c6] shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-18 flex items-center justify-between gap-3">
           
           {/* Logo Brand */}
-          <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-slate-200/90 dark:border-slate-700/80 flex items-center justify-center p-1 shadow-xs shrink-0">
+          <div 
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none min-h-[44px]" 
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          >
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden bg-white border-0 flex items-center justify-center p-1 shadow-xs shrink-0" style={{ borderWidth: '0px' }}>
               <img 
                 src="/sch sphere logo1.png" 
                 alt="SchoolSphere Logo" 
                 className="w-full h-full object-contain select-none pointer-events-none" 
               />
             </div>
-            <div>
+            <div className="flex flex-col justify-center">
               <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-bold text-lg text-slate-900 dark:text-slate-100 tracking-tight">School<span className="text-indigo-600 dark:text-indigo-400">Sphere</span></span>
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">3.1</span>
+                <span className="font-bold text-[14px] text-[#1c4a59] tracking-tight" style={{ fontSize: '14px' }}>School<span className="text-[#faae57]">Sphere</span></span>
               </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-tight mt-0.5">Intelligent Class & School Suite</p>
+              <p className="hidden xl:block text-[11px] text-[#6a7f84] font-medium tracking-tight mt-0.5">Intelligent Class & School Suite</p>
             </div>
           </div>
 
-          {/* Nav Links */}
-          <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-600 dark:text-slate-300">
-            <a href="#class-creator" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Class Placement</a>
-            <a href="#terminals" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Grade Terminals</a>
-            <a href="#billing" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Fees & MoMo</a>
-            <a href="#how-it-works" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">How It Works</a>
-            <a href="#security" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Security</a>
-            <a href="#faq" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">FAQ</a>
+          {/* Tablet & Desktop Nav Links (Visible on 768px+) */}
+          <nav className="hidden md:flex items-center gap-5 lg:gap-8 text-xs font-semibold text-[#6a7f84]">
+            <a href="#terminals" className="hover:text-[#1c4a59] transition-colors py-2">Grade Terminals</a>
+            <a href="#billing" className="hover:text-[#1c4a59] transition-colors py-2">Fees & MoMo</a>
+            <a href="#faq" className="hover:text-[#1c4a59] transition-colors py-2">FAQ</a>
           </nav>
 
           {/* Action CTAs */}
-          <div className="flex items-center gap-2.5">
-            <PWAInstallButton variant="landing" />
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            <div className="hidden lg:block">
+              <PWAInstallButton variant="landing" />
+            </div>
 
             <button
               onClick={onOpenActivation}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#1c4a59] hover:bg-[#f6f8f7] rounded-xl border border-[#bac4c6] transition-all cursor-pointer min-h-[44px]"
             >
-              <Key className="w-3.5 h-3.5 text-indigo-500" />
+              <Key className="w-3.5 h-3.5 text-[#1c4a59]" />
               <span>{isLicensed ? 'License Info' : 'Activate School'}</span>
             </button>
 
             <button
               onClick={onEnterSchoolPortal}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-lg shadow-xs transition-all cursor-pointer"
+              className="inline-flex items-center justify-center gap-1 font-bold text-[#1f2a2e] bg-[#faae57] hover:bg-[#e4ae67] active:scale-[0.97] rounded-full shadow-xs transition-all cursor-pointer shrink-0"
+              style={{ width: '101px', height: '30px' }}
             >
-              <span>Enter School Portal</span>
+              <span className="text-[13px] leading-none" style={{ fontSize: '13px' }}>Enter Portal</span>
               <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Mobile Navigation Toggle (Phones and small screens < 768px) */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+              className="md:hidden flex items-center justify-center w-11 h-11 rounded-full border border-[#bac4c6] text-[#1c4a59] bg-[#f6f8f7] hover:bg-white active:scale-[0.97] transition-all cursor-pointer shrink-0"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
 
         </div>
+
+        {/* Responsive Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-[#bac4c6] bg-white px-4 py-4 space-y-3 shadow-lg animate-in fade-in slide-in-from-top-2 duration-150">
+            <nav className="flex flex-col space-y-1">
+              <a
+                href="#terminals"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-[#1c4a59] hover:bg-[#f6f8f7] flex items-center justify-between transition-colors min-h-[44px]"
+              >
+                <span>Grade Terminals & Assessment</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#6a7f84]" />
+              </a>
+              <a
+                href="#billing"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-[#1c4a59] hover:bg-[#f6f8f7] flex items-center justify-between transition-colors min-h-[44px]"
+              >
+                <span>Fees & Mobile Money</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#6a7f84]" />
+              </a>
+              <a
+                href="#faq"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-[#1c4a59] hover:bg-[#f6f8f7] flex items-center justify-between transition-colors min-h-[44px]"
+              >
+                <span>Frequently Asked Questions</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#6a7f84]" />
+              </a>
+            </nav>
+
+            <div className="pt-2 border-t border-[#bac4c6]/60 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenActivation();
+                }}
+                className="w-full py-2.5 px-3 rounded-xl border border-[#bac4c6] text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] hover:bg-white flex items-center justify-center gap-1.5 transition-colors min-h-[44px] cursor-pointer"
+              >
+                <Key className="w-3.5 h-3.5 text-[#1c4a59]" />
+                <span>{isLicensed ? 'License Info' : 'Activate'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenVideoTour();
+                }}
+                className="w-full py-2.5 px-3 rounded-xl border border-[#bac4c6] text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] hover:bg-white flex items-center justify-center gap-1.5 transition-colors min-h-[44px] cursor-pointer"
+              >
+                <span>Watch Tour</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#6a7f84]" />
+              </button>
+            </div>
+
+            <div className="pt-1">
+              <PWAInstallButton variant="banner" className="w-full justify-center !rounded-xl !bg-[#1c4a59] hover:!bg-[#163b47] !text-white !py-2.5 !text-xs font-bold shadow-xs min-h-[44px]" />
+            </div>
+
+            <div className="pt-1 flex items-center justify-around text-[11px] font-semibold text-[#6a7f84] border-t border-[#bac4c6]/40">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenAbout();
+                }}
+                className="hover:text-[#1c4a59] py-2 cursor-pointer"
+              >
+                About
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenContact();
+                }}
+                className="hover:text-[#1c4a59] py-2 cursor-pointer"
+              >
+                Support
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenCreatorLogin();
+                }}
+                className="hover:text-[#1c4a59] py-2 cursor-pointer"
+              >
+                Console
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* HERO SECTION - Inspired by Class Creator */}
-      <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* HERO SECTION */}
+      <section className="relative pt-12 pb-16 lg:pt-16 lg:pb-20 border-b border-[#bac4c6] bg-[#f6f8f7] overflow-hidden">
+        <DoodleBackground opacity={0.06} />
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           
           <div className="text-center max-w-3xl mx-auto space-y-6">
             
             {/* Tag Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
-              <GraduationCap className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span>Made by Educators for High-Performing Schools</span>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white border border-[#bac4c6] text-[#1c4a59] text-xs font-bold shadow-xs">
+              <GraduationCap className="w-4 h-4 text-[#1c4a59]" />
+              <span>Engineered for High-Performing West African Schools</span>
             </div>
 
             {/* Main Headline */}
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 dark:text-slate-50 tracking-tight leading-[1.1]">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#1c4a59] tracking-tight leading-[1.15]">
               Balanced Class Lists. <br className="hidden sm:inline" />
-              <span className="text-indigo-600 dark:text-indigo-400">Automated Reports.</span> <br className="hidden sm:inline" />
-              Effortless School Management.
+              <span className="text-[#faae57]">Automated Reports.</span> <br className="hidden sm:inline" />
+              Effortless Productivity.
             </h1>
 
             {/* Subtitle */}
-            <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-normal leading-relaxed max-w-2xl mx-auto">
-              Say goodbye to sticky notes, spreadsheet chaos, and 3-week grading marathons. 
-              SchoolSphere empowers principals and teachers to create perfectly balanced classes, 
-              generate WAEC-standard terminal reports, and track fees with real-time Supabase cloud sync.
+            <p className="text-sm sm:text-base text-[#6a7f84] font-medium leading-relaxed max-w-2xl mx-auto">
+              Say goodbye to spreadsheet friction and chaotic grading periods. 
+              SchoolSphere empowers headteachers and faculty to organize balanced cohorts, 
+              generate WAEC-standard terminal reports, and manage timetables with real-time Supabase cloud persistence.
             </p>
 
             {/* Primary Action Button Cluster */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <button
                 onClick={onEnterSchoolPortal}
-                className="w-full sm:w-auto px-6 py-3.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3.5 text-sm font-bold text-[#1f2a2e] bg-[#faae57] hover:bg-[#e4ae67] rounded-full shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
               >
                 <span>Launch School Portal</span>
                 <ArrowRight className="w-4 h-4" />
@@ -232,732 +281,195 @@ export default function LandingPage({
 
               <button
                 onClick={onOpenActivation}
-                className="w-full sm:w-auto px-6 py-3.5 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3.5 text-sm font-bold text-[#1c4a59] bg-white hover:bg-[#f6f8f7] rounded-full border border-[#bac4c6] shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
               >
-                <Key className="w-4 h-4 text-indigo-500" />
+                <Key className="w-4 h-4 text-[#1c4a59]" />
                 <span>Activate School License</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const el = document.getElementById('class-creator');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className="w-full sm:w-auto px-5 py-3.5 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <span>Explore Live Demo</span>
-                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
             {/* Trust Metrics Bar */}
-            <div className="pt-8 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto text-left sm:text-center">
+            <div className="pt-8 border-t border-[#bac4c6] grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto text-left sm:text-center">
               <div>
-                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">50,000+</p>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">Students Placed & Managed</p>
+                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-[#1c4a59]">50,000+</p>
+                <p className="text-xs font-medium text-[#6a7f84] mt-0.5">Students Placed & Managed</p>
               </div>
               <div>
-                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-indigo-600 dark:text-indigo-400">3 Wks → 5m</p>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">Report & Roster Creation</p>
+                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-[#faae57]">3 Wks - 5m</p>
+                <p className="text-xs font-medium text-[#6a7f84] mt-0.5">Report & Roster Creation</p>
               </div>
               <div>
-                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">100%</p>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">RLS Tenant Isolation</p>
+                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-[#1c4a59]">100%</p>
+                <p className="text-xs font-medium text-[#6a7f84] mt-0.5">RLS Tenant Isolation</p>
               </div>
               <div>
-                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">99.98%</p>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">Supabase Cloud Uptime</p>
+                <p className="text-2xl sm:text-3xl font-black font-mono tabular-nums text-[#06d6a0]">99.98%</p>
+                <p className="text-xs font-medium text-[#6a7f84] mt-0.5">Cloud Database Uptime</p>
               </div>
             </div>
 
           </div>
 
-          {/* INTERACTIVE HERO SHOWCASE - LIVE SANDBOX */}
-          <div id="class-creator" className="mt-14 max-w-5xl mx-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
+        </div>
+      </section>
+
+      {/* CONTINUOUS ASSESSMENT & TERMINAL REPORTS */}
+      <section id="terminals" className="py-16 sm:py-20 border-b border-[#bac4c6] bg-[#f6f8f7] relative">
+        <DoodleBackground opacity={0.04} />
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             
-            {/* Showcase Header with Real-time Tab Controls */}
-            <div className="bg-slate-100 dark:bg-slate-800/60 p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1.5 mr-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+            <div className="space-y-5">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#6a7f84]">Grading & Examination Suite</span>
+              <h2 className="text-2xl sm:text-4xl font-black text-[#1c4a59] tracking-tight leading-tight">
+                WAEC Standard Continuous Assessment & Instant Reports
+              </h2>
+              <p className="text-sm sm:text-base text-[#6a7f84] font-medium leading-relaxed">
+                Grade terminal assessments with precision. Teachers input Class Assessment (30%) and Exam (70%), 
+                and SchoolSphere automatically computes totals, ranks, and grade remarks according to Ministry standards.
+              </p>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-[#faae57] text-[#1f2a2e] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[#1c4a59]">Single-Click Broad-Sheet Analysis</h4>
+                    <p className="text-xs text-[#6a7f84] mt-0.5">Instantly review subject pass rates, grade point averages, and class distributions.</p>
+                  </div>
                 </div>
-                <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-indigo-500" />
-                  SchoolSphere Core Engine
+
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-[#faae57] text-[#1f2a2e] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[#1c4a59]">Official Letterhead Print Mode</h4>
+                    <p className="text-xs text-[#6a7f84] mt-0.5">Clean print stylesheet strips navigation, printing crisp black-on-white terminal report cards.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-[#faae57] text-[#1f2a2e] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[#1c4a59]">Real-time Parent Ward Portal</h4>
+                    <p className="text-xs text-[#6a7f84] mt-0.5">Parents sign in and securely view only their children's verified terminal reports and rankings.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Assessment Matrix Mockup */}
+            <div className="bg-white border border-[#bac4c6] rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-[#bac4c6] pb-4 mb-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#1c4a59]" />
+                  <span className="text-xs font-bold text-[#1c4a59]">Basic 7 • Integrated Science</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-md text-[#1c4a59]">
+                  CA (30) + EXAM (70)
                 </span>
               </div>
 
-              {/* Segmented Showcase Tabs */}
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold overflow-x-auto">
-                <button
-                  onClick={() => setActiveTab('class_creator')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
-                    activeTab === 'class_creator' 
-                      ? "bg-indigo-600 text-white shadow-xs" 
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  )}
-                >
-                  <Split className="w-3.5 h-3.5" />
-                  <span>Class Placement</span>
-                </button>
+              <div className="space-y-3 font-mono text-xs">
+                <div className="flex items-center justify-between p-3 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/70">
+                  <div>
+                    <span className="font-bold text-[#1f2a2e] font-sans block">Mensah, Ama</span>
+                    <span className="text-[10px] text-[#6a7f84]">CA: 28 / 30 • Exam: 64 / 70</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#1c4a59]">92%</span>
+                    <span className="text-[10px] font-bold text-[#06d6a0] block font-sans">Grade 1 (Excellent)</span>
+                  </div>
+                </div>
 
-                <button
-                  onClick={() => setActiveTab('terminal')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
-                    activeTab === 'terminal' 
-                      ? "bg-indigo-600 text-white shadow-xs" 
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  )}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Terminal Reports</span>
-                </button>
+                <div className="flex items-center justify-between p-3 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/70">
+                  <div>
+                    <span className="font-bold text-[#1f2a2e] font-sans block">Osei, Kwame</span>
+                    <span className="text-[10px] text-[#6a7f84]">CA: 24 / 30 • Exam: 53 / 70</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#1c4a59]">77%</span>
+                    <span className="text-[10px] font-bold text-[#1c4a59] block font-sans">Grade 2 (Very Good)</span>
+                  </div>
+                </div>
 
-                <button
-                  onClick={() => setActiveTab('fees')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
-                    activeTab === 'fees' 
-                      ? "bg-indigo-600 text-white shadow-xs" 
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  )}
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Fees & MoMo</span>
-                </button>
+                <div className="flex items-center justify-between p-3 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/70">
+                  <div>
+                    <span className="font-bold text-[#1f2a2e] font-sans block">Appiah, Kofi</span>
+                    <span className="text-[10px] text-[#6a7f84]">CA: 20 / 30 • Exam: 44 / 70</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#1c4a59]">64%</span>
+                    <span className="text-[10px] font-bold text-[#faae57] block font-sans">Grade 3 (Good)</span>
+                  </div>
+                </div>
+              </div>
 
-                <button
-                  onClick={() => setActiveTab('attendance')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
-                    activeTab === 'attendance' 
-                      ? "bg-indigo-600 text-white shadow-xs" 
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  )}
+              <div className="mt-5 pt-4 border-t border-[#bac4c6] flex items-center justify-between text-xs font-bold text-[#1c4a59]">
+                <span>Class Average: 77.6%</span>
+                <button 
+                  onClick={onEnterSchoolPortal}
+                  className="text-xs text-[#faae57] hover:underline font-bold cursor-pointer"
                 >
-                  <CalendarCheck className="w-3.5 h-3.5" />
-                  <span>RFID Attendance</span>
+                  Enter Grading Terminal
                 </button>
               </div>
             </div>
 
-            {/* Showcase Body Content */}
-            <div className="p-4 sm:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950/40">
-              
-              {/* TAB 1: INTELLIGENT CLASS CREATOR (Inspired by ClassCreator.io) */}
-              {activeTab === 'class_creator' && (
-                <div className="space-y-6">
-                  
-                  {/* Controls & Algorithmic Summary Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Grade 5 Cohort Placement</h3>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Balanced Cohort
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">58 Students • 2 Stream Sections (5A Emerald & 5B Sapphire)</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleRunRebalance}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <RefreshCcw className={cn("w-3.5 h-3.5", balanceMetric === 'rebalancing' && "animate-spin text-indigo-600")} />
-                        <span>{balanceMetric === 'rebalancing' ? 'Optimizing...' : 'Run Teacher Logic'}</span>
-                      </button>
-
-                      <div className="flex rounded-md border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
-                        <button
-                          onClick={() => setClassFilter('5A')}
-                          className={cn("px-2.5 py-1 rounded transition-colors cursor-pointer", classFilter === '5A' ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs" : "text-slate-500")}
-                        >
-                          View 5A
-                        </button>
-                        <button
-                          onClick={() => setClassFilter('5B')}
-                          className={cn("px-2.5 py-1 rounded transition-colors cursor-pointer", classFilter === '5B' ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs" : "text-slate-500")}
-                        >
-                          View 5B
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Real-Time Balance Analytics Comparison Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        <span>Gender Parity</span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">50% / 50%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-xs overflow-hidden flex">
-                        <div className="h-full bg-indigo-500 w-1/2" title="Female: 14" />
-                        <div className="h-full bg-cyan-500 w-1/2" title="Male: 15" />
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-1.5">14 Girls • 15 Boys per section</p>
-                    </div>
-
-                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        <span>Academic Spread</span>
-                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">Normal Bell Curve</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-xs overflow-hidden flex">
-                        <div className="h-full bg-emerald-500 w-[30%]" title="Advanced: 30%" />
-                        <div className="h-full bg-indigo-500 w-[50%]" title="Proficient: 50%" />
-                        <div className="h-full bg-amber-500 w-[20%]" title="Developing: 20%" />
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-1.5">9 High • 15 Mid • 5 Support</p>
-                    </div>
-
-                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        <span>Behavior Profile</span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">Low Friction</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-xs overflow-hidden">
-                        <div className="h-full bg-indigo-600 w-[92%]" />
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-1.5">Zero conflicting peer pairs</p>
-                    </div>
-
-                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        <span>Teacher Logic Pairings</span>
-                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">12 Rules Satisfied</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-xs overflow-hidden">
-                        <div className="h-full bg-emerald-500 w-full" />
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-1.5">Twin & Separations honored</p>
-                    </div>
-                  </div>
-
-                  {/* Student Placement Roster Table */}
-                  <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                          {classFilter === '5A' ? 'Class 5A (Emerald Section)' : 'Class 5B (Sapphire Section)'}
-                        </span>
-                        <span className="text-[11px] font-mono text-slate-500">29 Students Enrolled</span>
-                      </div>
-                      <span className="text-[11px] text-slate-400">Class Teacher: {classFilter === '5A' ? 'Mrs. Eunice Darko' : 'Mr. Kwesi Osei'}</span>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-medium">
-                          <tr>
-                            <th className="px-4 py-2.5">Student</th>
-                            <th className="px-4 py-2.5">Academic Band</th>
-                            <th className="px-4 py-2.5">Behavior Index</th>
-                            <th className="px-4 py-2.5">Teacher Logic Tags</th>
-                            <th className="px-4 py-2.5 text-right">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                          {[
-                            { name: 'Kofi Mensah', id: 'SCH-501', gender: 'M', band: 'Advanced (Grade A)', behavior: 'Exemplary', tag: 'Paired: Kwame', status: 'Locked' },
-                            { name: 'Abena Serwaa', id: 'SCH-502', gender: 'F', band: 'Advanced (Grade A)', behavior: 'Leadership', tag: 'Class Prefect Candidate', status: 'Placed' },
-                            { name: 'Emmanuel Asante', id: 'SCH-503', gender: 'M', band: 'Proficient (Grade B)', behavior: 'Standard', tag: 'Separated: Kelvin', status: 'Placed' },
-                            { name: 'Grace Addo', id: 'SCH-504', gender: 'F', band: 'Proficient (Grade B)', behavior: 'Cooperative', tag: 'Math Enrichment', status: 'Placed' },
-                            { name: 'Nana Yaw Boateng', id: 'SCH-505', gender: 'M', band: 'Developing (Support)', behavior: 'Requires Focus', tag: 'IEP Support Assigned', status: 'Balanced' }
-                          ].map((s, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-7 h-7 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-[10px]">
-                                    {s.name[0]}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-slate-800 dark:text-slate-200">{s.name}</div>
-                                    <div className="text-[10px] font-mono text-slate-400">{s.id} • {s.gender === 'M' ? 'Male' : 'Female'}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={cn(
-                                  "text-[11px] font-semibold px-2 py-0.5 rounded-md",
-                                  s.band.includes('Advanced') && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60",
-                                  s.band.includes('Proficient') && "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60",
-                                  s.band.includes('Developing') && "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60"
-                                )}>
-                                  {s.band}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-medium">{s.behavior}</td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                  {s.tag}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                                  <Check className="w-3 h-3" />
-                                  {s.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                </div>
-              )}
-
-              {/* TAB 2: TERMINAL REPORTS & GRADING */}
-              {activeTab === 'terminal' && (
-                <div className="space-y-4">
-                  <div className="p-5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">WAEC / GES STANDARD</span>
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">Continuous Assessment Terminal Report Sheet</h4>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">Student: <span className="font-bold text-slate-700 dark:text-slate-300">Akua Afriyie</span> • JHS 2 • Term 1 Assessment (30% CA + 70% Exam)</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Overall GPA</span>
-                        <span className="text-lg font-black font-mono text-indigo-600 dark:text-indigo-400">1.2 (Grade 1)</span>
-                      </div>
-                      <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2" />
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Position in Class</span>
-                        <span className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">2nd of 46</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden text-xs">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800 font-medium">
-                        <tr>
-                          <th className="px-4 py-2.5">Subject</th>
-                          <th className="px-4 py-2.5 text-center">Class Score (30%)</th>
-                          <th className="px-4 py-2.5 text-center">Exam Score (70%)</th>
-                          <th className="px-4 py-2.5 text-center">Total (100%)</th>
-                          <th className="px-4 py-2.5 text-center">Grade</th>
-                          <th className="px-4 py-2.5">Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                        {[
-                          { sub: 'English Language', ca: '28', ex: '64', tot: '92', gr: '1', rem: 'Outstanding analytical reading' },
-                          { sub: 'Mathematics', ca: '27', ex: '61', tot: '88', gr: '1', rem: 'Strong problem-solving grasp' },
-                          { sub: 'Integrated Science', ca: '26', ex: '59', tot: '85', gr: '1', rem: 'Very good lab experimental results' },
-                          { sub: 'Social Studies', ca: '29', ex: '62', tot: '91', gr: '1', rem: 'Exceptional civic knowledge' },
-                          { sub: 'Information & Tech (ICT)', ca: '30', ex: '65', tot: '95', gr: '1', rem: 'Superior computational literacy' },
-                        ].map((r, i) => (
-                          <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                            <td className="px-4 py-2.5 font-bold text-slate-800 dark:text-slate-200">{r.sub}</td>
-                            <td className="px-4 py-2.5 text-center font-mono tabular-nums">{r.ca}</td>
-                            <td className="px-4 py-2.5 text-center font-mono tabular-nums">{r.ex}</td>
-                            <td className="px-4 py-2.5 text-center font-mono font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{r.tot}%</td>
-                            <td className="px-4 py-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">{r.gr}</td>
-                            <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{r.rem}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 3: FEES & MOMO LEDGER */}
-              {activeTab === 'fees' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Total Term Billed</p>
-                      <h4 className="text-xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">GH₵ 148,200.00</h4>
-                      <p className="text-[10px] text-slate-400 mt-1">Tuition, Feeding & Activities</p>
-                    </div>
-                    <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Collected via MoMo & Bank</p>
-                      <h4 className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">GH₵ 136,450.00</h4>
-                      <p className="text-[10px] text-emerald-600/70 mt-1">92% Real-time reconciliation</p>
-                    </div>
-                    <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Outstanding Arrears</p>
-                      <h4 className="text-xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-1">GH₵ 11,750.00</h4>
-                      <p className="text-[10px] text-rose-600/70 mt-1">Automated SMS Reminders queued</p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-xs">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                      <span className="font-bold text-slate-800 dark:text-slate-200">Recent Automated Payment Transactions</span>
-                      <span className="text-[11px] font-mono text-slate-400">Live Paystack / MoMo Gateway</span>
-                    </div>
-                    <div className="space-y-2.5 pt-3">
-                      {[
-                        { student: 'Yaw Ofori (Basic 6)', ref: 'MM-GH-829104', amount: 'GH₵ 850.00', method: 'MTN Mobile Money', time: '5 mins ago', status: 'Instant Verified' },
-                        { student: 'Priscilla Amoah (JHS 1)', ref: 'PSTK-491022', amount: 'GH₵ 1,200.00', method: 'Paystack Card', time: '14 mins ago', status: 'Instant Verified' },
-                        { student: 'David Kyeremeh (Basic 3)', ref: 'MM-GH-773190', amount: 'GH₵ 450.00', method: 'Telecel Cash', time: '28 mins ago', status: 'Instant Verified' }
-                      ].map((tx, idx) => (
-                        <div key={idx} className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800/50 last:border-0">
-                          <div>
-                            <div className="font-bold text-slate-800 dark:text-slate-200">{tx.student}</div>
-                            <div className="text-[10px] font-mono text-slate-400">{tx.ref} • {tx.method} • {tx.time}</div>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-bold font-mono text-slate-900 dark:text-slate-100 block">{tx.amount}</span>
-                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">{tx.status}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: RFID ATTENDANCE TERMINAL */}
-              {activeTab === 'attendance' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">School Gate RFID & Biometric Terminal Active</h4>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">Today: 412 of 420 Students Present (98.1% Attendance Rate)</p>
-                    </div>
-                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      Terminal #01 Main Gate
-                    </span>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 text-xs space-y-2.5">
-                    {[
-                      { student: 'Ama Owusu', class: 'Basic 4B', time: '07:22 AM', method: 'RFID Card Tap', status: 'Present', sms: 'Guardian SMS Dispatched' },
-                      { student: 'Michael Tetteh', class: 'JHS 3A', time: '07:28 AM', method: 'Biometric Fingerprint', status: 'Present', sms: 'Guardian SMS Dispatched' },
-                      { student: 'Kelvin Adjei', class: 'Basic 6A', time: '08:05 AM', method: 'Manual Teacher Roll', status: 'Late', sms: 'Late Notice Sent' }
-                    ].map((att, i) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded-md bg-slate-50 dark:bg-slate-800/40">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">{att.time}</span>
-                          <div>
-                            <div className="font-bold text-slate-800 dark:text-slate-200">{att.student} ({att.class})</div>
-                            <div className="text-[10px] text-slate-400">{att.method}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">{att.status}</span>
-                          <span className="text-[10px] text-slate-400">{att.sms}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            {/* Showcase Footer Bar */}
-            <div className="p-3.5 bg-slate-100 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">
-                Want to test this live with your school's actual student dataset?
-              </span>
-              <button
-                onClick={onEnterSchoolPortal}
-                className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <span>Launch Interactive Demo School</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
           </div>
-
         </div>
       </section>
 
-      {/* THE PROBLEM VS THE SOLUTION (Class Creator Philosophy) */}
-      <section className="py-16 lg:py-24 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+      {/* SECTION 4: FEES & MOBILE MONEY BILLING */}
+      <section id="billing" className="py-16 sm:py-20 border-b border-[#bac4c6] bg-white relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="text-center max-w-3xl mx-auto mb-14 space-y-3">
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
-              Creating class lists and running a school manually is broken.
+          <div className="text-center max-w-3xl mx-auto mb-12 space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#6a7f84]">Direct Tuition Settlement</span>
+            <h2 className="text-2xl sm:text-4xl font-black text-[#1c4a59] tracking-tight">
+              Mobile Money (MoMo) & Paystack Tuition Invoicing
             </h2>
-            <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-              Every term, educators lose dozens of hours to manual spreadsheet data entry, 
-              parent complaints over unbalanced classes, and lost receipt slips. SchoolSphere eliminates the friction.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 max-w-5xl mx-auto">
-            
-            {/* The Old Way */}
-            <div className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-xl border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-5">
-              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
-                <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 flex items-center justify-center font-bold">✕</div>
-                <h3 className="font-bold text-lg">The Old Traditional Way</h3>
-              </div>
-
-              <ul className="space-y-3.5 text-xs text-slate-600 dark:text-slate-400">
-                <li className="flex items-start gap-2.5">
-                  <span className="text-rose-500 font-bold mt-0.5">•</span>
-                  <span><strong>Whiteboard & Sticky Notes:</strong> Teachers spend 40+ hours shuffling colored cards, missing behavioral conflicts and separating friends accidentally.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-rose-500 font-bold mt-0.5">•</span>
-                  <span><strong>3-Week Grading Bottleneck:</strong> Computing continuous assessments by hand causes calculation errors, delayed terminal reports, and exhausted teachers.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-rose-500 font-bold mt-0.5">•</span>
-                  <span><strong>Missing Bank Slips & Cash Thefts:</strong> Manual paper receipts lead to uncollected fee arrears, audit discrepancies, and angry parents.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-rose-500 font-bold mt-0.5">•</span>
-                  <span><strong>Disconnected Data Silos:</strong> Academic records stored on flash drives get lost or corrupted when computers crash.</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* The SchoolSphere Way */}
-            <div className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-xs space-y-5 relative">
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center font-bold">✓</div>
-                <h3 className="font-bold text-lg">The SchoolSphere 3.1 Way</h3>
-              </div>
-
-              <ul className="space-y-3.5 text-xs text-slate-600 dark:text-slate-400">
-                <li className="flex items-start gap-2.5">
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">✓</span>
-                  <span><strong>Algorithmic Class Balancing:</strong> Balances academics, behavior, gender, and special needs in 60 seconds with educator-configured rules.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">✓</span>
-                  <span><strong>Instant Terminal Reports:</strong> Automatic GPA calculation, WAEC/GES grade bands, and batch PDF generation ready for parent distribution.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">✓</span>
-                  <span><strong>Instant MoMo & Paystack Reconciliation:</strong> Digital receipts and automated SMS payment reminders eliminate all cash leakage.</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">✓</span>
-                  <span><strong>Authoritative Cloud Single Source of Truth:</strong> PostgreSQL database with Row Level Security guarantees 100% data safety and offline caching.</span>
-                </li>
-              </ul>
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* 6 CORE PILLARS GRID */}
-      <section id="terminals" className="py-16 lg:py-24 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-3xl mx-auto mb-14 space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold border border-indigo-200 dark:border-indigo-800">
-              Comprehensive Platform Capabilities
-            </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
-              Built specifically for modern primary, secondary, and international schools.
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <Split className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Intelligent Class Placement</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Automatically allocate students across parallel classes. Accommodates teacher surveys, academic bell curves, behavioral friction pairs, and twin placements.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <FileText className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">WAEC & Cambridge Terminal Reports</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Compute 30% Continuous Assessment (Class Tests, Homework, Projects) + 70% End-of-Term Examination scores with automated grade rankings and remarks.
-              </p>
-            </div>
-
-            <div id="billing" className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <CreditCard className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">MoMo & Paystack Fee Collection</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Itemized bills for tuition, ICT, feeding, and uniform fees. Parents pay instantly via Mobile Money wallets with automatic ledger reconciliation.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <CalendarCheck className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">RFID & Biometric Attendance</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                One-tap student card badges at school gates or in classrooms. Dispatches immediate SMS alerts to guardians if a student fails to arrive on time.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <UserCheck className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Granular Role-Based Permissions</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Dedicated views for Principals, Academic Deans, Form Masters, Subject Teachers, and Accountants. Zero risk of teachers altering financial books.
-              </p>
-            </div>
-
-            <div id="security" className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">PostgreSQL RLS & Cloud Reliability</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Direct Supabase PostgreSQL database architecture with strict Row Level Security, automatic encrypted backups, and offline fallback resilience.
-              </p>
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* HOW IT WORKS IN 3 STEPS */}
-      <section id="how-it-works" className="py-16 lg:py-24 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-14 space-y-3">
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
-              Get your school running in 3 simple steps.
-            </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Transitioning from paper files or Excel spreadsheets takes less than an afternoon.
+            <p className="text-sm sm:text-base text-[#6a7f84] font-medium leading-relaxed">
+              Accept MTN MoMo, Telecel Cash, and card payments directly into your school bank account. 
+              Eliminate cash handling risks and deliver instant receipts to parents via SMS.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold font-mono text-sm flex items-center justify-center">
-                01
+            <div className="bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl p-6 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-white border border-[#bac4c6] flex items-center justify-center text-[#1c4a59]">
+                <CreditCard className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Import Rosters & Staff</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Upload your student rosters and teacher records via CSV or create them directly in the UI. Configure classes, arms, and academic terms.
+              <h3 className="text-base font-bold text-[#1c4a59]">Direct MoMo Prompts</h3>
+              <p className="text-xs text-[#6a7f84] leading-relaxed font-medium">
+                Push instant USSD payment prompts directly to parents' MTN or Telecel phones for 1-step PIN fee approval.
               </p>
             </div>
 
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold font-mono text-sm flex items-center justify-center">
-                02
+            <div className="bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl p-6 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-white border border-[#bac4c6] flex items-center justify-center text-[#1c4a59]">
+                <CheckCircle className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Set Logic & Placement Rules</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Define class size caps, gender balance targets, peer separation rules, and academic distribution parameters.
+              <h3 className="text-base font-bold text-[#1c4a59]">Automated Ledger Reconciliation</h3>
+              <p className="text-xs text-[#6a7f84] leading-relaxed font-medium">
+                No manual receipt matching. Payments immediately update the student ledger and reduce outstanding balance.
               </p>
             </div>
 
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-              <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white font-bold font-mono text-sm flex items-center justify-center">
-                03
+            <div className="bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl p-6 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-white border border-[#bac4c6] flex items-center justify-center text-[#1c4a59]">
+                <Mail className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Generate, Print & Track</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Generate balanced classes instantly, record daily marks, dispatch terminal report cards to parents, and track fees with live sync.
+              <h3 className="text-base font-bold text-[#1c4a59]">SMS Payment Receipts</h3>
+              <p className="text-xs text-[#6a7f84] leading-relaxed font-medium">
+                Dispatch branded SMS confirmations with official transaction reference numbers to guardians automatically.
               </p>
-            </div>
-
-          </div>
-
-          <div className="text-center mt-10">
-            <button
-              onClick={onEnterSchoolPortal}
-              className="inline-flex items-center gap-2 px-6 py-3 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-all cursor-pointer"
-            >
-              <span>Get Started Now</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-
-        </div>
-      </section>
-
-      {/* EDUCATOR TESTIMONIALS */}
-      <section className="py-16 lg:py-24 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-14 space-y-3">
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
-              Trusted by school heads, administrators, and teachers.
-            </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Read how schools are transforming their administration across the region.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="flex text-amber-400 gap-1">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />)}
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">
-                  "Class list creation used to paralyze our senior leadership team every August. With SchoolSphere's class creator logic, we balanced 400 junior high students across 10 arms in under an hour without a single parental conflict."
-                </p>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
-                <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Mr. Joseph Mensah</h4>
-                <p className="text-[11px] text-slate-500">Headmaster • Prempeh Model Academy</p>
-              </div>
-            </div>
-
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="flex text-amber-400 gap-1">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />)}
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">
-                  "Our terminal report cards are now printed and emailed within 48 hours of exams closing. The automatic WAEC grade scale calculation and teacher remarks have saved our teachers immense stress."
-                </p>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
-                <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Dr. Abigail Boateng</h4>
-                <p className="text-[11px] text-slate-500">Academic Dean • Cape Coast International</p>
-              </div>
-            </div>
-
-            <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="flex text-amber-400 gap-1">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />)}
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">
-                  "Tuition collection via MTN MoMo and Paystack solved our cash accounting headaches. Parents get instant receipts on their phones, and our bursar has real-time reconciliation with zero lost funds."
-                </p>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
-                <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100">Rev. Francis Quaye</h4>
-                <p className="text-[11px] text-slate-500">Director of Finance • Achimota Prep School</p>
-              </div>
             </div>
 
           </div>
@@ -965,37 +477,66 @@ export default function LandingPage({
         </div>
       </section>
 
-      {/* FREQUENTLY ASKED QUESTIONS (Accordion) */}
-      <section id="faq" className="py-16 lg:py-24 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* SECTION 5: INSTITUTIONAL TRUST (NAMED SCHOOLS) */}
+      <section className="py-14 border-b border-[#bac4c6] bg-[#f6f8f7] relative overflow-hidden">
+        <DoodleBackground opacity={0.03} />
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 relative z-10">
+          <p className="text-xs font-bold text-[#6a7f84] uppercase tracking-widest">
+            Trusted by Administrators Across Leading Academic Institutions
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-[#1c4a59] font-bold text-sm sm:text-base">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-[#bac4c6] shadow-xs">
+              <Building2 className="w-4 h-4 text-[#faae57]" />
+              <span>Cape Coast International School</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-[#bac4c6] shadow-xs">
+              <Building2 className="w-4 h-4 text-[#faae57]" />
+              <span>Mfantsipim School</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-[#bac4c6] shadow-xs">
+              <Building2 className="w-4 h-4 text-[#faae57]" />
+              <span>Prempeh College</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-[#bac4c6] shadow-xs">
+              <Building2 className="w-4 h-4 text-[#faae57]" />
+              <span>Achimota Academy</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 6: FREQUENTLY ASKED QUESTIONS */}
+      <section id="faq" className="py-16 sm:py-20 border-b border-[#bac4c6] bg-white relative">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="text-center mb-12 space-y-3">
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
+          <div className="text-center mb-10 space-y-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#6a7f84]">Got Questions?</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-[#1c4a59] tracking-tight">
               Frequently Asked Questions
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-              Everything you need to know about implementing SchoolSphere in your school.
-            </p>
           </div>
 
           <div className="space-y-3">
-            {faqs.map((item, idx) => {
+            {faqs.map((faq, idx) => {
               const isOpen = openFaq === idx;
               return (
                 <div 
-                  key={idx} 
-                  className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden"
+                  key={idx}
+                  className="bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl overflow-hidden transition-all"
                 >
                   <button
+                    type="button"
                     onClick={() => setOpenFaq(isOpen ? null : idx)}
-                    className="w-full px-5 py-4 text-left flex items-center justify-between text-xs font-bold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                    className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-3 font-bold text-sm text-[#1c4a59] cursor-pointer"
                   >
-                    <span>{item.q}</span>
-                    <ChevronRight className={cn("w-4 h-4 transition-transform text-slate-400", isOpen && "rotate-90 text-indigo-600")} />
+                    <span>{faq.q}</span>
+                    <ChevronDown className={cn("w-4 h-4 text-[#6a7f84] transition-transform", isOpen && "rotate-180")} />
                   </button>
                   {isOpen && (
-                    <div className="px-5 pb-4 pt-1 text-xs text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800/60">
-                      {item.a}
+                    <div className="px-4 sm:px-5 pb-5 text-xs text-[#6a7f84] leading-relaxed font-medium border-t border-[#bac4c6]/40 pt-3">
+                      {faq.a}
                     </div>
                   )}
                 </div>
@@ -1006,164 +547,68 @@ export default function LandingPage({
         </div>
       </section>
 
-      {/* CALL TO ACTION BANNER */}
-      <section className="py-16 bg-indigo-600 text-white relative overflow-hidden">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 relative z-10">
-          <h2 className="text-2xl sm:text-4xl font-black tracking-tight">
-            Ready to upgrade your school's class placement and administration?
-          </h2>
-          <p className="text-sm text-indigo-100 max-w-xl mx-auto leading-relaxed">
-            Join hundreds of forward-thinking educators. Launch the SchoolSphere portal in minutes, or activate your institutional license key.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-            <button
-              onClick={onEnterSchoolPortal}
-              className="w-full sm:w-auto px-6 py-3.5 text-xs font-bold text-indigo-600 bg-white hover:bg-indigo-50 rounded-lg shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <span>Launch School Portal</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={onOpenActivation}
-              className="w-full sm:w-auto px-6 py-3.5 text-xs font-semibold text-white bg-indigo-700 hover:bg-indigo-800 border border-indigo-500 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Key className="w-4 h-4" />
-              <span>Activate Institutional License</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* MODERN FOOTER */}
-      <footer className="bg-slate-900 text-slate-400 text-xs border-t border-slate-800 py-12">
+      {/* FOOTER */}
+      <footer className="bg-[#1c4a59] text-white py-12 border-t border-[#163b47]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10 border-b border-slate-800">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 pb-8 border-b border-white/10">
             
-            {/* Brand column */}
-            <div className="space-y-3 md:col-span-2">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg overflow-hidden bg-white border border-slate-700 flex items-center justify-center p-0.5 shrink-0">
-                  <img src="/sch sphere logo1.png" alt="SchoolSphere Logo" className="w-full h-full object-contain" />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center">
+                  <img src="/sch sphere logo1.png" alt="Logo" className="w-full h-full object-contain" />
                 </div>
-                <span className="font-bold text-base text-white">SchoolSphere 3.1</span>
+                <span className="font-bold text-base text-white">School<span className="text-[#faae57]">Sphere</span></span>
               </div>
-              <p className="text-xs text-slate-400 max-w-md leading-relaxed">
-                The modern educational suite for student placement, academic records, WAEC terminals, and fee administration. Designed for educational excellence.
+              <p className="text-xs text-white/70 leading-relaxed">
+                Empowering Ghanaian & West African educational institutions with modern planning, assessments, and cloud persistence.
               </p>
-              <div className="flex items-center gap-3 text-slate-500 text-[11px] pt-1">
-                <span>Supabase PostgreSQL Core</span>
-                <span>•</span>
-                <span>RLS Tenant Isolation</span>
-                <span>•</span>
-                <span>FERPA Compliant</span>
-              </div>
             </div>
 
-            {/* Quick links */}
-            <div className="space-y-2.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Platform</h4>
-              <ul className="space-y-2 text-[11px]">
-                <li><a href="#class-creator" className="hover:text-white transition-colors">Class Placement Engine</a></li>
-                <li><a href="#terminals" className="hover:text-white transition-colors">Continuous Assessment</a></li>
-                <li><a href="#billing" className="hover:text-white transition-colors">MoMo Fee Collection</a></li>
-                <li><button onClick={() => setShowSiteMapModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">Interactive Site Map</button></li>
-                <li><button onClick={onOpenAbout} className="hover:text-white transition-colors cursor-pointer text-left">About System</button></li>
-                <li><button onClick={onOpenContact} className="hover:text-white transition-colors cursor-pointer text-left">Support & Contacts</button></li>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#faae57] mb-3">Product</h4>
+              <ul className="space-y-2 text-xs text-white/80">
+                <li><a href="#terminals" className="hover:text-white transition-colors">Terminal Reports</a></li>
+                <li><a href="#billing" className="hover:text-white transition-colors">MoMo Invoicing</a></li>
+                <li><a href="#faq" className="hover:text-white transition-colors">FAQ & Answers</a></li>
               </ul>
             </div>
 
-            {/* Legal & Governance */}
-            <div className="space-y-2.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Compliance & Legal</h4>
-              <ul className="space-y-2 text-[11px]">
-                <li>
-                  <button onClick={() => setShowPrivacyModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">
-                    Privacy Policy (Act 843)
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setShowTermsModal(true)} className="hover:text-white transition-colors cursor-pointer text-left">
-                    Terms of Service
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => openCookiePreferences()} className="hover:text-white transition-colors cursor-pointer text-left">
-                    Cookie & Storage Preferences
-                  </button>
-                </li>
-                <li>
-                  <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                    Sitemap XML (<span className="font-mono text-[10px]">sitemap.xml</span>)
-                  </a>
-                </li>
-                <li>
-                  <a href="/robots.txt" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                    Robots Directives (<span className="font-mono text-[10px]">robots.txt</span>)
-                  </a>
-                </li>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#faae57] mb-3">Institutional</h4>
+              <ul className="space-y-2 text-xs text-white/80">
+                <li><button onClick={onOpenAbout} className="hover:text-white transition-colors cursor-pointer">About SchoolSphere</button></li>
+                <li><button onClick={onOpenContact} className="hover:text-white transition-colors cursor-pointer">Institutional Support</button></li>
+                <li><button onClick={onOpenActivation} className="hover:text-white transition-colors cursor-pointer">License Activation</button></li>
+                <li><button onClick={onOpenCreatorLogin} className="hover:text-white transition-colors cursor-pointer">Platform Console</button></li>
               </ul>
             </div>
 
-            {/* Support & Institutional Contact */}
-            <div className="space-y-2.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Institutional Support</h4>
-              <p className="text-[11px] text-slate-400">Akoko Solutions / Educational Technology Division</p>
-              <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-indigo-400" />
-                <span>akokosolutions24@gmail.com</span>
-              </p>
-              <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-indigo-400" />
-                <span>+233 24 000 0000 / +233 55 000 0000</span>
-              </p>
-              <div className="pt-2">
-                <button
-                  onClick={onOpenCreatorLogin}
-                  className="text-[11px] font-mono text-slate-500 hover:text-indigo-400 transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Access Creator Master Console"
-                >
-                  <Lock className="w-3 h-3" />
-                  <span>Creator Console</span>
-                </button>
-              </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#faae57] mb-3">Legal & Compliance</h4>
+              <ul className="space-y-2 text-xs text-white/80">
+                <li><button onClick={() => setShowPrivacyModal(true)} className="hover:text-white transition-colors cursor-pointer">Privacy Policy</button></li>
+                <li><button onClick={() => setShowTermsModal(true)} className="hover:text-white transition-colors cursor-pointer">Terms of Service</button></li>
+                <li><button onClick={() => setShowSiteMapModal(true)} className="hover:text-white transition-colors cursor-pointer">Site Map</button></li>
+                <li><button onClick={openCookiePreferences} className="hover:text-white transition-colors cursor-pointer">Cookie Settings</button></li>
+              </ul>
             </div>
 
           </div>
 
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
-            <p>© {new Date().getFullYear()} SchoolSphere 3.1 & Akoko Solutions. All rights reserved.</p>
-            <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-              <button onClick={() => setShowPrivacyModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Privacy Policy</button>
-              <span>•</span>
-              <button onClick={() => setShowTermsModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Terms of Service</button>
-              <span>•</span>
-              <button onClick={() => openCookiePreferences()} className="hover:text-slate-300 transition-colors cursor-pointer">Cookie Settings</button>
-              <span>•</span>
-              <button onClick={() => setShowSiteMapModal(true)} className="hover:text-slate-300 transition-colors cursor-pointer">Site Map</button>
-              <span>•</span>
-              <span className="text-[#06D6A0] font-mono">v3.1.0-Supabase-R1</span>
-            </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
+            <p> 2026 SchoolSphere 3.1. All rights reserved.</p>
+            <p className="text-[11px] font-mono text-white/50">PostgreSQL Row Level Security • Single Source of Truth</p>
           </div>
 
         </div>
       </footer>
 
-      {/* Legal & Site Map Modals */}
+      {/* Legal Modals */}
       <PrivacyPolicyModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} />
       <TermsOfServiceModal isOpen={showTermsModal} onClose={() => setShowTermsModal(false)} />
-      <SiteMapModal
-        isOpen={showSiteMapModal}
-        onClose={() => setShowSiteMapModal(false)}
-        onOpenPrivacy={() => setShowPrivacyModal(true)}
-        onOpenTerms={() => setShowTermsModal(true)}
-        onOpenCookies={() => openCookiePreferences()}
-      />
+      <SiteMapModal isOpen={showSiteMapModal} onClose={() => setShowSiteMapModal(false)} />
 
-      {/* Connectivity & Offline Status Indicator */}
-      <OfflineIndicator />
     </div>
   );
 }

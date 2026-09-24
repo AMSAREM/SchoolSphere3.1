@@ -362,7 +362,7 @@ export default function SecuritySuite({
                 const res = await fetch('/api/integrations/vercel-supabase');
                 const data = await res.json();
                 if (data.success) {
-                  alert(`Vercel ⚡ Supabase Bridge Healthy!\nLatency: ${data.latencyMs}ms\nSupabase Status: ${data.supabase.status}\nVercel Origin: ${data.vercel.frontendUrl}`);
+                  alert(`Vercel  Supabase Bridge Healthy!\nLatency: ${data.latencyMs}ms\nSupabase Status: ${data.supabase.status}\nVercel Origin: ${data.vercel.frontendUrl}`);
                 } else {
                   alert("Bridge response error: " + JSON.stringify(data));
                 }
@@ -373,7 +373,7 @@ export default function SecuritySuite({
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer"
           >
             <Zap className="w-3.5 h-3.5 text-emerald-300" />
-            Test Vercel ⚡ Supabase Ping
+            Test Vercel  Supabase Ping
           </button>
         </div>
 
