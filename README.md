@@ -57,7 +57,7 @@ To initialize the primary administrator account for a new deployment:
 
 ## ⚙️ Environment Configuration (`.env`)
 
-Declare a `.env` file in the root workspace folder to toggle configuration parameters. A guide is provided in `.env.example`:
+Declare a `.env` file in the root workspace folder to configure your deployment. A template is provided in `.env.example`:
 
 ```env
 # Server Binding Port
@@ -66,18 +66,17 @@ PORT=3000
 # Server Host Address
 HOST=0.0.0.0
 
-# Gemini AI Integration Credentials
-GEMINI_API_KEY=your_gemini_api_key_here
+# Supabase Database & Auth (Single Source of Truth)
+SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# JWT Session Secret (Mandatory in production)
+JWT_SECRET=your_strong_random_jwt_secret_here
 
 # Outbound App URL for web routing
-APP_URL=https://your-domain-url.com
-
-# MySQL Database Connection (Leave empty to trigger automatic server-side JSON fallback)
-MYSQL_HOST=your-mysql-host.com
-MYSQL_PORT=3306
-MYSQL_USER=database_user
-MYSQL_PASSWORD=database_secure_password
-MYSQL_DATABASE=school_sphere_db
+APP_URL=https://schoolsphere.app
 ```
 
 ---
@@ -87,14 +86,14 @@ MYSQL_DATABASE=school_sphere_db
 Ready to transition to development or production deployment? Follow these systematic instructions:
 
 ### 📥 Prerequisites
-- **Node.js**: Version 18.x or above (LTS version recommended).
+- **Node.js**: Version 20.x or 22.x (LTS recommended).
 - **npm**: v9.x or above (delivered automatically with Node.js).
-- **MySQL Server** *(Optional)*: Required ONLY if you wish to persistent-host data on a central remote SQL backend rather than local JSON fallback.
+- **Supabase Project**: With PostgreSQL 15+ and schema migrated from `supabase/schema_master.sql`.
 
 ---
 
 ### 💻 Step 1: Clone and Set Up Directory
-Extract your zipped code bundle, or clone the project files directly to your target deployment environment:
+Extract your code bundle or clone the project files directly to your target deployment environment:
 ```bash
 cd school-sphere
 ```
@@ -110,7 +109,7 @@ npm install
 ---
 
 ### 🛠️ Step 3: Local Development Sandbox (Run Dev Server)
-Boot the application inside the development environment. This automatically launches Express on port `3000`, setting up a hot-reloaded development asset pipe:
+Boot the application inside the development environment. This automatically launches Express on port `3000`, setting up a development asset pipeline:
 ```bash
 npm run dev
 ```
@@ -138,12 +137,12 @@ The server binds to port `3000` on host `0.0.0.0` for high-performance scale.
 
 ---
 
-## 💾 Server Data Sync Architecture
+## 💾 Cloud Persistence & Data Architecture
 
-When operating on a client-server sync setup, the backend operates as follows:
-- **Automatic Setup**: If MySQL credentials are provided, the Express backend automatically bootstraps 11 primary structured tables on startup.
-- **Failover Safe**: If credentials are empty or the remote SQL servers are unavailable, the backend outputs helpful diagnostics in `/api/db/status` and gracefully switches to use a local JSON file database at `/school_db_fallback.json`. All student directories, schedules, visual statistics trackers, and SMS records continue to operate with zero interruption!
-- **Dexie Replication**: The client-side utilizes Dexie transactions to push local changes up to the fallback array or pull fresh collections.
+SchoolSphere uses Supabase PostgreSQL as its single source of truth:
+- **Tenant Isolation**: Every academic table (`students`, `classes`, `subjects`, `teachers`, `attendance`, `results`, `fees`) is protected with Row Level Security (RLS) policies scoped strictly to `school_id`.
+- **Client Offline Cache**: The browser maintains an IndexedDB cache via Dexie.js for instant UI responsiveness and offline read availability. All writes are committed directly to Supabase first.
+- **Fail-Fast Connectivity**: The server checks Supabase connectivity at startup and fails fast with actionable diagnostics if credentials are missing or unreachable.
 
 ---
 

@@ -165,9 +165,9 @@ Complete these 3 configuration steps in your **Supabase Project Dashboard**:
 
 ### 2. Configure Redirect URL Allowlist
 1. Go to **Authentication** → **URL Configuration**.
-2. In **Site URL**, set: `https://ai.studio/apps/a3dcbc82-0bbd-43c0-9bc8-6b9090159f51` (or your production domain).
+2. In **Site URL**, set: `https://schoolsphere.app` (or your custom domain).
 3. In **Redirect URLs**, add:
-   * `https://ai.studio/apps/a3dcbc82-0bbd-43c0-9bc8-6b9090159f51`
+   * `https://schoolsphere.app`
    * `https://www.schoolsphere.xyz`
    * `http://localhost:3000` (for local development)
 4. Click **Save**.
@@ -300,7 +300,7 @@ export async function provisionLicensedSchoolAdmin(params: {
   await supabaseAdmin.auth.signInWithOtp({
     email: cleanEmail,
     options: {
-      emailRedirectTo: redirectUrl || 'https://ai.studio/apps/a3dcbc82-0bbd-43c0-9bc8-6b9090159f51'
+      emailRedirectTo: redirectUrl || 'https://schoolsphere.app'
     }
   });
 
@@ -325,7 +325,7 @@ export async function requestMagicLink(email: string) {
   const { error } = await supabase.auth.signInWithOtp({
     email: email.trim().toLowerCase(),
     options: {
-      emailRedirectTo: 'https://ai.studio/apps/a3dcbc82-0bbd-43c0-9bc8-6b9090159f51',
+      emailRedirectTo: 'https://schoolsphere.app',
       shouldCreateUser: true
     }
   });
@@ -341,5 +341,5 @@ export async function requestMagicLink(email: string) {
 1. **Trigger**: Navigate to the login portal and click **"Sign In with Passwordless Magic Link"**. Enter your email and click Send.
 2. **Inbox**: Open the email received from Supabase / Resend and click the **"Sign In"** link.
 3. **Landing**: The browser should open and redirect to:
-   `https://ai.studio/apps/a3dcbc82-0bbd-43c0-9bc8-6b9090159f51`
+   `https://schoolsphere.app`
 4. **Session Hydration**: The app's `supabase.auth.onAuthStateChange` listener intercepts the session token, retrieves the linked `public.users` row matching `auth_user_id = auth.uid()`, and logs the user directly into their school dashboard.

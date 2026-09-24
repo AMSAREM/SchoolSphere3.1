@@ -19,158 +19,40 @@ import {
   getRecentLoginActivities 
 } from "./lib/multiTenantAuth.js";
 
-const { Pool } = pg;
-
-// DNS-over-HTTPS patch to resolve "ENOTFOUND" errors inside sandboxed server environments
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-const originalLookup = dns.lookup;
-const dnsCache: Record<string, string> = {
-  'openapi.arkesel.com': '104.21.31.252',
-  'sms.arkesel.com': '104.21.31.252',
-  'api.arkesel.com': '104.21.31.252'
-};
-const targetHostnames = [
-  'openapi.arkesel.com',
-  'sms.arkesel.com',
-  'api.arkesel.com',
-  'vwmahpuzthyxnzrohfxw.supabase.co',
-  'db.vwmahpuzthyxnzrohfxw.supabase.co'
-];
-
-async function updateDnsResolution(hostname: string) {
-  // Use direct IP addresses for DNS queries to bypass local DNS lookup completely
-  try {
-    const res = await fetch(`https://1.1.1.1/dns-query?name=${encodeURIComponent(hostname)}&type=A`, {
-      headers: { 'accept': 'application/dns-json', 'host': 'cloudflare-dns.com' }
-    });
-    if (res.ok) {
-      const data = await res.json() as any;
-      if (data && data.Answer && data.Answer.length > 0) {
-        const ip = data.Answer.find((ans: any) => ans.type === 1)?.data;
-        if (ip) {
-          dnsCache[hostname] = ip;
-          console.log(`[DoH Custom Resolver - Cloudflare IP] Dynamic update: ${hostname} resolved to ${ip}`);
-          return;
-        }
-      }
-    }
-  } catch (e: any) {
-    console.warn(`[DoH Custom Resolver Warning] Cloudflare direct DoH IP query failed:`, e?.message || e);
-  }
-
-  try {
-    const res = await fetch(`https://8.8.8.8/resolve?name=${encodeURIComponent(hostname)}`);
-    if (res.ok) {
-      const data = await res.json() as any;
-      if (data && data.Answer && data.Answer.length > 0) {
-        const ip = data.Answer.find((ans: any) => ans.type === 1)?.data;
-        if (ip) {
-          dnsCache[hostname] = ip;
-          console.log(`[DoH Custom Resolver - Google IP] Dynamic update: ${hostname} resolved to ${ip}`);
-        }
-      }
-    }
-  } catch (e: any) {
-    console.warn(`[DoH Custom Resolver Warning] Google direct DoH IP query failed:`, e?.message || e);
-  }
-}
-
-targetHostnames.forEach(host => {
-  updateDnsResolution(host).catch(() => {});
-});
+dotenv.config();
 
 function getResolvedSupabaseUrl(): string {
-  const envUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (envUrl) {
-    return envUrl;
-  }
-  return 'https://niavmonyfwqlryppgksy.supabase.co';
+  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co';
 }
 
-// @ts-ignore
-dns.lookup = function(hostname, options, callback) {
-  const realCallback = typeof options === "function" ? options : callback;
-  const realOptions = typeof options === "function" ? {} : (options || {});
-
-  // Try the original native system resolver first
-  // @ts-ignore
-  return originalLookup(hostname, realOptions, (err, address, family) => {
-    if (!err) {
-      if (typeof realCallback === "function") {
-        realCallback(null, address, family);
-      }
-      return;
-    }
-
-    // Standard local dns.lookup failed (e.g. ENOTFOUND in sandboxed container)
-    if (typeof hostname === "string") {
-      const cachedIp = dnsCache[hostname];
-      if (cachedIp) {
-        if (typeof realCallback === "function") {
-          console.log(`[DoH Resolver Cache Hit] Using cached IP for "${hostname}": ${cachedIp}`);
-          if (realOptions.all) {
-            realCallback(null, [{ address: cachedIp, family: 4 }]);
-          } else {
-            realCallback(null, cachedIp, 4);
-          }
-        }
-        return;
-      }
-
-      // To prevent infinite recursion, if it is a DNS provider itself, propagate the error immediately
-      if (hostname === '1.1.1.1' || hostname === '8.8.8.8' || hostname === 'cloudflare-dns.com') {
-        if (typeof realCallback === "function") {
-          realCallback(err, address, family);
-        }
-        return;
-      }
-
-      // Try dynamic resolution on the fly
-      updateDnsResolution(hostname).then(() => {
-        const resolvedIp = dnsCache[hostname];
-        if (resolvedIp) {
-          console.log(`[DoH Resolver Fallback Success] Standard DNS failed for "${hostname}". Dynamic DoH resolved to IP: ${resolvedIp}`);
-          if (typeof realCallback === "function") {
-            if (realOptions.all) {
-              realCallback(null, [{ address: resolvedIp, family: 4 }]);
-            } else {
-              realCallback(null, resolvedIp, 4);
-            }
-          }
-        } else {
-          if (typeof realCallback === "function") {
-            realCallback(err, address, family);
-          }
-        }
-      }).catch(() => {
-        if (typeof realCallback === "function") {
-          realCallback(err, address, family);
-        }
-      });
-      return;
-    }
-
-    // Otherwise, propagate the original error
-    if (typeof realCallback === "function") {
-      realCallback(err, address, family);
-    }
-  });
-};
-
-dotenv.config();
+const pgPool: any = null;
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
-// Permissive CORS middleware to support cross-origin testing (e.g., from aistudio.google.com parent or direct requests)
+// Restrictive CORS middleware - permits trusted domains and local development with credentials
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https?:\/\/localhost(:[0-9]+)?$/,
+  /^https?:\/\/127\.0\.0\.1(:[0-9]+)?$/,
+  /^https:\/\/(.*\.)?schoolsphere\.app$/,
+  /^https:\/\/(.*\.)?schoolsphere\.xyz$/,
+  /^https:\/\/(.*\.)?run\.app$/,
+  /^https:\/\/(.*\.)?web\.app$/
+];
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin;
+  if (origin) {
+    const isAllowed = ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
+    if (isAllowed) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-School-Id, Accept");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
   if (req.method === "OPTIONS") {
     res.status(200).end();
     return;
@@ -310,7 +192,6 @@ const importedFileHashesMap = new Map<string, {
   importedAt: number;
 }>();
 
-let pgPool: pg.Pool | null = null;
 let dbMode: "supabase" = "supabase";
 let dbStatusDetails = "Initializing database layer...";
 
@@ -332,293 +213,6 @@ function sanitizeErrorMessage(err: any): string {
   }
 
   return msg.trim() || "An unexpected error occurred.";
-}
-
-// Automatically create tables in PostgreSQL
-async function createPostgresTables() {
-  if (!pgPool) return;
-  const queries = [
-    `CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      "username" VARCHAR(100) NOT NULL UNIQUE,
-      "passwordHash" VARCHAR(255) NOT NULL,
-      "fullName" VARCHAR(255) NOT NULL,
-      "role" VARCHAR(50) NOT NULL,
-      "createdAt" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS classes (
-      id BIGSERIAL PRIMARY KEY,
-      "name" VARCHAR(100) NOT NULL UNIQUE,
-      "level" VARCHAR(50) NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS subjects (
-      id BIGSERIAL PRIMARY KEY,
-      "name" VARCHAR(255) NOT NULL UNIQUE,
-      "code" VARCHAR(50) NOT NULL UNIQUE,
-      "applicableClasses" JSONB NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS students (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" VARCHAR(50) NOT NULL UNIQUE,
-      "firstName" VARCHAR(100) NOT NULL,
-      "lastName" VARCHAR(100) NOT NULL,
-      "class" VARCHAR(100) NOT NULL,
-      "dateOfBirth" DATE NOT NULL,
-      "gender" VARCHAR(20) NOT NULL,
-      "guardianName" VARCHAR(255) NOT NULL,
-      "guardianPhone" VARCHAR(50) NOT NULL,
-      "feesPaid" NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-      "totalFees" NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-      "house" VARCHAR(100) DEFAULT NULL,
-      "department" VARCHAR(100) DEFAULT NULL,
-      "photo" TEXT DEFAULT NULL,
-      "createdAt" BIGINT NOT NULL,
-      "feeBreakdown" JSONB NULL,
-      "feePaidBreakdown" JSONB NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS teachers (
-      id BIGSERIAL PRIMARY KEY,
-      "staffId" VARCHAR(50) NOT NULL UNIQUE,
-      "firstName" VARCHAR(100) NOT NULL,
-      "lastName" VARCHAR(100) NOT NULL,
-      "phone" VARCHAR(50) NOT NULL,
-      "email" VARCHAR(150) NOT NULL UNIQUE,
-      "assignedClasses" JSONB NULL,
-      "subjects" JSONB NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS attendance (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" VARCHAR(50) NOT NULL,
-      "date" DATE NOT NULL,
-      "status" VARCHAR(20) NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS results (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" VARCHAR(50) NOT NULL,
-      "subject" VARCHAR(255) NOT NULL,
-      "term" VARCHAR(50) NOT NULL,
-      "class" VARCHAR(100) NOT NULL,
-      "classScore" NUMERIC(5, 2) NOT NULL,
-      "examScore" NUMERIC(5, 2) NOT NULL,
-      "totalScore" NUMERIC(5, 2) NOT NULL,
-      "grade" VARCHAR(5) NOT NULL,
-      "remarks" VARCHAR(100) NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS "termReports" (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" VARCHAR(50) NOT NULL,
-      "term" VARCHAR(50) NOT NULL,
-      "academicYear" VARCHAR(50) NOT NULL,
-      "attendancePresent" INT NOT NULL DEFAULT 0,
-      "attendanceTotal" INT NOT NULL DEFAULT 0,
-      "teacherRemark" TEXT DEFAULT NULL,
-      "headmasterRemark" TEXT DEFAULT NULL,
-      "position" INT DEFAULT NULL,
-      "totalStudents" INT DEFAULT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS settings (
-      id BIGSERIAL PRIMARY KEY,
-      "key" VARCHAR(255) NOT NULL UNIQUE,
-      "value" JSONB NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS "examAnalysis" (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" VARCHAR(50) NOT NULL,
-      "studentName" VARCHAR(255) NOT NULL,
-      "examType" VARCHAR(20) NOT NULL,
-      "year" INT NOT NULL,
-      "indexNumber" VARCHAR(100) NOT NULL,
-      "schoolName" VARCHAR(255) NOT NULL,
-      "subjects" JSONB NOT NULL,
-      "aggregate" INT NOT NULL,
-      "status" VARCHAR(50) NOT NULL,
-      "remarks" TEXT DEFAULT NULL,
-      "createdAt" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS "smsLogs" (
-      id BIGSERIAL PRIMARY KEY,
-      "recipientName" VARCHAR(255) NOT NULL,
-      "recipientPhone" VARCHAR(50) NOT NULL,
-      "recipientType" VARCHAR(50) NOT NULL,
-      "message" TEXT NOT NULL,
-      "type" VARCHAR(50) NOT NULL,
-      "status" VARCHAR(20) NOT NULL,
-      "createdAt" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS polls (
-      id BIGSERIAL PRIMARY KEY,
-      "title" VARCHAR(255) NOT NULL,
-      "description" TEXT DEFAULT NULL,
-      "status" VARCHAR(20) NOT NULL DEFAULT 'draft',
-      "category" VARCHAR(100) NOT NULL,
-      "createdAt" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS candidates (
-      id BIGSERIAL PRIMARY KEY,
-      "pollId" BIGINT NOT NULL,
-      "name" VARCHAR(255) NOT NULL,
-      "position" VARCHAR(150) NOT NULL,
-      "class" VARCHAR(100) NOT NULL,
-      "votesCount" INT NOT NULL DEFAULT 0,
-      "photo" TEXT DEFAULT NULL,
-      "manifesto" TEXT DEFAULT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS votes (
-      id BIGSERIAL PRIMARY KEY,
-      "pollId" BIGINT NOT NULL,
-      "studentId" VARCHAR(50) NOT NULL,
-      "position" VARCHAR(150) NOT NULL,
-      "candidateId" BIGINT NOT NULL,
-      "timestamp" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS "promotionHistory" (
-      id BIGSERIAL PRIMARY KEY,
-      "studentId" INT NOT NULL,
-      "studentIdentifier" VARCHAR(50) NOT NULL,
-      "studentName" VARCHAR(255) NOT NULL,
-      "sourceClass" VARCHAR(100) NOT NULL,
-      "destClass" VARCHAR(100) NOT NULL,
-      "academicYear" VARCHAR(50) NOT NULL,
-      "term" VARCHAR(50) NOT NULL,
-      "timestamp" BIGINT NOT NULL,
-      "previousFeesPaid" NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-      "previousTotalFees" NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-      "previousFeeBreakdown" JSONB NULL,
-      "previousFeePaidBreakdown" JSONB NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS inventory (
-      id BIGSERIAL PRIMARY KEY,
-      "itemName" VARCHAR(255) NOT NULL,
-      "category" VARCHAR(50) NOT NULL,
-      "quantity" INT NOT NULL DEFAULT 0,
-      "minQuantity" INT NOT NULL DEFAULT 0,
-      "unitPrice" NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-      "location" VARCHAR(255) NOT NULL,
-      "supplierName" VARCHAR(255) DEFAULT NULL,
-      "supplierPhone" VARCHAR(50) DEFAULT NULL,
-      "lastUpdated" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS expenses (
-      id BIGSERIAL PRIMARY KEY,
-      "description" TEXT NOT NULL,
-      "category" VARCHAR(50) NOT NULL,
-      "amount" NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      "date" BIGINT NOT NULL,
-      "inventoryItemId" BIGINT DEFAULT NULL,
-      "quantityPurchased" INT DEFAULT NULL,
-      "paymentMethod" VARCHAR(50) NOT NULL,
-      "recordedBy" VARCHAR(255) NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS licenses (
-      id BIGSERIAL PRIMARY KEY,
-      "key" VARCHAR(255) NOT NULL UNIQUE,
-      "schoolName" VARCHAR(255) NOT NULL,
-      "tier" VARCHAR(100) NOT NULL DEFAULT 'Basic',
-      "durationMonths" VARCHAR(50) DEFAULT '12',
-      "expiryDate" BIGINT DEFAULT NULL,
-      "createdAt" BIGINT NOT NULL,
-      "status" VARCHAR(50) NOT NULL DEFAULT 'active',
-      "activeModules" JSONB NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS schools (
-      id BIGSERIAL PRIMARY KEY,
-      "schoolName" VARCHAR(255) NOT NULL UNIQUE,
-      "licenseKey" VARCHAR(255) DEFAULT NULL,
-      "email" VARCHAR(255) DEFAULT NULL,
-      "phone" VARCHAR(50) DEFAULT NULL,
-      "address" TEXT DEFAULT NULL,
-      "status" VARCHAR(50) NOT NULL DEFAULT 'active',
-      "createdAt" BIGINT NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS school_licenses (
-      id BIGSERIAL PRIMARY KEY,
-      "license_key" VARCHAR(255) NOT NULL UNIQUE,
-      "school_name" VARCHAR(255) NOT NULL,
-      "expiry_date" BIGINT DEFAULT NULL,
-      "active_status" VARCHAR(50) NOT NULL DEFAULT 'active',
-      "created_at" BIGINT NOT NULL DEFAULT (extract(epoch from now()) * 1000)::bigint
-    )`,
-    `CREATE TABLE IF NOT EXISTS license_codes (
-      id BIGSERIAL PRIMARY KEY,
-      "user_id" VARCHAR(255) NOT NULL,
-      "email" VARCHAR(255) NOT NULL,
-      "license_code" VARCHAR(255) NOT NULL,
-      "status" VARCHAR(50) NOT NULL DEFAULT 'pending',
-      "school_name" VARCHAR(255) DEFAULT NULL,
-      "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
-      "sent_at" TIMESTAMPTZ DEFAULT NULL,
-      "verified_at" TIMESTAMPTZ DEFAULT NULL
-    )`
-  ];
-
-  for (const q of queries) {
-    try {
-      await pgPool.query(q);
-    } catch (e: any) {
-      console.warn("[PostgreSQL Schema Notice]", e.message);
-    }
-  }
-
-  // Ensure school_id multi-tenant column exists on all academic tables & drop restrictive single-tenant unique constraints
-  const tenantColumnMigrations = [
-    'ALTER TABLE students ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE students ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE teachers ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE teachers ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE classes ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE classes ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE subjects ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE subjects ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE results ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE results ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE "termReports" ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE "termReports" ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE settings ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE users ADD COLUMN IF NOT EXISTS "schoolId" VARCHAR(255);',
-    'ALTER TABLE "examAnalysis" ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE "promotionHistory" ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE inventory ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE expenses ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE polls ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE candidates ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    'ALTER TABLE votes ADD COLUMN IF NOT EXISTS school_id VARCHAR(255);',
-    // Drop single-tenant unique constraints so multiple schools can have classes with same names (e.g. "Primary 1") or subjects ("Mathematics")
-    'ALTER TABLE classes DROP CONSTRAINT IF EXISTS classes_name_key;',
-    'ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_name_key;',
-    'ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_code_key;',
-    'ALTER TABLE students DROP CONSTRAINT IF EXISTS students_studentId_key;',
-    'ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_staffId_key;',
-    'ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_email_key;'
-  ];
-
-  for (const alterQ of tenantColumnMigrations) {
-    try {
-      await pgPool.query(alterQ);
-    } catch (e: any) {
-      // Ignore if constraint doesn't exist or column already present
-    }
-  }
-
-  // Enable Row Level Security (RLS) & Policies on all Supabase tables
-  const rlsTables = [
-    'users', 'classes', 'subjects', 'students', 'teachers', 'attendance', 'results',
-    '"termReports"', 'settings', '"examAnalysis"', '"smsLogs"', 'polls', 'candidates',
-    'votes', '"promotionHistory"', 'inventory', 'expenses', 'licenses', 'schools', 'school_licenses', 'license_codes'
-  ];
-
-  for (const table of rlsTables) {
-    try {
-      await pgPool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
-      await pgPool.query(`DROP POLICY IF EXISTS "Allow full access for authenticated and service role" ON ${table};`);
-      await pgPool.query(`CREATE POLICY "Allow full access for authenticated and service role" ON ${table} FOR ALL USING (true) WITH CHECK (true);`);
-    } catch (e: any) {
-      console.warn(`[Supabase RLS Notice on ${table}]`, e.message);
-    }
-  }
 }
 
 // Safely initialize the database connection - Supabase single source of truth
@@ -958,7 +552,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         let query = adminClient.from(targetTable).select('*');
         if (targetSchoolId && tenantScopedTables.has(table)) {
           // Pull records belonging to this tenant or shared global defaults
-          query = query.or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+          query = query.eq("school_id", targetSchoolId);
         }
 
         let { data: rows, error } = await query;
@@ -966,7 +560,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           // Try fallback to unmapped table name
           const fallbackQuery = adminClient.from(table).select('*');
           const altRes = targetSchoolId && tenantScopedTables.has(table)
-            ? await fallbackQuery.or(`school_id.eq.${targetSchoolId},school_id.is.null`)
+            ? await fallbackQuery.eq("school_id", targetSchoolId)
             : await fallbackQuery;
           if (!altRes.error && altRes.data) {
             rows = altRes.data;
@@ -975,6 +569,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         }
 
         if (error) {
+          console.warn(`[Supabase pullData Notice] Table '${table}' (${targetTable}):`, error.message);
           data[table] = [];
         } else {
           data[table] = (rows || []).map((row: any) => {
@@ -1014,8 +609,8 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
       }
       resultData = data;
     } catch (err: any) {
-      console.warn("Supabase pullData note:", err.message);
-      resultData = {};
+      console.error("[Supabase pullData Error]:", err.message || err);
+      throw new Error(`Failed to load data from Supabase: ${err.message || err}`);
     }
   }
 
@@ -6475,11 +6070,26 @@ async function startServer() {
     res.json(inMemorySyncLogs);
   });
 
-  // Pull All Data from DB (Supabase/MySQL or Fallback JSON file) with multi-tenant support
-  app.get("/api/db/sync", async (req, res) => {
+  // Pull All Data from DB with multi-tenant isolation
+  app.get("/api/db/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const isFresh = req.query.fresh === 'true';
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const isSuper = userRole === 'super_admin' || userRole === 'creator';
+      
+      const requestedSchoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const userSchoolId = req.user?.school_id || req.user?.schoolId || null;
+
+      let schoolId = requestedSchoolId || userSchoolId;
+      if (!isSuper) {
+        if (!schoolId) {
+          return res.status(401).json({ success: false, error: "Authentication or valid school_id required to sync tenant data." });
+        }
+        if (userSchoolId && schoolId !== userSchoolId) {
+          return res.status(403).json({ success: false, error: "Tenant isolation violation: cannot sync another school's data." });
+        }
+      }
+
       const data = await pullData(isFresh, schoolId || null);
       res.setHeader("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
       addSyncLog("Pull Local Storage", true, data);
@@ -6491,11 +6101,26 @@ async function startServer() {
     }
   });
 
-  // Push All Data to DB (Supabase/MySQL or Fallback JSON file) with multi-tenant support
-  app.post("/api/db/sync", async (req, res) => {
+  // Push All Data to DB with multi-tenant isolation
+  app.post("/api/db/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.school_id || req.body?.schoolId || '') as string;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const isSuper = userRole === 'super_admin' || userRole === 'creator';
+      
+      const requestedSchoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.school_id || req.body?.schoolId || '') as string;
+      const userSchoolId = req.user?.school_id || req.user?.schoolId || null;
+
+      let schoolId = requestedSchoolId || userSchoolId;
+      if (!isSuper) {
+        if (!schoolId) {
+          return res.status(401).json({ success: false, error: "Authentication or valid school_id required to sync tenant data." });
+        }
+        if (userSchoolId && schoolId !== userSchoolId) {
+          return res.status(403).json({ success: false, error: "Tenant isolation violation: cannot push data to another school." });
+        }
+      }
+
       await pushData(req.body, schoolId || null);
       addSyncLog("Push Local Storage", true, req.body);
       res.json({ success: true, message: "Sync successful!" });
@@ -6529,14 +6154,14 @@ async function startServer() {
         let { data, error } = await adminClient
           .from(targetTable)
           .select('*')
-          .or(`school_id.eq.${schoolId},school_id.is.null`);
+          .eq("school_id", schoolId);
 
         // If error and table was mapped, try fallback to original table name
         if (error && targetTable !== table) {
           const fallbackQuery = await adminClient
             .from(table)
             .select('*')
-            .or(`school_id.eq.${schoolId},school_id.is.null`);
+            .eq("school_id", schoolId);
           if (!fallbackQuery.error && fallbackQuery.data) {
             data = fallbackQuery.data;
             error = null;
@@ -6604,7 +6229,7 @@ async function startServer() {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       let query = adminClient.from('students').select('*');
       if (schoolId) {
-        query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+        query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: false });
       if (error) throw error;
@@ -7109,7 +6734,7 @@ async function startServer() {
       try {
         let query = adminClient.from('students').delete();
         if (schoolId) {
-          query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+          query = query.eq("school_id", schoolId);
         }
         await query.eq('id', id);
       } catch (e) {}
@@ -7154,7 +6779,7 @@ async function startServer() {
         try {
           let query = adminClient.from('students').delete().in('id', listIds);
           if (targetSchoolId) {
-            query = query.or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+            query = query.eq("school_id", targetSchoolId);
           }
           const { error, count } = await query;
           if (!error && count) deletedCount += count;
@@ -7193,7 +6818,7 @@ async function startServer() {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       let query = adminClient.from('teachers').select('*');
       if (schoolId) {
-        query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+        query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: false });
       if (error) throw error;
@@ -7412,7 +7037,7 @@ async function startServer() {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       let query = adminClient.from('classes').select('*');
       if (schoolId) {
-        query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+        query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: true });
       if (error) throw error;
@@ -7572,7 +7197,7 @@ async function startServer() {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       let query = adminClient.from('subjects').select('*');
       if (schoolId) {
-        query = query.or(`school_id.eq.${schoolId},school_id.is.null`);
+        query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: true });
       if (error) throw error;

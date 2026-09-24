@@ -14,7 +14,8 @@ export function getSupabaseAdmin() {
   const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://niavmonyfwqlryppgksy.supabase.co';
 
   const targetRef = supabaseUrl.replace(/^https?:\/\//, '').split('.')[0];
-  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
+  const matchingKey = getEnvVar('SUPABASE_ANON_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
+  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || matchingKey;
 
   // Verify that key matches target ref if it's a JWT
   if (serviceRoleKey && serviceRoleKey.startsWith('ey')) {
@@ -23,16 +24,15 @@ export function getSupabaseAdmin() {
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
         if (payload && payload.ref && payload.ref !== targetRef) {
-          // Fall back to anon key for the target project if service_role ref was mismatched
-          const anon = getEnvVar('VITE_SUPABASE_ANON_KEY');
-          if (anon) serviceRoleKey = anon;
+          // If the configured key belongs to a different project ref, fall back to matching key for targetRef
+          serviceRoleKey = matchingKey;
         }
       }
     } catch {}
   }
 
   if (!serviceRoleKey) {
-    serviceRoleKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
+    serviceRoleKey = matchingKey;
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {

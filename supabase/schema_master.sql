@@ -39,7 +39,8 @@ BEGIN
     RETURN NULL;
   END;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
 
 -- Function to check if the caller is a global Super Admin (Creator) or Service Role
 CREATE OR REPLACE FUNCTION public.is_super_admin()
@@ -52,11 +53,12 @@ BEGIN
   RETURN EXISTS (
     SELECT 1 FROM public.users
     WHERE auth_user_id = auth.uid()
-      AND role = 'super_admin'
+      AND role IN ('super_admin', 'creator')
       AND status = 'active'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
 
 -- Function for automatic updated_at timestamp management
 CREATE OR REPLACE FUNCTION public.set_updated_at_timestamp()

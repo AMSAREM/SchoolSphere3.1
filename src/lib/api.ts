@@ -61,7 +61,7 @@ export const studentsApi = {
           const { data, error } = await supabase
             .from('students')
             .select('*')
-            .or(`school_id.eq.${targetSchoolId},school_id.is.null`)
+            .eq("school_id", targetSchoolId)
             .order('id', { ascending: false });
 
           if (!error && data && Array.isArray(data)) {
@@ -112,7 +112,7 @@ export const studentsApi = {
     try {
       let query = supabase.from('students').select('*').eq('class', className);
       if (targetSchoolId) {
-        query = query.or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+        query = query.eq("school_id", targetSchoolId);
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) return data.map(s => normalizeStudentRecord(s));
@@ -610,7 +610,7 @@ export const classesApi = {
         const { data, error } = await supabase
           .from('classes')
           .select('*')
-          .or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+          .eq("school_id", targetSchoolId);
 
         if (!error && data && data.length > 0) {
           try {
@@ -793,7 +793,7 @@ export const subjectsApi = {
         const { data, error } = await supabase
           .from('subjects')
           .select('*')
-          .or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+          .eq("school_id", targetSchoolId);
 
         if (!error && data && data.length > 0) {
           const parsed = data.map((sub: any) => ({
@@ -980,7 +980,7 @@ export const teachersApi = {
         const { data, error } = await supabase
           .from('teachers')
           .select('*')
-          .or(`school_id.eq.${targetSchoolId},school_id.is.null`);
+          .eq("school_id", targetSchoolId);
 
         if (!error && data && data.length > 0) {
           const parsed = data.map((t: any) => ({
@@ -1251,7 +1251,7 @@ export const promotionsApi = {
         const { data, error } = await supabase
           .from('promotionHistory')
           .select('*')
-          .or(`school_id.eq.${targetSchoolId},school_id.is.null`)
+          .eq("school_id", targetSchoolId)
           .order('timestamp', { ascending: false });
 
         if (!error && data && data.length > 0) return data;
