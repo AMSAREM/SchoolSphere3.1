@@ -347,6 +347,32 @@ export default function Settings() {
     config?: { host: string; port: number; user: string; database: string };
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [serviceRoleKeyInput, setServiceRoleKeyInput] = useState('');
+  const [isUpdatingKey, setIsUpdatingKey] = useState(false);
+
+  const handleUpdateServiceRoleKey = async () => {
+    if (!serviceRoleKeyInput.trim()) return;
+    setIsUpdatingKey(true);
+    try {
+      const res = await fetch('/api/admin/supabase-service-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceRoleKey: serviceRoleKeyInput.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Supabase Service Role Key verified & linked! Database routed.' });
+        setServiceRoleKeyInput('');
+        fetchDbStatus();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to verify key on Supabase.' });
+      }
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Network error updating key.' });
+    } finally {
+      setIsUpdatingKey(false);
+    }
+  };
 
   const fetchDbStatus = async () => {
     try {
@@ -1294,22 +1320,48 @@ export default function Settings() {
                   </div>
                 </div>
 
+                {/* Service Role Key Direct Link */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    Supabase Service Role Secret Key (Direct DB Routing & Bypass RLS)
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Find this in your Supabase Dashboard (<span className="font-mono text-emerald-700">niavmonyfwqlryppgksy</span>) under <strong>Project Settings &gt; API &gt; service_role (secret)</strong>.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      value={serviceRoleKeyInput}
+                      onChange={(e) => setServiceRoleKeyInput(e.target.value)}
+                      className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
+                    />
+                    <button
+                      onClick={handleUpdateServiceRoleKey}
+                      disabled={isUpdatingKey || !serviceRoleKeyInput.trim()}
+                      className="px-4 py-2 bg-[#1c4a59] text-white rounded-lg text-xs font-bold hover:bg-[#1c4a59]/90 transition disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      {isUpdatingKey ? 'Verifying...' : 'Link & Route Key'}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="pt-2 flex flex-col md:flex-row gap-3">
                   <button
                     onClick={syncPush}
                     disabled={isSyncing}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 cursor-pointer disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1c4a59] text-white rounded-xl text-xs font-bold hover:bg-[#1c4a59]/90 cursor-pointer disabled:opacity-50"
                   >
                     <Upload className="w-4 h-4" />
-                    Push local data to MySQL Database
+                    Sync Data to Supabase Database
                   </button>
                   <button
                     onClick={syncPull}
                     disabled={isSyncing}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 cursor-pointer disabled:opacity-50"
                   >
-                    <Download className="w-4 h-4 text-indigo-600" />
-                    Pull from MySQL Database to Local
+                    <Download className="w-4 h-4 text-[#1c4a59]" />
+                    Pull from Supabase Database
                   </button>
                 </div>
               </div>

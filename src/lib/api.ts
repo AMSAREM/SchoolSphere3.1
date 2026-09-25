@@ -18,6 +18,20 @@ import {
  * Automatically applies school_id tenant scoping to all database and backend operations.
  */
 
+export function getApiHeaders(schoolId?: string): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('esepa_auth_token') : null;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (schoolId) {
+    headers['x-school-id'] = schoolId;
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 // ==========================================
 // 1. STUDENTS API
 // ==========================================
@@ -28,7 +42,9 @@ export const studentsApi = {
     // 1. Primary Backend-First Retrieval (Server API / Supabase)
     if (forceBackendFirst) {
       try {
-        const res = await fetch(`/api/students?school_id=${encodeURIComponent(targetSchoolId || '')}`);
+        const res = await fetch(`/api/students?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+          headers: getApiHeaders(targetSchoolId || undefined)
+        });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {

@@ -5,40 +5,53 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import { app } from '../server';
+import { app, startServer } from '../server';
 
 describe('Security Improvements', () => {
+  beforeAll(async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-jwt-secret-for-vitest-suite-2026';
+    await startServer();
+  });
   
   describe('JWT Secret Handling', () => {
     it('should require JWT_SECRET in production environment', async () => {
-      // This test verifies that the fallback is removed in production
       const originalEnv = process.env.NODE_ENV;
+      const originalJwt = process.env.JWT_SECRET;
+      const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
+
       process.env.NODE_ENV = 'production';
       delete process.env.JWT_SECRET;
       delete process.env.SUPABASE_JWT_SECRET;
 
-      // The auth module should throw an error when trying to get JWT secret in production
       try {
         const { getJwtSecret } = await import('../lib/auth');
         expect(() => getJwtSecret()).toThrow('JWT_SECRET or SUPABASE_JWT_SECRET environment variable must be set in production');
-      } catch (error) {
-        expect(error).toBeDefined();
       } finally {
         process.env.NODE_ENV = originalEnv;
+        if (originalJwt) process.env.JWT_SECRET = originalJwt;
+        if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
       }
     });
 
     it('should use fallback in development with warning', async () => {
       const originalEnv = process.env.NODE_ENV;
+      const originalJwt = process.env.JWT_SECRET;
+      const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
+
       process.env.NODE_ENV = 'development';
       delete process.env.JWT_SECRET;
       delete process.env.SUPABASE_JWT_SECRET;
 
-      const authModule = await import('../lib/auth');
-      const secret = authModule.getJwtSecret();
-      expect(secret).toBe('schoolsphere-dev-fallback-jwt-secret-key-3.1');
-
-      process.env.NODE_ENV = originalEnv;
+      try {
+        const authModule = await import('../lib/auth');
+        const secret = authModule.getJwtSecret();
+        expect(secret).toBe('schoolsphere-dev-fallback-jwt-secret-key-3.1');
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalJwt) process.env.JWT_SECRET = originalJwt;
+        if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
+      }
     });
   });
 
