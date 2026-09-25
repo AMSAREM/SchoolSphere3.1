@@ -769,6 +769,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       school,
       token,
+      refreshToken,
       isLoading,
       login,
       handleLogin,

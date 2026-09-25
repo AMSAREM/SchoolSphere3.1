@@ -34,8 +34,8 @@ describe('Security Improvements', () => {
       delete process.env.JWT_SECRET;
       delete process.env.SUPABASE_JWT_SECRET;
 
-      const { getJwtSecret } = await import('../lib/auth');
-      const secret = getJwtSecret();
+      const authModule = await import('../lib/auth');
+      const secret = authModule.getJwtSecret();
       expect(secret).toBe('schoolsphere-dev-fallback-jwt-secret-key-3.1');
 
       process.env.NODE_ENV = originalEnv;
@@ -131,7 +131,7 @@ describe('Security Improvements', () => {
     it('should extract IP addresses from requests', async () => {
       const { extractIpAddress } = await import('../lib/auditLogger');
       
-      const mockReq = {
+      const mockReq: any = {
         headers: {
           'x-forwarded-for': '192.168.1.1, 10.0.0.1',
           'x-real-ip': '192.168.1.2'
@@ -148,7 +148,7 @@ describe('Security Improvements', () => {
     it('should generate TOTP secrets', async () => {
       const { generateTOTPSecret } = await import('../lib/twoFactorAuth');
       
-      const secret = generateTOTPSecret();
+      const secret = await generateTOTPSecret();
       expect(secret).toBeDefined();
       expect(secret.length).toBeGreaterThan(10);
     });
@@ -168,7 +168,7 @@ describe('Security Improvements', () => {
       const { generateTOTPQRCodeURI } = await import('../lib/twoFactorAuth');
       
       const secret = 'test-secret-123';
-      const uri = generateTOTPQRCodeURI(secret, 'testuser', 'SchoolSphere');
+      const uri = await generateTOTPQRCodeURI(secret, 'testuser', 'SchoolSphere');
       
       expect(uri).toBeDefined();
       expect(uri).toContain('otpauth://totp');
@@ -179,12 +179,12 @@ describe('Security Improvements', () => {
     it('should verify TOTP tokens', async () => {
       const { generateTOTPSecret, verifyTOTPToken } = await import('../lib/twoFactorAuth');
       
-      const secret = generateTOTPSecret();
+      const secret = await generateTOTPSecret();
       // Generate a valid token using the same secret
       try {
         const { authenticator } = await import('otplib');
         const token = authenticator.generate(secret);
-        const isValid = verifyTOTPToken(token, secret);
+        const isValid = await verifyTOTPToken(token, secret);
         expect(isValid).toBe(true);
       } catch (error) {
         // If otplib is not installed, skip this test

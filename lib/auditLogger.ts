@@ -166,7 +166,7 @@ export function extractIpAddress(req: Request): string {
  * Middleware for automatic audit logging of sensitive operations
  */
 export function auditLogMiddleware(action: AuditAction, entityType: EntityType) {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: any, res: any, next: NextFunction) => {
     const originalSend = res.send;
     
     res.send = function(data: any) {

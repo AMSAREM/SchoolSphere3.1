@@ -7,9 +7,9 @@ import dotenv from "dotenv";
 import dns from "dns";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
-import { getSupabaseAdmin } from "./lib/supabase/server.js";
-import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth.js";
-import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.js";
+import { getSupabaseAdmin } from "./lib/supabase/server";
+import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth";
+import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger";
 import { Request, Response, NextFunction } from 'express';
 import { 
   setupTwoFactorAuth, 
@@ -19,7 +19,7 @@ import {
   isTwoFactorEnabled,
   getTwoFactorSettings,
   generateQRCodeDataURL 
-} from "./lib/twoFactorAuth.js";
+} from "./lib/twoFactorAuth";
 import { 
   registerOrganization, 
   createWorkerInvitation, 
