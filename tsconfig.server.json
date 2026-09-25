@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "ES2020",
+    "outDir": "./dist",
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": false,
+    "allowImportingTsExtensions": false
+  },
+  "include": ["server.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src", "lib/supabase/client.ts"]
+}
