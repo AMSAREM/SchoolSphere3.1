@@ -3,196 +3,201 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 
 // In-Memory Supabase mock database for hermetic test execution
-export const testSupabaseDB: Record<string, any[]> = {
-  schools: [
-    { id: 'school-uuid-a', name: 'School A Academy', slug: 'school-a', status: 'active' },
-    { id: 'school-uuid-b', name: 'School B College', slug: 'school-b', status: 'active' }
-  ],
-  school_licenses: [
-    {
-      id: 'lic-a',
-      school_id: 'school-uuid-a',
-      license_key: 'TEST-LICENSE-KEY-A',
-      active_status: 'active',
-      active_modules: JSON.stringify(['dashboard', 'students', 'academic', 'timetable', 'attendance', 'results', 'fees']),
-      created_at: Date.now(),
-      expiry_date: Date.now() + 86400000 * 365
+const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
+  const db: Record<string, any[]> = {
+    schools: [
+      { id: 'school-uuid-a', name: 'School A Academy', slug: 'school-a', status: 'active' },
+      { id: 'school-uuid-b', name: 'School B College', slug: 'school-b', status: 'active' }
+    ],
+    school_licenses: [
+      {
+        id: 'lic-a',
+        school_id: 'school-uuid-a',
+        license_key: 'TEST-LICENSE-KEY-A',
+        active_status: 'active',
+        active_modules: JSON.stringify(['dashboard', 'students', 'academic', 'timetable', 'attendance', 'results', 'fees']),
+        created_at: Date.now(),
+        expiry_date: Date.now() + 86400000 * 365
+      }
+    ],
+    students: [],
+    classes: [],
+    subjects: [],
+    teachers: [],
+    attendance: [],
+    results: [],
+    users: []
+  };
+
+  class MockQueryBuilder {
+    private tableName: string;
+    private filters: Array<(row: any) => boolean> = [];
+    private pendingOperation: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select';
+    private operationData: any = null;
+
+    constructor(table: string) {
+      this.tableName = table;
+      if (!db[this.tableName]) {
+        db[this.tableName] = [];
+      }
     }
-  ],
-  students: [],
-  classes: [],
-  subjects: [],
-  teachers: [],
-  attendance: [],
-  results: [],
-  users: []
-};
 
-class MockQueryBuilder {
-  private tableName: string;
-  private filters: Array<(row: any) => boolean> = [];
-  private pendingOperation: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select';
-  private operationData: any = null;
-
-  constructor(table: string) {
-    this.tableName = table;
-    if (!testSupabaseDB[this.tableName]) {
-      testSupabaseDB[this.tableName] = [];
+    select(_cols = '*') {
+      if (this.pendingOperation !== 'insert' && this.pendingOperation !== 'update') {
+        this.pendingOperation = 'select';
+      }
+      return this;
     }
-  }
 
-  select(_cols = '*') {
-    if (this.pendingOperation !== 'insert' && this.pendingOperation !== 'update') {
-      this.pendingOperation = 'select';
+    insert(data: any | any[]) {
+      this.pendingOperation = 'insert';
+      this.operationData = Array.isArray(data) ? data : [data];
+      return this;
     }
-    return this;
-  }
 
-  insert(data: any | any[]) {
-    this.pendingOperation = 'insert';
-    this.operationData = Array.isArray(data) ? data : [data];
-    return this;
-  }
+    upsert(data: any | any[], _opts?: any) {
+      this.pendingOperation = 'upsert';
+      this.operationData = Array.isArray(data) ? data : [data];
+      return this;
+    }
 
-  upsert(data: any | any[], _opts?: any) {
-    this.pendingOperation = 'upsert';
-    this.operationData = Array.isArray(data) ? data : [data];
-    return this;
-  }
+    update(data: any) {
+      this.pendingOperation = 'update';
+      this.operationData = data;
+      return this;
+    }
 
-  update(data: any) {
-    this.pendingOperation = 'update';
-    this.operationData = data;
-    return this;
-  }
+    delete() {
+      this.pendingOperation = 'delete';
+      return this;
+    }
 
-  delete() {
-    this.pendingOperation = 'delete';
-    return this;
-  }
+    eq(column: string, value: any) {
+      this.filters.push(row => row[column] === value || String(row[column]) === String(value));
+      return this;
+    }
 
-  eq(column: string, value: any) {
-    this.filters.push(row => row[column] === value || String(row[column]) === String(value));
-    return this;
-  }
-
-  or(condition: string) {
-    const parts = condition.split(',');
-    this.filters.push(row => {
-      return parts.some(part => {
-        const [col, op, val] = part.split('.');
-        if (op === 'eq') return row[col] === val;
-        if (op === 'is' && val === 'null') return row[col] == null;
-        return true;
+    or(condition: string) {
+      const parts = condition.split(',');
+      this.filters.push(row => {
+        return parts.some(part => {
+          const [col, op, val] = part.split('.');
+          if (op === 'eq') return row[col] === val;
+          if (op === 'is' && val === 'null') return row[col] == null;
+          return true;
+        });
       });
-    });
-    return this;
-  }
-
-  order(_column: string, _opts?: any) {
-    return this;
-  }
-
-  limit(count: number) {
-    const origFilters = [...this.filters];
-    this.filters = [
-      (row: any) => {
-        return origFilters.every(f => f(row));
-      }
-    ];
-    return this;
-  }
-
-  private execute() {
-    const table = testSupabaseDB[this.tableName] || [];
-
-    if (this.pendingOperation === 'insert') {
-      const inserted: any[] = [];
-      for (const item of this.operationData) {
-        const record = { id: item.id || `row-${Date.now()}-${Math.random()}`, ...item };
-        table.push(record);
-        inserted.push(record);
-      }
-      return { data: inserted, error: null };
+      return this;
     }
 
-    if (this.pendingOperation === 'upsert') {
-      const results: any[] = [];
-      for (const item of this.operationData) {
-        const id = item.id || item.studentId || item.student_id;
-        const idx = table.findIndex(r => (r.id && r.id === id) || (r.studentId && r.studentId === id) || (r.student_id && r.student_id === id));
-        if (idx >= 0) {
-          table[idx] = { ...table[idx], ...item };
-          results.push(table[idx]);
-        } else {
-          const rec = { id: id || `rec-${Date.now()}`, ...item };
-          table.push(rec);
-          results.push(rec);
+    order(_column: string, _opts?: any) {
+      return this;
+    }
+
+    limit(count: number) {
+      const origFilters = [...this.filters];
+      this.filters = [
+        (row: any) => {
+          return origFilters.every(f => f(row));
         }
-      }
-      return { data: results, error: null };
+      ];
+      return this;
     }
 
-    if (this.pendingOperation === 'update') {
-      const updated: any[] = [];
-      for (let i = 0; i < table.length; i++) {
-        if (this.filters.every(f => f(table[i]))) {
-          table[i] = { ...table[i], ...this.operationData };
-          updated.push(table[i]);
+    private execute() {
+      const table = db[this.tableName] || [];
+
+      if (this.pendingOperation === 'insert') {
+        const inserted: any[] = [];
+        for (const item of this.operationData) {
+          const record = { id: item.id || `row-${Date.now()}-${Math.random()}`, ...item };
+          table.push(record);
+          inserted.push(record);
         }
+        return { data: inserted, error: null };
       }
-      return { data: updated, error: null };
+
+      if (this.pendingOperation === 'upsert') {
+        const results: any[] = [];
+        for (const item of this.operationData) {
+          const id = item.id || item.studentId || item.student_id;
+          const idx = table.findIndex(r => (r.id && r.id === id) || (r.studentId && r.studentId === id) || (r.student_id && r.student_id === id));
+          if (idx >= 0) {
+            table[idx] = { ...table[idx], ...item };
+            results.push(table[idx]);
+          } else {
+            const rec = { id: id || `rec-${Date.now()}`, ...item };
+            table.push(rec);
+            results.push(rec);
+          }
+        }
+        return { data: results, error: null };
+      }
+
+      if (this.pendingOperation === 'update') {
+        const updated: any[] = [];
+        for (let i = 0; i < table.length; i++) {
+          if (this.filters.every(f => f(table[i]))) {
+            table[i] = { ...table[i], ...this.operationData };
+            updated.push(table[i]);
+          }
+        }
+        return { data: updated, error: null };
+      }
+
+      if (this.pendingOperation === 'delete') {
+        const remaining = table.filter(row => !this.filters.every(f => f(row)));
+        db[this.tableName] = remaining;
+        return { data: null, error: null };
+      }
+
+      // Select
+      const rows = table.filter(row => this.filters.every(f => f(row)));
+      return { data: rows, error: null };
     }
 
-    if (this.pendingOperation === 'delete') {
-      const remaining = table.filter(row => !this.filters.every(f => f(row)));
-      testSupabaseDB[this.tableName] = remaining;
-      return { data: null, error: null };
-    }
-
-    // Select
-    const rows = table.filter(row => this.filters.every(f => f(row)));
-    return { data: rows, error: null };
-  }
-
-  async single() {
-    const res = this.execute();
-    const rows = res.data;
-    if (!rows || rows.length === 0) {
-      return { data: null, error: { message: 'Row not found', code: 'PGRST116' } };
-    }
-    return { data: rows[0], error: null };
-  }
-
-  async maybeSingle() {
-    const res = this.execute();
-    const rows = res.data;
-    if (!rows || rows.length === 0) {
-      return { data: null, error: null };
-    }
-    return { data: rows[0], error: null };
-  }
-
-  then(resolve: any, reject?: any) {
-    try {
+    async single() {
       const res = this.execute();
-      return Promise.resolve(res).then(resolve, reject);
-    } catch (e) {
-      if (reject) return reject(e);
-      throw e;
+      const rows = res.data;
+      if (!rows || rows.length === 0) {
+        return { data: null, error: { message: 'Row not found', code: 'PGRST116' } };
+      }
+      return { data: rows[0], error: null };
     }
-  }
-}
 
-export const mockSupabaseClient = {
-  from: (table: string) => new MockQueryBuilder(table),
-  auth: {
-    signInWithOtp: async () => ({ error: null }),
-    admin: {
-      createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null })
+    async maybeSingle() {
+      const res = this.execute();
+      const rows = res.data;
+      if (!rows || rows.length === 0) {
+        return { data: null, error: null };
+      }
+      return { data: rows[0], error: null };
+    }
+
+    then(resolve: any, reject?: any) {
+      try {
+        const res = this.execute();
+        return Promise.resolve(res).then(resolve, reject);
+      } catch (e) {
+        if (reject) return reject(e);
+        throw e;
+      }
     }
   }
-};
+
+  const client = {
+    from: (table: string) => new MockQueryBuilder(table),
+    rpc: async (_fn: string, _args: any) => ({ data: null, error: null }),
+    auth: {
+      signInWithOtp: async () => ({ error: null }),
+      admin: {
+        createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null })
+      }
+    }
+  };
+
+  return { testSupabaseDB: db, mockSupabaseClient: client };
+});
 
 vi.mock('../lib/supabase/server.js', () => ({
   getSupabaseAdmin: () => mockSupabaseClient,

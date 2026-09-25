@@ -3589,9 +3589,47 @@ async function doStartServer() {
         'students', 'academic', 'timetable', 'attendance', 'results',
         'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory'
       ];
-
-      // 1. Locate or create the School record
       const slug = schoolName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
+      // Strategy 1: Call atomic security-definer stored procedure in Supabase
+      try {
+        const { data: rpcData, error: rpcErr } = await adminClient.rpc('sync_school_license', {
+          p_school_name: schoolName,
+          p_license_key: licenseKey,
+          p_tier: tier,
+          p_email: licenseRecord.clientEmail || `admin@${slug}.edu.gh`,
+          p_phone: licenseRecord.phone || '+233 24 000 0000',
+          p_address: licenseRecord.address || 'Ghana',
+          p_duration_months: durationMonths,
+          p_expiry_date: expiryDate,
+          p_modules: activeModules,
+          p_status: status
+        });
+
+        if (!rpcErr && rpcData && rpcData.success) {
+          syncedSchool = {
+            id: rpcData.school_id,
+            name: rpcData.school_name,
+            slug: rpcData.slug,
+            license_id: rpcData.license_id,
+            status: 'active'
+          };
+          syncedLicense = {
+            id: rpcData.license_id,
+            license_key: rpcData.license_key,
+            school_id: rpcData.school_id,
+            tier: rpcData.tier,
+            active_status: 'active'
+          };
+          return { isSynced: true, syncError: null, school: syncedSchool, license: syncedLicense };
+        } else if (rpcErr && rpcErr.message && !rpcErr.message.includes('function') && !rpcErr.message.includes('not found')) {
+          console.warn("RPC sync_school_license notice:", rpcErr.message);
+        }
+      } catch (rpcCatch: any) {
+        // Fallback to table queries below
+      }
+
+      // Strategy 2: Direct Table Upsert Fallback with strict schema compliance
       let schoolId = licenseRecord.school_id || null;
 
       if (!schoolId) {
@@ -3605,15 +3643,15 @@ async function doStartServer() {
           schoolId = existingSchool.id;
           syncedSchool = existingSchool;
         } else {
-          // Create school record
+          // Create school record (license_id initially null to satisfy foreign key)
           const { data: newSchool, error: newSchErr } = await adminClient
             .from('schools')
             .insert([{
               name: schoolName,
               slug,
-              email: `admin@${slug}.edu.gh`,
-              phone: '+233 24 000 0000',
-              address: 'Ghana',
+              email: licenseRecord.clientEmail || `admin@${slug}.edu.gh`,
+              phone: licenseRecord.phone || '+233 24 000 0000',
+              address: licenseRecord.address || 'Ghana',
               theme: 'indigo',
               academic_year: '2026/2027',
               current_term: 'Term 1',
@@ -3631,12 +3669,11 @@ async function doStartServer() {
         }
       }
 
-      // 2. Upsert into 'school_licenses' table
-      const isRecordUsed = licenseRecord.used === true || (licenseRecord.activatedAt && Number(licenseRecord.activatedAt) > 0) || (licenseRecord.activated_at && Number(licenseRecord.activated_at) > 0);
+      // 2. Upsert into 'school_licenses' table strictly matching existing columns
       let slData: any = null;
       let slErr: any = null;
 
-      const baseLicensePayload: any = {
+      const cleanLicensePayload: any = {
         license_key: licenseKey,
         school_name: schoolName,
         expiry_date: expiryDate,
@@ -3644,36 +3681,19 @@ async function doStartServer() {
         school_id: schoolId,
         tier: tier,
         active_modules: activeModules,
-        created_at: createdAt,
-        updated_at: Date.now()
+        created_at: createdAt
       };
 
-      // Try upsert with extended fields first
-      const fullRes = await adminClient
+      const baseRes = await adminClient
         .from('school_licenses')
-        .upsert([{
-          ...baseLicensePayload,
-          used: isRecordUsed,
-          activated_at: licenseRecord.activatedAt || licenseRecord.activated_at || null
-        }], { onConflict: 'license_key' })
+        .upsert([cleanLicensePayload], { onConflict: 'license_key' })
         .select()
         .maybeSingle();
 
-      if (!fullRes.error && fullRes.data) {
-        slData = fullRes.data;
+      if (!baseRes.error && baseRes.data) {
+        slData = baseRes.data;
       } else {
-        // Fallback to base schema fields if extended columns are not cached in Supabase
-        const baseRes = await adminClient
-          .from('school_licenses')
-          .upsert([baseLicensePayload], { onConflict: 'license_key' })
-          .select()
-          .maybeSingle();
-
-        if (baseRes.data) {
-          slData = baseRes.data;
-        } else {
-          slErr = fullRes.error || baseRes.error;
-        }
+        slErr = baseRes.error;
       }
 
       if (slErr) {
@@ -3695,7 +3715,7 @@ async function doStartServer() {
         isSynced = true;
       }
 
-      // 4. Also upsert into legacy 'licenses' table if needed
+      // 4. Also upsert into legacy 'licenses' table if present
       try {
         await adminClient.from('licenses').upsert([{
           key: licenseKey,
@@ -5477,9 +5497,15 @@ async function doStartServer() {
       if (dbMode === "supabase") {
         try {
           const adminClient = getSupabaseAdmin();
-          const { data, error } = await adminClient.from('schools').select('*');
-          if (!error && Array.isArray(data)) {
-            supabaseSchools = data;
+          // Try get_schools_directory RPC first
+          const { data: rpcSchools, error: rpcErr } = await adminClient.rpc('get_schools_directory');
+          if (!rpcErr && Array.isArray(rpcSchools) && rpcSchools.length > 0) {
+            supabaseSchools = rpcSchools;
+          } else {
+            const { data, error } = await adminClient.from('schools').select('*');
+            if (!error && Array.isArray(data)) {
+              supabaseSchools = data;
+            }
           }
 
           // Fetch student count per school

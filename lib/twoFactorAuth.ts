@@ -13,9 +13,8 @@ import crypto from 'crypto';
 async function loadOtplib() {
   try {
     const otplib = await import('otplib');
-    return otplib.authenticator;
+    return otplib.authenticator || (otplib as any).default?.authenticator || otplib;
   } catch (error) {
-    console.warn('otplib not installed, 2FA functionality will be limited');
     return null;
   }
 }
@@ -114,11 +113,15 @@ export async function verifyTOTPToken(token: string, secret: string): Promise<bo
   try {
     const authenticator = await loadOtplib();
     if (authenticator) {
-      // @ts-ignore - otplib types may not match exactly
-      return authenticator.verify(token, secret);
+      if (typeof authenticator.check === 'function') {
+        return authenticator.check(token, secret);
+      }
+      if (typeof authenticator.verify === 'function') {
+        return authenticator.verify({ token, secret });
+      }
     }
   } catch (error) {
-    console.warn('TOTP verification failed (otplib not available)');
+    // If verification encounters error, return false without logging noise
   }
   return false;
 }
