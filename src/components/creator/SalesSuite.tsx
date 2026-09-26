@@ -38,6 +38,7 @@ import {
   signInWithGoogle, 
   signOutGoogle, 
   getGoogleAccessToken, 
+  clearGoogleAccessToken,
   getCurrentGoogleUser, 
   sendLicenseViaGmailApi,
   getGmailWebComposeUrl,
@@ -138,16 +139,9 @@ export default function SalesSuite({
   handleSendLicenseEmail
 }: SalesSuiteProps) {
 
-  // Local state for CRM
-  const [crmLeads, setCrmLeads] = useState<any[]>(() => {
-    const cached = localStorage.getItem('esepa_creator_crm_leads');
-    if (cached) return JSON.parse(cached);
-    return [
-      { id: '1', schoolName: 'Kumasi Science High School', contactPerson: 'Principal Isaac Osei', phone: '+233 24 555 1212', email: 'kumasitech@edu.gh', status: 'Demo Scheduled', notes: 'Very interested in eVoting and Results SMS.' },
-      { id: '2', schoolName: 'Tema International Pre-School', contactPerson: 'Director Sarah Mensah', phone: '+233 20 888 3434', email: 'temapreschool@gmail.com', status: 'Lead', notes: 'Inquired about fee management system.' },
-      { id: '3', schoolName: 'Legon Academic Academy', contactPerson: 'Dr. John Arthur', phone: '+233 30 123 4567', email: 'legonacademy@edu.gh', status: 'Proposal Sent', notes: 'Sent Standard proposal ($950/yr + sms addon).' }
-    ];
-  });
+  // Live Supabase state for CRM leads
+  const [crmLeads, setCrmLeads] = useState<any[]>([]);
+  const [isSavingLead, setIsSavingLead] = useState(false);
 
   const [leadSchool, setLeadSchool] = useState('');
   const [leadContact, setLeadContact] = useState('');
@@ -156,84 +150,170 @@ export default function SalesSuite({
   const [leadStatus, setLeadStatus] = useState('Lead');
   const [leadNotes, setLeadNotes] = useState('');
 
-  const handleAddLead = (e: React.FormEvent) => {
+  const buildCrmHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const token = localStorage.getItem('esepa_auth_token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+    } catch {}
+    return headers;
+  };
+
+  const fetchCrmLeads = async () => {
+    try {
+      localStorage.removeItem('esepa_creator_crm_leads');
+      localStorage.removeItem('esepa_crm_leads_v1');
+      const res = await fetch('/api/crm/leads', { headers: buildCrmHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.leads)) {
+          setCrmLeads(data.leads);
+        }
+      }
+    } catch (err) {
+      console.warn('Notice fetching CRM leads from Supabase:', err);
+    }
+  };
+
+  const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leadSchool.trim()) return;
-    const newLead = {
-      id: Date.now().toString(),
-      schoolName: leadSchool.trim(),
-      contactPerson: leadContact.trim(),
-      phone: leadPhone.trim(),
-      email: leadEmail.trim(),
-      status: leadStatus,
-      notes: leadNotes.trim()
-    };
-    const updated = [...crmLeads, newLead];
-    setCrmLeads(updated);
-    localStorage.setItem('esepa_creator_crm_leads', JSON.stringify(updated));
-    setLeadSchool('');
-    setLeadContact('');
-    setLeadPhone('');
-    setLeadEmail('');
-    setLeadNotes('');
+    if (!leadSchool.trim() || isSavingLead) return;
+    setIsSavingLead(true);
+    try {
+      const res = await fetch('/api/crm/leads', {
+        method: 'POST',
+        headers: buildCrmHeaders(),
+        body: JSON.stringify({
+          schoolName: leadSchool.trim(),
+          contactPerson: leadContact.trim(),
+          phone: leadPhone.trim(),
+          email: leadEmail.trim(),
+          status: leadStatus,
+          notes: leadNotes.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.lead) {
+        setCrmLeads(prev => [data.lead, ...prev]);
+        setLeadSchool('');
+        setLeadContact('');
+        setLeadPhone('');
+        setLeadEmail('');
+        setLeadNotes('');
+      }
+    } catch (err) {
+      console.warn('Error saving CRM lead to Supabase:', err);
+    } finally {
+      setIsSavingLead(false);
+    }
   };
 
-  const handleUpdateLeadStatus = (id: string, newStatus: string) => {
-    const updated = crmLeads.map(l => l.id === id ? { ...l, status: newStatus } : l);
-    setCrmLeads(updated);
-    localStorage.setItem('esepa_creator_crm_leads', JSON.stringify(updated));
+  const handleUpdateLeadStatus = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/crm/leads/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: buildCrmHeaders(),
+        body: JSON.stringify({ status: newStatus })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setCrmLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus, stage: newStatus } : l));
+      }
+    } catch (err) {
+      console.warn('Error updating CRM lead status in Supabase:', err);
+    }
   };
 
-  const handleRemoveLead = (id: string) => {
-    const updated = crmLeads.filter(l => l.id !== id);
-    setCrmLeads(updated);
-    localStorage.setItem('esepa_creator_crm_leads', JSON.stringify(updated));
+  const handleRemoveLead = async (id: string) => {
+    try {
+      const res = await fetch(`/api/crm/leads/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: buildCrmHeaders()
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setCrmLeads(prev => prev.filter(l => l.id !== id));
+      }
+    } catch (err) {
+      console.warn('Error deleting CRM lead from Supabase:', err);
+    }
   };
 
-  // Local state for Invoicing
+  // Live Supabase state for Subscription Invoicing
   const [billingSchool, setBillingSchool] = useState('');
   const [billingAmount, setBillingAmount] = useState('');
   const [billingType, setBillingType] = useState('Setup Fee');
   const [billingStatus, setBillingStatus] = useState('Paid');
-  const [invoices, setInvoices] = useState<any[]>(() => {
-    const cached = localStorage.getItem('esepa_creator_invoices');
-    if (cached) return JSON.parse(cached);
-    return [
-      { id: 'inv-101', school: 'Accra Science Academy', type: 'Annual Renewal', amount: 950, status: 'Paid', date: '2026-06-25' },
-      { id: 'inv-102', school: 'Kumasi Science High', type: 'Setup & Install', amount: 580, status: 'Pending', date: '2026-06-28' },
-      { id: 'inv-103', school: 'Tema International School', type: 'SMS Pack Purchase', amount: 350, status: 'Overdue', date: '2026-06-05' }
-    ];
-  });
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
 
-  const handleCreateInvoice = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!billingSchool || !billingAmount) return;
-    const uniqueSuffix = `${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`;
-    const newInv = {
-      id: `inv-${uniqueSuffix}`,
-      school: billingSchool,
-      type: billingType,
-      amount: parseFloat(billingAmount) || 0,
-      status: billingStatus,
-      date: new Date().toISOString().split('T')[0]
-    };
-    const updated = [...invoices, newInv];
-    setInvoices(updated);
-    localStorage.setItem('esepa_creator_invoices', JSON.stringify(updated));
-    setBillingSchool('');
-    setBillingAmount('');
+  const fetchInvoices = async () => {
+    try {
+      localStorage.removeItem('esepa_creator_invoices');
+      localStorage.removeItem('esepa_Pos_invoices_v1');
+      const res = await fetch('/api/crm/invoices', { headers: buildCrmHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.invoices)) {
+          setInvoices(data.invoices);
+        }
+      }
+    } catch (err) {
+      console.warn('Notice fetching subscription invoices from Supabase:', err);
+    }
   };
 
-  const handleToggleInvoiceStatus = (id: string) => {
-    const updated = invoices.map(inv => {
-      if (inv.id === id) {
-        const nextStatus = inv.status === 'Paid' ? 'Pending' : inv.status === 'Pending' ? 'Overdue' : 'Paid';
-        return { ...inv, status: nextStatus };
+  useEffect(() => {
+    fetchCrmLeads();
+    fetchInvoices();
+  }, []);
+
+  const handleCreateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!billingSchool || !billingAmount || isSavingInvoice) return;
+    setIsSavingInvoice(true);
+    try {
+      const res = await fetch('/api/crm/invoices', {
+        method: 'POST',
+        headers: buildCrmHeaders(),
+        body: JSON.stringify({
+          school: billingSchool.trim(),
+          type: billingType,
+          amount: parseFloat(billingAmount) || 0,
+          status: billingStatus,
+          date: new Date().toISOString().split('T')[0]
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.invoice) {
+        setInvoices(prev => [data.invoice, ...prev]);
+        setBillingSchool('');
+        setBillingAmount('');
       }
-      return inv;
-    });
-    setInvoices(updated);
-    localStorage.setItem('esepa_creator_invoices', JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Error creating invoice in Supabase:', err);
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  };
+
+  const handleToggleInvoiceStatus = async (id: string) => {
+    const current = invoices.find(inv => inv.id === id);
+    if (!current) return;
+    const nextStatus = current.status === 'Paid' ? 'Pending' : current.status === 'Pending' ? 'Overdue' : 'Paid';
+    try {
+      const res = await fetch(`/api/crm/invoices/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: buildCrmHeaders(),
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: nextStatus } : inv));
+      }
+    } catch (err) {
+      console.warn('Error updating invoice status in Supabase:', err);
+    }
   };
 
   // Local state for copy feedback & freshly issued key
@@ -339,7 +419,7 @@ export default function SalesSuite({
 
     const val = validateEmailSyntax(customEmailRecipient.trim());
     if (!val.isValid) {
-      alert(`Invalid email address: ${val.error}`);
+      setEmailSentSuccessMsg(`Invalid email address: ${val.error}`);
       return;
     }
 
@@ -347,11 +427,13 @@ export default function SalesSuite({
     setEmailSentSuccessMsg(null);
 
     try {
-      let token = googleToken || getGoogleAccessToken();
+      let token = getGoogleAccessToken() || googleToken;
       if (!token) {
         const res = await signInWithGoogle();
         if (!res?.accessToken) {
-          throw new Error('Google Sign-in was cancelled or denied. You can use 1-Click Web Gmail Compose instead.');
+          setGoogleToken(null);
+          setEmailSentSuccessMsg('Google Sign-in was cancelled or expired. You can use 1-Click Web Gmail Compose or Cloud Server below.');
+          return;
         }
         setGoogleUser(res.user);
         setGoogleToken(res.accessToken);
@@ -380,10 +462,15 @@ export default function SalesSuite({
           dispatchMethod: 'gmail',
           emailDispatched: true
         });
+      } else {
+        clearGoogleAccessToken();
+        setGoogleToken(null);
+        setEmailSentSuccessMsg(result.error || 'Gmail authorization expired. Please reconnect Google or use Cloud Server dispatch below.');
       }
     } catch (err: any) {
-      console.error('Direct Gmail send failed:', err);
-      alert(`Gmail Dispatch Notice: ${err.message || 'Could not send via Gmail API. You can use 1-Click Web Gmail or Cloud Server below.'}`);
+      clearGoogleAccessToken();
+      setGoogleToken(null);
+      setEmailSentSuccessMsg(`Gmail Dispatch Notice: ${err.message || 'Could not send via Gmail API. You can use 1-Click Web Gmail or Cloud Server below.'}`);
     } finally {
       setIsSendingCustomEmail(false);
     }
@@ -396,7 +483,7 @@ export default function SalesSuite({
     // Syntax validation guard
     const val = validateEmailSyntax(customEmailRecipient.trim());
     if (!val.isValid) {
-      alert(`Invalid email address: ${val.error}`);
+      setEmailSentSuccessMsg(`Invalid email address: ${val.error}`);
       return;
     }
 
@@ -405,10 +492,13 @@ export default function SalesSuite({
     setDispatchedEmailPackage(null);
 
     try {
-      const activeToken = googleToken || getGoogleAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (activeToken) {
-        headers['Authorization'] = `Bearer ${activeToken}`;
+      const activeGoogleToken = getGoogleAccessToken();
+      if (!activeGoogleToken && googleToken) {
+        setGoogleToken(null);
+      }
+      const headers = buildCrmHeaders();
+      if (activeGoogleToken) {
+        headers['x-google-access-token'] = activeGoogleToken;
       }
 
       const res = await fetch('/api/license/send-email', {
@@ -420,11 +510,16 @@ export default function SalesSuite({
           schoolName: emailModalLicense.schoolName,
           contactPerson: customContactPerson.trim() || undefined,
           customMessage: customMessage.trim() || undefined,
-          googleAccessToken: activeToken || undefined
+          googleAccessToken: activeGoogleToken || undefined
         })
       });
 
       const data = await res.json();
+
+      if (data?.gmailTokenExpired) {
+        clearGoogleAccessToken();
+        setGoogleToken(null);
+      }
 
       if (res.ok && data.success) {
         const method = data.dispatchMethod || (data.emailDispatched ? 'cloud_email' : 'direct_delivery_ready');
@@ -448,8 +543,7 @@ export default function SalesSuite({
         throw new Error(data.error || 'Failed to dispatch license email.');
       }
     } catch (err: any) {
-      console.error('Failed to send license email:', err);
-      alert(`Email dispatch notice: ${err.message || 'Please verify email recipient.'}`);
+      setEmailSentSuccessMsg(`Email dispatch notice: ${err.message || 'Please verify email recipient.'}`);
     } finally {
       setIsSendingCustomEmail(false);
     }
@@ -1418,7 +1512,7 @@ export default function SalesSuite({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {dedupedFilteredLicenses.map((lic, idx) => {
-                  const syncState = lic.syncStatus || 'local_only';
+                  const syncState = lic.syncStatus || 'synced';
                   const isCopied = copiedKey === lic.key;
                   const rowSlug = (lic.schoolSlug || lic.provisionedAdmin?.schoolSlug || lic.schoolName || 'school')
                     .toString()

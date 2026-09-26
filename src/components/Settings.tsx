@@ -33,11 +33,19 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { LicenseSyncBanner } from './LicenseSyncBanner';
+import {
+  fetchTenantLicenseStatus,
+  activateTenantLicense,
+  deactivateTenantLicense,
+  generateSchoolLicense,
+  revokeSchoolLicense,
+  broadcastLicenseChange
+} from '../lib/licenseSync';
 
 export default function Settings() {
   const settingsData = useLiveQuery(() => db.settings.toArray());
   const { showToast, confirm } = useNotifications();
-  const { user } = useAuth();
+  const { user, school } = useAuth();
   const [activeTab, setActiveTab ] = useState<'profile' | 'academic' | 'database' | 'fees' | 'creator' | 'theme'>('profile');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,19 +66,16 @@ export default function Settings() {
 
   const fetchLicenseInfo = async () => {
     try {
-      let userRole = '';
-      try {
-        const stored = localStorage.getItem('esepa_user');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          userRole = parsed.role || '';
+      const data = await fetchTenantLicenseStatus(school?.id || user?.school_id || null, user?.role || null);
+      if (data) {
+        setLicenseInfo({
+          active: data.active,
+          licenseKey: data.licenseKey,
+          remoteOverride: Boolean(data.remoteOverride)
+        });
+        if (data.lockAnnouncement) {
+          setLockAnnouncementMsg(data.lockAnnouncement);
         }
-      } catch (e) {}
-
-      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setLicenseInfo(data);
       }
     } catch (err) {
       console.warn("Failed to fetch license status inside settings panel:", err);
@@ -79,27 +84,22 @@ export default function Settings() {
 
   useEffect(() => {
     fetchLicenseInfo();
-  }, []);
+  }, [school?.id, user?.school_id]);
 
   const handleRemoteDeactivate = async () => {
     confirm({
       title: "Deactivate Portal",
-      message: "Are you sure you want to remotely lock and deactivate this school portal? All active users will be blocked from accessing the system until a valid activation key is entered.",
+      message: "Are you sure you want to remotely lock and deactivate this school portal in Supabase? All active non-creator users will be blocked from accessing the system until a valid activation key is entered.",
       confirmLabel: "Remotely Lock Now",
       onConfirm: async () => {
         setLoadingLicenseAction(true);
         try {
-          const res = await fetch('/api/license/deactivate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creatorPassword: "creator_override_9922_july" })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast("System remotely locked and deactivated!", "success");
-            fetchLicenseInfo();
+          const result = await deactivateTenantLicense(school?.id || user?.school_id || null, licenseInfo?.licenseKey || null);
+          if (result.success) {
+            showToast("System remotely locked and deactivated in Supabase!", "success");
+            await fetchLicenseInfo();
           } else {
-            showToast(data.error || "Failed to deactivate", "error");
+            showToast(result.error || "Failed to deactivate in Supabase", "error");
           }
         } catch (err) {
           showToast("Network error. Please try again.", "error");
@@ -118,24 +118,12 @@ export default function Settings() {
     }
     setLoadingLicenseAction(true);
     try {
-      const res = await fetch('/api/license/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: keyToUse })
-      });
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast("System activated successfully!", "success");
-          fetchLicenseInfo();
-          setLoadingLicenseAction(false);
-          return;
-        } else {
-          showToast(data.error || "Activation failed", "error");
-          setLoadingLicenseAction(false);
-          return;
-        }
+      const result = await activateTenantLicense(keyToUse, school?.id || user?.school_id || null);
+      if (result.success) {
+        showToast("System activated and synced in Supabase!", "success");
+        await fetchLicenseInfo();
+      } else {
+        showToast(result.error || "Activation failed in Supabase", "error");
       }
     } catch (err: any) {
       showToast(err.message || "Error during activation", "error");
@@ -147,7 +135,10 @@ export default function Settings() {
   const fetchGeneratedLicenses = async (retries = 2) => {
     try {
       localStorage.removeItem('esepa_generated_licenses');
-      const res = await fetch('/api/license/list');
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/license/list', { headers });
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
@@ -180,82 +171,63 @@ export default function Settings() {
       return;
     }
     setIsGenerating(true);
-    let createdLicense: any = null;
     try {
-      const res = await fetch('/api/license/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schoolName: genSchoolName,
-          durationMonths: genDuration,
-          tier: genTier
-        })
+      const result = await generateSchoolLicense({
+        schoolName: genSchoolName,
+        durationMonths: genDuration,
+        tier: genTier
       });
 
-      const contentType = res.headers.get('content-type') || '';
-      let data: any = {};
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      }
-
-      if (res.ok && data.success && data.license) {
-        createdLicense = data.license;
-      } else if (data.error) {
-        showToast(data.error, "error");
+      if (!result.success || !result.license) {
+        showToast(result.error || "Failed to persist license key in Supabase database.", "error");
         setIsGenerating(false);
         return;
       }
+
+      const createdLicense = result.license;
+      const updated = [
+        createdLicense,
+        ...licensesList.filter(
+          (l: any) =>
+            l.key !== createdLicense.key &&
+            (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
+            String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
+        )
+      ];
+
+      showToast(`Success! Generated activation key in Supabase: ${createdLicense.key}`, "success");
+      setGenSchoolName('');
+      setLicensesList(updated);
+      fetchGeneratedLicenses();
     } catch (err) {
       console.warn("Network error generating key in Settings:", err);
       showToast("Failed to connect to server to generate license in Supabase.", "error");
+    } finally {
       setIsGenerating(false);
-      return;
     }
-
-    if (!createdLicense) {
-      showToast("Failed to persist license key in Supabase database.", "error");
-      setIsGenerating(false);
-      return;
-    }
-
-    localStorage.removeItem('esepa_generated_licenses');
-    const updated = [
-      createdLicense,
-      ...licensesList.filter(
-        (l: any) =>
-          l.key !== createdLicense.key &&
-          (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
-          String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
-      )
-    ];
-
-    showToast(`Success! Generated activation key: ${createdLicense.key}`, "success");
-    setGenSchoolName('');
-    setLicensesList(updated);
-    setIsGenerating(false);
-    fetchGeneratedLicenses();
   };
 
   const handleRevokeKey = async (key: string) => {
+    const matched = licensesList.find((l: any) => l.key === key || l.licenseKey === key);
     confirm({
       title: "Revoke Product Activation Key",
-      message: `Are you sure you want to suspend and revoke the license key: ${key}? This will instantly block operations for this school portal.`,
+      message: `Are you sure you want to suspend and revoke the license key: ${key} in Supabase? This will instantly block operations for this school portal.`,
       confirmLabel: "Revoke & Lock Portal",
       onConfirm: async () => {
         setIsRevoking(key);
         try {
-          const res = await fetch('/api/license/revoke', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast("Success! Selected license key has been revoked.", "success");
+          const result = await revokeSchoolLicense(
+            key,
+            matched?.school_id || matched?.id || null,
+            'revoked',
+            matched?.schoolName || null
+          );
+          if (result.success) {
+            showToast("Success! Selected license key has been revoked in Supabase.", "success");
             fetchGeneratedLicenses();
             fetchLicenseInfo();
           } else {
-            showToast(data.error || "Failed to revoke key", "error");
+            showToast(result.error || "Failed to revoke key in Supabase", "error");
           }
         } catch (err) {
           showToast("Network error. Please try again.", "error");
@@ -268,14 +240,22 @@ export default function Settings() {
 
   const handleUpdateAnnouncement = async () => {
     try {
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/license/announcement', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: lockAnnouncementMsg })
+        headers,
+        body: JSON.stringify({
+          message: lockAnnouncementMsg,
+          schoolId: school?.id || user?.school_id || undefined,
+          licenseKey: licenseInfo?.licenseKey || undefined
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast("Lockout banner notice updated successfully!", "success");
+        showToast("Lockout banner notice updated in Supabase!", "success");
+        broadcastLicenseChange(data);
       } else {
         showToast(data.error || "Failed to update announcement", "error");
       }

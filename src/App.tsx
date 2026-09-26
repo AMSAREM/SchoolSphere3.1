@@ -74,6 +74,7 @@ import { NotificationProvider, useNotifications } from './contexts/NotificationC
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { DoodleBackground } from './components/DoodleBackground';
+import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
 
@@ -114,39 +115,42 @@ function AppContent() {
   const [activeModules, setActiveModules] = useState<string[]>(ALL_DEFAULT_MODULES);
 
   const checkLicenseStatus = async () => {
+    purgeLegacyLicenseCaches();
     try {
-      let userRole = '';
-      try {
-        const stored = localStorage.getItem('esepa_user');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          userRole = parsed.role || '';
-        }
-      } catch (e) {}
-
-      const token = localStorage.getItem('esepa_auth_token');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`, { headers });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          setIsLicensed(data.active ?? true);
-          setLicenseKey(data.licenseKey || '');
-          setLockAnnouncement(data.lockAnnouncement || '');
-          if (data.activeModules && Array.isArray(data.activeModules) && data.activeModules.length > 0) {
-            setActiveModules(data.activeModules);
-          } else {
-            setActiveModules(ALL_DEFAULT_MODULES);
+      let userRole = user?.role || '';
+      let targetSchoolId = school?.id || user?.school_id || '';
+      if (!userRole || !targetSchoolId) {
+        try {
+          const stored = localStorage.getItem('esepa_user');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (!userRole) userRole = parsed.role || '';
+            if (!targetSchoolId) targetSchoolId = parsed.school_id || parsed.schoolId || '';
           }
-          return;
-        }
+        } catch (e) {}
       }
-      // Static host fallback (e.g., Vercel static deployment returning HTML for /api)
+      if (!targetSchoolId) {
+        try {
+          const activeSchoolRaw = localStorage.getItem('esepa_active_school');
+          if (activeSchoolRaw) {
+            const parsed = JSON.parse(activeSchoolRaw);
+            if (parsed?.id) targetSchoolId = String(parsed.id);
+          }
+        } catch (e) {}
+      }
+
+      const data = await fetchTenantLicenseStatus(targetSchoolId || null, userRole || null);
+      if (data) {
+        setIsLicensed(Boolean(data.active));
+        setLicenseKey(data.licenseKey || '');
+        setLockAnnouncement(data.lockAnnouncement || data.announcement || '');
+        if (data.activeModules && Array.isArray(data.activeModules) && data.activeModules.length > 0) {
+          setActiveModules(data.activeModules);
+        } else {
+          setActiveModules(ALL_DEFAULT_MODULES);
+        }
+        return;
+      }
       setActiveModules(ALL_DEFAULT_MODULES);
     } catch (err) {
       console.warn("Failed to retrieve license status from backend, using default modules:", err);
@@ -163,7 +167,20 @@ function AppContent() {
 
   useEffect(() => {
     checkLicenseStatus();
-  }, []);
+    const handleLicenseEvent = () => {
+      checkLicenseStatus();
+    };
+    window.addEventListener('esepa_license_status_changed', handleLicenseEvent);
+    window.addEventListener('esepa_licenses_updated', handleLicenseEvent);
+    const heartbeat = setInterval(() => {
+      checkLicenseStatus();
+    }, 15000);
+    return () => {
+      window.removeEventListener('esepa_license_status_changed', handleLicenseEvent);
+      window.removeEventListener('esepa_licenses_updated', handleLicenseEvent);
+      clearInterval(heartbeat);
+    };
+  }, [user?.id, user?.role, user?.school_id, school?.id]);
 
   useEffect(() => {
     localStorage.setItem('esepa_active_view', activeView);

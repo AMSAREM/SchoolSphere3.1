@@ -35,8 +35,17 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getGoogleAccessToken } from '../lib/gmailService';
+import { getGoogleAccessToken, clearGoogleAccessToken } from '../lib/gmailService';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  fetchTenantLicenseStatus,
+  activateTenantLicense,
+  deactivateTenantLicense,
+  updateTenantModules,
+  generateSchoolLicense,
+  revokeSchoolLicense,
+  broadcastLicenseChange
+} from '../lib/licenseSync';
 
 // Import our modular sub-suites
 import CoreSuite from './creator/CoreSuite';
@@ -191,55 +200,101 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const [sysCurrentTerm, setSysCurrentTerm] = useState('Term 1');
   const [sysCurrency, setSysCurrency] = useState('GHS');
 
-  // Dynamic DB record counts
-  const countStudents = useLiveQuery(() => db.students.count()) ?? 0;
-  const countAttendance = useLiveQuery(() => db.attendance.count()) ?? 0;
-  const countResults = useLiveQuery(() => db.results.count()) ?? 0;
-  const countReports = useLiveQuery(() => db.termReports.count()) ?? 0;
-  const countSms = useLiveQuery(() => db.smsLogs.count()) ?? 0;
-  const countPolls = useLiveQuery(() => db.polls.count()) ?? 0;
-  const countCandidates = useLiveQuery(() => db.candidates.count()) ?? 0;
-  const countVotes = useLiveQuery(() => db.votes.count()) ?? 0;
-  const countInventory = useLiveQuery(() => db.inventory.count()) ?? 0;
-  const countExpenses = useLiveQuery(() => db.expenses.count()) ?? 0;
+  // Live Supabase database telemetry counts
+  const [telemetryCounts, setTelemetryCounts] = useState<{
+    students: number;
+    attendance: number;
+    results: number;
+    reports: number;
+    sms: number;
+    polls: number;
+    candidates: number;
+    votes: number;
+    inventory: number;
+    expenses: number;
+    totalRecords?: number;
+  }>({
+    students: 0,
+    attendance: 0,
+    results: 0,
+    reports: 0,
+    sms: 0,
+    polls: 0,
+    candidates: 0,
+    votes: 0,
+    inventory: 0,
+    expenses: 0,
+    totalRecords: 0
+  });
+
+  const fetchCreatorTelemetry = async () => {
+    try {
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/creator/telemetry', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.counts) {
+          setTelemetryCounts({
+            students: Number(data.counts.students || 0),
+            attendance: Number(data.counts.attendance || 0),
+            results: Number(data.counts.results || 0),
+            reports: Number(data.counts.reports || 0),
+            sms: Number(data.counts.sms || 0),
+            polls: Number(data.counts.polls || 0),
+            candidates: Number(data.counts.candidates || 0),
+            votes: Number(data.counts.votes || 0),
+            inventory: Number(data.counts.inventory || 0),
+            expenses: Number(data.counts.expenses || 0),
+            totalRecords: Number(data.totalRecords || 0)
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Notice fetching live Supabase creator telemetry:', err);
+    }
+  };
+
+  const countStudents = telemetryCounts.students;
+  const countAttendance = telemetryCounts.attendance;
+  const countResults = telemetryCounts.results;
+  const countReports = telemetryCounts.reports;
+  const countSms = telemetryCounts.sms;
+  const countPolls = telemetryCounts.polls;
+  const countCandidates = telemetryCounts.candidates;
+  const countVotes = telemetryCounts.votes;
+  const countInventory = telemetryCounts.inventory;
+  const countExpenses = telemetryCounts.expenses;
 
   const totalDemoRecords =
+    telemetryCounts.totalRecords ||
     countStudents +
-    countAttendance +
-    countResults +
-    countReports +
-    countSms +
-    countPolls +
-    countCandidates +
-    countVotes +
-    countInventory +
-    countExpenses;
+      countAttendance +
+      countResults +
+      countReports +
+      countSms +
+      countPolls +
+      countCandidates +
+      countVotes +
+      countInventory +
+      countExpenses;
 
   const fetchLicenseInfo = async () => {
     try {
-      let userRole = '';
-      try {
-        const stored = localStorage.getItem('esepa_user');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          userRole = parsed.role || '';
-        }
-      } catch (e) {}
-
-      const token = localStorage.getItem('esepa_auth_token');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`/api/license/status?role=${encodeURIComponent(userRole)}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setLicenseInfo(data);
+      const data = await fetchTenantLicenseStatus(user?.school_id || null, user?.role || null);
+      if (data) {
+        setLicenseInfo({
+          active: data.active,
+          licenseKey: data.licenseKey,
+          remoteOverride: Boolean(data.remoteOverride),
+          lockAnnouncement: data.lockAnnouncement,
+          activeModules: data.activeModules
+        });
         if (data.lockAnnouncement) {
           setLockAnnouncementMsg(data.lockAnnouncement);
         }
-        if (data.activeModules) {
+        if (data.activeModules && data.activeModules.length > 0) {
           setActiveInstanceModules(data.activeModules);
         }
       }
@@ -269,13 +324,16 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const fetchGeneratedLicenses = async (retries = 2) => {
     try {
       localStorage.removeItem('esepa_generated_licenses');
-      const res = await fetch('/api/license/list');
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/license/list', { headers });
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setLicensesList(normalizeAndDedupeLicenses(data));
+            setLicensesList(prev => normalizeAndDedupeLicenses([...data, ...prev]));
             return;
           }
         }
@@ -293,27 +351,34 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
     fetchLicenseInfo();
     fetchGeneratedLicenses();
     fetchSyncLogs();
+    fetchCreatorTelemetry();
+
+    const handleLicensesUpdated = () => {
+      fetchGeneratedLicenses();
+      fetchCreatorTelemetry();
+    };
+    window.addEventListener('esepa_licenses_updated', handleLicensesUpdated);
+    return () => {
+      window.removeEventListener('esepa_licenses_updated', handleLicensesUpdated);
+    };
   }, []);
 
   const handleRemoteDeactivate = async () => {
     confirm({
       title: ' CRITICAL: Remotely Lock Instance',
-      message: 'Are you sure you want to remotely lock this school portal? Every student dashboard and admin login screen will immediately be replaced by a locked block notice requiring activation.',
+      message: 'Are you sure you want to remotely lock this school portal in Supabase? Every student dashboard and admin login screen will immediately be replaced by a locked block notice requiring activation.',
       confirmLabel: 'Lock Portal Now',
       onConfirm: async () => {
         setLoadingLicenseAction(true);
         try {
-          const res = await fetch('/api/license/deactivate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creatorPassword: 'creator_override_9922_july' })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast('System locked! Access suspended successfully.', 'success');
-            fetchLicenseInfo();
+          const result = await deactivateTenantLicense(user?.school_id || null, licenseInfo?.licenseKey || null);
+          if (result.success) {
+            showToast('System locked in Supabase! Access suspended successfully.', 'success');
+            await fetchLicenseInfo();
+            await fetchGeneratedLicenses();
+            if (onLicenseChange) onLicenseChange();
           } else {
-            showToast(data.error || 'Deactivation request failed', 'error');
+            showToast(result.error || 'Deactivation request failed in Supabase', 'error');
           }
         } catch (err) {
           showToast('Network error occurred. Try again.', 'error');
@@ -332,24 +397,14 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
     }
     setLoadingLicenseAction(true);
     try {
-      const res = await fetch('/api/license/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: keyToUse })
-      });
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast('System activated successfully with valid license key!', 'success');
-          fetchLicenseInfo();
-          setLoadingLicenseAction(false);
-          return;
-        } else {
-          showToast(data.error || 'Activation failed', 'error');
-          setLoadingLicenseAction(false);
-          return;
-        }
+      const result = await activateTenantLicense(keyToUse, user?.school_id || null);
+      if (result.success) {
+        showToast('System activated successfully in Supabase with valid license key!', 'success');
+        await fetchLicenseInfo();
+        await fetchGeneratedLicenses();
+        if (onLicenseChange) onLicenseChange();
+      } else {
+        showToast(result.error || 'Activation failed in Supabase', 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'Error during license activation', 'error');
@@ -365,93 +420,64 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       return;
     }
     setIsGenerating(true);
-    let createdLicense: any = null;
-    let emailNotice: string | null = null;
-    let emailDispatched = false;
     const googleToken = getGoogleAccessToken();
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (googleToken) {
-        headers['Authorization'] = `Bearer ${googleToken}`;
-      }
-
-      const res = await fetch('/api/license/generate', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          schoolName: genSchoolName,
-          durationMonths: genDuration,
-          tier: genTier,
-          activeModules: genSelectedModules,
-          clientEmail: genClientEmail,
-          contactPerson: genContactPerson,
-          sendEmail: sendEmailOnGenerate,
-          googleAccessToken: googleToken || undefined
-        })
+      const result = await generateSchoolLicense({
+        schoolName: genSchoolName,
+        durationMonths: genDuration,
+        tier: genTier,
+        activeModules: genSelectedModules,
+        clientEmail: genClientEmail,
+        contactPerson: genContactPerson,
+        sendEmail: sendEmailOnGenerate,
+        googleAccessToken: googleToken || undefined
       });
 
-      const contentType = res.headers.get('content-type') || '';
-      let data: any = {};
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      }
-
-      if (res.ok && data.success && data.license) {
-        createdLicense = {
-          ...data.license,
-          provisionedAdmin: data.provisionedAdmin || data.license?.provisionedAdmin || null
-        };
-        emailNotice = data.emailNotice || data.message;
-        emailDispatched = !!data.emailDispatched;
-      } else if (data.error) {
-        showToast(data.error, 'error');
+      if (!result.success || !result.license) {
+        showToast(result.error || 'Failed to persist license key in Supabase database.', 'error');
         setIsGenerating(false);
         return;
       }
+
+      const createdLicense: any = {
+        ...result.license,
+        provisionedAdmin: result.provisionedAdmin || result.license?.provisionedAdmin || null,
+        used: false,
+        activatedAt: null
+      };
+
+      localStorage.removeItem('esepa_generated_licenses');
+      const updated = [
+        createdLicense,
+        ...licensesList.filter(
+          (l: any) =>
+            l.key !== createdLicense.key &&
+            (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
+            String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
+        )
+      ];
+
+      const loginHandle = createdLicense.provisionedAdmin?.scopedUsername || createdLicense.clientEmail || 'admin';
+      if (result.emailDispatched && genClientEmail.trim()) {
+        showToast(`License issued in Supabase & dispatched! Client login ready: ${loginHandle} / Password: ${createdLicense.key}`, 'success');
+      } else {
+        showToast(`Issued License in Supabase: ${createdLicense.key} — Client login ready (${loginHandle})`, 'success');
+      }
+
+      setGenSchoolName('');
+      setGenClientEmail('');
+      setGenContactPerson('');
+      setLicensesList(normalizeAndDedupeLicenses(updated));
+      fetchGeneratedLicenses();
+      fetchCreatorTelemetry();
+      if (onLicenseChange) onLicenseChange();
     } catch (err) {
       console.warn('Network error during license generation:', err);
       showToast('Failed to connect to server to generate license in Supabase.', 'error');
+    } finally {
       setIsGenerating(false);
-      return;
     }
-
-    if (!createdLicense) {
-      showToast('Failed to persist license key in Supabase database. Please verify connection and retry.', 'error');
-      setIsGenerating(false);
-      return;
-    }
-
-    createdLicense = {
-      ...createdLicense,
-      used: false,
-      activatedAt: null
-    };
-
-    localStorage.removeItem('esepa_generated_licenses');
-    const updated = [
-      createdLicense,
-      ...licensesList.filter(
-        (l: any) =>
-          l.key !== createdLicense.key &&
-          (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
-          String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
-      )
-    ];
-
-    const loginHandle = createdLicense.provisionedAdmin?.scopedUsername || createdLicense.clientEmail || 'admin';
-    if (emailDispatched && genClientEmail.trim()) {
-      showToast(`License issued & dispatched! Client login ready: ${loginHandle} / Password: ${createdLicense.key}`, 'success');
-    } else {
-      showToast(`Issued License: ${createdLicense.key} — Client login ready (${loginHandle})`, 'success');
-    }
-
-    setGenSchoolName('');
-    setGenClientEmail('');
-    setGenContactPerson('');
-    setLicensesList(normalizeAndDedupeLicenses(updated));
-    setIsGenerating(false);
-    fetchGeneratedLicenses();
   };
 
   const handleSendLicenseEmail = async (
@@ -465,10 +491,14 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       return false;
     }
     const googleToken = getGoogleAccessToken();
+    const appAuthToken = localStorage.getItem('esepa_auth_token');
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (appAuthToken) {
+        headers['Authorization'] = `Bearer ${appAuthToken}`;
+      }
       if (googleToken) {
-        headers['Authorization'] = `Bearer ${googleToken}`;
+        headers['x-google-access-token'] = googleToken;
       }
 
       const res = await fetch('/api/license/send-email', {
@@ -483,6 +513,9 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         })
       });
       const data = await res.json();
+      if (data?.gmailTokenExpired) {
+        clearGoogleAccessToken();
+      }
       if (res.ok && data.success) {
         showToast(data.message || `License ${licenseKey} dispatched to ${recipientEmail}!`, 'success');
         fetchGeneratedLicenses();
@@ -500,20 +533,20 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const handleSaveInstanceModules = async () => {
     setIsUpdatingModules(true);
     try {
-      const res = await fetch('/api/license/modules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activeModules: activeInstanceModules })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast('Instance modules successfully updated!', 'success');
-        fetchLicenseInfo();
+      const result = await updateTenantModules(
+        user?.school_id || null,
+        activeInstanceModules,
+        licenseInfo?.licenseKey || null
+      );
+      if (result.success) {
+        showToast('Instance modules successfully updated in Supabase!', 'success');
+        await fetchLicenseInfo();
+        await fetchGeneratedLicenses();
         if (onLicenseChange) {
           onLicenseChange();
         }
       } else {
-        showToast(data.error || 'Failed to update active modules', 'error');
+        showToast(result.error || 'Failed to update active modules in Supabase', 'error');
       }
     } catch (err) {
       showToast('Network error updating modules', 'error');
@@ -526,28 +559,24 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
     const matched = licensesList.find((l: any) => l.key === key || l.licenseKey === key);
     confirm({
       title: 'Revoke License Key & Suspend Software',
-      message: `Are you sure you want to revoke key [ ${key} ]? This instantly blacklists the serial number and locks out any portals using it.`,
+      message: `Are you sure you want to revoke key [ ${key} ] in Supabase? This instantly blacklists the serial number and locks out any portals using it.`,
       confirmLabel: 'Confirm Blacklist',
       onConfirm: async () => {
         setIsRevoking(key);
         try {
-          const res = await fetch('/api/license/revoke', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              key,
-              schoolId: matched?.school_id || matched?.id || matched?.school?.id,
-              schoolName: matched?.schoolName || matched?.name || matched?.school?.name,
-              status: 'suspended'
-            })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast('License suspended. Client app has been restricted.', 'success');
-            fetchGeneratedLicenses();
-            fetchLicenseInfo();
+          const result = await revokeSchoolLicense(
+            key,
+            matched?.school_id || matched?.id || matched?.school?.id || null,
+            'revoked',
+            matched?.schoolName || matched?.name || matched?.school?.name || null
+          );
+          if (result.success) {
+            showToast('License revoked in Supabase. Client app has been restricted.', 'success');
+            await fetchGeneratedLicenses();
+            await fetchLicenseInfo();
+            if (onLicenseChange) onLicenseChange();
           } else {
-            showToast(data.error || 'Key revocation failed', 'error');
+            showToast(result.error || 'Key revocation failed in Supabase', 'error');
           }
         } catch (err) {
           showToast('Network error', 'error');
@@ -560,14 +589,22 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
 
   const handleUpdateAnnouncement = async () => {
     try {
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/license/announcement', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: lockAnnouncementMsg })
+        headers,
+        body: JSON.stringify({
+          message: lockAnnouncementMsg,
+          schoolId: user?.school_id || undefined,
+          licenseKey: licenseInfo?.licenseKey || undefined
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast('Lockout announcement updated successfully.', 'success');
+        showToast('Lockout announcement updated in Supabase.', 'success');
+        broadcastLicenseChange(data);
         fetchLicenseInfo();
       } else {
         showToast(data.error || 'Failed to update lockout banner text', 'error');

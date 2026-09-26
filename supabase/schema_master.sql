@@ -73,22 +73,37 @@ $$ LANGUAGE plpgsql;
 -- 2. CORE TENANCY & LICENSING (Circular FK Resolved)
 -- ==============================================================================
 
--- Table: public.school_licenses
+-- Table: public.school_licenses (Single Canonical Source of Truth for Licenses)
 CREATE TABLE IF NOT EXISTS public.school_licenses (
   id BIGSERIAL PRIMARY KEY,
   license_key VARCHAR(255) NOT NULL UNIQUE,
   school_name VARCHAR(255) NOT NULL,
+  client_email VARCHAR(255) NULL,
+  contact_person VARCHAR(255) NULL,
+  phone VARCHAR(50) NULL,
+  duration_months VARCHAR(50) NOT NULL DEFAULT '12',
+  issued_date BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   expiry_date BIGINT NULL,
-  active_status VARCHAR(50) NOT NULL DEFAULT 'pending_activation' 
-    CHECK (active_status IN ('active', 'pending_activation', 'unactivated', 'suspended', 'expired', 'revoked')),
+  active_status VARCHAR(50) NOT NULL DEFAULT 'active' 
+    CHECK (active_status IN ('active', 'pending_activation', 'unactivated', 'suspended', 'expired', 'revoked', 'deactivated')),
   tier VARCHAR(50) NOT NULL DEFAULT 'Standard' 
-    CHECK (tier IN ('Standard', 'Professional', 'Enterprise', 'Ultimate', 'Trial', 'Basic', 'Diagnostic', 'Custom', 'Starter')),
-  active_modules JSONB NOT NULL DEFAULT '["students", "academic", "timetable", "attendance", "results", "reports", "fees", "siren"]'::jsonb,
+    CHECK (tier IN ('Standard', 'Pro', 'Professional', 'Enterprise', 'Ultimate', 'Lifetime', 'Developer', 'Trial', 'Basic', 'Diagnostic', 'Custom', 'Starter')),
+  active_modules JSONB NOT NULL DEFAULT '["students", "academic", "timetable", "attendance", "results", "reports", "fees", "siren", "evoting", "inventory"]'::jsonb,
+  announcement TEXT NULL,
+  notes TEXT NULL,
   school_id UUID NULL,
   max_students INT NOT NULL DEFAULT 1000 CHECK (max_students > 0),
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
+
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS client_email VARCHAR(255) NULL;
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255) NULL;
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL;
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS duration_months VARCHAR(50) NOT NULL DEFAULT '12';
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS issued_date BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS announcement TEXT NULL;
+ALTER TABLE public.school_licenses ADD COLUMN IF NOT EXISTS notes TEXT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_school_licenses_key ON public.school_licenses (license_key);
 CREATE INDEX IF NOT EXISTS idx_school_licenses_school_id ON public.school_licenses (school_id);
@@ -500,6 +515,56 @@ CREATE INDEX IF NOT EXISTS idx_two_factor_school ON public.two_factor_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_two_factor_user_unique ON public.two_factor_settings (user_id);
 
 -- ==============================================================================
+-- 15B. CREATOR HUB SALES SUITE: CRM LEADS & SUBSCRIPTION INVOICES
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.crm_leads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_name VARCHAR(255) NOT NULL,
+  contact_person VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NULL,
+  phone VARCHAR(50) NOT NULL,
+  location VARCHAR(255) NULL,
+  estimated_students INT NOT NULL DEFAULT 250,
+  stage VARCHAR(50) NOT NULL DEFAULT 'New'
+    CHECK (stage IN ('New', 'Contacted', 'Demo Scheduled', 'Proposal Sent', 'Closed Won', 'Closed Lost')),
+  expected_tier VARCHAR(50) NOT NULL DEFAULT 'Standard',
+  deal_value NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  notes TEXT NULL,
+  follow_up_date VARCHAR(50) NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON public.crm_leads (stage);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_created_at ON public.crm_leads (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.subscription_invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_number VARCHAR(100) NOT NULL UNIQUE,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE SET NULL,
+  school_name VARCHAR(255) NOT NULL,
+  client_email VARCHAR(255) NULL,
+  contact_person VARCHAR(255) NULL,
+  tier VARCHAR(50) NOT NULL DEFAULT 'Standard',
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  currency VARCHAR(10) NOT NULL DEFAULT 'GHS',
+  status VARCHAR(50) NOT NULL DEFAULT 'Pending'
+    CHECK (status IN ('Draft', 'Pending', 'Paid', 'Overdue', 'Cancelled')),
+  issued_date VARCHAR(50) NOT NULL,
+  due_date VARCHAR(50) NULL,
+  paid_at BIGINT NULL,
+  license_key VARCHAR(255) NULL,
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes TEXT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_invoices_school ON public.subscription_invoices (school_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_invoices_status ON public.subscription_invoices (status);
+
+-- ==============================================================================
 -- 16. ROW LEVEL SECURITY (RLS) POLICIES ENFORCEMENT
 -- ==============================================================================
 
@@ -524,10 +589,20 @@ ALTER TABLE public.school_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sms_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.two_factor_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subscription_invoices ENABLE ROW LEVEL SECURITY;
 
 -- Policy helper: Super Admin & Service Role bypass
 DROP POLICY IF EXISTS "Super admin full access on licenses" ON public.school_licenses;
 CREATE POLICY "Super admin full access on licenses" ON public.school_licenses
+  FOR ALL USING (public.is_super_admin());
+
+DROP POLICY IF EXISTS "Super admin full access on crm_leads" ON public.crm_leads;
+CREATE POLICY "Super admin full access on crm_leads" ON public.crm_leads
+  FOR ALL USING (public.is_super_admin());
+
+DROP POLICY IF EXISTS "Super admin full access on subscription_invoices" ON public.subscription_invoices;
+CREATE POLICY "Super admin full access on subscription_invoices" ON public.subscription_invoices
   FOR ALL USING (public.is_super_admin());
 
 DROP POLICY IF EXISTS "Tenant view own license" ON public.school_licenses;
@@ -785,10 +860,10 @@ DECLARE
   v_status TEXT := LOWER(TRIM(COALESCE(p_status, 'suspended')));
   v_school_status TEXT;
 BEGIN
-  IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'pending_activation') THEN
+  IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'deactivated', 'pending_activation') THEN
     v_status := 'suspended';
   END IF;
-  v_school_status := CASE WHEN v_status = 'revoked' THEN 'suspended' ELSE v_status END;
+  v_school_status := CASE WHEN v_status IN ('revoked', 'deactivated') THEN 'suspended' ELSE v_status END;
 
   IF v_school_id IS NULL AND p_license_key IS NOT NULL AND TRIM(p_license_key) <> '' THEN
     SELECT school_id, school_name INTO v_school_id, v_school_name

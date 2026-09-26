@@ -58,14 +58,34 @@ export function AuthScreens({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Auto-detected school state
+  // Helper to read recently onboarded / active school from localStorage
+  const getStoredActiveSchool = () => {
+    try {
+      const raw = localStorage.getItem('esepa_active_school');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.id || parsed.name)) {
+          return {
+            id: String(parsed.id || ''),
+            name: String(parsed.name || parsed.schoolName || 'Verified Institution'),
+            slug: parsed.slug || String(parsed.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            logo_url: parsed.logo_url || parsed.logo || undefined,
+            theme: parsed.theme || 'indigo'
+          };
+        }
+      }
+    } catch {}
+    return null;
+  };
+
+  // Auto-detected school state (seeded from active onboarded school if present)
   const [detectedSchool, setDetectedSchool] = useState<{
     id: string;
     name: string;
     slug?: string;
     logo_url?: string;
     theme?: string;
-  } | null>(null);
+  } | null>(() => getStoredActiveSchool());
 
   // --- SIGN IN STATE ---
   const [identifier, setIdentifier] = useState('');
@@ -111,8 +131,9 @@ export function AuthScreens({
   // Live Auto-Detection: Debounce lookup of school via /api/auth/resolve-school
   useEffect(() => {
     const clean = identifier.trim().toLowerCase();
-    if (!clean || clean.length < 2) {
-      setDetectedSchool(null);
+    const storedSchool = getStoredActiveSchool();
+    if (!clean || clean.length < 2 || clean === 'admin' || clean === 'school_admin' || clean === 'headmaster') {
+      setDetectedSchool(storedSchool);
       return;
     }
 
@@ -124,11 +145,11 @@ export function AuthScreens({
           if (data.success && data.school) {
             setDetectedSchool(data.school);
           } else {
-            setDetectedSchool(null);
+            setDetectedSchool(storedSchool);
           }
         }
       } catch (e) {
-        setDetectedSchool(null);
+        setDetectedSchool(storedSchool);
       }
     }, 300);
 

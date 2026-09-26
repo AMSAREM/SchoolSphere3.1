@@ -23,7 +23,23 @@ googleProvider.setCustomParameters({
 });
 
 let cachedAccessToken: string | null = null;
+let cachedTokenExpiresAt = 0;
 let isSigningIn = false;
+
+const GOOGLE_TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutes safe window for 1-hour OAuth2 access tokens
+
+function isValidGoogleOAuthToken(token?: string | null): boolean {
+  if (!token || typeof token !== 'string') return false;
+  const trimmed = token.trim();
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return false;
+  if (trimmed.startsWith('eyJ') || trimmed.split('.').length === 3) return false;
+  return trimmed.length > 16;
+}
+
+export const clearGoogleAccessToken = () => {
+  cachedAccessToken = null;
+  cachedTokenExpiresAt = 0;
+};
 
 /**
  * Initializes Google Auth state listener.
@@ -33,11 +49,12 @@ export const initGoogleAuth = (
   onAuthFailure?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user && cachedAccessToken) {
-      if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+    const validToken = getGoogleAccessToken();
+    if (user && validToken) {
+      if (onAuthSuccess) onAuthSuccess(user, validToken);
     } else {
       if (!isSigningIn) {
-        cachedAccessToken = null;
+        clearGoogleAccessToken();
         if (onAuthFailure) onAuthFailure();
       }
     }
@@ -53,11 +70,12 @@ export const signInWithGoogle = async (): Promise<{ user: User; accessToken: str
     const result = await signInWithPopup(auth, googleProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
-    if (!credential?.accessToken) {
+    if (!credential?.accessToken || !isValidGoogleOAuthToken(credential.accessToken)) {
       throw new Error('Google sign-in succeeded but failed to acquire Gmail API access token.');
     }
 
     cachedAccessToken = credential.accessToken;
+    cachedTokenExpiresAt = Date.now() + GOOGLE_TOKEN_TTL_MS;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     const errorCode = error?.code || '';
@@ -79,9 +97,18 @@ export const signInWithGoogle = async (): Promise<{ user: User; accessToken: str
 };
 
 /**
- * Gets the current cached Google OAuth access token.
+ * Gets the current cached Google OAuth access token if valid and not expired.
  */
 export const getGoogleAccessToken = (): string | null => {
+  if (!cachedAccessToken) return null;
+  if (cachedTokenExpiresAt > 0 && Date.now() > cachedTokenExpiresAt) {
+    clearGoogleAccessToken();
+    return null;
+  }
+  if (!isValidGoogleOAuthToken(cachedAccessToken)) {
+    clearGoogleAccessToken();
+    return null;
+  }
   return cachedAccessToken;
 };
 
@@ -91,7 +118,7 @@ export const getGoogleAccessToken = (): string | null => {
 export const signOutGoogle = async () => {
   try {
     await signOut(auth);
-    cachedAccessToken = null;
+    clearGoogleAccessToken();
   } catch (e) {
     console.error('Google Sign out error:', e);
   }
@@ -271,10 +298,18 @@ export function buildLicenseEmailHtml(params: SendLicenseEmailParams, magicLinkU
  * Sends a license email directly via the Google Gmail API using client OAuth token.
  */
 export async function sendLicenseViaGmailApi(params: SendLicenseEmailParams): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const token = params.accessToken || cachedAccessToken;
+  let token = isValidGoogleOAuthToken(params.accessToken) ? params.accessToken : getGoogleAccessToken();
   
   if (!token) {
-    throw new Error('Google OAuth token is missing. Please sign in with Google to authorize sending via Gmail.');
+    const authRes = await signInWithGoogle();
+    token = authRes?.accessToken || null;
+  }
+
+  if (!token) {
+    return {
+      success: false,
+      error: 'Google OAuth token is missing or expired. Please sign in with Google to authorize sending via Gmail.'
+    };
   }
 
   const { recipientEmail, licenseKey, schoolName } = params;
@@ -312,7 +347,7 @@ export async function sendLicenseViaGmailApi(params: SendLicenseEmailParams): Pr
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+  let response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -323,10 +358,30 @@ export async function sendLicenseViaGmailApi(params: SendLicenseEmailParams): Pr
     })
   });
 
+  if (response.status === 401 || response.status === 403) {
+    clearGoogleAccessToken();
+    const reauth = await signInWithGoogle();
+    if (reauth?.accessToken) {
+      response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${reauth.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          raw: encodedMessage
+        })
+      });
+    }
+  }
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const errorMsg = errorData?.error?.message || `Gmail API responded with status ${response.status}`;
-    throw new Error(`Gmail API error: ${errorMsg}`);
+    const errorMsg = errorData?.error?.message || `Gmail authorization expired (${response.status}). Please reconnect Google or use Cloud Server dispatch.`;
+    return {
+      success: false,
+      error: errorMsg
+    };
   }
 
   const result = await response.json();

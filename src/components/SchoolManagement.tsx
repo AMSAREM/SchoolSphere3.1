@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../contexts/NotificationContext';
 import { cn } from '../lib/utils';
 import { LicenseSyncBanner } from './LicenseSyncBanner';
+import { revokeSchoolLicense, broadcastLicenseChange } from '../lib/licenseSync';
 
 interface SchoolManagementProps {
   onSwitchSchool?: (school: any) => void;
@@ -177,6 +178,7 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     if (onSwitchSchool) {
       onSwitchSchool(schoolPayload);
     }
+    broadcastLicenseChange(schoolPayload);
 
     showToast(`Switched active tenant to ${school.name || school.schoolName}`, 'success');
   };
@@ -186,33 +188,27 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     confirm({
       title: isReactivating ? 'REACTIVATE TENANT INSTANCE' : 'SUSPEND TENANT INSTANCE',
       message: isReactivating
-        ? `Are you sure you want to reactivate the subscription and portal access for ${schoolName}?`
-        : `Are you sure you want to suspend the subscription for ${schoolName}? All users associated with this tenant will be restricted.`,
+        ? `Are you sure you want to reactivate the subscription and portal access in Supabase for ${schoolName}?`
+        : `Are you sure you want to suspend the subscription in Supabase for ${schoolName}? All users associated with this tenant will be restricted.`,
       confirmLabel: isReactivating ? 'Reactivate Tenant' : 'Suspend Tenant',
       onConfirm: async () => {
         try {
-          const res = await fetch('/api/license/revoke', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              key,
-              schoolId: schoolObj?.id || schoolObj?.school_id,
-              schoolName,
-              slug: schoolObj?.slug,
-              status: targetStatus
-            })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
+          const result = await revokeSchoolLicense(
+            key,
+            schoolObj?.id || schoolObj?.school_id || null,
+            targetStatus,
+            schoolName
+          );
+          if (result.success) {
             showToast(
               isReactivating
-                ? `Tenant ${schoolName} reactivated and synced to database`
-                : `Tenant ${schoolName} suspended and synced to database`,
+                ? `Tenant ${schoolName} reactivated and synced to Supabase`
+                : `Tenant ${schoolName} suspended and synced to Supabase`,
               'success'
             );
             fetchSchools();
           } else {
-            showToast(data.error || `Failed to ${isReactivating ? 'reactivate' : 'suspend'} tenant`, 'error');
+            showToast(result.error || `Failed to ${isReactivating ? 'reactivate' : 'suspend'} tenant in Supabase`, 'error');
           }
         } catch (err) {
           showToast(`Network error updating tenant status`, 'error');

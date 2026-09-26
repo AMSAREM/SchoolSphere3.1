@@ -33,6 +33,11 @@ import {
 import { cn } from '../../lib/utils';
 import { useNotifications } from '../../contexts/NotificationContext';
 import {
+  updateSchoolLicense,
+  activateTenantLicense,
+  broadcastLicenseChange
+} from '../../lib/licenseSync';
+import {
   ResponsiveContainer,
   AreaChart,
   Area,
@@ -147,26 +152,23 @@ export default function CoreSuite({
     setIsSavingChanges(true);
     try {
       const expMs = editExpiryDate ? new Date(editExpiryDate).getTime() : null;
-      const res = await fetch('/api/license/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key: selectedManageSchool.key || selectedManageSchool.licenseKey,
-          schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
-          tier: editTier,
-          schoolName: editSchoolName || selectedManageSchool.schoolName,
-          expiryDate: expMs
-        })
+      const result = await updateSchoolLicense({
+        key: selectedManageSchool.key || selectedManageSchool.licenseKey,
+        schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
+        tier: editTier,
+        schoolName: editSchoolName || selectedManageSchool.schoolName,
+        expiryDate: expMs
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast('School tenant configuration saved successfully!', 'success');
-        setSelectedManageSchool(data.license);
+      if (result.success) {
+        showToast('School tenant configuration saved in Supabase!', 'success');
+        if (result.license) {
+          setSelectedManageSchool(result.license);
+        }
         if (onLicenseChange) {
           onLicenseChange();
         }
       } else {
-        showToast(data.error || 'Failed to save configuration', 'error');
+        showToast(result.error || 'Failed to save configuration in Supabase', 'error');
       }
     } catch (err) {
       showToast('Network error saving configuration', 'error');
@@ -182,30 +184,27 @@ export default function CoreSuite({
     
     confirm({
       title: ` ${confirmText} school?`,
-      message: `Are you sure you want to ${newStatus === 'suspended' ? 'SUSPEND and block all user access' : 'REACTIVATE'} for ${selectedManageSchool.schoolName}?`,
+      message: `Are you sure you want to ${newStatus === 'suspended' ? 'SUSPEND and block all user access' : 'REACTIVATE'} in Supabase for ${selectedManageSchool.schoolName}?`,
       confirmLabel: confirmText,
       onConfirm: async () => {
         setIsSavingChanges(true);
         try {
-          const res = await fetch('/api/license/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              key: selectedManageSchool.key || selectedManageSchool.licenseKey,
-              schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
-              schoolName: selectedManageSchool.schoolName || selectedManageSchool.name || selectedManageSchool.school?.name,
-              status: newStatus
-            })
+          const result = await updateSchoolLicense({
+            key: selectedManageSchool.key || selectedManageSchool.licenseKey,
+            schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
+            schoolName: selectedManageSchool.schoolName || selectedManageSchool.name || selectedManageSchool.school?.name,
+            status: newStatus
           });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast(`School tenant status updated to ${newStatus}!`, 'success');
-            setSelectedManageSchool(data.license);
+          if (result.success) {
+            showToast(`School tenant status updated to ${newStatus} in Supabase!`, 'success');
+            if (result.license) {
+              setSelectedManageSchool(result.license);
+            }
             if (onLicenseChange) {
               onLicenseChange();
             }
           } else {
-            showToast(data.error || 'Failed to update status', 'error');
+            showToast(result.error || 'Failed to update status in Supabase', 'error');
           }
         } catch (err) {
           showToast('Network error updating status', 'error');
@@ -229,19 +228,23 @@ export default function CoreSuite({
       onConfirm: async () => {
         setIsManaging(school.key);
         try {
-          const res = await fetch('/api/license/activate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ licenseKey: school.key })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
+          const targetSchoolId = school.school_id || school.id || school.school?.id;
+          const result = await activateTenantLicense(school.key, targetSchoolId);
+          if (result.success) {
+            if (targetSchoolId || school.schoolName) {
+              localStorage.setItem('esepa_active_school', JSON.stringify({
+                id: targetSchoolId || result.school?.id,
+                name: school.schoolName || result.school?.name,
+                slug: school.schoolSlug || result.school?.slug || String(school.schoolName || 'school').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                status: 'active'
+              }));
+            }
             showToast(`Switched active portal to ${school.schoolName} successfully!`, 'success');
             if (onLicenseChange) {
               onLicenseChange();
             }
           } else {
-            showToast(data.error || 'Failed to switch portal', 'error');
+            showToast(result.error || 'Failed to switch portal', 'error');
           }
         } catch (err) {
           showToast('Network error switching portal', 'error');
@@ -295,15 +298,23 @@ export default function CoreSuite({
     if (!selectedManageSchool) return;
     setIsSavingAnnouncement(true);
     try {
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/license/announcement', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: lockAnnouncement })
+        headers,
+        body: JSON.stringify({
+          message: lockAnnouncement,
+          schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
+          licenseKey: selectedManageSchool.key || selectedManageSchool.licenseKey
+        })
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Administrative Announcement Broadcasted successfully!', 'success');
+        showToast('Administrative Announcement Broadcasted in Supabase!', 'success');
         setSelectedManageSchool(prev => prev ? { ...prev, lockAnnouncement } : null);
+        broadcastLicenseChange(data);
       } else {
         showToast(data.error || 'Failed to update announcement', 'error');
       }

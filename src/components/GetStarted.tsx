@@ -112,12 +112,12 @@ export default function GetStarted({
   const [setupAdminConfirmPass, setSetupAdminConfirmPass] = useState<string>('');
   const [setupAdminError, setSetupAdminError] = useState<string>('');
 
-  // Magic Link Onboarding Mode
-  const [activationMode, setActivationMode] = useState<'magic_link' | 'password'>('magic_link');
+  // Onboarding Mode (default to direct password setup so admins can set credentials and log in immediately)
+  const [activationMode, setActivationMode] = useState<'magic_link' | 'password'>('password');
   const [magicLinkSent, setMagicLinkSent] = useState<boolean>(false);
   const [magicSentEmail, setMagicSentEmail] = useState<string>('');
   const [magicActionLink, setMagicActionLink] = useState<string | null>(null);
-  const [provisionedSession, setProvisionedSession] = useState<{ user: any; token: string } | null>(null);
+  const [provisionedSession, setProvisionedSession] = useState<{ user: any; token: string; school?: any } | null>(null);
 
   // Additional Interactive States
   const [showAbout, setShowAbout] = useState<boolean>(false);
@@ -215,7 +215,7 @@ export default function GetStarted({
       return;
     }
 
-    if (licenseValidation.checked && licenseValidation.used) {
+    if (isLicensed && licenseValidation.checked && licenseValidation.used) {
       setActivationError(`This license key has already been used and activated for "${licenseValidation.schoolName || 'another school'}". License keys are strictly single-use.`);
       return;
     }
@@ -237,11 +237,24 @@ export default function GetStarted({
 
     try {
       const targetEmail = setupAdminEmail.trim() || setupSchoolEmail.trim();
+      let currentSchoolId: string | undefined;
+      try {
+        const storedSchool = localStorage.getItem('esepa_active_school');
+        if (storedSchool) {
+          const parsed = JSON.parse(storedSchool);
+          if (parsed?.id) currentSchoolId = String(parsed.id);
+        }
+      } catch {}
+      const token = localStorage.getItem('esepa_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/license/activate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ 
           licenseKey: licenseInput.trim().toUpperCase(),
+          schoolId: currentSchoolId,
           adminUser: setupAdminUser.trim().toLowerCase() || 'admin',
           adminPassword: setupAdminPass || 'admin123',
           adminFullName: setupAdminName.trim() || 'Head Administrator',
@@ -277,16 +290,9 @@ export default function GetStarted({
 
     if (activatedData) {
       localStorage.setItem('esepa_active_license', JSON.stringify(activatedData));
-      try {
-        const cachedLics = JSON.parse(localStorage.getItem('esepa_generated_licenses') || '[]');
-        if (Array.isArray(cachedLics)) {
-          const cleanKey = licenseInput.trim().toUpperCase();
-          const updatedLics = cachedLics.map((l: any) =>
-            l.key === cleanKey ? { ...l, used: true, activatedAt: Date.now(), status: 'active' } : l
-          );
-          localStorage.setItem('esepa_generated_licenses', JSON.stringify(updatedLics));
-        }
-      } catch {}
+      localStorage.removeItem('esepa_generated_licenses');
+      localStorage.removeItem('school_license_override');
+      window.dispatchEvent(new CustomEvent('esepa_license_status_changed', { detail: activatedData }));
       setSetupLicenseInfo(activatedData);
       
       const effectiveSchoolName = setupSchoolName.trim().toUpperCase() || (activatedData.schoolName || 'SCHOOL SPHERE ACADEMY').toUpperCase();
@@ -336,10 +342,10 @@ export default function GetStarted({
         console.warn("Settings sync catch:", dbSettingsErr);
       }
 
-      // Authenticate user directly via Supabase Auth login
+      // Authenticate user directly via backend multi-tenant Auth login scoped to the newly activated school
       const username = setupAdminUser.trim().toLowerCase() || 'admin';
       const password = setupAdminPass || 'admin123';
-      const loginSuccess = await login(username, password);
+      const loginSuccess = await login(username, password, activeSchoolObj.id);
 
       if (loginSuccess) {
         showToast(
@@ -407,13 +413,20 @@ export default function GetStarted({
       if (res.ok && data?.success) {
         setMagicSentEmail(setupAdminEmail.trim().toLowerCase());
         setMagicLinkSent(true);
+        if (data.magicLinkUrl) {
+          setMagicActionLink(data.magicLinkUrl);
+        }
+        if (data.user && data.token) {
+          setProvisionedSession({ user: data.user, token: data.token, school: data.school });
+        }
         if (data.license) {
           localStorage.setItem('esepa_active_license', JSON.stringify(data.license));
+          window.dispatchEvent(new CustomEvent('esepa_license_status_changed', { detail: data.license }));
         }
         if (data.school) {
           localStorage.setItem('esepa_active_school', JSON.stringify(data.school));
         }
-        showToast("Magic Link sent to your email! Please check your inbox to sign in.", "success");
+        showToast("School activated! You can sign in via the magic link or proceed directly to your portal.", "success");
       } else {
         setActivationError(data?.error || "Failed to dispatch magic link. Please check your credentials.");
       }
@@ -498,10 +511,10 @@ export default function GetStarted({
         await db.settings.add({ key: 'academicConfig', value: academicValue });
       }
 
-      // 4. Authenticate registered admin via Supabase
-      if (setupAdminUser && setupAdminPass) {
-        await login(setupAdminUser.trim().toLowerCase(), setupAdminPass);
-      }
+      // 4. Authenticate registered admin via backend multi-tenant login scoped to the newly activated school
+      const effectiveUser = setupAdminUser.trim().toLowerCase() || 'admin';
+      const effectivePass = setupAdminPass || 'admin123';
+      await login(effectiveUser, effectivePass, activeSchoolObj.id);
 
       // 5. Complete
       onActivationSuccess();
@@ -1253,18 +1266,35 @@ export default function GetStarted({
                           <span>What happens next:</span>
                         </div>
                         <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1 text-[11px]">
-                          <li>Open the inbox for <strong className="text-slate-800">{magicSentEmail}</strong>.</li>
-                          <li>Click the <strong>"Sign in to School Sphere"</strong> button in the email.</li>
-                          <li>You will automatically be signed in with full Admin permissions and your school dashboard initialized!</li>
+                          <li>Open the inbox for <strong className="text-slate-800">{magicSentEmail}</strong> and click the sign-in link, OR</li>
+                          <li>Sign in on the Login screen using <strong className="text-slate-800">{magicSentEmail}</strong> and your <strong>License Key</strong> (or <code className="bg-slate-100 px-1 rounded">admin123</code>) as the password.</li>
                         </ol>
                       </div>
 
                       <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
                         <button
                           type="button"
+                          onClick={async () => {
+                            const keyTrimmed = licenseInput.trim().toUpperCase();
+                            const schoolId = provisionedSession?.school?.id;
+                            const ok = await login(magicSentEmail || 'admin', keyTrimmed || 'admin123', schoolId);
+                            if (ok) {
+                              setMagicLinkSent(false);
+                              onActivationSuccess();
+                            } else {
+                              setMagicLinkSent(false);
+                              onActivationSuccess();
+                            }
+                          }}
+                          className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md"
+                        >
+                          Enter Admin Portal Now
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => handleMagicActivation(e)}
                           disabled={activating}
-                          className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md disabled:opacity-50"
+                          className="w-full sm:w-auto px-5 py-2.5 bg-white hover:bg-slate-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50"
                         >
                           {activating ? "Resending Link..." : "Resend Magic Link"}
                         </button>

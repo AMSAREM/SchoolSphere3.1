@@ -502,6 +502,8 @@ export async function reconcileOfflineWrites(): Promise<void> {
   } catch (e) {}
 }
 
+let activeRealtimeChannel: any = null;
+
 /**
  * Initialize Realtime Supabase + Polling Synchronizer
  */
@@ -514,10 +516,28 @@ export function initRealtimeAndAutoSync() {
   // 1. Initial Pull immediately
   syncAllDataFromBackend(undefined, true).catch(() => {});
 
-  // 2. Setup Supabase Postgres Changes Realtime Listener
+  // 2. Setup Supabase Postgres Changes Realtime Listener (idempotent)
+  let currentChannel: any = null;
   try {
     if (supabase && typeof supabase.channel === 'function') {
-      const channel = supabase
+      if (activeRealtimeChannel && typeof supabase.removeChannel === 'function') {
+        try {
+          supabase.removeChannel(activeRealtimeChannel);
+        } catch {}
+        activeRealtimeChannel = null;
+      }
+      if (typeof supabase.getChannels === 'function' && typeof supabase.removeChannel === 'function') {
+        const existingChannels = supabase.getChannels() || [];
+        for (const ch of existingChannels) {
+          if (ch?.topic === 'realtime:schema-live-changes' || ch?.subTopic === 'schema-live-changes') {
+            try {
+              supabase.removeChannel(ch);
+            } catch {}
+          }
+        }
+      }
+
+      currentChannel = supabase
         .channel('schema-live-changes')
         .on(
           'postgres_changes',
@@ -579,6 +599,7 @@ export function initRealtimeAndAutoSync() {
             console.log('[Supabase Realtime] Connected and listening to database mutations');
           }
         });
+      activeRealtimeChannel = currentChannel;
     }
   } catch (e) {
     console.warn('[SyncService] Supabase Realtime setup note:', e);
@@ -611,5 +632,13 @@ export function initRealtimeAndAutoSync() {
     window.removeEventListener('focus', onFocusOrVisible);
     document.removeEventListener('visibilitychange', onFocusOrVisible);
     window.removeEventListener('online', onOnline);
+    if (currentChannel && supabase && typeof supabase.removeChannel === 'function') {
+      try {
+        supabase.removeChannel(currentChannel);
+      } catch {}
+      if (activeRealtimeChannel === currentChannel) {
+        activeRealtimeChannel = null;
+      }
+    }
   };
 }

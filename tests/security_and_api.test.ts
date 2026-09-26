@@ -46,7 +46,7 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     }
 
     select(_cols = '*') {
-      if (this.pendingOperation !== 'insert' && this.pendingOperation !== 'update') {
+      if (this.pendingOperation !== 'insert' && this.pendingOperation !== 'update' && this.pendingOperation !== 'upsert') {
         this.pendingOperation = 'select';
       }
       return this;
@@ -428,6 +428,96 @@ describe('Security & API Endpoints Test Suite', () => {
 
       expect(res.status).toBe(401);
       expect(res.body.success).toBe(false);
+    });
+
+    it('completes license generation, onboarding activation, and authenticates admin via username, email, and license key', async () => {
+      const uniqueSuffix = Date.now().toString().slice(-6);
+      const testSchoolName = `Test Onboarding Academy ${uniqueSuffix}`;
+      const testAdminEmail = `admin_${uniqueSuffix}@onboardingacademy.edu.gh`;
+      const testAdminUser = `admin_${uniqueSuffix}`;
+      const testAdminPass = `SecurePass#${uniqueSuffix}`;
+
+      // 1. Generate a license key as creator
+      const genRes = await request(app)
+        .post('/api/license/generate')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          schoolName: testSchoolName,
+          tier: 'Standard',
+          durationMonths: '12',
+          clientEmail: testAdminEmail,
+          contactPerson: 'Principal Onboarding'
+        });
+
+      expect(genRes.status).toBe(200);
+      expect(genRes.body.success).toBe(true);
+      const generatedKey = genRes.body.license?.key;
+      expect(generatedKey).toBeDefined();
+
+      // 2. Activate / onboard the school with custom admin credentials
+      const actRes = await request(app)
+        .post('/api/license/activate')
+        .send({
+          licenseKey: generatedKey,
+          schoolName: testSchoolName,
+          adminUser: testAdminUser,
+          adminPassword: testAdminPass,
+          adminFullName: 'Principal Onboarding',
+          adminEmail: testAdminEmail,
+          schoolEmail: testAdminEmail,
+          schoolPhone: '+233 24 000 1111'
+        });
+
+      expect(actRes.status).toBe(200);
+      expect(actRes.body.success).toBe(true);
+      const onboardedSchoolId = actRes.body.school?.id || actRes.body.license?.school_id;
+      expect(onboardedSchoolId).toBeDefined();
+
+      // 3. Log in with admin username + custom password
+      const loginByUser = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: testAdminUser,
+          password: testAdminPass,
+          schoolId: onboardedSchoolId
+        });
+
+      expect(loginByUser.status).toBe(200);
+      expect(loginByUser.body.success).toBe(true);
+      expect(loginByUser.body.token).toBeDefined();
+      expect(loginByUser.body.user.role).toBe('admin');
+
+      // 4. Log in with admin email + custom password (without schoolId hint)
+      const loginByEmail = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: testAdminEmail,
+          password: testAdminPass
+        });
+
+      expect(loginByEmail.status).toBe(200);
+      expect(loginByEmail.body.success).toBe(true);
+      expect(loginByEmail.body.token).toBeDefined();
+
+      // 5. Log in with admin email + license key
+      const loginByKey = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: testAdminEmail,
+          password: generatedKey
+        });
+
+      expect(loginByKey.status).toBe(200);
+      expect(loginByKey.body.success).toBe(true);
+      expect(loginByKey.body.token).toBeDefined();
+
+      // 6. Verify /api/license/status returns active: true for the authenticated admin
+      const statusRes = await request(app)
+        .get(`/api/license/status?schoolId=${encodeURIComponent(onboardedSchoolId)}`)
+        .set('Authorization', `Bearer ${loginByUser.body.token}`);
+
+      expect(statusRes.status).toBe(200);
+      expect(statusRes.body.active).toBe(true);
     });
   });
 
@@ -982,6 +1072,25 @@ describe('Security & API Endpoints Test Suite', () => {
 
       const schoolIds = res.body.map((r: any) => r.school_id).filter(Boolean);
       expect(new Set(schoolIds).size).toBe(schoolIds.length);
+
+      // Issuing a new license via POST /api/license/generate must immediately appear in GET /api/license/list
+      const genRes = await request(app)
+        .post('/api/license/generate')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({
+          schoolName: 'Wesley Girls High School',
+          tier: 'Enterprise',
+          durationMonths: '12',
+          sendEmail: false
+        });
+      expect(genRes.status).toBe(200);
+      expect(genRes.body.success).toBe(true);
+      const issuedKey = genRes.body.license?.key;
+      expect(typeof issuedKey).toBe('string');
+
+      const listAfterGen = await request(app).get('/api/license/list');
+      expect(listAfterGen.status).toBe(200);
+      expect(listAfterGen.body.some((r: any) => r.key === issuedKey)).toBe(true);
     });
 
     it('GET /api/schools/public exposes only public identity fields (id, name, slug, logo_url) and redacts contact/license fields', async () => {
@@ -1041,6 +1150,97 @@ describe('Security & API Endpoints Test Suite', () => {
         String(s.slug || '').startsWith('diag-')
       );
       expect(leftoverDiagSchools.length).toBe(0);
+    });
+
+    it('enforces immediate Supabase license lockout, reactivation, module updates, Creator telemetry, and CRM leads/invoices persistence', async () => {
+      // 1. Verify active license status for School A
+      const statusBefore = await request(app)
+        .get('/api/license/status')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(statusBefore.status).toBe(200);
+      expect(statusBefore.body.active).toBe(true);
+
+      // 2. Deactivate School A license in Supabase
+      const deactRes = await request(app)
+        .post('/api/license/deactivate')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({ schoolId: 'school-uuid-a', licenseKey: 'TEST-LICENSE-KEY-A' });
+      expect(deactRes.status).toBe(200);
+      expect(deactRes.body.success).toBe(true);
+      expect(deactRes.body.active).toBe(false);
+
+      // 3. Confirm GET /api/license/status immediately returns active: false from Supabase
+      const statusLocked = await request(app)
+        .get('/api/license/status')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(statusLocked.status).toBe(200);
+      expect(statusLocked.body.active).toBe(false);
+
+      // 4. Reactivate School A license via POST /api/license/activate
+      const actRes = await request(app)
+        .post('/api/license/activate')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({ licenseKey: 'TEST-LICENSE-KEY-A', schoolId: 'school-uuid-a' });
+      expect(actRes.status).toBe(200);
+      expect(actRes.body.success).toBe(true);
+
+      // 5. Update active modules via POST /api/license/modules
+      const modRes = await request(app)
+        .post('/api/license/modules')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({ schoolId: 'school-uuid-a', activeModules: ['students', 'attendance', 'results'] });
+      expect(modRes.status).toBe(200);
+      expect(modRes.body.success).toBe(true);
+      expect(modRes.body.activeModules).toEqual(['students', 'attendance', 'results']);
+
+      // 6. Verify Creator telemetry endpoint reads from Supabase
+      const telRes = await request(app)
+        .get('/api/creator/telemetry')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(telRes.status).toBe(200);
+      expect(telRes.body.success).toBe(true);
+      expect(telRes.body.counts).toHaveProperty('schools');
+      expect(telRes.body.counts).toHaveProperty('students');
+
+      // 7. Create and read CRM lead and subscription invoice in Supabase
+      const leadCreate = await request(app)
+        .post('/api/crm/leads')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({
+          schoolName: 'Cape Coast Science College',
+          contactPerson: 'Dr. Mensah',
+          phone: '+233 24 111 2222',
+          email: 'principal@capecoast.edu.gh',
+          status: 'Demo Scheduled'
+        });
+      expect(leadCreate.status).toBe(201);
+      expect(leadCreate.body.success).toBe(true);
+      expect(leadCreate.body.lead.schoolName).toBe('Cape Coast Science College');
+
+      const leadsRead = await request(app)
+        .get('/api/crm/leads')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(leadsRead.status).toBe(200);
+      expect(leadsRead.body.leads.some((l: any) => l.schoolName === 'Cape Coast Science College')).toBe(true);
+
+      const invCreate = await request(app)
+        .post('/api/crm/invoices')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .send({
+          school: 'Cape Coast Science College',
+          type: 'Annual License',
+          amount: 950,
+          status: 'Paid'
+        });
+      expect(invCreate.status).toBe(201);
+      expect(invCreate.body.success).toBe(true);
+      expect(invCreate.body.invoice.amount).toBe(950);
+
+      const invRead = await request(app)
+        .get('/api/crm/invoices')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(invRead.status).toBe(200);
+      expect(invRead.body.invoices.some((i: any) => i.school === 'Cape Coast Science College' && i.amount === 950)).toBe(true);
     });
   });
 });
