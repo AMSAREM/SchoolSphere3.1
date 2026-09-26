@@ -32,28 +32,44 @@ export async function reconcileClassesInDexie(remoteClasses: any[], isFullSync =
     if (!remote || !remote.name) continue;
     const key = String(remote.name).trim().toLowerCase();
     remoteNames.add(key);
-    if (remote.id) remoteIds.add(remote.id);
+    const remoteNumId = remote.id != null && !isNaN(Number(remote.id)) ? Number(remote.id) : undefined;
+    if (remoteNumId !== undefined) remoteIds.add(remoteNumId);
+    else if (remote.id) remoteIds.add(remote.id);
 
     let existing = nameMap.get(key);
-    if (!existing && remote.id && idMap.has(remote.id)) {
+    if (!existing && remoteNumId !== undefined && idMap.has(remoteNumId)) {
+      existing = idMap.get(remoteNumId);
+    } else if (!existing && remote.id && idMap.has(remote.id)) {
       existing = idMap.get(remote.id);
     }
 
     if (existing) {
-      await db.classes.update(existing.id, {
+      const targetId = remoteNumId !== undefined ? remoteNumId : existing.id;
+      if (existing.id && existing.id !== targetId) {
+        await db.classes.delete(existing.id);
+      }
+      await db.classes.put({
+        ...existing,
         ...remote,
-        id: existing.id
+        id: targetId,
+        remoteId: remote.id ?? existing.remoteId
       });
     } else {
-      const { id, ...rest } = remote;
-      const newId = await db.classes.add(rest);
-      nameMap.set(key, { ...remote, id: newId });
+      if (remoteNumId !== undefined) {
+        await db.classes.put({ ...remote, id: remoteNumId, remoteId: remote.id });
+        nameMap.set(key, { ...remote, id: remoteNumId });
+      } else {
+        const { id, ...rest } = remote;
+        const newId = await db.classes.add(rest);
+        nameMap.set(key, { ...remote, id: newId });
+      }
     }
   }
 
   // Prune local classes that were deleted or renamed remotely during full sync
   if (isFullSync && remoteClasses.length > 0) {
-    for (const local of localClasses) {
+    const freshLocals = await db.classes.toArray();
+    for (const local of freshLocals) {
       const key = (local.name || '').trim().toLowerCase();
       const hasName = key && remoteNames.has(key);
       const hasId = local.id && remoteIds.has(local.id);
@@ -96,34 +112,54 @@ export async function reconcileTeachersInDexie(remoteTeachers: any[], isFullSync
     if (!remote) continue;
     const staffId = (remote.staffId || remote.staff_id || '').trim().toLowerCase();
     if (staffId) remoteStaffIds.add(staffId);
-    if (remote.id) remoteIds.add(remote.id);
+    const remoteNumId = remote.id != null && !isNaN(Number(remote.id)) ? Number(remote.id) : undefined;
+    if (remoteNumId !== undefined) remoteIds.add(remoteNumId);
+    else if (remote.id) remoteIds.add(remote.id);
 
     let existing = staffId ? staffMap.get(staffId) : null;
-    if (!existing && remote.id && idMap.has(remote.id)) {
+    if (!existing && remoteNumId !== undefined && idMap.has(remoteNumId)) {
+      existing = idMap.get(remoteNumId);
+    } else if (!existing && remote.id && idMap.has(remote.id)) {
       existing = idMap.get(remote.id);
     }
 
+    const rawAssigned = remote.assignedClasses ?? remote.assigned_classes;
     const payload = {
       ...remote,
-      assignedClasses: typeof remote.assignedClasses === 'string' ? JSON.parse(remote.assignedClasses || '[]') : (remote.assignedClasses || []),
+      staffId: remote.staffId || remote.staff_id || existing?.staffId || '',
+      firstName: remote.firstName || remote.first_name || existing?.firstName || '',
+      lastName: remote.lastName || remote.last_name || existing?.lastName || '',
+      assignedClasses: typeof rawAssigned === 'string' ? JSON.parse(rawAssigned || '[]') : (rawAssigned || []),
       subjects: typeof remote.subjects === 'string' ? JSON.parse(remote.subjects || '[]') : (remote.subjects || [])
     };
 
     if (existing) {
-      await db.teachers.update(existing.id, {
+      const targetId = remoteNumId !== undefined ? remoteNumId : existing.id;
+      if (existing.id && existing.id !== targetId) {
+        await db.teachers.delete(existing.id);
+      }
+      await db.teachers.put({
+        ...existing,
         ...payload,
-        id: existing.id
+        id: targetId,
+        remoteId: remote.id ?? existing.remoteId
       });
     } else {
-      const { id, ...rest } = payload;
-      const newId = await db.teachers.add(rest);
-      if (staffId) staffMap.set(staffId, { ...payload, id: newId });
+      if (remoteNumId !== undefined) {
+        await db.teachers.put({ ...payload, id: remoteNumId, remoteId: remote.id });
+        if (staffId) staffMap.set(staffId, { ...payload, id: remoteNumId });
+      } else {
+        const { id, ...rest } = payload;
+        const newId = await db.teachers.add(rest);
+        if (staffId) staffMap.set(staffId, { ...payload, id: newId });
+      }
     }
   }
 
   // Prune local teachers that were removed remotely during full sync
   if (isFullSync && remoteTeachers.length > 0) {
-    for (const local of localTeachers) {
+    const freshLocals = await db.teachers.toArray();
+    for (const local of freshLocals) {
       const staffId = (local.staffId || (local as any).staff_id || '').trim().toLowerCase();
       const hasStaffId = staffId && remoteStaffIds.has(staffId);
       const hasId = local.id && remoteIds.has(local.id);
@@ -160,6 +196,7 @@ export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync
   }
 
   const remoteCodes = new Set<string>();
+  const remoteNames = new Set<string>();
   const remoteIds = new Set<string | number>();
 
   for (const remote of remoteSubjects) {
@@ -167,38 +204,58 @@ export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync
     const code = (remote.code || '').trim().toLowerCase();
     const name = (remote.name || '').trim().toLowerCase();
     if (code) remoteCodes.add(code);
-    if (remote.id) remoteIds.add(remote.id);
+    if (name) remoteNames.add(name);
+    const remoteNumId = remote.id != null && !isNaN(Number(remote.id)) ? Number(remote.id) : undefined;
+    if (remoteNumId !== undefined) remoteIds.add(remoteNumId);
+    else if (remote.id) remoteIds.add(remote.id);
 
     const key = code || name;
     let existing = key ? codeMap.get(key) : null;
-    if (!existing && remote.id && idMap.has(remote.id)) {
+    if (!existing && remoteNumId !== undefined && idMap.has(remoteNumId)) {
+      existing = idMap.get(remoteNumId);
+    } else if (!existing && remote.id && idMap.has(remote.id)) {
       existing = idMap.get(remote.id);
     }
 
+    const rawApplicable = remote.applicableClasses ?? remote.applicable_classes;
     const payload = {
       ...remote,
-      applicableClasses: typeof remote.applicableClasses === 'string' ? JSON.parse(remote.applicableClasses || '[]') : (remote.applicableClasses || ['All'])
+      applicableClasses: typeof rawApplicable === 'string' ? JSON.parse(rawApplicable || '[]') : (rawApplicable || ['All'])
     };
 
     if (existing) {
-      await db.subjects.update(existing.id, {
+      const targetId = remoteNumId !== undefined ? remoteNumId : existing.id;
+      if (existing.id && existing.id !== targetId) {
+        await db.subjects.delete(existing.id);
+      }
+      await db.subjects.put({
+        ...existing,
         ...payload,
-        id: existing.id
+        id: targetId,
+        remoteId: remote.id ?? existing.remoteId
       });
     } else {
-      const { id, ...rest } = payload;
-      const newId = await db.subjects.add(rest);
-      if (key) codeMap.set(key, { ...payload, id: newId });
+      if (remoteNumId !== undefined) {
+        await db.subjects.put({ ...payload, id: remoteNumId, remoteId: remote.id });
+        if (key) codeMap.set(key, { ...payload, id: remoteNumId });
+      } else {
+        const { id, ...rest } = payload;
+        const newId = await db.subjects.add(rest);
+        if (key) codeMap.set(key, { ...payload, id: newId });
+      }
     }
   }
 
   // Prune local subjects that were removed remotely during full sync
   if (isFullSync && remoteSubjects.length > 0) {
-    for (const local of localSubjects) {
+    const freshLocals = await db.subjects.toArray();
+    for (const local of freshLocals) {
       const code = (local.code || '').trim().toLowerCase();
+      const name = (local.name || '').trim().toLowerCase();
       const hasCode = code && remoteCodes.has(code);
+      const hasName = name && remoteNames.has(name);
       const hasId = local.id && remoteIds.has(local.id);
-      if (!hasCode && !hasId && local.id) {
+      if (!hasCode && !hasName && !hasId && local.id) {
         await db.subjects.delete(local.id);
       }
     }
@@ -236,28 +293,44 @@ export async function reconcileStudentsInDexie(remoteStudents: any[], isFullSync
     const norm = normalizeStudentRecord(remote);
     const stuId = (norm.studentId || norm.student_id || '').trim().toLowerCase();
     if (stuId) remoteStudentIds.add(stuId);
-    if (norm.id) remoteIds.add(norm.id);
+    const remoteNumId = norm.id != null && !isNaN(Number(norm.id)) ? Number(norm.id) : undefined;
+    if (remoteNumId !== undefined) remoteIds.add(remoteNumId);
+    else if (norm.id) remoteIds.add(norm.id);
 
     let existing = stuId ? stuMap.get(stuId) : null;
-    if (!existing && norm.id && idMap.has(norm.id)) {
+    if (!existing && remoteNumId !== undefined && idMap.has(remoteNumId)) {
+      existing = idMap.get(remoteNumId);
+    } else if (!existing && norm.id && idMap.has(norm.id)) {
       existing = idMap.get(norm.id);
     }
 
     if (existing) {
-      await db.students.update(existing.id, {
+      const targetId = remoteNumId !== undefined ? remoteNumId : existing.id;
+      if (existing.id && existing.id !== targetId) {
+        await db.students.delete(existing.id);
+      }
+      await db.students.put({
+        ...existing,
         ...norm,
-        id: existing.id
+        id: targetId,
+        remoteId: norm.id ?? existing.remoteId
       });
     } else {
-      const { id, ...rest } = norm;
-      const newId = await db.students.add(rest);
-      if (stuId) stuMap.set(stuId, { ...norm, id: newId });
+      if (remoteNumId !== undefined) {
+        await db.students.put({ ...norm, id: remoteNumId, remoteId: norm.id });
+        if (stuId) stuMap.set(stuId, { ...norm, id: remoteNumId });
+      } else {
+        const { id, ...rest } = norm;
+        const newId = await db.students.add(rest);
+        if (stuId) stuMap.set(stuId, { ...norm, id: newId });
+      }
     }
   }
 
   // Prune local students that were deleted remotely during full sync
   if (isFullSync && remoteStudents.length > 0) {
-    for (const local of localStudents) {
+    const freshLocals = await db.students.toArray();
+    for (const local of freshLocals) {
       const stuId = (local.studentId || (local as any).student_id || '').trim().toLowerCase();
       const hasStuId = stuId && remoteStudentIds.has(stuId);
       const hasId = local.id && remoteIds.has(local.id);
@@ -312,11 +385,18 @@ export async function reconcileResultsInDexie(remoteResults: any[]) {
     const studentId = remote.studentId || remote.student_id;
     const k = `${studentId}_${(remote.subject || '').toLowerCase()}_${(remote.term || '').toLowerCase()}`;
     const existing = map.get(k);
+    const payload = {
+      ...remote,
+      studentId,
+      classScore: Number(remote.classScore ?? remote.class_score ?? 0),
+      examScore: Number(remote.examScore ?? remote.exam_score ?? 0),
+      totalScore: Number(remote.totalScore ?? remote.total_score ?? 0)
+    };
     if (existing) {
-      await db.results.update(existing.id, { ...remote, studentId, id: existing.id });
+      await db.results.update(existing.id, { ...payload, id: existing.id });
     } else {
-      const { id, ...rest } = remote;
-      await db.results.add({ ...rest, studentId });
+      const { id, ...rest } = payload;
+      await db.results.add(rest);
     }
   }
 }
@@ -361,7 +441,10 @@ export async function reconcileSettingsInDexie(remoteSettings: any[]) {
   for (const remote of remoteSettings) {
     if (!remote || !remote.key) continue;
     const existing = map.get(remote.key);
-    const value = typeof remote.value === 'string' ? JSON.parse(remote.value) : remote.value;
+    let value = remote.value;
+    if (typeof value === 'string') {
+      try { value = JSON.parse(value); } catch {}
+    }
     if (existing) {
       await db.settings.update(existing.id, { key: remote.key, value, id: existing.id });
     } else {

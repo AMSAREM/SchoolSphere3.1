@@ -230,17 +230,22 @@ let localFallbackDb: Record<string, any[]> = {
 function saveToFallback(table: string, record: any) {
   if (!localFallbackDb[table]) localFallbackDb[table] = [];
   const idx = localFallbackDb[table].findIndex((item: any) => 
-    (record.id && item.id === record.id) ||
-    (record.studentId && item.studentId === record.studentId) ||
-    (record.student_id && item.student_id === record.student_id) ||
-    (record.staffId && item.staffId === record.staffId) ||
-    (record.name && item.name === record.name)
+    (record.id && String(item.id) === String(record.id)) ||
+    ((record.studentId || record.student_id) && (item.studentId || item.student_id) === (record.studentId || record.student_id)) ||
+    ((record.staffId || record.staff_id) && (item.staffId || item.staff_id) === (record.staffId || record.staff_id)) ||
+    (record.code && item.code && String(item.code).toLowerCase() === String(record.code).toLowerCase()) ||
+    (record.name && item.name && String(item.name).toLowerCase() === String(record.name).toLowerCase())
   );
   if (idx >= 0) {
     localFallbackDb[table][idx] = { ...localFallbackDb[table][idx], ...record };
   } else {
     localFallbackDb[table].push(record);
   }
+}
+
+function removeFromFallback(table: string, predicate: (item: any) => boolean) {
+  if (!Array.isArray(localFallbackDb[table])) return;
+  localFallbackDb[table] = localFallbackDb[table].filter((item: any) => !predicate(item));
 }
 
 function getFromFallback(table: string, schoolId?: string | null) {
@@ -638,9 +643,9 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           } catch {}
         }
 
-        const fbRows = getFromFallback(table, targetSchoolId);
+        const fbRows = error ? getFromFallback(table, targetSchoolId) : [];
         const combinedRows: any[] = Array.isArray(rows) ? [...rows] : [];
-        if (Array.isArray(fbRows) && fbRows.length > 0) {
+        if (error && Array.isArray(fbRows) && fbRows.length > 0) {
           for (const fb of fbRows) {
             const alreadyPresent = combinedRows.some((r: any) =>
               (fb.id && r.id === fb.id) ||
@@ -5559,7 +5564,7 @@ async function doStartServer() {
   app.put("/api/users/:id", authenticateToken, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { fullName, full_name, role, status, email, phone, password, passwordHash, schoolId, school_id } = req.body || {};
+      const { fullName, full_name, role, status, email, phone, password, passwordHash, schoolId, school_id, username: reqUsername } = req.body || {};
       const adminClient = getSupabaseAdmin();
 
       const updateData: any = { updated_at: Date.now() };
@@ -5591,7 +5596,14 @@ async function doStartServer() {
         }
       }
 
-      const targetSchoolId = schoolId || school_id || req.user?.school_id || req.user?.schoolId || req.headers?.['x-school-id'] || null;
+      const targetSchoolId = schoolId || school_id || req.query?.school_id || req.user?.school_id || req.user?.schoolId || req.headers?.['x-school-id'] || null;
+      let targetUsername = String(reqUsername || req.query?.username || '').trim().toLowerCase().replace(/^@+/, '');
+
+      // Look up username from registries if not passed
+      if (!targetUsername) {
+        const regMatch = getRegisteredUsers().find((u: any) => String(u.id) === String(id));
+        if (regMatch?.username) targetUsername = String(regMatch.username).trim().toLowerCase().replace(/^@+/, '');
+      }
 
       let updatedRow: any = null;
       let updateErrMsg: string | null = null;
@@ -5605,11 +5617,26 @@ async function doStartServer() {
           .maybeSingle();
         if (!error && data) {
           updatedRow = data;
+          if (!targetUsername && data.username) {
+            targetUsername = String(data.username).trim().toLowerCase().split('@')[0];
+          }
         } else if (error) {
           updateErrMsg = error.message;
         }
       } catch (e: any) {
         updateErrMsg = e?.message || null;
+      }
+
+      // If id didn't match in public.users (e.g. timestamp ID from registry), match by username + school_id
+      if (!updatedRow && targetUsername) {
+        try {
+          let q = adminClient.from('users').update(updateData).ilike('username', `${targetUsername}%`);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          const { data, error } = await q.select().maybeSingle();
+          if (!error && data) {
+            updatedRow = data;
+          }
+        } catch {}
       }
 
       if (!updatedRow && /^\d+$/.test(String(id))) {
@@ -5630,49 +5657,28 @@ async function doStartServer() {
         } catch {}
       }
 
+      const matchesUserEntry = (u: any) => {
+        if (String(u.id) === String(id)) return true;
+        if (updatedRow?.id && String(u.id) === String(updatedRow.id)) return true;
+        if (targetUsername) {
+          const uBase = String(u.baseUsername || u.username || '').trim().toLowerCase().split('@')[0];
+          const uScoped = String(u.scopedUsername || u.username || '').trim().toLowerCase();
+          const sameUser = uBase === targetUsername || uScoped === targetUsername || uScoped.startsWith(`${targetUsername}@`);
+          const sameSchool = !targetSchoolId || !(u.school_id || u.schoolId) || (u.school_id || u.schoolId) === targetSchoolId;
+          if (sameUser && sameSchool) return true;
+        }
+        return false;
+      };
+
       // Also update in server registered users store and Supabase settings ('tenant_users_registry')
       try {
         const regUsers = getRegisteredUsers();
-        const rIdx = regUsers.findIndex((u: any) => String(u.id) === String(id));
-        if (rIdx >= 0) {
-          const merged = {
-            ...regUsers[rIdx],
-            ...(updateData.full_name ? { fullName: updateData.full_name, full_name: updateData.full_name } : {}),
-            ...(updateData.role ? { role: updateData.role } : {}),
-            ...(updateData.status ? { status: updateData.status } : {}),
-            ...(updateData.email !== undefined ? { email: updateData.email } : {}),
-            ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
-            ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
-            updatedAt: updateData.updated_at,
-            updated_at: updateData.updated_at
-          };
-          regUsers[rIdx] = merged;
-          saveRegisteredUsers(regUsers);
-          if (!updatedRow) updatedRow = merged;
-
-          if (updateData.password_hash) {
-            const passEntry = {
-              passwordHash: updateData.password_hash,
-              role: merged.role,
-              fullName: merged.fullName || merged.full_name,
-              schoolId: merged.school_id || merged.schoolId || targetSchoolId,
-              email: merged.email,
-              updatedAt: updateData.updated_at
-            };
-            if (merged.username) customUserPasswords.set(String(merged.username).toLowerCase(), passEntry);
-            if (merged.scopedUsername) customUserPasswords.set(String(merged.scopedUsername).toLowerCase(), passEntry);
-            if (merged.email) customUserPasswords.set(String(merged.email).toLowerCase(), passEntry);
-          }
-        }
-      } catch {}
-
-      try {
-        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
-        if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
-          const sIdx = settingsUsers.findIndex((u: any) => String(u.id) === String(id));
-          if (sIdx >= 0) {
+        let matchedAny = false;
+        for (let rIdx = 0; rIdx < regUsers.length; rIdx++) {
+          if (matchesUserEntry(regUsers[rIdx])) {
+            matchedAny = true;
             const merged = {
-              ...settingsUsers[sIdx],
+              ...regUsers[rIdx],
               ...(updateData.full_name ? { fullName: updateData.full_name, full_name: updateData.full_name } : {}),
               ...(updateData.role ? { role: updateData.role } : {}),
               ...(updateData.status ? { status: updateData.status } : {}),
@@ -5682,9 +5688,51 @@ async function doStartServer() {
               updatedAt: updateData.updated_at,
               updated_at: updateData.updated_at
             };
-            settingsUsers[sIdx] = merged;
-            await writeSupabaseSettingList('tenant_users_registry', settingsUsers);
+            regUsers[rIdx] = merged;
             if (!updatedRow) updatedRow = merged;
+
+            if (updateData.password_hash) {
+              const passEntry = {
+                passwordHash: updateData.password_hash,
+                role: merged.role,
+                fullName: merged.fullName || merged.full_name,
+                schoolId: merged.school_id || merged.schoolId || targetSchoolId,
+                email: merged.email,
+                updatedAt: updateData.updated_at
+              };
+              if (merged.username) customUserPasswords.set(String(merged.username).toLowerCase(), passEntry);
+              if (merged.scopedUsername) customUserPasswords.set(String(merged.scopedUsername).toLowerCase(), passEntry);
+              if (merged.email) customUserPasswords.set(String(merged.email).toLowerCase(), passEntry);
+            }
+          }
+        }
+        if (matchedAny) saveRegisteredUsers(regUsers);
+      } catch {}
+
+      try {
+        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+        if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
+          let matchedSettings = false;
+          for (let sIdx = 0; sIdx < settingsUsers.length; sIdx++) {
+            if (matchesUserEntry(settingsUsers[sIdx])) {
+              matchedSettings = true;
+              const merged = {
+                ...settingsUsers[sIdx],
+                ...(updateData.full_name ? { fullName: updateData.full_name, full_name: updateData.full_name } : {}),
+                ...(updateData.role ? { role: updateData.role } : {}),
+                ...(updateData.status ? { status: updateData.status } : {}),
+                ...(updateData.email !== undefined ? { email: updateData.email } : {}),
+                ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
+                ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
+                updatedAt: updateData.updated_at,
+                updated_at: updateData.updated_at
+              };
+              settingsUsers[sIdx] = merged;
+              if (!updatedRow) updatedRow = merged;
+            }
+          }
+          if (matchedSettings) {
+            await writeSupabaseSettingList('tenant_users_registry', settingsUsers);
           }
         }
       } catch {}
@@ -5737,6 +5785,7 @@ async function doStartServer() {
       const { id } = req.params;
       const adminClient = getSupabaseAdmin();
       const targetSchoolId = req.query?.school_id || req.query?.schoolId || req.user?.school_id || req.user?.schoolId || req.headers?.['x-school-id'] || null;
+      let targetUsername = String(req.query?.username || '').trim().toLowerCase().replace(/^@+/, '');
 
       let existingUser: any = null;
       try {
@@ -5746,7 +5795,17 @@ async function doStartServer() {
           .eq('id', id)
           .maybeSingle();
         existingUser = data;
+        if (existingUser?.username && !targetUsername) {
+          targetUsername = String(existingUser.username).trim().toLowerCase().split('@')[0];
+        }
       } catch {}
+
+      if (!targetUsername) {
+        const regMatch = getRegisteredUsers().find((u: any) => String(u.id) === String(id));
+        if (regMatch?.username) {
+          targetUsername = String(regMatch.username).trim().toLowerCase().split('@')[0];
+        }
+      }
 
       let deletedOk = false;
       let deleteErrMsg: string | null = null;
@@ -5765,6 +5824,15 @@ async function doStartServer() {
         deleteErrMsg = e?.message || null;
       }
 
+      if (targetUsername) {
+        try {
+          let q = adminClient.from('users').delete().ilike('username', `${targetUsername}%`);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          const { error } = await q;
+          if (!error) deletedOk = true;
+        } catch {}
+      }
+
       if (!deletedOk && /^\d+$/.test(String(id))) {
         try {
           const rpcRes = await adminClient.rpc('delete_tenant_user', {
@@ -5777,10 +5845,23 @@ async function doStartServer() {
         } catch {}
       }
 
+      const shouldRemoveUserEntry = (u: any) => {
+        if (String(u.id) === String(id)) return true;
+        if (existingUser?.id && String(u.id) === String(existingUser.id)) return true;
+        if (targetUsername) {
+          const uBase = String(u.baseUsername || u.username || '').trim().toLowerCase().split('@')[0];
+          const uScoped = String(u.scopedUsername || u.username || '').trim().toLowerCase();
+          const sameUser = uBase === targetUsername || uScoped === targetUsername || uScoped.startsWith(`${targetUsername}@`);
+          const sameSchool = !targetSchoolId || !(u.school_id || u.schoolId) || (u.school_id || u.schoolId) === targetSchoolId;
+          if (sameUser && sameSchool) return true;
+        }
+        return false;
+      };
+
       try {
         const regUsers = getRegisteredUsers();
         const beforeLen = regUsers.length;
-        const remaining = regUsers.filter((u: any) => String(u.id) !== String(id));
+        const remaining = regUsers.filter((u: any) => !shouldRemoveUserEntry(u));
         if (remaining.length < beforeLen) {
           saveRegisteredUsers(remaining);
           deletedOk = true;
@@ -5790,7 +5871,7 @@ async function doStartServer() {
       try {
         const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
         if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
-          const remainingSettings = settingsUsers.filter((u: any) => String(u.id) !== String(id));
+          const remainingSettings = settingsUsers.filter((u: any) => !shouldRemoveUserEntry(u));
           if (remainingSettings.length < settingsUsers.length) {
             await writeSupabaseSettingList('tenant_users_registry', remainingSettings);
             deletedOk = true;
@@ -11201,18 +11282,12 @@ async function doStartServer() {
       }
       const { data, error } = await query.order('id', { ascending: false });
       
-      const fallback = getFromFallback('students', schoolId).map((s: any) => normalizeServerStudentRecord(s));
       if (error) {
+        const fallback = getFromFallback('students', schoolId).map((s: any) => normalizeServerStudentRecord(s));
         return res.json(fallback);
       }
       const parsed = (data || []).map((s: any) => normalizeServerStudentRecord(s));
-      const combined = [...parsed];
-      for (const f of fallback) {
-        if (!combined.some(c => c.studentId === f.studentId || (f.id && c.id === f.id))) {
-          combined.push(f);
-        }
-      }
-      return res.json(combined);
+      return res.json(parsed);
     } catch (err: any) {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       const fallback = getFromFallback('students', schoolId).map((s: any) => normalizeServerStudentRecord(s));
@@ -11340,6 +11415,7 @@ async function doStartServer() {
       return res.status(201).json({ success: true, data: normalized });
     } catch (err: any) {
       console.error("Error in POST /api/students:", err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
@@ -11564,6 +11640,9 @@ async function doStartServer() {
 
       // 4. Return result from Supabase
       const finalResult = (insertedRecords || camelPrepared.map((item, idx) => ({ ...item, id: Date.now() + idx }))).map((s: any) => normalizeServerStudentRecord(s));
+      for (const rec of finalResult) {
+        saveToFallback('students', rec);
+      }
 
       // Record file hash in registry to prevent duplicate re-imports
       if (fileHash) {
@@ -11644,7 +11723,9 @@ async function doStartServer() {
       if (!updatedData && (studentId || id)) {
         try {
           const sidToMatch = studentId || id;
-          const { data, error } = await adminClient.from('students').update(snakePayload).eq('student_id', sidToMatch).select().maybeSingle();
+          let q = adminClient.from('students').update(snakePayload).eq('student_id', sidToMatch);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) {
             updatedData = data;
           }
@@ -11664,7 +11745,9 @@ async function doStartServer() {
       if (!updatedData && (studentId || id)) {
         try {
           const sidToMatch = studentId || id;
-          const { data, error } = await adminClient.from('students').update(camelPayload).eq('studentId', sidToMatch).select().maybeSingle();
+          let q = adminClient.from('students').update(camelPayload).eq('studentId', sidToMatch);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -11698,6 +11781,7 @@ async function doStartServer() {
         return res.status(404).json({ success: false, error: "Student record not found or could not be updated in Supabase." });
       }
 
+      saveToFallback('students', updatedData);
       const finalRecord = normalizeServerStudentRecord(updatedData);
       return res.json({ success: true, data: finalRecord });
     } catch (err: any) {
@@ -11727,12 +11811,23 @@ async function doStartServer() {
       const identifierToDelete = studentId || id;
       if (identifierToDelete) {
         try {
-          await adminClient.from('students').delete().eq('studentId', identifierToDelete);
+          let q1 = adminClient.from('students').delete().eq('studentId', identifierToDelete);
+          if (schoolId) q1 = q1.eq('school_id', schoolId);
+          await q1;
         } catch (e) {}
         try {
-          await adminClient.from('students').delete().eq('student_id', identifierToDelete);
+          let q2 = adminClient.from('students').delete().eq('student_id', identifierToDelete);
+          if (schoolId) q2 = q2.eq('school_id', schoolId);
+          await q2;
         } catch (e) {}
       }
+
+      removeFromFallback('students', (item: any) =>
+        String(item.id) === String(id) ||
+        (studentId && (item.studentId === studentId || item.student_id === studentId)) ||
+        item.studentId === String(id) ||
+        item.student_id === String(id)
+      );
 
       invalidateDbCache();
       return res.json({ success: true, message: "Student removed successfully from Supabase" });
@@ -11775,12 +11870,24 @@ async function doStartServer() {
       // 2. Delete by studentId identifiers in Supabase
       if (listStudentIds.length > 0) {
         try {
-          await adminClient.from('students').delete().in('studentId', listStudentIds);
+          let q1 = adminClient.from('students').delete().in('studentId', listStudentIds);
+          if (targetSchoolId) q1 = q1.eq('school_id', targetSchoolId);
+          await q1;
         } catch (e) {}
         try {
-          await adminClient.from('students').delete().in('student_id', listStudentIds);
+          let q2 = adminClient.from('students').delete().in('student_id', listStudentIds);
+          if (targetSchoolId) q2 = q2.eq('school_id', targetSchoolId);
+          await q2;
         } catch (e) {}
       }
+
+      const idSet = new Set(listIds.map(String));
+      const sidSet = new Set(listStudentIds.map(String));
+      removeFromFallback('students', (item: any) =>
+        idSet.has(String(item.id)) ||
+        sidSet.has(String(item.studentId || '')) ||
+        sidSet.has(String(item.student_id || ''))
+      );
 
       // 3. Invalidate DB cache
       invalidateDbCache();
@@ -11805,18 +11912,12 @@ async function doStartServer() {
         query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: false });
-      const fallback = getFromFallback('teachers', schoolId).map((t: any) => normalizeServerTeacherRecord(t));
       if (error) {
+        const fallback = getFromFallback('teachers', schoolId).map((t: any) => normalizeServerTeacherRecord(t));
         return res.json(fallback);
       }
       const parsed = (data || []).map((t: any) => normalizeServerTeacherRecord(t));
-      const combined = [...parsed];
-      for (const f of fallback) {
-        if (!combined.some(c => c.staffId === f.staffId || (f.id && c.id === f.id))) {
-          combined.push(f);
-        }
-      }
-      return res.json(combined);
+      return res.json(parsed);
     } catch (err: any) {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       const fallback = getFromFallback('teachers', schoolId).map((t: any) => normalizeServerTeacherRecord(t));
@@ -11911,6 +12012,7 @@ async function doStartServer() {
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const staffIdParam = String(req.query.staff_id || req.query.staffId || req.body?.staffId || req.body?.staff_id || '').trim();
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
 
@@ -11920,48 +12022,60 @@ async function doStartServer() {
       });
 
       let updatedData: any = null;
+      const snakePayload: any = {
+        first_name: cleanObj.firstName,
+        last_name: cleanObj.lastName,
+        phone: cleanObj.phone,
+        email: cleanObj.email,
+        assigned_classes: cleanObj.assignedClasses,
+        subjects: cleanObj.subjects
+      };
+      if (cleanObj.staffId) snakePayload.staff_id = cleanObj.staffId;
+      if (cleanObj.school_id) snakePayload.school_id = cleanObj.school_id;
 
-      // 1. Try Supabase update in-place on existing row
-      try {
-        const camelPayload: any = {
-          firstName: cleanObj.firstName,
-          lastName: cleanObj.lastName,
-          phone: cleanObj.phone,
-          email: cleanObj.email,
-          assignedClasses: cleanObj.assignedClasses,
-          subjects: cleanObj.subjects
-        };
-        if (cleanObj.school_id) camelPayload.school_id = cleanObj.school_id;
+      const camelPayload: any = {
+        firstName: cleanObj.firstName,
+        lastName: cleanObj.lastName,
+        phone: cleanObj.phone,
+        email: cleanObj.email,
+        assignedClasses: cleanObj.assignedClasses,
+        subjects: cleanObj.subjects
+      };
+      if (cleanObj.staffId) camelPayload.staffId = cleanObj.staffId;
+      if (cleanObj.school_id) camelPayload.school_id = cleanObj.school_id;
 
-        let query = adminClient.from('teachers').update(camelPayload);
-        if (!isNaN(Number(id))) {
-          query = query.eq('id', Number(id));
-        } else {
-          query = query.or(`staffId.eq.${id},staff_id.eq.${id}`);
-        }
-        const { data, error } = await query.select().maybeSingle();
-        if (!error && data) updatedData = data;
-      } catch (e) {}
-
-      if (!updatedData) {
+      // 1. Try snake_case update by ID first
+      if (!isNaN(Number(id))) {
         try {
-          const snakePayload: any = {
-            first_name: cleanObj.firstName,
-            last_name: cleanObj.lastName,
-            phone: cleanObj.phone,
-            email: cleanObj.email,
-            assigned_classes: cleanObj.assignedClasses,
-            subjects: cleanObj.subjects
-          };
-          if (cleanObj.school_id) snakePayload.school_id = cleanObj.school_id;
+          const { data, error } = await adminClient.from('teachers').update(snakePayload).eq('id', Number(id)).select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
 
-          let query = adminClient.from('teachers').update(snakePayload);
-          if (!isNaN(Number(id))) {
-            query = query.eq('id', Number(id));
-          } else {
-            query = query.or(`staff_id.eq.${id},staffId.eq.${id}`);
-          }
-          const { data, error } = await query.select().maybeSingle();
+      // 2. Try snake_case update by staff_id if ID didn't match
+      if (!updatedData && (staffIdParam || isNaN(Number(id)))) {
+        const sidToMatch = staffIdParam || String(id);
+        try {
+          let q = adminClient.from('teachers').update(snakePayload).eq('staff_id', sidToMatch);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
+
+      // 3. Try camelCase update fallback
+      if (!updatedData && !isNaN(Number(id))) {
+        try {
+          const { data, error } = await adminClient.from('teachers').update(camelPayload).eq('id', Number(id)).select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
+      if (!updatedData && (staffIdParam || isNaN(Number(id)))) {
+        const sidToMatch = staffIdParam || String(id);
+        try {
+          let q = adminClient.from('teachers').update(camelPayload).eq('staffId', sidToMatch);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -11977,7 +12091,7 @@ async function doStartServer() {
             [
               cleanObj.firstName, cleanObj.lastName, cleanObj.phone, cleanObj.email || '',
               JSON.stringify(cleanObj.assignedClasses), JSON.stringify(cleanObj.subjects),
-              !isNaN(Number(id)) ? Number(id) : -1, String(id)
+              !isNaN(Number(id)) ? Number(id) : -1, staffIdParam || String(id)
             ]
           );
           if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
@@ -11990,6 +12104,7 @@ async function doStartServer() {
         return res.status(404).json({ success: false, error: "Teacher record not found or could not be updated in Supabase." });
       }
 
+      saveToFallback('teachers', updatedData);
       return res.json({ success: true, data: normalizeServerTeacherRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
@@ -12002,23 +12117,46 @@ async function doStartServer() {
       invalidateDbCache();
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
+      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const staffIdParam = (req.query.staff_id || req.query.staffId || '') as string;
+
       try {
         if (!isNaN(Number(id))) {
-          await adminClient.from('teachers').delete().eq('id', Number(id));
-        } else {
-          await adminClient.from('teachers').delete().or(`staffId.eq.${id},staff_id.eq.${id}`);
+          let q = adminClient.from('teachers').delete().eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
         }
       } catch (e) {}
+
+      const sidToDelete = staffIdParam || (isNaN(Number(id)) ? id : '');
+      if (sidToDelete) {
+        try {
+          let q1 = adminClient.from('teachers').delete().eq('staff_id', sidToDelete);
+          if (schoolId) q1 = q1.eq('school_id', schoolId);
+          await q1;
+        } catch (e) {}
+        try {
+          let q2 = adminClient.from('teachers').delete().eq('staffId', sidToDelete);
+          if (schoolId) q2 = q2.eq('school_id', schoolId);
+          await q2;
+        } catch (e) {}
+      }
 
       if (pgPool) {
         try {
           if (!isNaN(Number(id))) {
             await pgPool.query(`DELETE FROM teachers WHERE id = $1`, [Number(id)]);
-          } else {
-            await pgPool.query(`DELETE FROM teachers WHERE "staffId" = $1 OR staff_id = $1`, [id]);
+          }
+          if (sidToDelete) {
+            await pgPool.query(`DELETE FROM teachers WHERE "staffId" = $1 OR staff_id = $1`, [sidToDelete]);
           }
         } catch (pgErr) {}
       }
+
+      removeFromFallback('teachers', (item: any) =>
+        String(item.id) === String(id) ||
+        (sidToDelete && (item.staffId === sidToDelete || item.staff_id === sidToDelete))
+      );
 
       invalidateDbCache();
       return res.json({ success: true, message: "Teacher deleted successfully" });
@@ -12038,18 +12176,12 @@ async function doStartServer() {
         query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: true });
-      const fallback = getFromFallback('classes', schoolId).map((c: any) => normalizeServerClassRecord(c));
       if (error) {
+        const fallback = getFromFallback('classes', schoolId).map((c: any) => normalizeServerClassRecord(c));
         return res.json(fallback);
       }
       const parsed = (data || []).map((c: any) => normalizeServerClassRecord(c));
-      const combined = [...parsed];
-      for (const f of fallback) {
-        if (!combined.some(c => c.name?.toLowerCase() === f.name?.toLowerCase() || (f.id && c.id === f.id))) {
-          combined.push(f);
-        }
-      }
-      return res.json(combined);
+      return res.json(parsed);
     } catch (err: any) {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       const fallback = getFromFallback('classes', schoolId).map((c: any) => normalizeServerClassRecord(c));
@@ -12116,6 +12248,7 @@ async function doStartServer() {
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const originalName = String(req.query.name || req.body?.originalName || '').trim();
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
 
@@ -12125,25 +12258,31 @@ async function doStartServer() {
       });
 
       let updatedData: any = null;
+      const payload: any = {
+        name: cleanObj.name,
+        level: cleanObj.level,
+        capacity: cleanObj.capacity
+      };
+      if (cleanObj.school_id) payload.school_id = cleanObj.school_id;
 
-      // 1. Try Supabase update in-place
-      try {
-        const payload: any = {
-          name: cleanObj.name,
-          level: cleanObj.level,
-          capacity: cleanObj.capacity
-        };
-        if (cleanObj.school_id) payload.school_id = cleanObj.school_id;
+      // 1. Try Supabase update by ID first
+      if (!isNaN(Number(id))) {
+        try {
+          const { data, error } = await adminClient.from('classes').update(payload).eq('id', Number(id)).select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
 
-        let query = adminClient.from('classes').update(payload);
-        if (!isNaN(Number(id))) {
-          query = query.eq('id', Number(id));
-        } else {
-          query = query.eq('name', id);
-        }
-        const { data, error } = await query.select().maybeSingle();
-        if (!error && data) updatedData = data;
-      } catch (e) {}
+      // 2. Try Supabase update by originalName or id string if not matched
+      if (!updatedData && (originalName || isNaN(Number(id)))) {
+        const nameToMatch = originalName || String(id);
+        try {
+          let q = adminClient.from('classes').update(payload).eq('name', nameToMatch);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
 
       // Direct SQL update via pgPool if available
       if (!updatedData && pgPool) {
@@ -12153,7 +12292,7 @@ async function doStartServer() {
              SET "name" = $1, "level" = $2, "capacity" = $3
              WHERE id = $4 OR "name" = $5
              RETURNING *`,
-            [cleanObj.name, cleanObj.level, cleanObj.capacity || 50, !isNaN(Number(id)) ? Number(id) : -1, String(id)]
+            [cleanObj.name, cleanObj.level, cleanObj.capacity || 50, !isNaN(Number(id)) ? Number(id) : -1, originalName || String(id)]
           );
           if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
         } catch (pgErr) {}
@@ -12165,6 +12304,7 @@ async function doStartServer() {
         return res.status(404).json({ success: false, error: "Class record not found or could not be updated in Supabase." });
       }
 
+      saveToFallback('classes', updatedData);
       return res.json({ success: true, data: normalizeServerClassRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
@@ -12177,23 +12317,41 @@ async function doStartServer() {
       invalidateDbCache();
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
+      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const nameParam = (req.query.name || '') as string;
+
       try {
         if (!isNaN(Number(id))) {
-          await adminClient.from('classes').delete().eq('id', Number(id));
-        } else {
-          await adminClient.from('classes').delete().eq('name', id);
+          let q = adminClient.from('classes').delete().eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
         }
       } catch (e) {}
+
+      const nameToDelete = nameParam || (isNaN(Number(id)) ? id : '');
+      if (nameToDelete) {
+        try {
+          let q = adminClient.from('classes').delete().eq('name', nameToDelete);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
+        } catch (e) {}
+      }
 
       if (pgPool) {
         try {
           if (!isNaN(Number(id))) {
             await pgPool.query(`DELETE FROM classes WHERE id = $1`, [Number(id)]);
-          } else {
-            await pgPool.query(`DELETE FROM classes WHERE "name" = $1`, [id]);
+          }
+          if (nameToDelete) {
+            await pgPool.query(`DELETE FROM classes WHERE "name" = $1`, [nameToDelete]);
           }
         } catch (pgErr) {}
       }
+
+      removeFromFallback('classes', (item: any) =>
+        String(item.id) === String(id) ||
+        (nameToDelete && item.name?.toLowerCase() === nameToDelete.toLowerCase())
+      );
 
       invalidateDbCache();
       return res.json({ success: true, message: "Class deleted successfully" });
@@ -12213,18 +12371,12 @@ async function doStartServer() {
         query = query.eq("school_id", schoolId);
       }
       const { data, error } = await query.order('id', { ascending: true });
-      const fallback = getFromFallback('subjects', schoolId).map((sub: any) => normalizeServerSubjectRecord(sub));
       if (error) {
+        const fallback = getFromFallback('subjects', schoolId).map((sub: any) => normalizeServerSubjectRecord(sub));
         return res.json(fallback);
       }
       const parsed = (data || []).map((sub: any) => normalizeServerSubjectRecord(sub));
-      const combined = [...parsed];
-      for (const f of fallback) {
-        if (!combined.some(c => c.name?.toLowerCase() === f.name?.toLowerCase() || (f.id && c.id === f.id))) {
-          combined.push(f);
-        }
-      }
-      return res.json(combined);
+      return res.json(parsed);
     } catch (err: any) {
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
       const fallback = getFromFallback('subjects', schoolId).map((sub: any) => normalizeServerSubjectRecord(sub));
@@ -12305,6 +12457,8 @@ async function doStartServer() {
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
       const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const originalCode = String(req.query.code || req.body?.originalCode || '').trim();
+      const originalName = String(req.query.name || req.body?.originalName || '').trim();
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
 
@@ -12314,42 +12468,56 @@ async function doStartServer() {
       });
 
       let updatedData: any = null;
+      const snakePayload: any = {
+        name: cleanObj.name,
+        code: cleanObj.code,
+        applicable_classes: cleanObj.applicableClasses
+      };
+      if (cleanObj.school_id) snakePayload.school_id = cleanObj.school_id;
 
-      // 1. Try Supabase update in-place
-      try {
-        const camelPayload: any = {
-          name: cleanObj.name,
-          code: cleanObj.code,
-          applicableClasses: cleanObj.applicableClasses
-        };
-        if (cleanObj.school_id) camelPayload.school_id = cleanObj.school_id;
+      const camelPayload: any = {
+        name: cleanObj.name,
+        code: cleanObj.code,
+        applicableClasses: cleanObj.applicableClasses
+      };
+      if (cleanObj.school_id) camelPayload.school_id = cleanObj.school_id;
 
-        let query = adminClient.from('subjects').update(camelPayload);
-        if (!isNaN(Number(id))) {
-          query = query.eq('id', Number(id));
-        } else {
-          query = query.or(`code.eq.${id},name.eq.${id}`);
-        }
-        const { data, error } = await query.select().maybeSingle();
-        if (!error && data) updatedData = data;
-      } catch (e) {}
-
-      if (!updatedData) {
+      // 1. Try snake_case update by ID first
+      if (!isNaN(Number(id))) {
         try {
-          const snakePayload: any = {
-            name: cleanObj.name,
-            code: cleanObj.code,
-            applicable_classes: cleanObj.applicableClasses
-          };
-          if (cleanObj.school_id) snakePayload.school_id = cleanObj.school_id;
+          const { data, error } = await adminClient.from('subjects').update(snakePayload).eq('id', Number(id)).select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
 
-          let query = adminClient.from('subjects').update(snakePayload);
-          if (!isNaN(Number(id))) {
-            query = query.eq('id', Number(id));
-          } else {
-            query = query.or(`code.eq.${id},name.eq.${id}`);
-          }
-          const { data, error } = await query.select().maybeSingle();
+      // 2. Try snake_case update by originalCode / originalName if ID didn't match
+      if (!updatedData && (originalCode || originalName || isNaN(Number(id)))) {
+        try {
+          let q = adminClient.from('subjects').update(snakePayload);
+          if (originalCode) q = q.eq('code', originalCode);
+          else if (originalName) q = q.eq('name', originalName);
+          else q = q.or(`code.eq.${id},name.eq.${id}`);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
+
+      // 3. Try camelCase update fallback
+      if (!updatedData && !isNaN(Number(id))) {
+        try {
+          const { data, error } = await adminClient.from('subjects').update(camelPayload).eq('id', Number(id)).select().maybeSingle();
+          if (!error && data) updatedData = data;
+        } catch (e) {}
+      }
+      if (!updatedData && (originalCode || originalName || isNaN(Number(id)))) {
+        try {
+          let q = adminClient.from('subjects').update(camelPayload);
+          if (originalCode) q = q.eq('code', originalCode);
+          else if (originalName) q = q.eq('name', originalName);
+          else q = q.or(`code.eq.${id},name.eq.${id}`);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -12360,9 +12528,9 @@ async function doStartServer() {
           const resSql = await pgPool.query(
             `UPDATE subjects 
              SET "name" = $1, "code" = $2, "applicableClasses" = $3
-             WHERE id = $4 OR "code" = $5 OR "name" = $5
+             WHERE id = $4 OR "code" = $5 OR "name" = $6
              RETURNING *`,
-            [cleanObj.name, cleanObj.code, JSON.stringify(cleanObj.applicableClasses), !isNaN(Number(id)) ? Number(id) : -1, String(id)]
+            [cleanObj.name, cleanObj.code, JSON.stringify(cleanObj.applicableClasses), !isNaN(Number(id)) ? Number(id) : -1, originalCode || String(id), originalName || String(id)]
           );
           if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
         } catch (pgErr) {}
@@ -12374,6 +12542,7 @@ async function doStartServer() {
         return res.status(404).json({ success: false, error: "Subject record not found or could not be updated in Supabase." });
       }
 
+      saveToFallback('subjects', updatedData);
       return res.json({ success: true, data: normalizeServerSubjectRecord(updatedData) });
     } catch (err: any) {
       invalidateDbCache();
@@ -12386,23 +12555,51 @@ async function doStartServer() {
       invalidateDbCache();
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
+      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const codeParam = (req.query.code || '') as string;
+      const nameParam = (req.query.name || '') as string;
+
       try {
         if (!isNaN(Number(id))) {
-          await adminClient.from('subjects').delete().eq('id', Number(id));
-        } else {
-          await adminClient.from('subjects').delete().or(`code.eq.${id},name.eq.${id}`);
+          let q = adminClient.from('subjects').delete().eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
         }
       } catch (e) {}
+
+      if (codeParam || isNaN(Number(id))) {
+        const c = codeParam || id;
+        try {
+          let q = adminClient.from('subjects').delete().eq('code', c);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
+        } catch (e) {}
+      }
+      if (nameParam || isNaN(Number(id))) {
+        const n = nameParam || id;
+        try {
+          let q = adminClient.from('subjects').delete().eq('name', n);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          await q;
+        } catch (e) {}
+      }
 
       if (pgPool) {
         try {
           if (!isNaN(Number(id))) {
             await pgPool.query(`DELETE FROM subjects WHERE id = $1`, [Number(id)]);
-          } else {
-            await pgPool.query(`DELETE FROM subjects WHERE "code" = $1 OR name = $1`, [id]);
+          }
+          if (codeParam || nameParam || isNaN(Number(id))) {
+            await pgPool.query(`DELETE FROM subjects WHERE "code" = $1 OR name = $2`, [codeParam || id, nameParam || id]);
           }
         } catch (pgErr) {}
       }
+
+      removeFromFallback('subjects', (item: any) =>
+        String(item.id) === String(id) ||
+        (codeParam && item.code?.toLowerCase() === codeParam.toLowerCase()) ||
+        (nameParam && item.name?.toLowerCase() === nameParam.toLowerCase())
+      );
 
       invalidateDbCache();
       return res.json({ success: true, message: "Subject deleted successfully" });

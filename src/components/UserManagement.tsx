@@ -336,7 +336,7 @@ export default function UserManagement() {
       confirmLabel: "Delete User",
       onConfirm: async () => {
         try {
-          await usersApi.delete(id);
+          await usersApi.delete(id, { username: targetUser?.username, school_id: school?.id });
           await loadUsers();
           showToast("User deleted successfully!", "success");
         } catch (err) {

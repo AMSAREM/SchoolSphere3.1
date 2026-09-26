@@ -49,21 +49,9 @@ export const studentsApi = {
           const data = await res.json();
           if (Array.isArray(data)) {
             const normalizedData = data.map(item => normalizeStudentRecord(item));
-            // Reconcile and update local IndexedDB cache so all live queries reflect backend state
-            for (const item of normalizedData) {
-              const studentIdVal = item.studentId || item.student_id;
-              if (studentIdVal) {
-                const existing = await db.students.where('studentId').equals(studentIdVal).first();
-                if (existing) {
-                  await db.students.update(existing.id!, {
-                    ...item,
-                    id: existing.id
-                  });
-                } else {
-                  await db.students.add(item);
-                }
-              }
-            }
+            try {
+              await reconcileStudentsInDexie(normalizedData, true);
+            } catch (e) {}
             return normalizedData;
           }
         }
@@ -82,17 +70,9 @@ export const studentsApi = {
 
           if (!error && data && Array.isArray(data)) {
             const normalized = data.map(s => normalizeStudentRecord(s));
-            for (const item of normalized) {
-              const studentIdVal = item.studentId || item.student_id;
-              if (studentIdVal) {
-                const existing = await db.students.where('studentId').equals(studentIdVal).first();
-                if (existing) {
-                  await db.students.update(existing.id!, { ...item, id: existing.id });
-                } else {
-                  await db.students.add(item);
-                }
-              }
-            }
+            try {
+              await reconcileStudentsInDexie(normalized, true);
+            } catch (e) {}
             return normalized;
           }
         }
@@ -163,10 +143,7 @@ export const studentsApi = {
 
     const res = await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-school-id': targetSchoolId || ''
-      },
+      headers: getApiHeaders(targetSchoolId || undefined),
       body: JSON.stringify(payload)
     });
 
@@ -194,17 +171,19 @@ export const studentsApi = {
     try {
       const res = await fetch('/api/students', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(normalized)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
-          const finalNorm = normalizeStudentRecord({ ...json.data, id: localId });
-          await db.students.update(localId, finalNorm);
+          const remoteNumId = json.data.id != null && !isNaN(Number(json.data.id)) ? Number(json.data.id) : localId;
+          const finalNorm = normalizeStudentRecord({ ...json.data, id: remoteNumId, remoteId: json.data.id });
+          if (localId !== remoteNumId) {
+            await db.students.delete(localId);
+          }
+          await db.students.put(finalNorm);
+          broadcastLocalMutation('students', 'create', finalNorm);
           return finalNorm;
         }
       }
@@ -212,6 +191,7 @@ export const studentsApi = {
       console.warn('Notice calling /api/students:', e);
     }
 
+    broadcastLocalMutation('students', 'create', normalized);
     return normalized;
   },
 
@@ -236,8 +216,7 @@ export const studentsApi = {
       const res = await fetch('/api/students/bulk', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || '',
+          ...getApiHeaders(targetSchoolId || undefined),
           ...(fileInfo?.fileHash ? { 'x-file-hash': fileInfo.fileHash } : {})
         },
         body: JSON.stringify({ 
@@ -263,18 +242,7 @@ export const studentsApi = {
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           serverSuccess = true;
           const normalizedIncoming = json.data.map((item: any) => normalizeStudentRecord(item));
-          // Add to local Dexie after server confirmed
-          for (const item of normalizedIncoming) {
-            const sid = item.studentId || item.student_id;
-            if (sid) {
-              const existing = await db.students.where('studentId').equals(sid).first();
-              if (existing) {
-                await db.students.update(existing.id!, { ...item, id: existing.id });
-              } else {
-                await db.students.add(item);
-              }
-            }
-          }
+          await reconcileStudentsInDexie(normalizedIncoming, false);
           return normalizedIncoming;
         }
       }
@@ -288,20 +256,23 @@ export const studentsApi = {
     // 2. Fallback direct client Supabase insert
     if (!serverSuccess) {
       try {
-        const { data, error } = await supabase.from('students').insert(remotePayload).select();
+        const snakePayload = remotePayload.map((c: any) => ({
+          student_id: c.studentId || c.student_id,
+          first_name: c.firstName || c.first_name,
+          last_name: c.lastName || c.last_name,
+          class: c.class,
+          gender: c.gender,
+          date_of_birth: c.dateOfBirth || c.date_of_birth,
+          guardian_name: c.guardianName || c.guardian_name,
+          guardian_phone: c.guardianPhone || c.guardian_phone,
+          fees_paid: c.feesPaid ?? c.fees_paid ?? 0,
+          total_fees: c.totalFees ?? c.total_fees ?? 0,
+          school_id: targetSchoolId
+        }));
+        const { data, error } = await supabase.from('students').insert(snakePayload).select();
         if (!error && data) {
           const normalizedIncoming = data.map((item: any) => normalizeStudentRecord(item));
-          for (const item of normalizedIncoming) {
-            const sid = item.studentId || item.student_id;
-            if (sid) {
-              const existing = await db.students.where('studentId').equals(sid).first();
-              if (existing) {
-                await db.students.update(existing.id!, { ...item, id: existing.id });
-              } else {
-                await db.students.add(item);
-              }
-            }
-          }
+          await reconcileStudentsInDexie(normalizedIncoming, false);
           return normalizedIncoming;
         }
       } catch (e) {
@@ -310,35 +281,28 @@ export const studentsApi = {
     }
 
     // 3. Add to local Dexie fallback
-    for (const item of prepared) {
-      const sid = item.studentId || item.student_id;
-      if (sid) {
-        const existing = await db.students.where('studentId').equals(sid).first();
-        if (existing) {
-          await db.students.update(existing.id!, { ...item, id: existing.id });
-        } else {
-          await db.students.add(item);
-        }
-      }
-    }
-
+    await reconcileStudentsInDexie(prepared, false);
     return prepared;
   },
 
   update: async (id: number | string, updates: any, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     
-    // Find existing student from Dexie to retrieve primary keys and identifiers
+    // Find existing student from Dexie to retrieve primary keys and identifiers BEFORE modifying Dexie
     let existing: any = null;
     try {
       if (typeof id === 'number') {
         existing = await db.students.get(id);
-      } else {
+      } else if (!isNaN(Number(id))) {
+        existing = await db.students.get(Number(id));
+      }
+      if (!existing) {
         existing = await db.students.where('studentId').equals(String(id)).first();
       }
     } catch (e) {}
 
-    const studentIdentifier = existing?.studentId || existing?.student_id || updates.studentId || updates.student_id || (typeof id === 'string' ? id : '');
+    const studentIdentifier = existing?.studentId || existing?.student_id || updates.studentId || updates.student_id || (typeof id === 'string' && isNaN(Number(id)) ? id : '');
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
     const mergedRecord = {
       ...(existing || {}),
       ...updates,
@@ -376,22 +340,17 @@ export const studentsApi = {
       if (targetSchoolId) qParams.set('school_id', targetSchoolId);
       if (studentIdentifier) qParams.set('student_id', studentIdentifier);
 
-      const targetId = existing?.id || id;
-      const res = await fetch(`/api/students/${encodeURIComponent(String(targetId))}?${qParams.toString()}`, {
+      const res = await fetch(`/api/students/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(cleanUpdates)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
           const normResult = normalizeStudentRecord(json.data);
-          if (existing?.id) {
-            await db.students.update(existing.id, normResult);
-          }
+          await reconcileStudentsInDexie([normResult], false);
+          broadcastLocalMutation('students', 'update', normResult);
           return normResult;
         }
       }
@@ -415,29 +374,34 @@ export const studentsApi = {
         fee_paid_breakdown: normalizedUpdates.feePaidBreakdown,
         school_id: targetSchoolId
       };
-      if (normalizedUpdates.house) snakeObj.house = normalizedUpdates.house;
-      if (normalizedUpdates.department) snakeObj.department = normalizedUpdates.department;
-      if (normalizedUpdates.photo) snakeObj.photo = normalizedUpdates.photo;
-      if (normalizedUpdates.status) snakeObj.status = normalizedUpdates.status;
+      if (normalizedUpdates.house !== undefined) snakeObj.house = normalizedUpdates.house;
+      if (normalizedUpdates.department !== undefined) snakeObj.department = normalizedUpdates.department;
+      if (normalizedUpdates.photo !== undefined) snakeObj.photo = normalizedUpdates.photo;
+      if (normalizedUpdates.status !== undefined) snakeObj.status = normalizedUpdates.status;
       if (studentIdentifier) snakeObj.student_id = studentIdentifier;
 
-      if (existing?.id && !isNaN(Number(existing.id))) {
+      if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
         const { data } = await supabase
           .from('students')
           .update(snakeObj)
-          .eq('id', Number(existing.id))
+          .eq('id', Number(remoteTargetId))
           .select()
           .maybeSingle();
-        if (data) return normalizeStudentRecord(data);
+        if (data) {
+          const norm = normalizeStudentRecord(data);
+          await reconcileStudentsInDexie([norm], false);
+          return norm;
+        }
       }
       if (studentIdentifier) {
-        const { data } = await supabase
-          .from('students')
-          .update(snakeObj)
-          .eq('student_id', studentIdentifier)
-          .select()
-          .maybeSingle();
-        if (data) return normalizeStudentRecord(data);
+        let q = supabase.from('students').update(snakeObj).eq('student_id', studentIdentifier);
+        if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+        const { data } = await q.select().maybeSingle();
+        if (data) {
+          const norm = normalizeStudentRecord(data);
+          await reconcileStudentsInDexie([norm], false);
+          return norm;
+        }
       }
     } catch (e) {
       console.warn('Notice updating student in Supabase directly:', e);
@@ -449,15 +413,24 @@ export const studentsApi = {
   delete: async (id: number | string, schoolId?: string, studentId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     
-    // 1. Get record info from Dexie before deleting to catch studentId identifier
+    // 1. Get record info from Dexie before deleting to catch studentId and remoteId
     let foundStudentId = studentId;
+    let remoteTargetId = id;
     try {
+      let rec: any = null;
       if (typeof id === 'number') {
-        const rec = await db.students.get(id);
-        if (rec && rec.studentId) foundStudentId = rec.studentId;
-      } else if (typeof id === 'string') {
-        const rec = await db.students.where('studentId').equals(id).first();
-        if (rec && rec.studentId) foundStudentId = rec.studentId;
+        rec = await db.students.get(id);
+      } else if (!isNaN(Number(id))) {
+        rec = await db.students.get(Number(id));
+      }
+      if (!rec && typeof id === 'string') {
+        rec = await db.students.where('studentId').equals(id).first();
+      }
+      if (rec) {
+        if (!foundStudentId && (rec.studentId || rec.student_id)) {
+          foundStudentId = rec.studentId || rec.student_id;
+        }
+        if (rec.remoteId) remoteTargetId = rec.remoteId;
       }
     } catch (e) {}
 
@@ -480,34 +453,38 @@ export const studentsApi = {
     }
 
     // 3. Server API Delete Endpoint
+    let serverDeleted = false;
     try {
       const qParams = new URLSearchParams();
       if (targetSchoolId) qParams.set('school_id', targetSchoolId);
       if (foundStudentId) qParams.set('student_id', foundStudentId);
       
-      await fetch(`/api/students/${encodeURIComponent(String(id))}?${qParams.toString()}`, { 
+      const res = await fetch(`/api/students/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, { 
         method: 'DELETE',
-        headers: {
-          'x-school-id': targetSchoolId || ''
-        }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
+      if (res.ok) serverDeleted = true;
     } catch (e) {
       console.warn('Notice calling DELETE /api/students/:id:', e);
     }
 
     // 4. Supabase Direct Deletion fallback
-    try {
-      if (id) {
-        await supabase.from('students').delete().eq('id', id);
+    if (!serverDeleted) {
+      try {
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('students').delete().eq('id', Number(remoteTargetId));
+        }
+        if (foundStudentId) {
+          let q = supabase.from('students').delete().eq('student_id', foundStudentId);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {
+        console.warn('Notice deleting student from Supabase directly:', e);
       }
-      if (foundStudentId) {
-        await supabase.from('students').delete().eq('studentId', foundStudentId);
-        await supabase.from('students').delete().eq('student_id', foundStudentId);
-      }
-    } catch (e) {
-      console.warn('Notice deleting student from Supabase directly:', e);
     }
 
+    broadcastLocalMutation('students', 'delete', { id: remoteTargetId, studentId: foundStudentId });
     return true;
   },
 
@@ -525,18 +502,23 @@ export const studentsApi = {
       } else if (typeof rawId === 'string') {
         if (!isNaN(Number(rawId))) {
           numericIds.push(Number(rawId));
+        } else {
+          allStudentIds.push(rawId);
         }
-        allStudentIds.push(rawId);
       }
     }
 
-    // Search Dexie for studentId strings for the numeric IDs
+    // Search Dexie for studentId strings and remoteIds for the numeric IDs BEFORE deleting
     try {
       if (numericIds.length > 0) {
         const records = await db.students.where('id').anyOf(numericIds).toArray();
-        records.forEach(r => {
-          if (r.studentId && !allStudentIds.includes(r.studentId)) {
-            allStudentIds.push(r.studentId);
+        records.forEach((r: any) => {
+          const sid = r.studentId || r.student_id;
+          if (sid && !allStudentIds.includes(sid)) {
+            allStudentIds.push(sid);
+          }
+          if (r.remoteId && !isNaN(Number(r.remoteId)) && !numericIds.includes(Number(r.remoteId))) {
+            numericIds.push(Number(r.remoteId));
           }
         });
       }
@@ -558,10 +540,7 @@ export const studentsApi = {
     try {
       const res = await fetch('/api/students/bulk-delete', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify({
           ids: numericIds,
           studentIds: allStudentIds,
@@ -570,6 +549,7 @@ export const studentsApi = {
       });
       if (res.ok) {
         const json = await res.json();
+        broadcastLocalMutation('students', 'bulk-delete', { ids: numericIds, studentIds: allStudentIds });
         return { success: true, count: json.count || ids.length };
       }
     } catch (e) {
@@ -582,17 +562,15 @@ export const studentsApi = {
         await supabase.from('students').delete().in('id', numericIds);
       }
       if (allStudentIds.length > 0) {
-        try {
-          await supabase.from('students').delete().in('studentId', allStudentIds);
-        } catch (e) {}
-        try {
-          await supabase.from('students').delete().in('student_id', allStudentIds);
-        } catch (e) {}
+        let q = supabase.from('students').delete().in('student_id', allStudentIds);
+        if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+        await q;
       }
     } catch (e) {
       console.warn('Notice bulk deleting students from Supabase directly:', e);
     }
 
+    broadcastLocalMutation('students', 'bulk-delete', { ids: numericIds, studentIds: allStudentIds });
     return { success: true, count: ids.length };
   }
 };
@@ -607,7 +585,7 @@ export const classesApi = {
     // 1. Try Backend API
     try {
       const res = await fetch(`/api/classes?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
       if (res.ok) {
         const data = await res.json();
@@ -655,38 +633,50 @@ export const classesApi = {
     // 1. Optimistic local Dexie entry
     const localId = await db.classes.add(payload as any);
     let officialRecord: any = { ...payload, id: localId };
+    let persistedRemotely = false;
 
     // 2. Persist to Backend API
     try {
       const res = await fetch('/api/classes', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
           officialRecord = json.data;
+          persistedRemotely = true;
           try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.classes.delete(localId);
+            }
             await reconcileClassesInDexie([officialRecord]);
           } catch (e) {}
         }
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync if needed
-    try {
-      const { data } = await supabase.from('classes').insert([payload]).select().single();
-      if (data && (!officialRecord || !officialRecord.id)) {
-        officialRecord = data;
-        try {
-          await reconcileClassesInDexie([officialRecord]);
-        } catch (e) {}
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync only if Backend API did not persist
+    if (!persistedRemotely) {
+      try {
+        const { data } = await supabase.from('classes').insert([{
+          name: payload.name,
+          level: payload.level,
+          capacity: payload.capacity,
+          school_id: targetSchoolId
+        }]).select().single();
+        if (data) {
+          officialRecord = data;
+          try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.classes.delete(localId);
+            }
+            await reconcileClassesInDexie([officialRecord]);
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
 
     broadcastLocalMutation('classes', 'create', officialRecord);
     return officialRecord;
@@ -694,36 +684,55 @@ export const classesApi = {
 
   update: async (id: number | string, updates: Partial<{ name: string; level: string; capacity?: number }>, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate in-place optimistic Dexie update
-    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
+    // Look up existing class BEFORE updating Dexie so we capture originalName and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.classes.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.classes.get(Number(id));
+      }
+      if (!existing) {
+        existing = await db.classes.where('name').equals(String(id)).first();
+      }
+    } catch (e) {}
+
+    const originalName = existing?.name || (typeof id === 'string' && isNaN(Number(id)) ? id : '');
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+    const mergedUpdates = {
+      ...updates,
+      originalName,
+      updatedAt: Date.now(),
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
+    };
+
+    // 1. Immediate in-place optimistic Dexie update
+    try {
+      if (existing && existing.id) {
+        await db.classes.update(existing.id, mergedUpdates);
+      } else if (typeof id === 'number') {
         await db.classes.update(id, mergedUpdates);
-        localKey = id;
-      } else {
-        const found = await db.classes.where('name').equals(String(id)).first();
-        if (found && found.id) {
-          await db.classes.update(found.id, mergedUpdates);
-          localKey = found.id;
-        }
       }
     } catch (e) {}
 
     // 2. Persist in-place to Backend API
+    let serverUpdated = false;
     try {
-      const res = await fetch(`/api/classes/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (originalName) qParams.set('name', originalName);
+
+      const res = await fetch(`/api/classes/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(mergedUpdates)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
+          serverUpdated = true;
           try {
             await reconcileClassesInDexie([json.data]);
           } catch (e) {}
@@ -733,49 +742,90 @@ export const classesApi = {
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('classes').update(mergedUpdates).eq('id', id);
-      } else {
-        await supabase.from('classes').update(mergedUpdates).eq('name', id);
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync if Backend API failed
+    if (!serverUpdated) {
+      try {
+        const dbPayload: any = {};
+        if (updates.name !== undefined) dbPayload.name = updates.name;
+        if (updates.level !== undefined) dbPayload.level = updates.level;
+        if (updates.capacity !== undefined) dbPayload.capacity = updates.capacity;
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('classes').update(dbPayload).eq('id', Number(remoteTargetId));
+        } else if (originalName) {
+          let q = supabase.from('classes').update(dbPayload).eq('name', originalName);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
 
-    broadcastLocalMutation('classes', 'update', { id, ...mergedUpdates });
+    broadcastLocalMutation('classes', 'update', { id: remoteTargetId, ...mergedUpdates });
     return true;
   },
 
   delete: async (id: number | string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
 
-    // 1. Immediate local Dexie deletion
+    // Look up existing class BEFORE deleting from Dexie so we capture name and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.classes.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.classes.get(Number(id));
+      }
+      if (!existing && typeof id === 'string') {
+        existing = await db.classes.where('name').equals(id).first();
+      }
+    } catch (e) {}
+
+    const className = existing?.name || (typeof id === 'string' && isNaN(Number(id)) ? id : '');
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+
+    // 1. Immediate local Dexie deletion
+    try {
+      if (existing?.id) {
+        await db.classes.delete(existing.id);
+      }
+      if (typeof id === 'number') {
         await db.classes.delete(id);
-      } else {
-        await db.classes.where('name').equals(String(id)).delete();
+      } else if (!isNaN(Number(id))) {
+        await db.classes.delete(Number(id));
+      }
+      if (className) {
+        await db.classes.where('name').equals(className).delete();
       }
     } catch (e) {}
 
     // 2. Backend API Deletion
+    let serverDeleted = false;
     try {
-      await fetch(`/api/classes/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (className) qParams.set('name', className);
+
+      const res = await fetch(`/api/classes/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'DELETE',
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
+      if (res.ok) serverDeleted = true;
     } catch (e) {}
 
-    // 3. Direct Supabase Deletion
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('classes').delete().eq('id', id);
-      } else {
-        await supabase.from('classes').delete().eq('name', id);
-      }
-    } catch (e) {}
+    // 3. Direct Supabase Deletion fallback
+    if (!serverDeleted) {
+      try {
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('classes').delete().eq('id', Number(remoteTargetId));
+        }
+        if (className) {
+          let q = supabase.from('classes').delete().eq('name', className);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
 
-    broadcastLocalMutation('classes', 'delete', { id });
+    broadcastLocalMutation('classes', 'delete', { id: remoteTargetId, name: className });
     return true;
   }
 };
@@ -790,7 +840,7 @@ export const subjectsApi = {
     // 1. Try Backend API
     try {
       const res = await fetch(`/api/subjects?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
       if (res.ok) {
         const data = await res.json();
@@ -812,10 +862,13 @@ export const subjectsApi = {
           .eq("school_id", targetSchoolId);
 
         if (!error && Array.isArray(data)) {
-          const parsed = data.map((sub: any) => ({
-            ...sub,
-            applicableClasses: typeof sub.applicableClasses === 'string' ? JSON.parse(sub.applicableClasses || '[]') : (sub.applicableClasses || [])
-          }));
+          const parsed = data.map((sub: any) => {
+            const rawApp = sub.applicableClasses ?? sub.applicable_classes;
+            return {
+              ...sub,
+              applicableClasses: typeof rawApp === 'string' ? JSON.parse(rawApp || '[]') : (rawApp || [])
+            };
+          });
           try {
             await reconcileSubjectsInDexie(parsed, true);
           } catch (e) {}
@@ -842,38 +895,50 @@ export const subjectsApi = {
     // 1. Optimistic local Dexie entry
     const localId = await db.subjects.add(payload as any);
     let officialRecord: any = { ...payload, id: localId };
+    let persistedRemotely = false;
 
     // 2. Persist to Backend API
     try {
       const res = await fetch('/api/subjects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
           officialRecord = json.data;
+          persistedRemotely = true;
           try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.subjects.delete(localId);
+            }
             await reconcileSubjectsInDexie([officialRecord]);
           } catch (e) {}
         }
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync
-    try {
-      const { data } = await supabase.from('subjects').insert([payload]).select().single();
-      if (data && (!officialRecord || !officialRecord.id)) {
-        officialRecord = data;
-        try {
-          await reconcileSubjectsInDexie([officialRecord]);
-        } catch (e) {}
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync only if Backend API did not persist
+    if (!persistedRemotely) {
+      try {
+        const { data } = await supabase.from('subjects').insert([{
+          name: payload.name,
+          code: payload.code,
+          applicable_classes: payload.applicableClasses,
+          school_id: targetSchoolId
+        }]).select().single();
+        if (data) {
+          officialRecord = data;
+          try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.subjects.delete(localId);
+            }
+            await reconcileSubjectsInDexie([officialRecord]);
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
 
     broadcastLocalMutation('subjects', 'create', officialRecord);
     return officialRecord;
@@ -881,36 +946,58 @@ export const subjectsApi = {
 
   update: async (id: number | string, updates: any, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate in-place optimistic Dexie update
-    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
+    // Look up existing subject BEFORE updating Dexie so we capture originalCode, originalName, and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.subjects.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.subjects.get(Number(id));
+      }
+      if (!existing) {
+        existing = await db.subjects.where('code').equals(String(id)).first() || await db.subjects.where('name').equals(String(id)).first();
+      }
+    } catch (e) {}
+
+    const originalCode = existing?.code || updates.originalCode || '';
+    const originalName = existing?.name || updates.originalName || '';
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+    const mergedUpdates = {
+      ...updates,
+      originalCode,
+      originalName,
+      updatedAt: Date.now(),
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
+    };
+
+    // 1. Immediate in-place optimistic Dexie update
+    try {
+      if (existing && existing.id) {
+        await db.subjects.update(existing.id, mergedUpdates);
+      } else if (typeof id === 'number') {
         await db.subjects.update(id, mergedUpdates);
-        localKey = id;
-      } else {
-        const found = await db.subjects.where('code').equals(String(id)).first() || await db.subjects.where('name').equals(String(id)).first();
-        if (found && found.id) {
-          await db.subjects.update(found.id, mergedUpdates);
-          localKey = found.id;
-        }
       }
     } catch (e) {}
 
     // 2. Persist in-place to Backend API
+    let serverUpdated = false;
     try {
-      const res = await fetch(`/api/subjects/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (originalCode) qParams.set('code', originalCode);
+      if (originalName) qParams.set('name', originalName);
+
+      const res = await fetch(`/api/subjects/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(mergedUpdates)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
+          serverUpdated = true;
           try {
             await reconcileSubjectsInDexie([json.data]);
           } catch (e) {}
@@ -920,49 +1007,95 @@ export const subjectsApi = {
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('subjects').update(mergedUpdates).eq('id', id);
-      } else {
-        await supabase.from('subjects').update(mergedUpdates).or(`code.eq.${id},name.eq.${id}`);
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync if Backend API failed
+    if (!serverUpdated) {
+      try {
+        const snakePayload: any = {};
+        if (updates.name !== undefined) snakePayload.name = updates.name;
+        if (updates.code !== undefined) snakePayload.code = updates.code;
+        if (updates.applicableClasses !== undefined) snakePayload.applicable_classes = updates.applicableClasses;
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('subjects').update(snakePayload).eq('id', Number(remoteTargetId));
+        } else if (originalCode) {
+          let q = supabase.from('subjects').update(snakePayload).eq('code', originalCode);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
 
-    broadcastLocalMutation('subjects', 'update', { id, ...mergedUpdates });
+    broadcastLocalMutation('subjects', 'update', { id: remoteTargetId, ...mergedUpdates });
     return true;
   },
 
   delete: async (id: number | string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
 
-    // 1. Immediate local Dexie deletion
+    // Look up existing subject BEFORE deleting from Dexie so we capture code, name, and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.subjects.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.subjects.get(Number(id));
+      }
+      if (!existing && typeof id === 'string') {
+        existing = await db.subjects.where('code').equals(id).first() || await db.subjects.where('name').equals(id).first();
+      }
+    } catch (e) {}
+
+    const subjectCode = existing?.code || '';
+    const subjectName = existing?.name || '';
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+
+    // 1. Immediate local Dexie deletion
+    try {
+      if (existing?.id) {
+        await db.subjects.delete(existing.id);
+      }
+      if (typeof id === 'number') {
         await db.subjects.delete(id);
-      } else {
-        await db.subjects.where('code').equals(String(id)).delete();
+      } else if (!isNaN(Number(id))) {
+        await db.subjects.delete(Number(id));
+      }
+      if (subjectCode) {
+        await db.subjects.where('code').equals(subjectCode).delete();
+      }
+      if (subjectName) {
+        await db.subjects.where('name').equals(subjectName).delete();
       }
     } catch (e) {}
 
     // 2. Backend API Deletion
+    let serverDeleted = false;
     try {
-      await fetch(`/api/subjects/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (subjectCode) qParams.set('code', subjectCode);
+      if (subjectName) qParams.set('name', subjectName);
+
+      const res = await fetch(`/api/subjects/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'DELETE',
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
+      if (res.ok) serverDeleted = true;
     } catch (e) {}
 
     // 3. Direct Supabase Deletion
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('subjects').delete().eq('id', id);
-      } else {
-        await supabase.from('subjects').delete().or(`code.eq.${id},name.eq.${id}`);
-      }
-    } catch (e) {}
+    if (!serverDeleted) {
+      try {
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('subjects').delete().eq('id', Number(remoteTargetId));
+        }
+        if (subjectCode) {
+          let q = supabase.from('subjects').delete().eq('code', subjectCode);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
 
-    broadcastLocalMutation('subjects', 'delete', { id });
+    broadcastLocalMutation('subjects', 'delete', { id: remoteTargetId, code: subjectCode, name: subjectName });
     return true;
   }
 };
@@ -977,7 +1110,7 @@ export const teachersApi = {
     // 1. Try Backend API
     try {
       const res = await fetch(`/api/teachers?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
       if (res.ok) {
         const data = await res.json();
@@ -999,11 +1132,17 @@ export const teachersApi = {
           .eq("school_id", targetSchoolId);
 
         if (!error && Array.isArray(data)) {
-          const parsed = data.map((t: any) => ({
-            ...t,
-            assignedClasses: typeof t.assignedClasses === 'string' ? JSON.parse(t.assignedClasses || '[]') : (t.assignedClasses || []),
-            subjects: typeof t.subjects === 'string' ? JSON.parse(t.subjects || '[]') : (t.subjects || [])
-          }));
+          const parsed = data.map((t: any) => {
+            const rawAssigned = t.assignedClasses ?? t.assigned_classes;
+            return {
+              ...t,
+              staffId: t.staffId || t.staff_id,
+              firstName: t.firstName || t.first_name,
+              lastName: t.lastName || t.last_name,
+              assignedClasses: typeof rawAssigned === 'string' ? JSON.parse(rawAssigned || '[]') : (rawAssigned || []),
+              subjects: typeof t.subjects === 'string' ? JSON.parse(t.subjects || '[]') : (t.subjects || [])
+            };
+          });
           try {
             await reconcileTeachersInDexie(parsed, true);
           } catch (e) {}
@@ -1031,38 +1170,54 @@ export const teachersApi = {
     // 1. Optimistic local Dexie entry
     const localId = await db.teachers.add(payload as any);
     let officialRecord: any = { ...payload, id: localId };
+    let persistedRemotely = false;
 
     // 2. Persist to Backend API
     try {
       const res = await fetch('/api/teachers', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
           officialRecord = json.data;
+          persistedRemotely = true;
           try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.teachers.delete(localId);
+            }
             await reconcileTeachersInDexie([officialRecord]);
           } catch (e) {}
         }
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync
-    try {
-      const { data } = await supabase.from('teachers').insert([payload]).select().single();
-      if (data && (!officialRecord || !officialRecord.id)) {
-        officialRecord = data;
-        try {
-          await reconcileTeachersInDexie([officialRecord]);
-        } catch (e) {}
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync only if Backend API did not persist
+    if (!persistedRemotely) {
+      try {
+        const { data } = await supabase.from('teachers').insert([{
+          staff_id: payload.staffId || payload.staff_id || `TEA-${Date.now().toString().slice(-4)}`,
+          first_name: payload.firstName || payload.first_name || '',
+          last_name: payload.lastName || payload.last_name || '',
+          phone: payload.phone || '',
+          email: payload.email || null,
+          assigned_classes: payload.assignedClasses,
+          subjects: payload.subjects,
+          school_id: targetSchoolId
+        }]).select().single();
+        if (data) {
+          officialRecord = data;
+          try {
+            if (officialRecord.id && Number(officialRecord.id) !== localId) {
+              await db.teachers.delete(localId);
+            }
+            await reconcileTeachersInDexie([officialRecord]);
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
 
     broadcastLocalMutation('teachers', 'create', officialRecord);
     return officialRecord;
@@ -1070,36 +1225,56 @@ export const teachersApi = {
 
   update: async (id: number | string, updates: any, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const mergedUpdates = { ...updates, updatedAt: Date.now(), school_id: targetSchoolId, schoolId: targetSchoolId };
 
-    // 1. Immediate in-place optimistic Dexie update
-    let localKey: number | undefined = typeof id === 'number' ? id : undefined;
+    // Look up existing teacher BEFORE updating Dexie so we capture staffId and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.teachers.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.teachers.get(Number(id));
+      }
+      if (!existing) {
+        existing = await db.teachers.where('staffId').equals(String(id)).first();
+      }
+    } catch (e) {}
+
+    const staffId = existing?.staffId || existing?.staff_id || updates.staffId || updates.staff_id || (typeof id === 'string' && isNaN(Number(id)) ? id : '');
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+    const mergedUpdates = {
+      ...updates,
+      staffId: staffId || updates.staffId,
+      staff_id: staffId || updates.staff_id,
+      updatedAt: Date.now(),
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
+    };
+
+    // 1. Immediate in-place optimistic Dexie update
+    try {
+      if (existing && existing.id) {
+        await db.teachers.update(existing.id, mergedUpdates);
+      } else if (typeof id === 'number') {
         await db.teachers.update(id, mergedUpdates);
-        localKey = id;
-      } else {
-        const found = await db.teachers.where('staffId').equals(String(id)).first();
-        if (found && found.id) {
-          await db.teachers.update(found.id, mergedUpdates);
-          localKey = found.id;
-        }
       }
     } catch (e) {}
 
     // 2. Persist in-place to Backend API
+    let serverUpdated = false;
     try {
-      const res = await fetch(`/api/teachers/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (staffId) qParams.set('staff_id', staffId);
+
+      const res = await fetch(`/api/teachers/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-school-id': targetSchoolId || ''
-        },
+        headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify(mergedUpdates)
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
+          serverUpdated = true;
           try {
             await reconcileTeachersInDexie([json.data]);
           } catch (e) {}
@@ -1109,49 +1284,94 @@ export const teachersApi = {
       }
     } catch (e) {}
 
-    // 3. Direct Supabase sync
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('teachers').update(mergedUpdates).eq('id', id);
-      } else {
-        await supabase.from('teachers').update(mergedUpdates).or(`staffId.eq.${id},staff_id.eq.${id}`);
-      }
-    } catch (e) {}
+    // 3. Direct Supabase sync if Backend API failed
+    if (!serverUpdated) {
+      try {
+        const snakePayload: any = {};
+        if (updates.firstName !== undefined) snakePayload.first_name = updates.firstName;
+        if (updates.lastName !== undefined) snakePayload.last_name = updates.lastName;
+        if (updates.phone !== undefined) snakePayload.phone = updates.phone;
+        if (updates.email !== undefined) snakePayload.email = updates.email;
+        if (updates.assignedClasses !== undefined) snakePayload.assigned_classes = updates.assignedClasses;
+        if (updates.subjects !== undefined) snakePayload.subjects = updates.subjects;
 
-    broadcastLocalMutation('teachers', 'update', { id, ...mergedUpdates });
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('teachers').update(snakePayload).eq('id', Number(remoteTargetId));
+        } else if (staffId) {
+          let q = supabase.from('teachers').update(snakePayload).eq('staff_id', staffId);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
+
+    broadcastLocalMutation('teachers', 'update', { id: remoteTargetId, ...mergedUpdates });
     return true;
   },
 
   delete: async (id: number | string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
 
-    // 1. Immediate local Dexie deletion
+    // Look up existing teacher BEFORE deleting from Dexie so we capture staffId and remoteId
+    let existing: any = null;
     try {
       if (typeof id === 'number') {
+        existing = await db.teachers.get(id);
+      } else if (!isNaN(Number(id))) {
+        existing = await db.teachers.get(Number(id));
+      }
+      if (!existing && typeof id === 'string') {
+        existing = await db.teachers.where('staffId').equals(id).first();
+      }
+    } catch (e) {}
+
+    const staffId = existing?.staffId || existing?.staff_id || (typeof id === 'string' && isNaN(Number(id)) ? id : '');
+    const remoteTargetId = existing?.remoteId || existing?.id || id;
+
+    // 1. Immediate local Dexie deletion
+    try {
+      if (existing?.id) {
+        await db.teachers.delete(existing.id);
+      }
+      if (typeof id === 'number') {
         await db.teachers.delete(id);
-      } else {
-        await db.teachers.where('staffId').equals(String(id)).delete();
+      } else if (!isNaN(Number(id))) {
+        await db.teachers.delete(Number(id));
+      }
+      if (staffId) {
+        await db.teachers.where('staffId').equals(staffId).delete();
       }
     } catch (e) {}
 
     // 2. Backend API Deletion
+    let serverDeleted = false;
     try {
-      await fetch(`/api/teachers/${encodeURIComponent(String(id))}`, {
+      const qParams = new URLSearchParams();
+      if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+      if (staffId) qParams.set('staff_id', staffId);
+
+      const res = await fetch(`/api/teachers/${encodeURIComponent(String(remoteTargetId))}?${qParams.toString()}`, {
         method: 'DELETE',
-        headers: { 'x-school-id': targetSchoolId || '' }
+        headers: getApiHeaders(targetSchoolId || undefined)
       });
+      if (res.ok) serverDeleted = true;
     } catch (e) {}
 
     // 3. Direct Supabase Deletion
-    try {
-      if (typeof id === 'number') {
-        await supabase.from('teachers').delete().eq('id', id);
-      } else {
-        await supabase.from('teachers').delete().or(`staffId.eq.${id},staff_id.eq.${id}`);
-      }
-    } catch (e) {}
+    if (!serverDeleted) {
+      try {
+        if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
+          await supabase.from('teachers').delete().eq('id', Number(remoteTargetId));
+        }
+        if (staffId) {
+          let q = supabase.from('teachers').delete().eq('staff_id', staffId);
+          if (targetSchoolId) q = q.eq('school_id', targetSchoolId);
+          await q;
+        }
+      } catch (e) {}
+    }
 
-    broadcastLocalMutation('teachers', 'delete', { id });
+    broadcastLocalMutation('teachers', 'delete', { id: remoteTargetId, staffId });
     return true;
   }
 };
@@ -1200,16 +1420,32 @@ export const attendanceApi = {
     return await db.attendance.where('date').equals(date).toArray();
   },
 
-  recordAttendance: async (records: Array<{ studentId: string; date: string; status: 'Present' | 'Absent' | 'Late' | string }>, schoolId?: string) => {
+  recordAttendance: async (records: Array<{ studentId: string; date: string; status: 'Present' | 'Absent' | 'Late' | string; class?: string; reason?: string }>, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     const recordsWithTenant: any[] = records.map(r => ({ ...r, school_id: targetSchoolId }));
     
     // Save to Dexie
     await db.attendance.bulkPut(recordsWithTenant as any);
 
-    // Save to Supabase
+    // Save to Backend API / Supabase
     try {
-      await supabase.from('attendance').upsert(recordsWithTenant);
+      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({ attendance: recordsWithTenant })
+      });
+    } catch (e) {}
+
+    try {
+      const snakeRecords = records.map(r => ({
+        school_id: targetSchoolId,
+        student_id: r.studentId || (r as any).student_id,
+        date: r.date,
+        status: r.status || 'Present',
+        class: r.class || null,
+        reason: r.reason || null
+      }));
+      await supabase.from('attendance').upsert(snakeRecords, { onConflict: 'school_id,student_id,date' });
     } catch (e) {}
     return true;
   }
@@ -1249,8 +1485,29 @@ export const resultsApi = {
     const recordsWithTenant = scores.map(s => ({ ...s, school_id: targetSchoolId }));
     
     await db.results.bulkPut(recordsWithTenant);
+
     try {
-      await supabase.from('results').upsert(recordsWithTenant);
+      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({ results: recordsWithTenant })
+      });
+    } catch (e) {}
+
+    try {
+      const snakeScores = scores.map(s => ({
+        school_id: targetSchoolId,
+        student_id: s.studentId || s.student_id,
+        subject: s.subject,
+        term: s.term,
+        class: s.class,
+        class_score: Number(s.classScore ?? s.class_score ?? 0),
+        exam_score: Number(s.examScore ?? s.exam_score ?? 0),
+        total_score: Number(s.totalScore ?? s.total_score ?? 0),
+        grade: s.grade || '',
+        remarks: s.remarks || ''
+      }));
+      await supabase.from('results').upsert(snakeScores, { onConflict: 'school_id,student_id,subject,term' });
     } catch (e) {}
     return true;
   }
@@ -1265,7 +1522,7 @@ export const promotionsApi = {
     try {
       if (targetSchoolId) {
         const { data, error } = await supabase
-          .from('promotionHistory')
+          .from('promotion_history')
           .select('*')
           .eq("school_id", targetSchoolId)
           .order('timestamp', { ascending: false });
@@ -1284,14 +1541,26 @@ export const promotionsApi = {
     // 1. Add to Dexie
     const localId = await db.promotionHistory.add(payload);
 
-    // 2. Persist to Supabase
+    // 2. Persist to Backend & Supabase
     try {
-      await supabase.from('promotionHistory').insert([payload]);
-    } catch (e) {
-      try {
-        await supabase.from('promotion_history').insert([payload]);
-      } catch (e2) {}
-    }
+      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({ promotionHistory: [payload] })
+      });
+    } catch (e) {}
+
+    try {
+      await supabase.from('promotion_history').insert([{
+        school_id: targetSchoolId,
+        student_id: record.studentId || record.student_id,
+        student_name: record.studentName || record.student_name,
+        from_class: record.fromClass || record.from_class,
+        to_class: record.toClass || record.to_class,
+        academic_year: record.academicYear || record.academic_year,
+        timestamp: record.timestamp || Date.now()
+      }]);
+    } catch (e) {}
 
     return localId;
   },
@@ -1304,12 +1573,8 @@ export const promotionsApi = {
 
     // 2. Delete from Supabase
     try {
-      await supabase.from('promotionHistory').delete().eq('id', id);
-    } catch (e) {
-      try {
-        await supabase.from('promotion_history').delete().eq('id', id);
-      } catch (e2) {}
-    }
+      await supabase.from('promotion_history').delete().eq('id', id);
+    } catch (e) {}
 
     return true;
   }
@@ -1324,14 +1589,14 @@ export const feesApi = {
     const student = await db.students.where('studentId').equals(paymentData.studentId).first();
     if (student && student.id) {
       const newFeesPaid = (student.feesPaid || 0) + paymentData.amount;
-      await db.students.update(student.id, { feesPaid: newFeesPaid });
-
+      await studentsApi.update(student.id, { feesPaid: newFeesPaid, studentId: paymentData.studentId }, targetSchoolId || undefined);
+    } else {
       try {
         await supabase
           .from('students')
-          .update({ feesPaid: newFeesPaid })
+          .update({ fees_paid: paymentData.amount })
           .eq('school_id', targetSchoolId)
-          .eq('studentId', paymentData.studentId);
+          .eq('student_id', paymentData.studentId);
       } catch (e) {}
     }
     return true;
@@ -1584,8 +1849,11 @@ export const usersApi = {
 
   update: async (id: number | string, updates: any) => {
     const targetSchoolId = updates.school_id || updates.schoolId || (await getCurrentSchoolId());
+    const qParams = new URLSearchParams();
+    if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+    if (updates.username) qParams.set('username', String(updates.username));
 
-    const res = await fetch(`/api/users/${id}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(String(id))}?${qParams.toString()}`, {
       method: 'PUT',
       headers: getApiHeaders(targetSchoolId || undefined),
       body: JSON.stringify(updates)
@@ -1599,11 +1867,20 @@ export const usersApi = {
     return data.user || true;
   },
 
-  delete: async (id: number | string) => {
-    const targetSchoolId = await getCurrentSchoolId();
-    const q = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
+  delete: async (
+    id: number | string,
+    usernameOrOpts?: string | { username?: string; school_id?: string; schoolId?: string },
+    schoolId?: string
+  ) => {
+    const opts = typeof usernameOrOpts === 'object' && usernameOrOpts !== null
+      ? usernameOrOpts
+      : { username: usernameOrOpts, school_id: schoolId };
+    const targetSchoolId = opts.school_id || opts.schoolId || schoolId || (await getCurrentSchoolId());
+    const qParams = new URLSearchParams();
+    if (targetSchoolId) qParams.set('school_id', targetSchoolId);
+    if (opts.username) qParams.set('username', opts.username);
 
-    const res = await fetch(`/api/users/${id}${q}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(String(id))}?${qParams.toString()}`, {
       method: 'DELETE',
       headers: getApiHeaders(targetSchoolId || undefined)
     });
@@ -1614,6 +1891,46 @@ export const usersApi = {
     }
 
     return true;
+  }
+};
+
+export const settingsApi = {
+  set: async (key: string, value: any, schoolId?: string) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const existing = await db.settings.where('key').equals(key).first();
+    let settingRecord: any = { key, value, school_id: targetSchoolId };
+    if (existing && existing.id) {
+      await db.settings.update(existing.id, { value });
+      settingRecord.id = existing.id;
+    } else {
+      const id = await db.settings.add({ key, value } as any);
+      settingRecord.id = id;
+    }
+
+    try {
+      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({ settings: [settingRecord] })
+      });
+    } catch (e) {}
+
+    try {
+      const { data: remExisting } = await supabase
+        .from('settings')
+        .select('id')
+        .eq('key', key)
+        .eq('school_id', targetSchoolId)
+        .maybeSingle();
+      if (remExisting?.id) {
+        await supabase.from('settings').update({ value }).eq('id', remExisting.id);
+      } else {
+        await supabase.from('settings').insert([{ key, value, school_id: targetSchoolId }]);
+      }
+    } catch (e) {}
+
+    broadcastLocalMutation('settings', 'update', settingRecord);
+    return settingRecord;
   }
 };
 

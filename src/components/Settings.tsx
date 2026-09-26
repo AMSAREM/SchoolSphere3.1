@@ -1,6 +1,7 @@
 import React, { useState, useEffect, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, FEE_TYPES, type FeeTypeConfig } from '../db/schema';
+import { settingsApi } from '../lib/api';
 import { useNotifications } from '../contexts/NotificationContext';
 import { 
   Building2, 
@@ -536,12 +537,7 @@ export default function Settings() {
   const saveSettings = async (key: string, value: any) => {
     setIsSaving(true);
     try {
-      const existing = await db.settings.where('key').equals(key).first();
-      if (existing) {
-        await db.settings.update(existing.id!, { value });
-      } else {
-        await db.settings.add({ key, value });
-      }
+      await settingsApi.set(key, value, school?.id);
       setMessage({ type: 'success', text: 'Settings saved successfully' });
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
@@ -595,12 +591,7 @@ export default function Settings() {
     }
 
     try {
-      const existingSetting = settingsData?.find(s => s.key === 'customFeeTypes');
-      if (existingSetting) {
-        await db.settings.update(existingSetting.id!, { value: updatedCustoms });
-      } else {
-        await db.settings.add({ key: 'customFeeTypes', value: updatedCustoms });
-      }
+      await settingsApi.set('customFeeTypes', updatedCustoms, school?.id);
       setIsFeeFormOpen(false);
       setEditingFee(null);
       setFeeForm({ id: '', label: '', defaultAmount: 0 });
@@ -616,12 +607,7 @@ export default function Settings() {
     const updatedCustoms = currentCustoms.filter(f => f.id !== feeId);
 
     try {
-      const existingSetting = settingsData?.find(s => s.key === 'customFeeTypes');
-      if (existingSetting) {
-        await db.settings.update(existingSetting.id!, { value: updatedCustoms });
-      } else {
-        await db.settings.add({ key: 'customFeeTypes', value: updatedCustoms });
-      }
+      await settingsApi.set('customFeeTypes', updatedCustoms, school?.id);
       setMessage({ type: 'success', text: 'Custom Fee Type deleted successfully' });
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {

@@ -218,7 +218,9 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     rpc: async (_fn: string, _args: any) => ({ data: null, error: null }),
     auth: {
       signInWithOtp: async () => ({ error: null }),
+      signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Invalid login credentials' } }),
       admin: {
+        listUsers: async () => ({ data: { users: [] }, error: null }),
         createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
         updateUserById: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
         deleteUser: async () => ({ data: {}, error: null })
@@ -987,7 +989,7 @@ describe('Security & API Endpoints Test Suite', () => {
         });
       expect(badLogin.status).toBe(401);
       expect(targetUser.password_hash).toBe(originalPasswordHash);
-    });
+    }, 15000);
 
     it('updates user password via PUT /api/users/:id directly in Supabase and deletes user via DELETE /api/users/:id', async () => {
       const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);

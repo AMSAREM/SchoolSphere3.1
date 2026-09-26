@@ -32,9 +32,12 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, triggerPrint } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
+import { supabase } from '../lib/supabase';
 
 export default function InventoryManagement() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, school } = useAuth();
+  const { showToast, confirm: confirmModal } = useNotifications();
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
 
@@ -217,6 +220,7 @@ export default function InventoryManagement() {
   const handleSubmitStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemName.trim() || quantity < 0 || unitPrice < 0) return;
+    const schoolId = school?.id || authUser?.schoolId;
 
     const payload: Omit<InventoryItem, 'id'> = {
       itemName: itemName.trim(),
@@ -232,10 +236,42 @@ export default function InventoryManagement() {
 
     if (isEditing !== null) {
       await db.inventory.update(isEditing, payload);
+      try {
+        await supabase.from('inventory').update({
+          item_name: payload.itemName,
+          category: payload.category,
+          quantity: payload.quantity,
+          min_quantity: payload.minQuantity,
+          unit_price: payload.unitPrice,
+          location: payload.location,
+          supplier_name: payload.supplierName || null,
+          supplier_phone: payload.supplierPhone || null,
+          last_updated: payload.lastUpdated
+        }).eq('id', isEditing);
+      } catch (err) {}
     } else {
-      await db.inventory.add(payload);
+      const localId = await db.inventory.add(payload);
+      try {
+        const { data } = await supabase.from('inventory').insert([{
+          school_id: schoolId,
+          item_name: payload.itemName,
+          category: payload.category,
+          quantity: payload.quantity,
+          min_quantity: payload.minQuantity,
+          unit_price: payload.unitPrice,
+          location: payload.location,
+          supplier_name: payload.supplierName || null,
+          supplier_phone: payload.supplierPhone || null,
+          last_updated: payload.lastUpdated
+        }]).select().single();
+        if (data?.id && data.id !== localId) {
+          await db.inventory.delete(localId);
+          await db.inventory.put({ ...payload, id: Number(data.id) });
+        }
+      } catch (err) {}
     }
 
+    showToast(isEditing !== null ? 'Stock item updated' : 'Stock item added', 'success');
     resetForm();
     setIsFormOpen(false);
   };
@@ -243,56 +279,100 @@ export default function InventoryManagement() {
   // Submit Handler: Expense / Stock Purchase
   const handleSubmitExpense = async (e: React.FormEvent) => {
     e.preventDefault();
+    const schoolId = school?.id || authUser?.schoolId;
 
     if (expenseCategory === 'Inventory Restock') {
       if (!selectedItemIdForRestock || restockQuantity <= 0 || restockUnitPrice < 0) {
-        alert('Please fill out all stock purchase fields correctly.');
+        showToast('Please fill out all stock purchase fields correctly.', 'error');
         return;
       }
       const targetItem = inventoryList.find(i => i.id === selectedItemIdForRestock);
       if (!targetItem) {
-        alert('Selected inventory item not found.');
+        showToast('Selected inventory item not found.', 'error');
         return;
       }
 
       const totalCost = restockQuantity * restockUnitPrice;
       const desc = `Restocked ${restockQuantity}x ${targetItem.itemName}`;
-
-      // 1. Add Expense record
-      await db.expenses.add({
+      const expPayload = {
         description: desc,
-        category: 'Inventory Restock',
+        category: 'Inventory Restock' as const,
         amount: totalCost,
         date: Date.now(),
         inventoryItemId: selectedItemIdForRestock,
         quantityPurchased: restockQuantity,
         paymentMethod: expensePaymentMethod,
         recordedBy: expenseRecordedBy.trim() || authUser?.fullName || 'Accountant'
-      });
+      };
+
+      // 1. Add Expense record
+      const localExpId = await db.expenses.add(expPayload);
+      try {
+        const { data } = await supabase.from('expenses').insert([{
+          school_id: schoolId,
+          description: expPayload.description,
+          category: expPayload.category,
+          amount: expPayload.amount,
+          date: expPayload.date,
+          inventory_item_id: expPayload.inventoryItemId,
+          quantity_purchased: expPayload.quantityPurchased,
+          payment_method: expPayload.paymentMethod,
+          recorded_by: expPayload.recordedBy
+        }]).select().single();
+        if (data?.id && data.id !== localExpId) {
+          await db.expenses.delete(localExpId);
+          await db.expenses.put({ ...expPayload, id: Number(data.id) });
+        }
+      } catch (err) {}
 
       // 2. Increment stock count
+      const newQty = targetItem.quantity + restockQuantity;
+      const now = Date.now();
       await db.inventory.update(selectedItemIdForRestock, {
-        quantity: targetItem.quantity + restockQuantity,
-        lastUpdated: Date.now()
+        quantity: newQty,
+        lastUpdated: now
       });
+      try {
+        await supabase.from('inventory').update({
+          quantity: newQty,
+          last_updated: now
+        }).eq('id', selectedItemIdForRestock);
+      } catch (err) {}
 
     } else {
       // General overhead expense
       if (!expenseDescription.trim() || expenseAmount <= 0) {
-        alert('Please specify an expense description and standard amount spent.');
+        showToast('Please specify an expense description and standard amount spent.', 'error');
         return;
       }
 
-      await db.expenses.add({
+      const expPayload = {
         description: expenseDescription.trim(),
         category: expenseCategory,
         amount: expenseAmount,
         date: Date.now(),
         paymentMethod: expensePaymentMethod,
         recordedBy: expenseRecordedBy.trim() || authUser?.fullName || 'Accountant'
-      });
+      };
+      const localExpId = await db.expenses.add(expPayload);
+      try {
+        const { data } = await supabase.from('expenses').insert([{
+          school_id: schoolId,
+          description: expPayload.description,
+          category: expPayload.category,
+          amount: expPayload.amount,
+          date: expPayload.date,
+          payment_method: expPayload.paymentMethod,
+          recorded_by: expPayload.recordedBy
+        }]).select().single();
+        if (data?.id && data.id !== localExpId) {
+          await db.expenses.delete(localExpId);
+          await db.expenses.put({ ...expPayload, id: Number(data.id) });
+        }
+      } catch (err) {}
     }
 
+    showToast('Expense recorded successfully', 'success');
     resetExpenseForm();
     setIsExpenseFormOpen(false);
   };
@@ -313,9 +393,18 @@ export default function InventoryManagement() {
 
   // Delete Action: Stock
   const handleDeleteStock = async (id: number) => {
-    if (confirm('Are you sure you want to delete this inventory item? This action cannot be undone.')) {
-      await db.inventory.delete(id);
-    }
+    confirmModal({
+      title: 'Delete Inventory Item',
+      message: 'Are you sure you want to delete this inventory item? This action cannot be undone.',
+      confirmLabel: 'Delete Item',
+      onConfirm: async () => {
+        await db.inventory.delete(id);
+        try {
+          await supabase.from('inventory').delete().eq('id', id);
+        } catch (err) {}
+        showToast('Inventory item deleted', 'success');
+      }
+    });
   };
 
   // Delete Action: Expense (with optional quantity rollback support)
@@ -325,33 +414,54 @@ export default function InventoryManagement() {
 
     let confirmMsg = 'Are you sure you want to delete this expense record permanently?';
     if (expense.category === 'Inventory Restock' && expense.inventoryItemId) {
-      confirmMsg = `This is a Stock Purchase expense of GHS ${expense.amount.toFixed(2)} for ${expense.quantityPurchased} units. Would you also like to automatically revert the stock addition (deduct ${expense.quantityPurchased} units from the inventory)?`;
+      confirmMsg = `This is a Stock Purchase expense of GHS ${expense.amount.toFixed(2)} for ${expense.quantityPurchased} units. Deleting it will also revert the stock addition.`;
     }
 
-    const answer = confirm(confirmMsg);
-    if (answer) {
-      // If stock restock, optional rollback
-      if (expense.category === 'Inventory Restock' && expense.inventoryItemId) {
-        const item = await db.inventory.get(expense.inventoryItemId);
-        if (item) {
-          const newQty = Math.max(0, item.quantity - (expense.quantityPurchased || 0));
-          await db.inventory.update(expense.inventoryItemId, {
-            quantity: newQty,
-            lastUpdated: Date.now()
-          });
+    confirmModal({
+      title: 'Delete Expense Record',
+      message: confirmMsg,
+      confirmLabel: 'Delete Expense',
+      onConfirm: async () => {
+        if (expense.category === 'Inventory Restock' && expense.inventoryItemId) {
+          const item = await db.inventory.get(expense.inventoryItemId);
+          if (item) {
+            const newQty = Math.max(0, item.quantity - (expense.quantityPurchased || 0));
+            const now = Date.now();
+            await db.inventory.update(expense.inventoryItemId, {
+              quantity: newQty,
+              lastUpdated: now
+            });
+            try {
+              await supabase.from('inventory').update({
+                quantity: newQty,
+                last_updated: now
+              }).eq('id', expense.inventoryItemId);
+            } catch (err) {}
+          }
         }
+        await db.expenses.delete(id);
+        try {
+          await supabase.from('expenses').delete().eq('id', id);
+        } catch (err) {}
+        showToast('Expense record deleted', 'success');
       }
-      await db.expenses.delete(id);
-    }
+    });
   };
 
   // Quick Quantity Update (+ / -) in Stock registry directly
   const handleAdjustQuantity = async (id: number, currentQty: number, adjustment: number) => {
     const newQty = Math.max(0, currentQty + adjustment);
+    const now = Date.now();
     await db.inventory.update(id, { 
       quantity: newQty,
-      lastUpdated: Date.now() 
+      lastUpdated: now 
     });
+    try {
+      await supabase.from('inventory').update({
+        quantity: newQty,
+        last_updated: now
+      }).eq('id', id);
+    } catch (err) {}
   };
 
   // Selected item's details for rendering inside the purchase form preview
