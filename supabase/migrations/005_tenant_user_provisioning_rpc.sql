@@ -123,6 +123,46 @@ BEGIN
   -- 1. Provision or locate in auth.users if not already provided
   IF v_auth_uid IS NULL AND v_email <> '' THEN
     SELECT id INTO v_auth_uid FROM auth.users WHERE LOWER(email) = v_email LIMIT 1;
+    IF v_auth_uid IS NULL THEN
+      v_auth_uid := gen_random_uuid();
+      BEGIN
+        INSERT INTO auth.users (
+          id,
+          instance_id,
+          aud,
+          role,
+          email,
+          encrypted_password,
+          email_confirmed_at,
+          confirmation_token,
+          recovery_token,
+          email_change_token_new,
+          email_change,
+          raw_app_meta_data,
+          raw_user_meta_data,
+          created_at,
+          updated_at
+        ) VALUES (
+          v_auth_uid,
+          '00000000-0000-0000-0000-000000000000',
+          'authenticated',
+          'authenticated',
+          v_email,
+          COALESCE(NULLIF(p_password_hash, ''), '$2a$10$7Z8bU9kZt4g.fP1eZ6t.O.Q6tF41s3mXG5YJ4bYVf7zM2sK1xQO6e'),
+          NOW(),
+          '',
+          '',
+          '',
+          '',
+          jsonb_build_object('provider', 'email', 'providers', array['email'], 'role', v_role, 'school_id', p_school_id),
+          jsonb_build_object('full_name', v_clean_name, 'username', v_clean_user, 'role', v_role, 'school_id', p_school_id, 'phone', COALESCE(p_phone, '')),
+          NOW(),
+          NOW()
+        );
+      EXCEPTION WHEN OTHERS THEN
+        v_auth_uid := NULL;
+      END;
+    END IF;
   END IF;
 
   -- 2. Check if user already exists in this school
@@ -193,7 +233,7 @@ BEGIN
         updated_at
       ) VALUES (
         p_school_id,
-        'TEA-' || SUBSTRING(v_now::TEXT FROM 8 FOR 6),
+        'TEA-' || SUBSTRING(v_now::TEXT FROM 10 FOR 4),
         v_first_name,
         v_last_name,
         v_email,
@@ -387,4 +427,47 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.delete_tenant_user(BIGINT, UUID) TO anon, authenticated, service_role;
+
+-- 6. Overloaded 15-parameter signature for provision_tenant_user (supports extended staff/student metadata)
+CREATE OR REPLACE FUNCTION public.provision_tenant_user(
+  p_school_id UUID,
+  p_username TEXT,
+  p_password_hash TEXT,
+  p_full_name TEXT,
+  p_role TEXT,
+  p_status TEXT,
+  p_email TEXT,
+  p_phone TEXT,
+  p_auth_user_id UUID,
+  p_staff_id TEXT,
+  p_student_id TEXT,
+  p_student_class TEXT,
+  p_gender TEXT,
+  p_date_of_birth TEXT,
+  p_guardian_name TEXT
+)
+RETURNS JSONB
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, auth, extensions, pg_temp
+AS $$
+  SELECT public.provision_tenant_user(
+    p_school_id,
+    p_username,
+    p_password_hash,
+    p_full_name,
+    p_role,
+    p_status,
+    p_email,
+    p_phone,
+    p_auth_user_id
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.users TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.teachers TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.students TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 

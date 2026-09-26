@@ -162,21 +162,21 @@ export default function UserManagement() {
   };
 
   const isTenantUser = (u: any) => {
+    if (!u) return false;
     const role = String(u?.role || '').toLowerCase();
     if (role === 'creator' || role === 'super_admin') return false;
-    const uSchoolId = u?.school_id || u?.schoolId;
-    if (school?.id && school.id !== '00000000-0000-0000-0000-000000000001' && uSchoolId && uSchoolId !== '00000000-0000-0000-0000-000000000001') {
-      return String(uSchoolId).toLowerCase() === String(school.id).toLowerCase();
-    }
     return true;
   };
 
   const loadUsers = async () => {
     try {
       const fetched = await usersApi.getAll(school?.id);
-      setUsers(Array.isArray(fetched) ? fetched.filter(isTenantUser) : []);
+      if (Array.isArray(fetched)) {
+        const validFetched = fetched.filter(isTenantUser);
+        setUsers(validFetched);
+      }
     } catch (e) {
-      setUsers([]);
+      // Preserve existing users in state if a transient network error occurs
     }
   };
 
@@ -226,6 +226,7 @@ export default function UserManagement() {
         status: formData.status || 'active',
         schoolId: school?.id,
         school_id: school?.id,
+        schoolName: school?.name,
         staffId: formData.staffId.trim() || undefined,
         subjects: formData.subjects ? formData.subjects.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         assignedClasses: formData.assignedClass ? [formData.assignedClass] : undefined,
@@ -241,6 +242,12 @@ export default function UserManagement() {
         ? ` and linked to ${created.linkedProfile.type === 'teacher' ? `Teacher (${created.linkedProfile.staffId})` : `Student (${created.linkedProfile.studentId})`} profile`
         : '';
       const successMsg = `User account @${cleanUsername} provisioned in Supabase${profileNote}.`;
+
+      // Immediately display created user in the table, then sync with backend list
+      setUsers(prev => {
+        const withoutDup = prev.filter(u => String(u.username || '').toLowerCase() !== cleanUsername);
+        return [created, ...withoutDup];
+      });
 
       setFeedback({ type: 'success', msg: successMsg });
       showToast(successMsg, 'success');
@@ -483,6 +490,14 @@ export default function UserManagement() {
                 const isActive = (user.status || 'active') === 'active';
                 const isMaster = user.role === 'super_admin' || user.role === 'creator';
                 const roleInfo = getRoleInfo(user.role);
+                const uAny = user as any;
+                const linkedProfile = uAny.linkedProfile || uAny.linked_profile || null;
+                const staffIdVal = uAny.staffId || uAny.staff_id || linkedProfile?.staffId || linkedProfile?.staff_id;
+                const studentIdVal = uAny.studentId || uAny.student_id || linkedProfile?.studentId || linkedProfile?.student_id;
+                const studentClassVal = uAny.class || linkedProfile?.class;
+                const assignedClassesVal = Array.isArray(uAny.assignedClasses)
+                  ? uAny.assignedClasses
+                  : (Array.isArray(linkedProfile?.assignedClasses) ? linkedProfile.assignedClasses : []);
 
                 return (
                   <tr 
@@ -490,13 +505,51 @@ export default function UserManagement() {
                     className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors group"
                   >
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-linear-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/20 dark:to-purple-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center font-bold text-sm border border-indigo-200/50 dark:border-indigo-800/50">
-                          {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-10 h-10 bg-[#1c4a59] text-white rounded-xl flex items-center justify-center font-bold text-sm shrink-0 mt-0.5 shadow-xs">
+                          {(user.fullName || user.full_name || user.username || 'U')[0]?.toUpperCase()}
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{user.fullName || user.full_name || user.username}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">@{user.username} {user.email ? `• ${user.email}` : ''}</p>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-bold text-[#1f2a2e] dark:text-slate-100 truncate">
+                              {user.fullName || user.full_name || user.username}
+                            </p>
+                            <span className="text-xs font-mono font-semibold text-[#1c4a59] dark:text-indigo-300 bg-[#f6f8f7] dark:bg-slate-800 px-2 py-0.5 rounded-md border border-[#bac4c6]/60 dark:border-slate-700">
+                              @{user.username}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6a7f84] dark:text-slate-400 font-mono">
+                            {user.email && (
+                              <span className="inline-flex items-center gap-1">
+                                <Mail className="w-3 h-3 shrink-0 text-[#6a7f84]" />
+                                {user.email}
+                              </span>
+                            )}
+                            {user.phone && (
+                              <span className="inline-flex items-center gap-1">
+                                <Phone className="w-3 h-3 shrink-0 text-[#6a7f84]" />
+                                {user.phone}
+                              </span>
+                            )}
+                          </div>
+                          {(staffIdVal || studentIdVal || linkedProfile) && (
+                            <div className="pt-0.5 flex flex-wrap items-center gap-1.5">
+                              {(staffIdVal || linkedProfile?.type === 'teacher') && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#e1c594]/35 text-[#1f2a2e] dark:bg-indigo-950/50 dark:text-indigo-200 border border-[#e4ae67]/50 dark:border-indigo-800/50 font-mono">
+                                  <CheckCircle2 className="w-3 h-3 text-[#06d6a0] shrink-0" />
+                                  Teacher Profile · {staffIdVal || 'Linked'}
+                                  {assignedClassesVal.length > 0 ? ` · ${assignedClassesVal.join(', ')}` : ''}
+                                </span>
+                              )}
+                              {(studentIdVal || linkedProfile?.type === 'student') && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#06d6a0]/12 text-[#1c4a59] dark:bg-emerald-950/50 dark:text-emerald-200 border border-[#06d6a0]/35 dark:border-emerald-800/50 font-mono">
+                                  <CheckCircle2 className="w-3 h-3 text-[#06d6a0] shrink-0" />
+                                  Student Profile · {studentIdVal || 'Linked'}
+                                  {studentClassVal ? ` · ${studentClassVal}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -706,13 +759,23 @@ export default function UserManagement() {
                 </div>
 
                 {/* Role-specific Supabase profile auto-linking fields */}
-                {formData.role === 'teacher' && (
+                {(formData.role === 'teacher' || formData.role === 'headteacher') && (
                   <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/60 dark:border-indigo-800/40 space-y-3">
                     <div className="flex items-center gap-2 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                       <span>Auto-links or creates Teacher Profile in Supabase</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Staff ID (Auto if blank)</label>
+                        <input
+                          type="text"
+                          value={formData.staffId}
+                          onChange={e => setFormData({...formData, staffId: e.target.value})}
+                          placeholder="TEA-1001"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white font-mono"
+                        />
+                      </div>
                       <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Assigned Class</label>
                         <input
@@ -724,12 +787,12 @@ export default function UserManagement() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Subjects (comma-separated)</label>
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Subjects</label>
                         <input
                           type="text"
                           value={formData.subjects}
                           onChange={e => setFormData({...formData, subjects: e.target.value})}
-                          placeholder="Mathematics, Science"
+                          placeholder="Math, Science"
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
                         />
                       </div>
@@ -743,7 +806,17 @@ export default function UserManagement() {
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                       <span>Auto-links or creates Student Profile in Supabase</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Student ID (Auto if blank)</label>
+                        <input
+                          type="text"
+                          value={formData.studentId}
+                          onChange={e => setFormData({...formData, studentId: e.target.value})}
+                          placeholder="STU-100001"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white font-mono"
+                        />
+                      </div>
                       <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Class / Grade</label>
                         <input

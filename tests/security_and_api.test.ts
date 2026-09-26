@@ -128,6 +128,9 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     }
 
     private execute() {
+      if ((db as any).__denyUsersTable && this.tableName === 'users') {
+        return { data: null, error: { message: 'permission denied for table users', code: '42501' } };
+      }
       const table = db[this.tableName] || [];
 
       if (this.pendingOperation === 'insert') {
@@ -181,6 +184,7 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
 
     async single() {
       const res = this.execute();
+      if (res.error) return { data: null, error: res.error };
       const rows = res.data;
       if (!rows || rows.length === 0) {
         return { data: null, error: { message: 'Row not found', code: 'PGRST116' } };
@@ -190,6 +194,7 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
 
     async maybeSingle() {
       const res = this.execute();
+      if (res.error) return { data: null, error: res.error };
       const rows = res.data;
       if (!rows || rows.length === 0) {
         return { data: null, error: null };
@@ -1028,6 +1033,82 @@ describe('Security & API Endpoints Test Suite', () => {
 
       const deletedCheck = testSupabaseDB.users.find((u: any) => u.id === targetUser.id);
       expect(deletedCheck).toBeUndefined();
+    });
+
+    it('seamlessly creates, lists, authenticates, updates, and deletes users when Supabase public.users returns permission denied for table users', async () => {
+      (testSupabaseDB as any).__denyUsersTable = true;
+      try {
+        // 1. Add user via POST /api/users while public.users is blocked by RLS
+        const createRes = await request(app)
+          .post('/api/users')
+          .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+          .set('x-school-id', 'school-uuid-a')
+          .send({
+            username: 'ama_serwaa',
+            fullName: 'Ama Serwaa',
+            password: 'TeacherPass789!',
+            role: 'teacher',
+            email: 'ama.serwaa@school-a.edu.gh',
+            phone: '0241112233',
+            school_id: 'school-uuid-a'
+          });
+
+        expect([200, 201]).toContain(createRes.status);
+        expect(createRes.body.success).toBe(true);
+        expect(createRes.body.user.username).toBe('ama_serwaa');
+        const createdUserId = createRes.body.user.id;
+        expect(createdUserId).toBeDefined();
+
+        // 2. List users via GET /api/users while public.users is blocked by RLS
+        const listRes = await request(app)
+          .get('/api/users')
+          .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+          .set('x-school-id', 'school-uuid-a');
+
+        expect(listRes.status).toBe(200);
+        expect(listRes.body.success).toBe(true);
+        const listedUser = (listRes.body.users || []).find((u: any) => u.username === 'ama_serwaa');
+        expect(listedUser).toBeDefined();
+        expect(listedUser.fullName).toBe('Ama Serwaa');
+
+        // 3. Log in as the newly added user via POST /api/auth/login while public.users is blocked by RLS
+        const loginRes = await request(app)
+          .post('/api/auth/login')
+          .send({
+            username: 'ama_serwaa',
+            password: 'TeacherPass789!',
+            schoolId: 'school-uuid-a'
+          });
+
+        expect(loginRes.status).toBe(200);
+        expect(loginRes.body.success).toBe(true);
+        expect(loginRes.body.token).toBeDefined();
+        expect(loginRes.body.user.username).toBe('ama_serwaa');
+
+        // 4. Reset password via PUT /api/users/:id while public.users is blocked by RLS
+        const updateRes = await request(app)
+          .put(`/api/users/${createdUserId}`)
+          .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+          .set('x-school-id', 'school-uuid-a')
+          .send({
+            password: 'UpdatedTeacherPass999!',
+            school_id: 'school-uuid-a'
+          });
+
+        expect(updateRes.status).toBe(200);
+        expect(updateRes.body.success).toBe(true);
+
+        // 5. Delete user via DELETE /api/users/:id while public.users is blocked by RLS
+        const delRes = await request(app)
+          .delete(`/api/users/${createdUserId}?school_id=school-uuid-a`)
+          .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+          .set('x-school-id', 'school-uuid-a');
+
+        expect(delRes.status).toBe(200);
+        expect(delRes.body.success).toBe(true);
+      } finally {
+        (testSupabaseDB as any).__denyUsersTable = false;
+      }
     });
 
     it('GET /api/license/list excludes unlicensed records and deduplicates by both license key and school_id', async () => {

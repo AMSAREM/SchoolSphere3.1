@@ -1451,6 +1451,7 @@ export const usersApi = {
           : rawUsername
       );
       const effectiveSchool = u?.school_id || u?.schoolId || canonicalSchoolId || targetSchoolId;
+      const linkedProfile = u?.linkedProfile || u?.linked_profile || null;
       return {
         ...u,
         id: u?.id,
@@ -1466,6 +1467,12 @@ export const usersApi = {
         schoolId: effectiveSchool,
         school_id: effectiveSchool,
         schoolName: u?.schoolName || u?.school_name || undefined,
+        staffId: u?.staffId || u?.staff_id || linkedProfile?.staffId || undefined,
+        studentId: u?.studentId || u?.student_id || linkedProfile?.studentId || undefined,
+        class: u?.class || linkedProfile?.class || undefined,
+        assignedClasses: u?.assignedClasses || u?.assigned_classes || linkedProfile?.assignedClasses || undefined,
+        subjects: u?.subjects || linkedProfile?.subjects || undefined,
+        linkedProfile,
         createdAt: Number(u?.createdAt || u?.created_at || Date.now()),
         lastLogin: u?.lastLogin || u?.last_login || null
       };
@@ -1552,7 +1559,7 @@ export const usersApi = {
     }
 
     const serverUser = data.user;
-    const linkedProfile = data.linkedProfile || null;
+    const linkedProfile = data.linkedProfile || serverUser.linkedProfile || null;
     const canonicalSchoolId = serverUser.school_id || serverUser.schoolId || targetSchoolId;
 
     return {
@@ -1560,8 +1567,17 @@ export const usersApi = {
       id: serverUser.id,
       username: serverUser.username || cleanUsername,
       fullName: serverUser.full_name || serverUser.fullName || payload.full_name,
+      full_name: serverUser.full_name || serverUser.fullName || payload.full_name,
+      email: serverUser.email || payload.email || '',
+      phone: serverUser.phone ?? payload.phone ?? '',
       schoolId: canonicalSchoolId,
       school_id: canonicalSchoolId,
+      schoolName: serverUser.schoolName || payload.schoolName,
+      staffId: serverUser.staffId || linkedProfile?.staffId || payload.staffId,
+      studentId: serverUser.studentId || linkedProfile?.studentId || payload.studentId,
+      class: serverUser.class || linkedProfile?.class || payload.class,
+      assignedClasses: serverUser.assignedClasses || linkedProfile?.assignedClasses || payload.assignedClasses,
+      subjects: serverUser.subjects || linkedProfile?.subjects || payload.subjects,
       linkedProfile
     };
   },

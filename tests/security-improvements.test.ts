@@ -19,10 +19,12 @@ describe('Security Improvements', () => {
       const originalEnv = process.env.NODE_ENV;
       const originalJwt = process.env.JWT_SECRET;
       const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
+      const originalShortJwt = process.env.JWT;
 
       process.env.NODE_ENV = 'production';
       delete process.env.JWT_SECRET;
       delete process.env.SUPABASE_JWT_SECRET;
+      delete process.env.JWT;
 
       try {
         const { getJwtSecret } = await import('../lib/auth');
@@ -31,6 +33,7 @@ describe('Security Improvements', () => {
         process.env.NODE_ENV = originalEnv;
         if (originalJwt) process.env.JWT_SECRET = originalJwt;
         if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
+        if (originalShortJwt) process.env.JWT = originalShortJwt;
       }
     });
 
@@ -38,10 +41,12 @@ describe('Security Improvements', () => {
       const originalEnv = process.env.NODE_ENV;
       const originalJwt = process.env.JWT_SECRET;
       const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
+      const originalShortJwt = process.env.JWT;
 
       process.env.NODE_ENV = 'development';
       delete process.env.JWT_SECRET;
       delete process.env.SUPABASE_JWT_SECRET;
+      delete process.env.JWT;
 
       try {
         const authModule = await import('../lib/auth');
@@ -51,6 +56,7 @@ describe('Security Improvements', () => {
         process.env.NODE_ENV = originalEnv;
         if (originalJwt) process.env.JWT_SECRET = originalJwt;
         if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
+        if (originalShortJwt) process.env.JWT = originalShortJwt;
       }
     });
   });

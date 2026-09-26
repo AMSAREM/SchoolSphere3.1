@@ -9,8 +9,24 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+function cleanEnvVal(val: string | undefined): string {
+  if (!val) return '';
+  let trimmed = val.trim();
+  const match = trimmed.match(/^[A-Z0-9_]+=(.+)$/);
+  if (match) {
+    trimmed = match[1].trim();
+  }
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
 export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET;
+  const secret =
+    cleanEnvVal(process.env.JWT_SECRET) ||
+    cleanEnvVal(process.env.SUPABASE_JWT_SECRET) ||
+    cleanEnvVal(process.env.JWT);
   
   if (!secret) {
     if (process.env.NODE_ENV === 'test') {

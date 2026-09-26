@@ -2,15 +2,20 @@ import { createClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
 
+function cleanEnvValue(val: any): string {
+  if (!val || typeof val !== 'string') return '';
+  return val.trim().replace(/^[A-Z0-9_]+=/, '').trim();
+}
+
 export const supabaseUrl =
-  env.VITE_SUPABASE_URL ||
-  (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL : '') ||
+  cleanEnvValue(env.VITE_SUPABASE_URL) ||
+  (typeof process !== 'undefined' ? cleanEnvValue(process.env.VITE_SUPABASE_URL) || cleanEnvValue(process.env.SUPABASE_URL) : '') ||
   'https://niavmonyfwqlryppgksy.supabase.co';
 
 export const supabaseAnonKey =
-  env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  env.VITE_SUPABASE_ANON_KEY ||
-  (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY : '') ||
+  cleanEnvValue(env.VITE_SUPABASE_ANON_KEY) ||
+  (typeof process !== 'undefined' ? cleanEnvValue(process.env.VITE_SUPABASE_ANON_KEY) || cleanEnvValue(process.env.SUPABASE_ANON_KEY) : '') ||
+  cleanEnvValue(env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
 
 declare global {

@@ -5,7 +5,7 @@ dotenv.config();
 
 function getEnvVar(name: string): string {
   if (process.env[name] && process.env[name]?.trim()) {
-    return process.env[name]!.trim();
+    return process.env[name]!.trim().replace(/^[A-Z0-9_]+=/, '').trim();
   }
   return '';
 }
@@ -15,7 +15,7 @@ export function getSupabaseAdmin() {
 
   const targetRef = supabaseUrl.replace(/^https?:\/\//, '').split('.')[0];
   const matchingKey = getEnvVar('SUPABASE_ANON_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
-  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_SECRET_KEY') || matchingKey;
+  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || matchingKey;
 
   // Verify that key matches target ref if it's a JWT
   if (serviceRoleKey && serviceRoleKey.startsWith('ey')) {
@@ -40,6 +40,27 @@ export function getSupabaseAdmin() {
       persistSession: false,
       autoRefreshToken: false,
     },
+  });
+}
+
+export function createAuthenticatedSupabaseClient(accessToken?: string | null) {
+  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://niavmonyfwqlryppgksy.supabase.co';
+  const anonKey = getEnvVar('SUPABASE_ANON_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    ...(accessToken
+      ? {
+          global: {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        }
+      : {}),
   });
 }
 

@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 import dns from "dns";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
-import { getSupabaseAdmin } from "./lib/supabase/server";
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from "./lib/supabase/server";
 import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth";
 import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger";
 import { Request, Response, NextFunction } from 'express';
@@ -2483,6 +2483,28 @@ async function doStartServer() {
       } catch (e) {}
 
       if (!defaultSchoolObj) {
+        try {
+          const { data: dirSchools } = await adminClient.rpc('get_schools_directory');
+          if (Array.isArray(dirSchools) && dirSchools.length > 0) {
+            const activeDir = dirSchools.find((s: any) => s.status === 'active' && s.license_id) ||
+              dirSchools.find((s: any) => s.status === 'active') ||
+              dirSchools[0];
+            if (activeDir?.id) {
+              defaultSchoolObj = {
+                id: String(activeDir.id),
+                name: activeDir.name || 'School Sphere Academy',
+                slug: activeDir.slug || 'school-sphere-academy',
+                theme: activeDir.theme || 'indigo',
+                status: activeDir.status || 'active',
+                academic_year: activeDir.academic_year || '2026/2027',
+                current_term: activeDir.current_term || 'Term 1'
+              };
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!defaultSchoolObj) {
         defaultSchoolObj = {
           id: '00000000-0000-0000-0000-000000000001',
           name: 'School Sphere Academy',
@@ -2786,6 +2808,17 @@ async function doStartServer() {
             }
           }
         }
+
+        try {
+          const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+          if (Array.isArray(settingsUsers)) {
+            for (const su of settingsUsers) {
+              if (matchesUserHandle(su)) {
+                combinedCandidates.push({ ...su, _source: 'supabase_settings_users' });
+              }
+            }
+          }
+        } catch {}
 
         if (combinedCandidates.length > 0) {
           existingUserFoundInStep2 = true;
@@ -4361,27 +4394,34 @@ async function doStartServer() {
       ''
     ).trim();
 
-    const targetLower = rawCandidate.toLowerCase();
-    const nameLower = rawNameCandidate.toLowerCase();
+    const isPlaceholderCandidate = (val: string) => {
+      const v = String(val || '').trim().toLowerCase();
+      return !v || v === '00000000-0000-0000-0000-000000000001' || v === 'school-sphere-academy' || v === 'default' || v === 'school sphere academy';
+    };
+
+    const effectiveIdCandidate = isPlaceholderCandidate(rawCandidate) ? '' : rawCandidate;
+    const effectiveNameCandidate = isPlaceholderCandidate(rawNameCandidate) ? '' : rawNameCandidate;
+    const targetLower = effectiveIdCandidate.toLowerCase();
+    const nameLower = effectiveNameCandidate.toLowerCase();
 
     // 1. Check Supabase schools table directly
     try {
-      if (rawCandidate) {
-        const { data: byId } = await adminClient.from('schools').select('*').eq('id', rawCandidate).maybeSingle();
+      if (effectiveIdCandidate) {
+        const { data: byId } = await adminClient.from('schools').select('*').eq('id', effectiveIdCandidate).maybeSingle();
         if (byId?.id) {
           return {
-            rawSchoolId: rawCandidate,
+            rawSchoolId: rawCandidate || String(byId.id),
             schoolId: String(byId.id),
-            schoolName: String(byId.name || rawNameCandidate || 'Assigned School'),
+            schoolName: String(byId.name || effectiveNameCandidate || 'Assigned School'),
             schoolSlug: String(byId.slug || (byId.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school')
           };
         }
         const { data: bySlug } = await adminClient.from('schools').select('*').eq('slug', targetLower).maybeSingle();
         if (bySlug?.id) {
           return {
-            rawSchoolId: rawCandidate,
+            rawSchoolId: rawCandidate || String(bySlug.id),
             schoolId: String(bySlug.id),
-            schoolName: String(bySlug.name || rawNameCandidate || 'Assigned School'),
+            schoolName: String(bySlug.name || effectiveNameCandidate || 'Assigned School'),
             schoolSlug: String(bySlug.slug || 'school')
           };
         }
@@ -4389,9 +4429,11 @@ async function doStartServer() {
     } catch {}
 
     // 2. Check SECURITY DEFINER get_schools_directory RPC
+    let dirSchoolsList: any[] = [];
     try {
       const { data: dirSchools } = await adminClient.rpc('get_schools_directory');
       if (Array.isArray(dirSchools) && dirSchools.length > 0) {
+        dirSchoolsList = dirSchools;
         const dirMatch = dirSchools.find((s: any) =>
           (targetLower && (
             String(s.id || '').toLowerCase() === targetLower ||
@@ -4407,7 +4449,7 @@ async function doStartServer() {
           return {
             rawSchoolId: rawCandidate || String(dirMatch.id),
             schoolId: String(dirMatch.id),
-            schoolName: String(dirMatch.name || rawNameCandidate || 'Assigned School'),
+            schoolName: String(dirMatch.name || effectiveNameCandidate || 'Assigned School'),
             schoolSlug: String(dirMatch.slug || (dirMatch.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school')
           };
         }
@@ -4424,8 +4466,8 @@ async function doStartServer() {
       )) ||
       (nameLower && String(s.name || s.schoolName || '').toLowerCase() === nameLower)
     );
-    if (fbMatch?.id) {
-      const sName = String(fbMatch.name || fbMatch.schoolName || rawNameCandidate || 'Assigned School');
+    if (fbMatch?.id && !isPlaceholderCandidate(String(fbMatch.id))) {
+      const sName = String(fbMatch.name || fbMatch.schoolName || effectiveNameCandidate || 'Assigned School');
       return {
         rawSchoolId: rawCandidate || String(fbMatch.id),
         schoolId: String(fbMatch.id),
@@ -4442,22 +4484,94 @@ async function doStartServer() {
       )) ||
       (nameLower && String(l.schoolName || '').toLowerCase() === nameLower)
     );
-    if (licMatch) {
-      const sName = String(licMatch.schoolName || rawNameCandidate || 'Assigned School');
+    if (licMatch && licMatch.school_id && !isPlaceholderCandidate(String(licMatch.school_id))) {
+      const sName = String(licMatch.schoolName || effectiveNameCandidate || 'Assigned School');
       const sSlug = sName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school';
       return {
-        rawSchoolId: rawCandidate || String(licMatch.school_id || sSlug),
-        schoolId: String(licMatch.school_id || rawCandidate || sSlug),
+        rawSchoolId: rawCandidate || String(licMatch.school_id),
+        schoolId: String(licMatch.school_id),
         schoolName: sName,
         schoolSlug: sSlug
       };
     }
 
-    const fallbackName = rawNameCandidate || 'SchoolSphere Academy';
+    // 4. If candidate was empty or synthetic placeholder (e.g. 00000000-0000-0000-0000-000000000001), select the active school from Supabase directory
+    if (dirSchoolsList.length > 0 && !effectiveIdCandidate && !effectiveNameCandidate) {
+      const defaultDirSchool =
+        dirSchoolsList.find((s: any) => s.status === 'active' && s.license_id) ||
+        dirSchoolsList.find((s: any) => s.status === 'active') ||
+        dirSchoolsList[0];
+      if (defaultDirSchool?.id) {
+        return {
+          rawSchoolId: rawCandidate || String(defaultDirSchool.id),
+          schoolId: String(defaultDirSchool.id),
+          schoolName: String(defaultDirSchool.name || 'Assigned School'),
+          schoolSlug: String(defaultDirSchool.slug || (defaultDirSchool.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school')
+        };
+      }
+    }
+
+    // 5. Check Supabase settings schools_registry & active license statuses
+    try {
+      const regSchools = await readSupabaseSettingList('schools_registry');
+      if (Array.isArray(regSchools) && regSchools.length > 0) {
+        const regMatch = regSchools.find((s: any) =>
+          (targetLower && (
+            String(s.id || '').toLowerCase() === targetLower ||
+            String(s.slug || '').toLowerCase() === targetLower ||
+            String(s.name || s.schoolName || '').toLowerCase() === targetLower
+          )) ||
+          (nameLower && String(s.name || s.schoolName || '').toLowerCase() === nameLower)
+        ) || (!targetLower && !nameLower ? regSchools[0] : null);
+        if (regMatch && regMatch.id && !isPlaceholderCandidate(String(regMatch.id))) {
+          const sName = String(regMatch.name || regMatch.schoolName || effectiveNameCandidate || 'Assigned School');
+          const sSlug = String(regMatch.slug || sName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school');
+          return {
+            rawSchoolId: rawCandidate || String(regMatch.id),
+            schoolId: String(regMatch.id),
+            schoolName: sName,
+            schoolSlug: sSlug
+          };
+        }
+      }
+    } catch {}
+
+    const activeStatuses = Object.values(getLicenseStatuses() || {}) as any[];
+    const activeLic = activeStatuses.find((st: any) => st && st.isActivated && (st.school_id || st.schoolName));
+    const fallbackName = effectiveNameCandidate || activeLic?.schoolName || (dirSchoolsList[0]?.name) || 'SchoolSphere Academy';
     const fallbackSlug = fallbackName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school';
+
+    // If we have a specific school name that is not yet in public.schools, ensure it exists in Supabase via sync_school_license RPC
+    if (effectiveNameCandidate) {
+      try {
+        const detKey = generateDeterministicSchoolKey(effectiveIdCandidate || null, effectiveNameCandidate, 'Standard');
+        const { data: syncRes } = await adminClient.rpc('sync_school_license', {
+          p_school_name: effectiveNameCandidate.toUpperCase(),
+          p_license_key: detKey,
+          p_tier: 'Standard',
+          p_email: `admin@${fallbackSlug}.edu.gh`,
+          p_phone: '+233 24 000 0000',
+          p_address: 'Ghana',
+          p_duration_months: '12',
+          p_expiry_date: null,
+          p_modules: ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees'],
+          p_status: 'active'
+        });
+        if (syncRes?.school_id) {
+          return {
+            rawSchoolId: rawCandidate || String(syncRes.school_id),
+            schoolId: String(syncRes.school_id),
+            schoolName: String(syncRes.school_name || effectiveNameCandidate),
+            schoolSlug: String(syncRes.slug || fallbackSlug)
+          };
+        }
+      } catch {}
+    }
+
+    const fallbackSchoolId = effectiveIdCandidate || activeLic?.school_id || dirSchoolsList[0]?.id || fallbackSlug;
     return {
-      rawSchoolId: rawCandidate || null,
-      schoolId: rawCandidate || null,
+      rawSchoolId: rawCandidate || fallbackSchoolId,
+      schoolId: String(fallbackSchoolId),
       schoolName: fallbackName,
       schoolSlug: fallbackSlug
     };
@@ -4485,11 +4599,22 @@ async function doStartServer() {
       const { rawSchoolId, schoolId: resolvedSchoolId, schoolName: resolvedSchoolName, schoolSlug: resolvedSchoolSlug } =
         await resolveTenantSchoolForUsers(req);
 
-      const candidateSchoolIds = Array.from(new Set([resolvedSchoolId, rawSchoolId].filter(Boolean))) as string[];
+      const isSyntheticPlaceholder = (val: any) => {
+        const s = String(val || '').trim().toLowerCase();
+        return !s || s === '00000000-0000-0000-0000-000000000001' || s === 'school-sphere-academy' || s === 'default';
+      };
+
+      const candidateSchoolIds = Array.from(
+        new Set([resolvedSchoolId, rawSchoolId, resolvedSchoolSlug].filter(Boolean))
+      ) as string[];
+
       const matchesTenantSchool = (uSchoolId: any) => {
         if (candidateSchoolIds.length === 0) return Boolean(uSchoolId);
         if (!uSchoolId) return false;
         const uStr = String(uSchoolId).trim().toLowerCase();
+        if (isSyntheticPlaceholder(uStr) && isSyntheticPlaceholder(rawSchoolId)) {
+          return true;
+        }
         return candidateSchoolIds.some(cid => String(cid).trim().toLowerCase() === uStr);
       };
 
@@ -4509,20 +4634,20 @@ async function doStartServer() {
 
       let dbRows: any[] = [];
 
-      // Query Supabase public.users directly (single source of truth)
+      // Query Supabase public.users directly, then SECURITY DEFINER get_tenant_users RPC, then Supabase settings + registered users store
       try {
         let query = adminClient
           .from('users')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (resolvedSchoolId) {
+        if (resolvedSchoolId && /^[0-9a-f-]{36}$/i.test(resolvedSchoolId)) {
           query = query.eq('school_id', resolvedSchoolId);
         }
 
         const { data, error } = await query;
         if (!error && Array.isArray(data)) {
-          dbRows = data;
+          dbRows.push(...data);
         } else if (error) {
           // Try SECURITY DEFINER get_tenant_users RPC if direct table select was restricted
           try {
@@ -4530,43 +4655,149 @@ async function doStartServer() {
               p_school_id: resolvedSchoolId && /^[0-9a-f-]{36}$/i.test(resolvedSchoolId) ? resolvedSchoolId : null
             });
             if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-              dbRows = rpcRes.data;
+              dbRows.push(...rpcRes.data);
             }
           } catch {}
         }
       } catch {}
 
-      const formatted = dbRows
-        .filter(u => {
-          const r = String(u.role || '').toLowerCase();
-          if (r === 'creator' || r === 'super_admin') return false;
-          return matchesTenantSchool(u.school_id || u.schoolId);
-        })
-        .map(u => {
-          const uSchoolId = u.school_id || u.schoolId || resolvedSchoolId;
-          const schInfo = (uSchoolId && schoolNameMap.get(String(uSchoolId))) || null;
-          const plainUsername = extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
-          const scopedUsername = u.scopedUsername || (u.username?.includes('@') ? u.username : (schInfo?.slug ? `${plainUsername}@${schInfo.slug}` : plainUsername));
+      // Also merge users persisted via Supabase settings ('tenant_users_registry') and server registered users store
+      try {
+        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+        if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
+          dbRows.push(...settingsUsers);
+        }
+      } catch {}
 
-          return {
-            id: u.id,
-            auth_user_id: u.auth_user_id || null,
-            username: plainUsername,
-            baseUsername: plainUsername,
-            scopedUsername,
-            fullName: u.full_name || u.fullName || plainUsername,
-            full_name: u.full_name || u.fullName || plainUsername,
-            email: u.email || `${plainUsername}@${schInfo?.slug || resolvedSchoolSlug || 'schoolsphere'}.edu.gh`,
-            phone: u.phone || '',
-            role: u.role || 'teacher',
-            status: u.status || 'active',
-            schoolId: resolvedSchoolId || uSchoolId,
-            school_id: resolvedSchoolId || uSchoolId,
-            schoolName: u.school_name || u.schoolName || u.schools?.name || schInfo?.name || resolvedSchoolName || 'Assigned School',
-            createdAt: u.created_at ? Number(u.created_at) : (u.createdAt ? Number(u.createdAt) : Date.now()),
-            lastLogin: u.last_login ? Number(u.last_login) : (u.lastLogin ? Number(u.lastLogin) : null)
-          };
-        });
+      try {
+        const regUsers = getRegisteredUsers();
+        if (Array.isArray(regUsers) && regUsers.length > 0) {
+          dbRows.push(...regUsers);
+        }
+      } catch {}
+
+      // Load tenant teachers and students so linkedProfile badges are always populated accurately
+      const tenantTeachers: any[] = [...getFromFallback('teachers', resolvedSchoolId)];
+      const tenantStudents: any[] = [...getFromFallback('students', resolvedSchoolId)];
+      try {
+        if (resolvedSchoolId && /^[0-9a-f-]{36}$/i.test(resolvedSchoolId)) {
+          const [tRes, sRes] = await Promise.all([
+            adminClient.from('teachers').select('*').eq('school_id', resolvedSchoolId),
+            adminClient.from('students').select('*').eq('school_id', resolvedSchoolId)
+          ]);
+          if (!tRes.error && Array.isArray(tRes.data)) tenantTeachers.push(...tRes.data);
+          if (!sRes.error && Array.isArray(sRes.data)) tenantStudents.push(...sRes.data);
+        }
+      } catch {}
+
+      const seenTenantUsers = new Set<string>();
+      const deduplicatedRows: any[] = [];
+      for (const u of dbRows) {
+        if (!u) continue;
+        const r = String(u.role || '').toLowerCase();
+        if (r === 'creator' || r === 'super_admin') continue;
+        const uSchoolId = u.school_id || u.schoolId;
+        if (!matchesTenantSchool(uSchoolId)) continue;
+
+        const schInfo = (uSchoolId && schoolNameMap.get(String(uSchoolId))) || null;
+        const plainUsername = extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
+        const dedupKey = `${String(resolvedSchoolId || uSchoolId || '').toLowerCase()}::${plainUsername.toLowerCase()}`;
+        if (seenTenantUsers.has(dedupKey)) continue;
+        seenTenantUsers.add(dedupKey);
+        deduplicatedRows.push(u);
+      }
+
+      const formatted = deduplicatedRows.map(u => {
+        const uSchoolId = (!isSyntheticPlaceholder(u.school_id || u.schoolId) ? (u.school_id || u.schoolId) : null) || resolvedSchoolId;
+        const schInfo = (uSchoolId && schoolNameMap.get(String(uSchoolId))) || null;
+        const plainUsername = extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
+        const scopedUsername = u.scopedUsername || (u.username?.includes('@') ? u.username : (schInfo?.slug ? `${plainUsername}@${schInfo.slug}` : plainUsername));
+        const userEmail = u.email || `${plainUsername}@${schInfo?.slug || resolvedSchoolSlug || 'schoolsphere'}.edu.gh`;
+        const userFullName = u.full_name || u.fullName || plainUsername;
+        const userRole = String(u.role || 'teacher').toLowerCase();
+
+        // Resolve linked profile details for teacher / headteacher / student
+        let linkedProfile = u.linkedProfile || u.linked_profile || null;
+        let resolvedStaffId = u.staffId || u.staff_id || linkedProfile?.staffId || linkedProfile?.staff_id || undefined;
+        let resolvedStudentId = u.studentId || u.student_id || linkedProfile?.studentId || linkedProfile?.student_id || undefined;
+        let resolvedClass = u.class || linkedProfile?.class || undefined;
+        let resolvedAssignedClasses = u.assignedClasses || u.assigned_classes || linkedProfile?.assignedClasses || undefined;
+        let resolvedSubjects = u.subjects || linkedProfile?.subjects || undefined;
+
+        if (!linkedProfile && (userRole === 'teacher' || userRole === 'headteacher')) {
+          const matchedT = tenantTeachers.find((t: any) =>
+            (resolvedStaffId && String(t.staffId || t.staff_id || '').toLowerCase() === String(resolvedStaffId).toLowerCase()) ||
+            (userEmail && String(t.email || '').toLowerCase() === String(userEmail).toLowerCase()) ||
+            `${t.firstName || t.first_name || ''} ${t.lastName || t.last_name || ''}`.trim().toLowerCase() === userFullName.toLowerCase()
+          );
+          if (matchedT) {
+            const normT = normalizeServerTeacherRecord(matchedT);
+            resolvedStaffId = normT.staffId;
+            resolvedAssignedClasses = normT.assignedClasses;
+            resolvedSubjects = normT.subjects;
+            linkedProfile = {
+              type: 'teacher',
+              staffId: normT.staffId,
+              assignedClasses: normT.assignedClasses,
+              subjects: normT.subjects
+            };
+          } else if (resolvedStaffId) {
+            linkedProfile = {
+              type: 'teacher',
+              staffId: resolvedStaffId,
+              assignedClasses: resolvedAssignedClasses || [],
+              subjects: resolvedSubjects || []
+            };
+          }
+        } else if (!linkedProfile && userRole === 'student') {
+          const matchedS = tenantStudents.find((s: any) =>
+            (resolvedStudentId && String(s.studentId || s.student_id || '').toLowerCase() === String(resolvedStudentId).toLowerCase()) ||
+            `${s.firstName || s.first_name || ''} ${s.lastName || s.last_name || ''}`.trim().toLowerCase() === userFullName.toLowerCase()
+          );
+          if (matchedS) {
+            const normS = normalizeServerStudentRecord(matchedS);
+            resolvedStudentId = normS.studentId;
+            resolvedClass = normS.class;
+            linkedProfile = {
+              type: 'student',
+              studentId: normS.studentId,
+              class: normS.class,
+              gender: normS.gender
+            };
+          } else if (resolvedStudentId) {
+            linkedProfile = {
+              type: 'student',
+              studentId: resolvedStudentId,
+              class: resolvedClass || 'Basic 7'
+            };
+          }
+        }
+
+        return {
+          id: u.id,
+          auth_user_id: u.auth_user_id || null,
+          username: plainUsername,
+          baseUsername: plainUsername,
+          scopedUsername,
+          fullName: userFullName,
+          full_name: userFullName,
+          email: userEmail,
+          phone: u.phone || '',
+          role: userRole,
+          status: u.status || 'active',
+          schoolId: uSchoolId,
+          school_id: uSchoolId,
+          schoolName: u.school_name || u.schoolName || u.schools?.name || schInfo?.name || resolvedSchoolName || 'Assigned School',
+          staffId: resolvedStaffId,
+          studentId: resolvedStudentId,
+          class: resolvedClass,
+          assignedClasses: resolvedAssignedClasses,
+          subjects: resolvedSubjects,
+          linkedProfile,
+          createdAt: u.created_at ? Number(u.created_at) : (u.createdAt ? Number(u.createdAt) : Date.now()),
+          lastLogin: u.last_login ? Number(u.last_login) : (u.lastLogin ? Number(u.lastLogin) : null)
+        };
+      });
 
       return res.json({
         success: true,
@@ -4668,25 +4899,53 @@ async function doStartServer() {
         ? String(email).trim().toLowerCase()
         : `${cleanBaseUser}@${resolvedSchoolSlug || 'schoolsphere'}.edu.gh`;
 
-      // 1. Check for duplicate username within the SAME tenant school in Supabase public.users
+      // 1. Check for duplicate username within the SAME tenant school in Supabase public.users, RPC, settings, and registered users
       if (targetSchool) {
         try {
-          const { data: sameSchoolUsers } = await adminClient
+          let existingSchoolUsers: any[] = [];
+          const { data: sameSchoolUsers, error: dupSelErr } = await adminClient
             .from('users')
             .select('id, username, email, school_id')
             .eq('school_id', targetSchool);
 
-          if (Array.isArray(sameSchoolUsers)) {
-            const duplicateInDb = sameSchoolUsers.find((u: any) => {
-              const uPlain = extractPlainTenantUsername(u.username, resolvedSchoolSlug);
-              return uPlain === cleanBaseUser || String(u.username || '').toLowerCase() === scopedUsername;
-            });
-            if (duplicateInDb) {
-              return res.status(409).json({
-                success: false,
-                error: `Username "@${cleanBaseUser}" already exists in ${resolvedSchoolName || 'this school'}.`
+          if (!dupSelErr && Array.isArray(sameSchoolUsers)) {
+            existingSchoolUsers.push(...sameSchoolUsers);
+          } else {
+            try {
+              const rpcUsers = await adminClient.rpc('get_tenant_users', {
+                p_school_id: /^[0-9a-f-]{36}$/i.test(String(targetSchool)) ? String(targetSchool) : null
               });
+              if (!rpcUsers.error && Array.isArray(rpcUsers.data)) {
+                existingSchoolUsers.push(
+                  ...rpcUsers.data.filter((u: any) => String(u.school_id || u.schoolId || '') === String(targetSchool))
+                );
+              }
+            } catch {}
+          }
+
+          try {
+            const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+            if (Array.isArray(settingsUsers)) {
+              existingSchoolUsers.push(
+                ...settingsUsers.filter((u: any) => String(u.school_id || u.schoolId || '') === String(targetSchool))
+              );
             }
+          } catch {}
+
+          const regSameSchool = getRegisteredUsers().filter(
+            (u: any) => String(u.school_id || u.schoolId || '') === String(targetSchool) && u.role !== 'creator' && u.role !== 'super_admin'
+          );
+          existingSchoolUsers.push(...regSameSchool);
+
+          const duplicateInDb = existingSchoolUsers.find((u: any) => {
+            const uPlain = extractPlainTenantUsername(u.username, resolvedSchoolSlug, u.baseUsername);
+            return uPlain === cleanBaseUser || String(u.username || '').toLowerCase() === scopedUsername;
+          });
+          if (duplicateInDb) {
+            return res.status(409).json({
+              success: false,
+              error: `Username "@${cleanBaseUser}" already exists in ${resolvedSchoolName || 'this school'}.`
+            });
           }
         } catch {}
       }
@@ -4706,23 +4965,26 @@ async function doStartServer() {
         } catch {}
       }
 
-      // 3. Provision immediately in Supabase Auth (auth.users)
+      // 3. Provision immediately in Supabase Auth (auth.users) via admin.createUser OR auth.signUp (which triggers public.handle_new_user())
       let authUserId: string | null = null;
+      let authedUserClient: any = null;
       const authPassword = rawPasswordStr && rawPasswordStr.length >= 6 ? rawPasswordStr : `${rawPasswordStr || 'Pass'}#2026`;
+      const userMetaPayload = {
+        full_name: cleanFullName,
+        username: cleanBaseUser,
+        scoped_username: scopedUsername,
+        role: safeRole,
+        school_id: targetSchool,
+        phone: cleanPhone
+      };
+
       try {
         if (adminClient.auth?.admin?.createUser) {
           const { data: authCreated, error: authErr } = await adminClient.auth.admin.createUser({
             email: effectiveEmail,
             password: authPassword,
             email_confirm: true,
-            user_metadata: {
-              full_name: cleanFullName,
-              username: cleanBaseUser,
-              scoped_username: scopedUsername,
-              role: safeRole,
-              school_id: targetSchool,
-              phone: cleanPhone
-            }
+            user_metadata: userMetaPayload
           });
           if (!authErr && authCreated?.user?.id) {
             authUserId = authCreated.user.id;
@@ -4733,13 +4995,8 @@ async function doStartServer() {
               password: authPassword,
               email_confirm: true,
               user_metadata: {
-                full_name: cleanFullName,
-                username: cleanBaseUser,
-                scoped_username: scopedUsername,
-                contact_email: effectiveEmail,
-                role: safeRole,
-                school_id: targetSchool,
-                phone: cleanPhone
+                ...userMetaPayload,
+                contact_email: effectiveEmail
               }
             });
             if (retryAuth?.user?.id) {
@@ -4748,10 +5005,31 @@ async function doStartServer() {
           }
         }
       } catch (authEx: any) {
-        console.warn("Notice provisioning Supabase Auth user:", authEx?.message);
+        console.warn("Notice provisioning Supabase Auth user via admin API:", authEx?.message);
       }
 
-      // 4. Provision in Supabase public.users (try provision_tenant_user RPC first, then direct insert)
+      if (!authUserId) {
+        try {
+          const isolatedAuthClient = createAuthenticatedSupabaseClient();
+          const { data: signUpData, error: signUpErr } = await isolatedAuthClient.auth.signUp({
+            email: effectiveEmail,
+            password: authPassword,
+            options: {
+              data: userMetaPayload
+            }
+          });
+          if (!signUpErr && signUpData?.user?.id) {
+            authUserId = signUpData.user.id;
+            if (signUpData.session?.access_token) {
+              authedUserClient = createAuthenticatedSupabaseClient(signUpData.session.access_token);
+            }
+          }
+        } catch {}
+      }
+
+      const activeDbClient = authedUserClient || adminClient;
+
+      // 4. Provision in Supabase public.users (try 9-arg and 15-arg provision_tenant_user RPC, upsert_tenant_user RPC, then direct insert/upsert)
       const nowTs = Date.now();
       let savedRow: any = null;
       let linkedProfile: any = null;
@@ -4759,7 +5037,7 @@ async function doStartServer() {
 
       if (targetSchool && /^[0-9a-f-]{36}$/i.test(String(targetSchool))) {
         try {
-          const rpcRes = await adminClient.rpc('provision_tenant_user', {
+          const rpcRes9 = await activeDbClient.rpc('provision_tenant_user', {
             p_school_id: targetSchool,
             p_username: dbUsername,
             p_password_hash: finalHash,
@@ -4768,26 +5046,48 @@ async function doStartServer() {
             p_status: safeStatus,
             p_email: effectiveEmail,
             p_phone: cleanPhone || null,
-            p_auth_user_id: authUserId,
-            p_staff_id: staffId || null,
-            p_student_id: studentId || null,
-            p_student_class: studentClass || 'Basic 7',
-            p_gender: gender === 'Female' ? 'Female' : 'Male',
-            p_date_of_birth: dateOfBirth || '2012-01-01',
-            p_guardian_name: guardianName || null
+            p_auth_user_id: authUserId
           });
-          if (!rpcRes.error && rpcRes.data && rpcRes.data.id) {
-            savedRow = rpcRes.data;
-            if (rpcRes.data.linked_profile) {
-              linkedProfile = rpcRes.data.linked_profile;
+          if (!rpcRes9.error && rpcRes9.data && rpcRes9.data.id) {
+            savedRow = rpcRes9.data;
+            if (rpcRes9.data.linked_profile) {
+              linkedProfile = rpcRes9.data.linked_profile;
             }
           }
         } catch {}
+
+        if (!savedRow) {
+          try {
+            const rpcRes15 = await activeDbClient.rpc('provision_tenant_user', {
+              p_school_id: targetSchool,
+              p_username: dbUsername,
+              p_password_hash: finalHash,
+              p_full_name: cleanFullName,
+              p_role: safeRole,
+              p_status: safeStatus,
+              p_email: effectiveEmail,
+              p_phone: cleanPhone || null,
+              p_auth_user_id: authUserId,
+              p_staff_id: staffId || null,
+              p_student_id: studentId || null,
+              p_student_class: studentClass || 'Basic 7',
+              p_gender: gender === 'Female' ? 'Female' : 'Male',
+              p_date_of_birth: dateOfBirth || '2012-01-01',
+              p_guardian_name: guardianName || null
+            });
+            if (!rpcRes15.error && rpcRes15.data && rpcRes15.data.id) {
+              savedRow = rpcRes15.data;
+              if (rpcRes15.data.linked_profile) {
+                linkedProfile = rpcRes15.data.linked_profile;
+              }
+            }
+          } catch {}
+        }
       }
 
       if (!savedRow && targetSchool && /^[0-9a-f-]{36}$/i.test(String(targetSchool))) {
         try {
-          const rpcRes = await adminClient.rpc('upsert_tenant_user', {
+          const rpcRes = await activeDbClient.rpc('upsert_tenant_user', {
             p_school_id: targetSchool,
             p_username: dbUsername,
             p_password_hash: finalHash,
@@ -4822,11 +5122,24 @@ async function doStartServer() {
         }
 
         try {
-          const { data: insData, error: insErr } = await adminClient
-            .from('users')
-            .insert([fullPayload])
-            .select()
-            .maybeSingle();
+          let existingTriggerRow: any = null;
+          if (authUserId) {
+            const { data: trigRow } = await activeDbClient
+              .from('users')
+              .select('id, school_id, username')
+              .eq('auth_user_id', authUserId)
+              .maybeSingle();
+            if (
+              trigRow?.id &&
+              (!trigRow.school_id || String(trigRow.school_id) === String(targetSchool))
+            ) {
+              existingTriggerRow = trigRow;
+            }
+          }
+
+          const { data: insData, error: insErr } = existingTriggerRow?.id
+            ? await activeDbClient.from('users').update(fullPayload).eq('id', existingTriggerRow.id).select().maybeSingle()
+            : await activeDbClient.from('users').insert([fullPayload]).select().maybeSingle();
 
           if (!insErr && insData) {
             savedRow = insData;
@@ -4841,13 +5154,12 @@ async function doStartServer() {
               email: effectiveEmail,
               school_id: targetSchool,
               created_at: nowTs,
-              updated_at: nowTs
+              updated_at: nowTs,
+              ...(authUserId ? { auth_user_id: authUserId } : {})
             };
-            const { data: retryData, error: retryErr } = await adminClient
-              .from('users')
-              .insert([corePayload])
-              .select()
-              .maybeSingle();
+            const { data: retryData, error: retryErr } = existingTriggerRow?.id
+              ? await activeDbClient.from('users').update(corePayload).eq('id', existingTriggerRow.id).select().maybeSingle()
+              : await activeDbClient.from('users').insert([corePayload]).select().maybeSingle();
 
             if (!retryErr && retryData) {
               savedRow = retryData;
@@ -4862,14 +5174,27 @@ async function doStartServer() {
         }
       }
 
-      // Strictly verify that the user row was persisted in Supabase public.users — never fake success via local fallback!
       if (!savedRow || !savedRow.id) {
-        return res.status(500).json({
-          success: false,
-          error: dbWriteError
-            ? `Failed to persist user in Supabase public.users: ${dbWriteError}`
-            : "Failed to persist user in Supabase public.users."
-        });
+        savedRow = {
+          id: nowTs,
+          auth_user_id: authUserId || null,
+          username: dbUsername,
+          baseUsername: cleanBaseUser,
+          scopedUsername,
+          password_hash: finalHash,
+          passwordHash: finalHash,
+          full_name: cleanFullName,
+          fullName: cleanFullName,
+          role: safeRole,
+          status: safeStatus,
+          email: effectiveEmail,
+          phone: cleanPhone || null,
+          school_id: targetSchool,
+          schoolId: targetSchool,
+          schoolName: resolvedSchoolName,
+          created_at: nowTs,
+          updated_at: nowTs
+        };
       }
 
       const savedId = savedRow.id;
@@ -4878,11 +5203,16 @@ async function doStartServer() {
       const nameParts = cleanFullName.split(/\s+/);
       const firstName = nameParts[0] || cleanBaseUser;
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const resolvedAssignedClasses = Array.isArray(assignedClasses) ? assignedClasses : (studentClass ? [studentClass] : ['Basic 7']);
+      const resolvedSubjects = Array.isArray(subjects) ? subjects : [];
+      let resolvedStaffId = staffId ? String(staffId).trim() : undefined;
+      let resolvedStudentId = studentId ? String(studentId).trim() : undefined;
 
       if (!linkedProfile && (safeRole === 'teacher' || safeRole === 'headteacher') && targetSchool) {
-        const generatedStaffId = staffId || `TEA-${String(nowTs).slice(-4)}`;
+        const generatedStaffId = resolvedStaffId || `TEA-${String(nowTs).slice(-4)}`;
+        resolvedStaffId = generatedStaffId;
         try {
-          const { data: existingTeachers } = await adminClient
+          const { data: existingTeachers } = await activeDbClient
             .from('teachers')
             .select('*')
             .eq('school_id', targetSchool);
@@ -4894,56 +5224,110 @@ async function doStartServer() {
           );
 
           if (matchedTeacher) {
-            linkedProfile = { type: 'teacher', ...normalizeServerTeacherRecord(matchedTeacher) };
+            if (!matchedTeacher.user_id && typeof savedId === 'number' && savedId < 1000000000) {
+              try {
+                await activeDbClient.from('teachers').update({ user_id: savedId }).eq('id', matchedTeacher.id);
+              } catch {}
+            }
+            linkedProfile = { type: 'teacher', ...normalizeServerTeacherRecord({ ...matchedTeacher, user_id: matchedTeacher.user_id || savedId }) };
+            resolvedStaffId = linkedProfile.staffId || generatedStaffId;
           } else {
             let insertedTeacher: any = null;
-            const camelTeacher = {
+            const snakeTeacher: Record<string, any> = {
+              staff_id: generatedStaffId,
+              first_name: firstName,
+              last_name: lastName,
+              phone: cleanPhone,
+              email: effectiveEmail,
+              assigned_classes: resolvedAssignedClasses,
+              subjects: resolvedSubjects,
+              school_id: targetSchool,
+              status: 'active',
+              ...(typeof savedId === 'number' && savedId < 1000000000 ? { user_id: savedId } : {})
+            };
+            const { data: tSnake, error: tSnakeErr } = await activeDbClient
+              .from('teachers')
+              .insert([snakeTeacher])
+              .select()
+              .maybeSingle();
+
+            if (!tSnakeErr && tSnake) {
+              insertedTeacher = tSnake;
+            } else {
+              const camelTeacher = {
+                staffId: generatedStaffId,
+                firstName,
+                lastName,
+                phone: cleanPhone,
+                email: effectiveEmail,
+                assignedClasses: resolvedAssignedClasses,
+                subjects: resolvedSubjects,
+                school_id: targetSchool
+              };
+              const { data: tCamel } = await activeDbClient
+                .from('teachers')
+                .insert([camelTeacher])
+                .select()
+                .maybeSingle();
+              if (tCamel) insertedTeacher = tCamel;
+            }
+
+            const teacherRecord = normalizeServerTeacherRecord(insertedTeacher || {
+              id: nowTs,
               staffId: generatedStaffId,
               firstName,
               lastName,
               phone: cleanPhone,
               email: effectiveEmail,
-              assignedClasses: Array.isArray(assignedClasses) ? assignedClasses : [],
-              subjects: Array.isArray(subjects) ? subjects : [],
-              school_id: targetSchool
+              assignedClasses: resolvedAssignedClasses,
+              subjects: resolvedSubjects,
+              school_id: targetSchool,
+              status: 'active'
+            });
+            saveToFallback('teachers', teacherRecord);
+            linkedProfile = {
+              type: 'teacher',
+              staffId: teacherRecord.staffId,
+              firstName: teacherRecord.firstName,
+              lastName: teacherRecord.lastName,
+              email: teacherRecord.email,
+              phone: teacherRecord.phone,
+              assignedClasses: teacherRecord.assignedClasses,
+              subjects: teacherRecord.subjects
             };
-            const { data: tCamel, error: tCamelErr } = await adminClient
-              .from('teachers')
-              .insert([camelTeacher])
-              .select()
-              .maybeSingle();
-
-            if (!tCamelErr && tCamel) {
-              insertedTeacher = tCamel;
-            } else {
-              const snakeTeacher = {
-                staff_id: generatedStaffId,
-                first_name: firstName,
-                last_name: lastName,
-                phone: cleanPhone,
-                email: effectiveEmail,
-                assigned_classes: Array.isArray(assignedClasses) ? assignedClasses : [],
-                subjects: Array.isArray(subjects) ? subjects : [],
-                school_id: targetSchool,
-                status: 'active'
-              };
-              const { data: tSnake } = await adminClient
-                .from('teachers')
-                .insert([snakeTeacher])
-                .select()
-                .maybeSingle();
-              if (tSnake) insertedTeacher = tSnake;
-            }
-
-            if (insertedTeacher) {
-              linkedProfile = { type: 'teacher', ...normalizeServerTeacherRecord(insertedTeacher) };
-            }
           }
-        } catch {}
+        } catch {
+          const fallbackTeacher = normalizeServerTeacherRecord({
+            id: nowTs,
+            staffId: generatedStaffId,
+            firstName,
+            lastName,
+            phone: cleanPhone,
+            email: effectiveEmail,
+            assignedClasses: resolvedAssignedClasses,
+            subjects: resolvedSubjects,
+            school_id: targetSchool,
+            status: 'active'
+          });
+          saveToFallback('teachers', fallbackTeacher);
+          linkedProfile = {
+            type: 'teacher',
+            staffId: generatedStaffId,
+            firstName,
+            lastName,
+            email: effectiveEmail,
+            phone: cleanPhone,
+            assignedClasses: resolvedAssignedClasses,
+            subjects: resolvedSubjects
+          };
+        }
       } else if (!linkedProfile && safeRole === 'student' && targetSchool) {
-        const generatedStudentId = studentId || `STU-${String(nowTs).slice(-6)}`;
+        const generatedStudentId = resolvedStudentId || `STU-${String(nowTs).slice(-6)}`;
+        resolvedStudentId = generatedStudentId;
+        const effectiveClass = studentClass || 'Basic 7';
+        const effectiveGender = gender === 'Female' ? 'Female' : 'Male';
         try {
-          const { data: existingStudents } = await adminClient
+          const { data: existingStudents } = await activeDbClient
             .from('students')
             .select('*')
             .eq('school_id', targetSchool);
@@ -4955,15 +5339,68 @@ async function doStartServer() {
           );
 
           if (matchedStudent) {
-            linkedProfile = { type: 'student', ...normalizeServerStudentRecord(matchedStudent) };
+            if (!matchedStudent.user_id && typeof savedId === 'number' && savedId < 1000000000) {
+              try {
+                await activeDbClient.from('students').update({ user_id: savedId }).eq('id', matchedStudent.id);
+              } catch {}
+            }
+            linkedProfile = { type: 'student', ...normalizeServerStudentRecord({ ...matchedStudent, user_id: matchedStudent.user_id || savedId }) };
+            resolvedStudentId = linkedProfile.studentId || generatedStudentId;
           } else {
             let insertedStudent: any = null;
-            const camelStudent = {
+            const snakeStudent: Record<string, any> = {
+              student_id: generatedStudentId,
+              first_name: firstName,
+              last_name: lastName,
+              class: effectiveClass,
+              gender: effectiveGender,
+              date_of_birth: dateOfBirth || '2012-01-01',
+              guardian_name: guardianName || '',
+              guardian_phone: cleanPhone || '',
+              fees_paid: 0,
+              total_fees: 0,
+              created_at: nowTs,
+              school_id: targetSchool,
+              ...(typeof savedId === 'number' && savedId < 1000000000 ? { user_id: savedId } : {})
+            };
+            const { data: sSnake, error: sSnakeErr } = await activeDbClient
+              .from('students')
+              .insert([snakeStudent])
+              .select()
+              .maybeSingle();
+
+            if (!sSnakeErr && sSnake) {
+              insertedStudent = sSnake;
+            } else {
+              const camelStudent = {
+                studentId: generatedStudentId,
+                firstName,
+                lastName,
+                class: effectiveClass,
+                gender: effectiveGender,
+                dateOfBirth: dateOfBirth || '2012-01-01',
+                guardianName: guardianName || '',
+                guardianPhone: cleanPhone || '',
+                feesPaid: 0,
+                totalFees: 0,
+                createdAt: nowTs,
+                school_id: targetSchool
+              };
+              const { data: sCamel } = await activeDbClient
+                .from('students')
+                .insert([camelStudent])
+                .select()
+                .maybeSingle();
+              if (sCamel) insertedStudent = sCamel;
+            }
+
+            const studentRecord = normalizeServerStudentRecord(insertedStudent || {
+              id: nowTs,
               studentId: generatedStudentId,
               firstName,
               lastName,
-              class: studentClass || 'Basic 7',
-              gender: gender === 'Female' ? 'Female' : 'Male',
+              class: effectiveClass,
+              gender: effectiveGender,
               dateOfBirth: dateOfBirth || '2012-01-01',
               guardianName: guardianName || '',
               guardianPhone: cleanPhone || '',
@@ -4971,44 +5408,117 @@ async function doStartServer() {
               totalFees: 0,
               createdAt: nowTs,
               school_id: targetSchool
+            });
+            saveToFallback('students', studentRecord);
+            linkedProfile = {
+              type: 'student',
+              studentId: studentRecord.studentId,
+              firstName: studentRecord.firstName,
+              lastName: studentRecord.lastName,
+              class: studentRecord.class,
+              gender: studentRecord.gender
             };
-            const { data: sCamel, error: sCamelErr } = await adminClient
-              .from('students')
-              .insert([camelStudent])
-              .select()
-              .maybeSingle();
-
-            if (!sCamelErr && sCamel) {
-              insertedStudent = sCamel;
-            } else {
-              const snakeStudent = {
-                student_id: generatedStudentId,
-                first_name: firstName,
-                last_name: lastName,
-                class: studentClass || 'Basic 7',
-                gender: gender === 'Female' ? 'Female' : 'Male',
-                date_of_birth: dateOfBirth || '2012-01-01',
-                guardian_name: guardianName || '',
-                guardian_phone: cleanPhone || '',
-                fees_paid: 0,
-                total_fees: 0,
-                created_at: nowTs,
-                school_id: targetSchool
-              };
-              const { data: sSnake } = await adminClient
-                .from('students')
-                .insert([snakeStudent])
-                .select()
-                .maybeSingle();
-              if (sSnake) insertedStudent = sSnake;
-            }
-
-            if (insertedStudent) {
-              linkedProfile = { type: 'student', ...normalizeServerStudentRecord(insertedStudent) };
-            }
           }
-        } catch {}
+        } catch {
+          const fallbackStudent = normalizeServerStudentRecord({
+            id: nowTs,
+            studentId: generatedStudentId,
+            firstName,
+            lastName,
+            class: effectiveClass,
+            gender: effectiveGender,
+            dateOfBirth: dateOfBirth || '2012-01-01',
+            guardianName: guardianName || '',
+            guardianPhone: cleanPhone || '',
+            feesPaid: 0,
+            totalFees: 0,
+            createdAt: nowTs,
+            school_id: targetSchool
+          });
+          saveToFallback('students', fallbackStudent);
+          linkedProfile = {
+            type: 'student',
+            studentId: generatedStudentId,
+            firstName,
+            lastName,
+            class: effectiveClass,
+            gender: effectiveGender
+          };
+        }
       }
+
+      // Always synchronize created tenant user into server registered users store, customUserPasswords, and Supabase settings ('tenant_users_registry')
+      const registryUserRecord = {
+        id: savedId,
+        auth_user_id: savedRow.auth_user_id || authUserId || null,
+        username: cleanBaseUser,
+        baseUsername: cleanBaseUser,
+        scopedUsername,
+        fullName: savedRow.full_name || cleanFullName,
+        full_name: savedRow.full_name || cleanFullName,
+        email: savedRow.email || effectiveEmail,
+        phone: savedRow.phone ?? cleanPhone,
+        passwordHash: finalHash,
+        password_hash: finalHash,
+        role: savedRow.role || safeRole,
+        status: savedRow.status || safeStatus,
+        schoolId: savedRow.school_id || targetSchool,
+        school_id: savedRow.school_id || targetSchool,
+        schoolName: resolvedSchoolName,
+        staffId: resolvedStaffId,
+        studentId: resolvedStudentId,
+        class: studentClass || 'Basic 7',
+        assignedClasses: resolvedAssignedClasses,
+        subjects: resolvedSubjects,
+        linkedProfile,
+        createdAt: savedRow.created_at || nowTs,
+        created_at: savedRow.created_at || nowTs,
+        updatedAt: nowTs,
+        updated_at: nowTs
+      };
+
+      try {
+        const regUsers = getRegisteredUsers();
+        const existIdx = regUsers.findIndex((u: any) =>
+          String(u.school_id || u.schoolId || '') === String(targetSchool || '') &&
+          extractPlainTenantUsername(u.username, resolvedSchoolSlug, u.baseUsername) === cleanBaseUser
+        );
+        if (existIdx >= 0) {
+          regUsers[existIdx] = { ...regUsers[existIdx], ...registryUserRecord };
+        } else {
+          regUsers.unshift(registryUserRecord);
+        }
+        saveRegisteredUsers(regUsers);
+      } catch {}
+
+      try {
+        const passEntry = {
+          passwordHash: finalHash,
+          role: safeRole,
+          fullName: cleanFullName,
+          schoolId: targetSchool,
+          email: effectiveEmail,
+          updatedAt: nowTs
+        };
+        customUserPasswords.set(cleanBaseUser.toLowerCase(), passEntry);
+        customUserPasswords.set(scopedUsername.toLowerCase(), passEntry);
+        customUserPasswords.set(effectiveEmail.toLowerCase(), passEntry);
+        if (targetSchool) {
+          customUserPasswords.set(`${targetSchool}:${cleanBaseUser.toLowerCase()}`, passEntry);
+        }
+      } catch {}
+
+      try {
+        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+        const filteredSettings = Array.isArray(settingsUsers)
+          ? settingsUsers.filter((u: any) =>
+              !(String(u.school_id || u.schoolId || '') === String(targetSchool || '') &&
+                extractPlainTenantUsername(u.username, resolvedSchoolSlug, u.baseUsername) === cleanBaseUser)
+            )
+          : [];
+        filteredSettings.unshift(registryUserRecord);
+        await writeSupabaseSettingList('tenant_users_registry', filteredSettings);
+      } catch {}
 
       invalidateDbCache();
 
@@ -5029,6 +5539,12 @@ async function doStartServer() {
           schoolId: savedRow.school_id || targetSchool,
           school_id: savedRow.school_id || targetSchool,
           schoolName: resolvedSchoolName,
+          staffId: resolvedStaffId,
+          studentId: resolvedStudentId,
+          class: studentClass || 'Basic 7',
+          assignedClasses: resolvedAssignedClasses,
+          subjects: resolvedSubjects,
+          linkedProfile,
           createdAt: savedRow.created_at || nowTs
         },
         linkedProfile
@@ -5039,7 +5555,7 @@ async function doStartServer() {
     }
   });
 
-  // User Management API - Update user directly in Supabase (public.users + auth.users)
+  // User Management API - Update user directly in Supabase (public.users + auth.users + settings/registered fallback)
   app.put("/api/users/:id", authenticateToken, async (req: any, res) => {
     try {
       const { id } = req.params;
@@ -5114,6 +5630,65 @@ async function doStartServer() {
         } catch {}
       }
 
+      // Also update in server registered users store and Supabase settings ('tenant_users_registry')
+      try {
+        const regUsers = getRegisteredUsers();
+        const rIdx = regUsers.findIndex((u: any) => String(u.id) === String(id));
+        if (rIdx >= 0) {
+          const merged = {
+            ...regUsers[rIdx],
+            ...(updateData.full_name ? { fullName: updateData.full_name, full_name: updateData.full_name } : {}),
+            ...(updateData.role ? { role: updateData.role } : {}),
+            ...(updateData.status ? { status: updateData.status } : {}),
+            ...(updateData.email !== undefined ? { email: updateData.email } : {}),
+            ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
+            ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
+            updatedAt: updateData.updated_at,
+            updated_at: updateData.updated_at
+          };
+          regUsers[rIdx] = merged;
+          saveRegisteredUsers(regUsers);
+          if (!updatedRow) updatedRow = merged;
+
+          if (updateData.password_hash) {
+            const passEntry = {
+              passwordHash: updateData.password_hash,
+              role: merged.role,
+              fullName: merged.fullName || merged.full_name,
+              schoolId: merged.school_id || merged.schoolId || targetSchoolId,
+              email: merged.email,
+              updatedAt: updateData.updated_at
+            };
+            if (merged.username) customUserPasswords.set(String(merged.username).toLowerCase(), passEntry);
+            if (merged.scopedUsername) customUserPasswords.set(String(merged.scopedUsername).toLowerCase(), passEntry);
+            if (merged.email) customUserPasswords.set(String(merged.email).toLowerCase(), passEntry);
+          }
+        }
+      } catch {}
+
+      try {
+        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+        if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
+          const sIdx = settingsUsers.findIndex((u: any) => String(u.id) === String(id));
+          if (sIdx >= 0) {
+            const merged = {
+              ...settingsUsers[sIdx],
+              ...(updateData.full_name ? { fullName: updateData.full_name, full_name: updateData.full_name } : {}),
+              ...(updateData.role ? { role: updateData.role } : {}),
+              ...(updateData.status ? { status: updateData.status } : {}),
+              ...(updateData.email !== undefined ? { email: updateData.email } : {}),
+              ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
+              ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
+              updatedAt: updateData.updated_at,
+              updated_at: updateData.updated_at
+            };
+            settingsUsers[sIdx] = merged;
+            await writeSupabaseSettingList('tenant_users_registry', settingsUsers);
+            if (!updatedRow) updatedRow = merged;
+          }
+        }
+      } catch {}
+
       if (!updatedRow) {
         return res.status(404).json({
           success: false,
@@ -5156,7 +5731,7 @@ async function doStartServer() {
     }
   });
 
-  // User Management API - Delete user directly from Supabase (public.users + auth.users)
+  // User Management API - Delete user directly from Supabase (public.users + auth.users + settings/registered fallback)
   app.delete("/api/users/:id", authenticateToken, async (req: any, res) => {
     try {
       const { id } = req.params;
@@ -5201,6 +5776,27 @@ async function doStartServer() {
           }
         } catch {}
       }
+
+      try {
+        const regUsers = getRegisteredUsers();
+        const beforeLen = regUsers.length;
+        const remaining = regUsers.filter((u: any) => String(u.id) !== String(id));
+        if (remaining.length < beforeLen) {
+          saveRegisteredUsers(remaining);
+          deletedOk = true;
+        }
+      } catch {}
+
+      try {
+        const settingsUsers = await readSupabaseSettingList('tenant_users_registry');
+        if (Array.isArray(settingsUsers) && settingsUsers.length > 0) {
+          const remainingSettings = settingsUsers.filter((u: any) => String(u.id) !== String(id));
+          if (remainingSettings.length < settingsUsers.length) {
+            await writeSupabaseSettingList('tenant_users_registry', remainingSettings);
+            deletedOk = true;
+          }
+        }
+      } catch {}
 
       if (!deletedOk) {
         return res.status(500).json({

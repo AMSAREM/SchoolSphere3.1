@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to fix the 4 reported issues: duplicate GoTrueClient instances, Supabase Realtime channel subscription warning, Vite WebSocket unhandled rejection, and issued licenses disappearing from the frontend license registry.",
-  "updatedAt":  "2026-09-26T15:38:55.547480174Z",
+  "summary":  "Implementation plan to ensure users created in User Management are persisted directly into Supabase (auth.users, public.users, and role profile tables) and immediately displayed in the User Management table with full identity, contact, and linked profile metadata.",
+  "updatedAt":  "2026-09-26T19:34:04.300085652Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
