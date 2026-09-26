@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   CreditCard,
   Briefcase,
@@ -208,8 +208,9 @@ export default function SalesSuite({
   const handleCreateInvoice = (e: React.FormEvent) => {
     e.preventDefault();
     if (!billingSchool || !billingAmount) return;
+    const uniqueSuffix = `${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`;
     const newInv = {
-      id: `inv-${Math.floor(100 + Math.random() * 900)}`,
+      id: `inv-${uniqueSuffix}`,
       school: billingSchool,
       type: billingType,
       amount: parseFloat(billingAmount) || 0,
@@ -460,6 +461,47 @@ export default function SalesSuite({
     const previousCount = licensesList.length;
     await handleGenerateKey(e);
   };
+
+  // Deduplicate and filter license lists to strictly include valid issued keys and unique key + school_id
+  const dedupedLicensesList = useMemo(() => {
+    const seenKeys = new Set<string>();
+    const seenSchools = new Set<string>();
+    const result: any[] = [];
+    for (const lic of (Array.isArray(licensesList) ? licensesList : [])) {
+      const normKey = String(lic?.key || lic?.licenseKey || lic?.license_key || '').trim().toUpperCase();
+      if (!normKey) continue;
+      const schoolId = String(lic?.school_id || lic?.schoolId || lic?.school?.id || '').trim();
+      const schoolName = String(lic?.schoolName || lic?.school_name || '').trim().toUpperCase();
+      if (seenKeys.has(normKey)) continue;
+      if (schoolId && seenSchools.has(`id:${schoolId}`)) continue;
+      if (!schoolId && schoolName && seenSchools.has(`name:${schoolName}`)) continue;
+      seenKeys.add(normKey);
+      if (schoolId) seenSchools.add(`id:${schoolId}`);
+      if (schoolName) seenSchools.add(`name:${schoolName}`);
+      result.push({ ...lic, key: normKey });
+    }
+    return result;
+  }, [licensesList]);
+
+  const dedupedFilteredLicenses = useMemo(() => {
+    const seenKeys = new Set<string>();
+    const seenSchools = new Set<string>();
+    const result: any[] = [];
+    for (const lic of (Array.isArray(filteredLicenses) ? filteredLicenses : [])) {
+      const normKey = String(lic?.key || lic?.licenseKey || lic?.license_key || '').trim().toUpperCase();
+      if (!normKey) continue;
+      const schoolId = String(lic?.school_id || lic?.schoolId || lic?.school?.id || '').trim();
+      const schoolName = String(lic?.schoolName || lic?.school_name || '').trim().toUpperCase();
+      if (seenKeys.has(normKey)) continue;
+      if (schoolId && seenSchools.has(`id:${schoolId}`)) continue;
+      if (!schoolId && schoolName && seenSchools.has(`name:${schoolName}`)) continue;
+      seenKeys.add(normKey);
+      if (schoolId) seenSchools.add(`id:${schoolId}`);
+      if (schoolName) seenSchools.add(`name:${schoolName}`);
+      result.push({ ...lic, key: normKey });
+    }
+    return result;
+  }, [filteredLicenses]);
 
   // Finance lists
   const totalInvoiced = invoices.reduce((acc, inv) => acc + inv.amount, 0);
@@ -725,8 +767,8 @@ export default function SalesSuite({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {invoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-slate-50/50">
+                  {invoices.map((inv, idx) => (
+                    <tr key={`${inv.id || 'inv'}::${idx}`} className="hover:bg-slate-50/50">
                       <td className="py-2.5 font-mono text-slate-500 pr-2">{inv.id}</td>
                       <td className="py-2.5 font-bold text-slate-800 pr-2">{inv.school}</td>
                       <td className="py-2.5 text-slate-600 pr-2">{inv.type}</td>
@@ -838,8 +880,8 @@ export default function SalesSuite({
           <div className="lg:col-span-2 space-y-4">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Active Deals & Outreach Leads</h3>
             <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-              {crmLeads.map((lead) => (
-                <div key={lead.id} className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2 flex flex-col justify-between md:flex-row md:items-center gap-4">
+              {crmLeads.map((lead, idx) => (
+                <div key={`${lead.id || 'lead'}::${idx}`} className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2 flex flex-col justify-between md:flex-row md:items-center gap-4">
                   <div className="space-y-1">
                     <h4 className="font-bold text-slate-800 text-xs">{lead.schoolName}</h4>
                     <p className="text-[10px] text-slate-500">
@@ -980,7 +1022,7 @@ export default function SalesSuite({
   }
 
   if (activePanel === 'license_management') {
-    const latestLicense = filteredLicenses[0] || licensesList[0];
+    const latestLicense = dedupedFilteredLicenses[0] || dedupedLicensesList[0];
 
     return (
       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
@@ -1234,11 +1276,11 @@ export default function SalesSuite({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto pr-1">
-              {availableModules.map((mod) => {
+              {availableModules.map((mod, idx) => {
                 const checked = genSelectedModules.includes(mod.id);
                 return (
                   <label
-                    key={mod.id}
+                    key={`${mod.id || 'mod'}::${idx}`}
                     className={cn(
                       "flex items-start gap-2 p-2.5 rounded-xl border text-left cursor-pointer transition-all select-none",
                       checked ? "bg-white border-indigo-200 ring-2 ring-indigo-50/40 shadow-xs" : "bg-slate-50/50 border-slate-200 hover:border-slate-300"
@@ -1375,7 +1417,7 @@ export default function SalesSuite({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredLicenses.map((lic) => {
+                {dedupedFilteredLicenses.map((lic, idx) => {
                   const syncState = lic.syncStatus || 'local_only';
                   const isCopied = copiedKey === lic.key;
                   const rowSlug = (lic.schoolSlug || lic.provisionedAdmin?.schoolSlug || lic.schoolName || 'school')
@@ -1384,8 +1426,9 @@ export default function SalesSuite({
                     .replace(/[^a-z0-9]+/g, '-')
                     .replace(/^-|-$/g, '') || 'school';
                   const rowScopedHandle = lic.provisionedAdmin?.scopedUsername || `admin@${rowSlug}`;
+                  const rowCompositeKey = `${String(lic.key).trim().toUpperCase()}::${String(lic.school_id || lic.schoolId || rowSlug).trim()}::${idx}`;
                   return (
-                    <tr key={lic.key} className="hover:bg-slate-50/70 transition-colors group">
+                    <tr key={rowCompositeKey} className="hover:bg-slate-50/70 transition-colors group">
                       <td className="py-3.5 px-3 font-bold text-slate-800">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1402,10 +1445,10 @@ export default function SalesSuite({
                           </div>
                           {lic.activeModules && lic.activeModules.length > 0 && (
                             <div className="flex flex-wrap gap-1 pt-0.5">
-                              {lic.activeModules.slice(0, 5).map((m: string) => {
+                              {Array.from(new Set<string>(lic.activeModules)).slice(0, 5).map((m: string, mIdx: number) => {
                                 const label = availableModules.find(mod => mod.id === m)?.label || m;
                                 return (
-                                  <span key={m} className="text-[9px] bg-indigo-50 text-indigo-600 font-semibold px-2 py-0.5 rounded-md border border-indigo-100/60">
+                                  <span key={`${m}::${mIdx}`} className="text-[9px] bg-indigo-50 text-indigo-600 font-semibold px-2 py-0.5 rounded-md border border-indigo-100/60">
                                     {label.replace(' Records', '').replace(' Portal', '').replace(' Terminal', '').replace(' Registry', '').replace(' School', '')}
                                   </span>
                                 );
@@ -1541,7 +1584,7 @@ export default function SalesSuite({
                     </tr>
                   );
                 })}
-                {filteredLicenses.length === 0 && (
+                {dedupedFilteredLicenses.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-slate-400 text-sm italic">No matching keys located.</td>
                   </tr>

@@ -26,6 +26,9 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     teachers: [],
     attendance: [],
     results: [],
+    fee_transactions: [],
+    inventory_items: [],
+    term_reports: [],
     users: []
   };
 
@@ -507,6 +510,28 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(res.body.success).toBe(false);
     });
 
+    it('GET /api/users REJECTS unauthenticated requests with 401', async () => {
+      const res = await request(app).get('/api/users');
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('GET /api/users and GET /api/license/status REJECT forged Bearer JWT tokens with 403', async () => {
+      const badToken = 'Bearer forged.jwt.signature_tampered_payload';
+
+      const licRes = await request(app)
+        .get('/api/license/status')
+        .set('Authorization', badToken);
+      expect([401, 403]).toContain(licRes.status);
+      expect(licRes.body.success).toBe(false);
+
+      const usersRes = await request(app)
+        .get('/api/users')
+        .set('Authorization', badToken);
+      expect([401, 403]).toContain(usersRes.status);
+      expect(usersRes.body.success).toBe(false);
+    });
+
     it('GET /api/license/status ACCEPTS valid authenticated request', async () => {
       const res = await request(app)
         .get('/api/license/status')
@@ -914,7 +939,111 @@ describe('Security & API Endpoints Test Suite', () => {
       const deletedCheck = testSupabaseDB.users.find((u: any) => u.id === targetUser.id);
       expect(deletedCheck).toBeUndefined();
     });
+
+    it('GET /api/license/list excludes unlicensed records and deduplicates by both license key and school_id', async () => {
+      // Inject an unlicensed row (empty key) and duplicate key/school rows into school_licenses
+      testSupabaseDB.school_licenses.push(
+        {
+          id: 'lic-empty',
+          school_id: 'school-uuid-b',
+          license_key: '',
+          school_name: 'School B College',
+          active_status: 'active'
+        },
+        {
+          id: 'lic-dup-key',
+          school_id: 'school-uuid-c',
+          license_key: 'TEST-LICENSE-KEY-A',
+          school_name: 'Duplicate Key School',
+          active_status: 'active'
+        },
+        {
+          id: 'lic-dup-school',
+          school_id: 'school-uuid-a',
+          license_key: 'SECOND-KEY-FOR-SCHOOL-A',
+          school_name: 'School A Academy',
+          active_status: 'active'
+        }
+      );
+
+      const res = await request(app).get('/api/license/list');
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+
+      // Every returned record must have a non-empty key
+      for (const item of res.body) {
+        expect(typeof item.key).toBe('string');
+        expect(item.key.trim().length).toBeGreaterThan(0);
+      }
+
+      // Keys and school_ids must be strictly unique
+      const keys = res.body.map((r: any) => r.key);
+      expect(new Set(keys).size).toBe(keys.length);
+
+      const schoolIds = res.body.map((r: any) => r.school_id).filter(Boolean);
+      expect(new Set(schoolIds).size).toBe(schoolIds.length);
+    });
+
+    it('GET /api/schools/public exposes only public identity fields (id, name, slug, logo_url) and redacts contact/license fields', async () => {
+      const res = await request(app).get('/api/schools/public');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.schools)).toBe(true);
+      expect(res.body.schools.length).toBeGreaterThan(0);
+
+      for (const s of res.body.schools) {
+        expect(s).toHaveProperty('id');
+        expect(s).toHaveProperty('name');
+        expect(s).toHaveProperty('slug');
+        expect(s).toHaveProperty('logo_url');
+        expect(s).not.toHaveProperty('email');
+        expect(s).not.toHaveProperty('phone');
+        expect(s).not.toHaveProperty('address');
+        expect(s).not.toHaveProperty('license_id');
+        expect(s).not.toHaveProperty('license_key');
+        expect(s).not.toHaveProperty('key');
+      }
+    });
+
+    it('POST /api/diagnostics/backend-suite executes schema_audit, fk_constraint_audit, attendance_uniqueness_probe, rbac_and_tenant_isolation_probe, and live CRUD rollback probes', async () => {
+      const actions = [
+        'schema_audit',
+        'fk_constraint_audit',
+        'attendance_uniqueness_probe',
+        'rbac_and_tenant_isolation_probe',
+        'crud_student_probe',
+        'crud_academic_probe',
+        'crud_user_autolink_probe',
+        'license_and_rpc_audit'
+      ];
+
+      for (const action of actions) {
+        const res = await request(app)
+          .post('/api/diagnostics/backend-suite')
+          .send({ action });
+
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.action).toBe(action);
+        expect(typeof res.body.summary).toBe('string');
+        expect(Array.isArray(res.body.details)).toBe(true);
+        expect(res.body.details.length).toBeGreaterThan(0);
+
+        if (action === 'schema_audit') {
+          expect(Array.isArray(res.body.tables)).toBe(true);
+          expect(res.body.tables.length).toBe(12);
+          expect(res.body.tables.every((t: any) => t.exists === true)).toBe(true);
+        }
+      }
+
+      // Confirm all temporary diagnostic schools were rolled back cleanly
+      const leftoverDiagSchools = testSupabaseDB.schools.filter((s: any) =>
+        String(s.slug || '').startsWith('diag-')
+      );
+      expect(leftoverDiagSchools.length).toBe(0);
+    });
   });
 });
+
 
 

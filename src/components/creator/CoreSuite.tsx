@@ -491,8 +491,8 @@ export default function CoreSuite({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {licensesList.map((school) => (
-                <tr key={school.key} className="hover:bg-slate-50/50">
+              {licensesList.filter((s) => s && String(s.key || '').trim()).map((school, idx) => (
+                <tr key={`${String(school.key).trim().toUpperCase()}::${String(school.school_id || school.schoolName || 'school').trim()}::${idx}`} className="hover:bg-slate-50/50">
                   <td className="py-3 font-bold text-slate-800 pr-2">{school.schoolName}</td>
                   <td className="py-3 font-mono font-bold text-indigo-600 select-all pr-2">{school.key}</td>
                   <td className="py-3 pr-2">

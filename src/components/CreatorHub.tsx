@@ -43,6 +43,7 @@ import CoreSuite from './creator/CoreSuite';
 import SalesSuite from './creator/SalesSuite';
 import ServicesSuite from './creator/ServicesSuite';
 import SecuritySuite from './creator/SecuritySuite';
+import FrontendTestRunner from './FrontendTestRunner';
 
 const AVAILABLE_MODULES = [
   { id: 'students', label: 'Students Records', description: 'Student profile directories & biodata' },
@@ -61,6 +62,7 @@ const AVAILABLE_MODULES = [
 const SECTIONS = [
   // Core Suite
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Core Suite' },
+  { id: 'frontend_test_runner', label: 'Frontend Test Suite', icon: Activity, category: 'Core Suite' },
   { id: 'school_management', label: 'School Management', icon: Building, category: 'Core Suite' },
   { id: 'reports_analytics', label: 'Reports & Analytics', icon: TrendingUp, category: 'Core Suite' },
   { id: 'feature_management', label: 'Feature Management', icon: Sliders, category: 'Core Suite' },
@@ -95,6 +97,44 @@ const SECTIONS = [
 interface CreatorHubProps {
   onLicenseChange?: () => void;
   onExit?: () => void;
+}
+
+export function normalizeAndDedupeLicenses(rawList: any[]): any[] {
+  if (!Array.isArray(rawList)) return [];
+  const seenKeys = new Set<string>();
+  const seenSchoolIds = new Set<string>();
+  const seenSchoolNames = new Set<string>();
+  const result: any[] = [];
+
+  for (const item of rawList) {
+    if (!item) continue;
+    const normKey = String(item.key || item.licenseKey || item.license_key || '').trim().toUpperCase();
+    // Only include records with a valid issued license key
+    if (!normKey) continue;
+
+    const rawSchoolId = item.school_id || item.schoolId || item.school?.id || null;
+    const normSchoolId = rawSchoolId ? String(rawSchoolId).trim() : '';
+    const normSchoolName = String(item.schoolName || item.school_name || item.name || item.school?.name || '').trim().toUpperCase();
+
+    // Deduplicate by both license key and school ID (with school name fallback when school_id is absent)
+    if (seenKeys.has(normKey)) continue;
+    if (normSchoolId && seenSchoolIds.has(normSchoolId)) continue;
+    if (!normSchoolId && normSchoolName && seenSchoolNames.has(normSchoolName)) continue;
+
+    seenKeys.add(normKey);
+    if (normSchoolId) seenSchoolIds.add(normSchoolId);
+    if (normSchoolName) seenSchoolNames.add(normSchoolName);
+
+    result.push({
+      ...item,
+      key: normKey,
+      licenseKey: normKey,
+      school_id: rawSchoolId,
+      schoolName: item.schoolName || item.school_name || item.name || item.school?.name || 'School'
+    });
+  }
+
+  return result;
 }
 
 export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps) {
@@ -235,7 +275,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         if (contentType.includes('application/json')) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setLicensesList(data);
+            setLicensesList(normalizeAndDedupeLicenses(data));
             return;
           }
         }
@@ -409,7 +449,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
     setGenSchoolName('');
     setGenClientEmail('');
     setGenContactPerson('');
-    setLicensesList(updated);
+    setLicensesList(normalizeAndDedupeLicenses(updated));
     setIsGenerating(false);
     fetchGeneratedLicenses();
   };
@@ -636,16 +676,18 @@ Elena / Akoko Solutions (Vendor System Creator)`;
     setTimeout(() => setCopiedProposal(false), 2000);
   };
 
-  const filteredLicenses = licensesList.filter((lic) => {
+  const validLicensesList = normalizeAndDedupeLicenses(licensesList);
+
+  const filteredLicenses = validLicensesList.filter((lic) => {
     const matchesSearch =
-      lic.schoolName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lic.key.toLowerCase().includes(searchQuery.toLowerCase());
+      String(lic.schoolName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(lic.key || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterTier === 'all' || lic.tier === filterTier;
     return matchesSearch && matchesFilter;
   });
 
   // Recharts Data Sets for Platform Sync and Active Session Monitoring
-  const activeSchoolsCount = licensesList.filter((lic) => lic.status === 'active').length;
+  const activeSchoolsCount = validLicensesList.filter((lic) => lic.status === 'active').length;
   const activeSchoolsBaseline = Math.max(3, activeSchoolsCount);
 
   const monthlyTrendData = [
@@ -813,9 +855,9 @@ Elena / Akoko Solutions (Vendor System Creator)`;
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
         {/* Header */}
-        <header className="bg-white border-b border-slate-200 h-16 shrink-0 flex items-center justify-between px-6">
+        <header className="bg-white border-b border-slate-200 h-16 shrink-0 flex items-center justify-between px-6 print:hidden">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -830,7 +872,20 @@ Elena / Akoko Solutions (Vendor System Creator)`;
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              type="button"
+              onClick={() => setActivePanel('frontend_test_runner')}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap',
+                activePanel === 'frontend_test_runner'
+                  ? 'bg-[#1c4a59] text-white shadow-xs'
+                  : 'bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e]'
+              )}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Frontend Test Suite</span>
+            </button>
             <span className="hidden sm:inline-flex px-2.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-md tracking-wider">
               Environment: Live Sandbox
             </span>
@@ -852,7 +907,7 @@ Elena / Akoko Solutions (Vendor System Creator)`;
         </header>
 
         {/* Content Container */}
-        <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        <main className="flex-1 overflow-y-auto p-6 space-y-6 print:block print:h-auto print:overflow-visible print:p-0">
           {/* Active Sub-Suite Rendering */}
           <AnimatePresence mode="wait">
             <motion.div
@@ -862,11 +917,18 @@ Elena / Akoko Solutions (Vendor System Creator)`;
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.15 }}
             >
-              {activeSectionObj?.category === 'Core Suite' && (
+              {activePanel === 'frontend_test_runner' && (
+                <FrontendTestRunner
+                  isEmbeddedInCreator
+                  onNavigateCreatorPanel={setActivePanel}
+                />
+              )}
+
+              {activePanel !== 'frontend_test_runner' && activeSectionObj?.category === 'Core Suite' && (
                 <CoreSuite
                   activePanel={activePanel}
                   licenseInfo={licenseInfo}
-                  licensesList={licensesList}
+                  licensesList={validLicensesList}
                   totalDemoRecords={totalDemoRecords}
                   activeInstanceModules={activeInstanceModules}
                   setActiveInstanceModules={setActiveInstanceModules}
@@ -898,7 +960,7 @@ Elena / Akoko Solutions (Vendor System Creator)`;
               {activeSectionObj?.category === 'Sales Suite' && (
                 <SalesSuite
                   activePanel={activePanel}
-                  licensesList={licensesList}
+                  licensesList={validLicensesList}
                   searchQuery={searchQuery}
                   setSearchQuery={setSearchQuery}
                   filterTier={filterTier}

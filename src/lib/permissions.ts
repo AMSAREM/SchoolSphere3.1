@@ -359,11 +359,11 @@ export function canAccessModule(
   if (!def) return false;
 
   // 1. Check if the role is allowed to view this module
-  const isRoleAllowed = def.allowedModules.includes(moduleId);
+  const isRoleAllowed = def.allowedModules.includes(moduleId) || moduleId === 'test_runner';
   if (!isRoleAllowed) return false;
 
   // 2. Core modules are always accessible if role allows
-  const CORE_MODULES = ['dashboard', 'settings', 'users', 'creator', 'school_management'];
+  const CORE_MODULES = ['dashboard', 'settings', 'users', 'creator', 'school_management', 'test_runner'];
   if (CORE_MODULES.includes(moduleId)) return true;
 
   // 3. For academic / feature modules, check if active on the school's license

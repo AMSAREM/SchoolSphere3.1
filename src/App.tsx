@@ -38,7 +38,8 @@ import {
   Lock,
   Server,
   Key,
-  Sparkles
+  Sparkles,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -61,6 +62,7 @@ import InventoryManagement from './components/InventoryManagement';
 import CreatorHub from './components/CreatorHub';
 import SchoolManagement from './components/SchoolManagement';
 import TenantSwitcher from './components/TenantSwitcher';
+import FrontendTestRunner from './components/FrontendTestRunner';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -73,7 +75,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { DoodleBackground } from './components/DoodleBackground';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
 
 const ALL_DEFAULT_MODULES = [
   'students',
@@ -752,8 +754,10 @@ function AppContent() {
       baseItems.push({ id: 'school_management', label: 'Tenants & Schools', icon: Building });
     }
 
+    baseItems.push({ id: 'test_runner', label: 'Frontend Test Suite', icon: Activity });
+
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
+      const isCore = ['dashboard', 'settings', 'users', 'creator', 'school_management', 'test_runner'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1145,6 +1149,24 @@ function AppContent() {
 
               <PWAInstallButton variant="header" />
 
+              <button
+                type="button"
+                id="open-frontend-test-runner"
+                onClick={() => setActiveView('test_runner')}
+                className={cn(
+                  "flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-xs font-bold shadow-2xs cursor-pointer min-h-[44px]",
+                  activeView === 'test_runner'
+                    ? "bg-[#1c4a59] text-white border-[#1c4a59]"
+                    : "bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] border-[#faae57]"
+                )}
+                title="Open Interactive Frontend Test Runner"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span className="hidden md:inline text-xs tracking-tight font-bold">
+                  Test Suite
+                </span>
+              </button>
+
               <button 
                 id="manual-sync"
                 onClick={async () => {
@@ -1271,6 +1293,15 @@ function AppContent() {
                       setShowGetStarted(true);
                       setActiveView('dashboard');
                     }} 
+                  />
+                )}
+                {activeView === 'test_runner' && (
+                  <FrontendTestRunner
+                    onNavigateView={(target) => {
+                      if (navItems.some(i => i.id === target)) {
+                        setActiveView(target as View);
+                      }
+                    }}
                   />
                 )}
               </ErrorBoundary>

@@ -116,9 +116,9 @@ export const LicenseSyncBanner: React.FC<LicenseSyncBannerProps> = ({
             </p>
             {pendingList.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {pendingList.map((lic) => (
+                {pendingList.filter(lic => lic && String(lic.key || '').trim()).map((lic, idx) => (
                   <span
-                    key={lic.key}
+                    key={`${String(lic.key).trim().toUpperCase()}::${idx}`}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700"
                   >
                     <Database className="w-3 h-3 text-amber-500" />

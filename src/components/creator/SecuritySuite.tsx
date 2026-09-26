@@ -538,8 +538,8 @@ export default function SecuritySuite({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {syncLogs.map((log: any) => (
-                  <tr key={log.id} className="hover:bg-slate-50/50">
+                {syncLogs.map((log: any, idx: number) => (
+                  <tr key={`${log.id || 'log'}::${idx}`} className="hover:bg-slate-50/50">
                     <td className="py-3 font-medium text-slate-500 pr-2 whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleString()}
                     </td>

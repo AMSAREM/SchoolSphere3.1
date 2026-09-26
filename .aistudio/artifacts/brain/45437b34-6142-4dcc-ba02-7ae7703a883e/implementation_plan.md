@@ -1,82 +1,73 @@
-# License Registry Deduplication & Key Filtering in Creator Hub
+# SchoolSphere 3.1 — Strict JWT Authentication Gate on `/api/users` Endpoints
 
-Resolves the React duplicate key warning (`Encountered two children with the same key`) in the Creator Hub's License Management suite by filtering out unlicensed school placeholders and strictly deduplicating registry entries across both license key and school identifier.
+Enforces mandatory Bearer JWT authentication (`authenticateToken`) across the User Management API (`/api/users`) so anonymous requests are rejected with `HTTP 401` and forged or tampered Bearer tokens are rejected with `HTTP 403`, resolving both assertion failures in the live **Tenant Isolation, JWT Auth & RBAC Route Guards** test suite.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following decisions were confirmed during clarification and govern how license records and school rows are merged and displayed in the Creator Hub.
+> **Root Cause Identified**: All four `/api/users` endpoints (`GET /api/users`, `POST /api/users`, `PUT /api/users/:id`, and `DELETE /api/users/:id`) were mounted with `optionalAuthenticateToken` instead of `authenticateToken`. As a result, requests with no `Authorization` header or with a forged token (`Bearer forged.jwt.signature_tampered_payload`) bypassed the authentication gate and returned `HTTP 200` instead of `401` / `403`.
 
-- **Confirmed Decision 1 — Valid Issued Keys Only**: The License Management registry and activity tables will display only records that have a valid, non-empty issued license key. Unlicensed school records without an issued key are excluded from the license registry tables.
-- **Confirmed Decision 2 — Dual-Key Deduplication**: License registry entries returned by the backend and merged in the client state are deduplicated by both normalized license key (`UPPER(TRIM(key))`) and normalized school identifier (`school_id`), preventing duplicate rows or colliding React table keys.
+- **Confirmed Decision 1 — Strict `authenticateToken` Middleware on `/api/users`**: Replace `optionalAuthenticateToken` with `authenticateToken` on `GET /api/users`, `POST /api/users`, `PUT /api/users/:id`, and `DELETE /api/users/:id` so missing tokens return `HTTP 401 Unauthorized` and malformed/forged tokens return `HTTP 403 Forbidden`.
+- **Confirmed Decision 2 — Session Token Continuity for Authenticated Browser Users**: Ensure `AuthContext` always issues or refreshes a valid Bearer token (`esepa_auth_token`) for active authenticated sessions so legitimate administrators using the User Management terminal always include a valid `Authorization: Bearer <token>` header.
+
+---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Ensures the Creator Hub's License Management and Sales Suite views render a clean, strictly deduplicated registry of issued school licenses without React key collisions or unlicensed placeholder rows.
-- **Target Audience / Persona**: Platform Creators (`super_admin`) managing multi-tenant school licenses, subscription tiers, and institutional activation states.
-- **Key Value**: Eliminates UI rendering glitches and duplicate React key warnings in `<tbody>` tables while guaranteeing that license counts, revenue metrics, and registry rows accurately reflect unique, issued school licenses.
+- **What It Does**: Locks down all `/api/users` routes behind strict JWT verification while maintaining seamless authenticated access for tenant administrators and platform creators.
+- **Target Audience / Persona**: School administrators, platform creators, and security auditors running the Full-Stack Verification Suite.
+- **Key Value**: Eliminates anonymous enumeration or mutation of tenant user accounts and satisfies Master Guide §A5 & §A7 route authentication requirements.
+
+---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **License Overview & Recent Key Activity**: When opening the Sales Suite overview, the "Recent Key Activity" table lists the 5 most recent issued licenses with unique row identities, clean status indicators, and quick selection into the detail drawer.
-  2. **Master Key Registry Filtering & Inspection**: Switching to the License Management panel displays the full searchable, filterable table of issued licenses. Creators can filter by status (`Active`, `Expired`, `Revoked`), inspect school metadata, toggle activation status, or generate new keys.
-  3. **Empty & Filtered States**: When no issued licenses match the active filter or search query, a clear empty state row is displayed inside the table.
+  1. **Unauthenticated Request Rejection (`test_api_unauthenticated_rejection`)**: When the test runner calls `GET /api/license/status` and `GET /api/users` without an `Authorization` header, both routes immediately respond with `HTTP 401 Unauthorized`.
+  2. **Malformed & Tampered Bearer Token Rejection (`test_api_invalid_jwt_rejection`)**: When the test runner sends `Authorization: Bearer forged.jwt.signature_tampered_payload` to `/api/license/status` and `/api/users`, both routes verify the signature via `authenticateToken` and immediately reject the request with `HTTP 403 Forbidden`.
+  3. **Authenticated User Management**: Signed-in school administrators and creators continue to list, provision, update, and delete scoped tenant users with their active session JWT.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Utilitarian, high-density enterprise administration console adhering to the SchoolSphere 3.1 light-mode palette.
-  - *Color Palette & Mood*: Base canvas `#f6f8f7`, crisp white card surfaces `#ffffff`, deep navy-teal primary headers `#1c4a59`, warm amber primary CTA `#faae57`, subtle structural dividers `#bac4c6`, and semantic status indicators (`#06d6a0` for active/paid, `#ef476f` for expired/revoked).
-  - *Typography & Hierarchy*: Clean sans-serif (`Inter`) for institutional names and UI labels paired with monospace tabular figures (`JetBrains Mono`, `tabular-nums`) for license keys, student counts, and GH₵ financial figures.
-  - *Component Styling & Layout*: High-density data grids with 44px minimum row heights, sticky headers, zebra row tinting (`#f6f8f7`), and single-elevation surface depth.
-- **Interactive Feedback & Motion**: Smooth drawer transitions (`< 200ms`), immediate search and status filtering, and confirmed state updates after backend persistence.
+  - Preserves the SchoolSphere 3.1 light palette (`#f6f8f7` background, `#1c4a59` primary surface, `#faae57` CTA, `#06d6a0` functional pass badge, `#ef476f` alert badge).
+
+---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Exclude Unlicensed Schools from the License Registry State**
-  - *Chosen Approach*: Only merge metadata from the schools directory onto existing issued license records rather than synthesizing blank `key: ""` rows for unlicensed schools.
-  - *Why*: Synthesizing empty-key entries caused multiple `<tr>` elements to share `key=""` and inflated license registry tables with non-existent keys. Unlicensed schools remain accessible in the Institutional Directory for onboarding and key issuance.
-  - *Alternatives Considered*: Assigning synthetic placeholder keys to unlicensed schools, which was passed over per user preference to show only records with a valid issued license key.
-- **Decision 2: Multi-Layer Deduplication (API + State Merger + View Layer)**
-  - *Chosen Approach*: Enforce deduplication by both normalized license key and school ID at the backend API level, inside the Creator Hub state merger, and via a memoized selector in the Sales Suite component.
-  - *Why*: Guarantees defense-in-depth so that even if historical database tables (`school_licenses` and `schools`) contain overlapping records for the same school or key, the UI never receives or renders duplicate children.
-  - *Alternatives Considered*: Deduplicating only in the UI table render loop, which would leave summary KPI counters out of sync with the visible table rows.
+- **Decision 1 — Mandatory `authenticateToken` on All `/api/users` Routes**
+  - *Chosen Approach*: Gate `GET /api/users`, `POST /api/users`, `PUT /api/users/:id`, and `DELETE /api/users/:id` with `authenticateToken`.
+  - *Why*: User directory records contain usernames, emails, roles, and school assignments and must never be accessible to unauthenticated callers or forged tokens.
+  - *Alternatives Considered*: Rejecting only forged tokens while allowing missing tokens was rejected because `GET /api/users` without a token must return `HTTP 401` per the security specification.
+
+---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Architecture & Component Diagram**:
+### Architecture & Request Verification Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Supabase Persistence Layer                       │
-│         [ school_licenses ]                 [ schools ]                 │
-└──────────────────┬─────────────────────────────────┬────────────────────┘
-                   │                                 │
-                   ▼                                 ▼
+│                Frontend, Backend & Database Test Runner                 │
+├───────────────────────────────────┬─────────────────────────────────────┤
+│ 1. Unauthenticated Probe          │ 2. Forged JWT Probe                 │
+│ GET /api/users (No Auth Header)   │ GET /api/users (Bearer forged.jwt…) │
+└─────────────────┬─────────────────┴──────────────────┬──────────────────┘
+                  │                                    │
+                  ▼                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                   Express Backend License Registry API                  │
-│  • Filters out rows with missing/empty license keys                     │
-│  • Deduplicates by normalized license key AND school_id                 │
-└──────────────────────────────────┬──────────────────────────────────────┘
-                                   │
-                                   ▼
+│             Express Route Guard: authenticateToken Middleware           │
+│  • No Bearer token / query token  ──► HTTP 401 Unauthorized             │
+│  • Invalid / tampered signature   ──► HTTP 403 Forbidden                │
+│  • Valid signed JWT               ──► Attaches req.user & proceeds      │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │ (Valid Token Only)
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Creator Hub State Orchestrator                     │
-│  • Enriches valid issued licenses with school contact/slug metadata     │
-│  • Never injects empty-key placeholder rows for unlicensed schools      │
-└──────────────────────────────────┬──────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Sales Suite View Component                       │
-│  • Memoized valid & deduplicated license collection                     │
-│  • Recent Key Activity Table & Master Key Registry Table                │
-│  • Composite unique React keys (`${normalizedKey}::${schoolId}`)        │
+│          Tenant-Scoped Supabase Handler (/api/users CRUD)               │
+│  • Scopes query/mutation to req.user.school_id / x-school-id            │
+│  • Filters out creator/super_admin accounts from tenant listings        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Data Model & State**:
-  - **License Record**: Contains a non-empty normalized `key`, `schoolId` (`school_id`), `schoolName`, `packageTier`, `maxStudents`, `IssueDate`, `ExpiryDate`, `status`, and enriched school contact details (`email`, `phone`, `location`, `slug`).
-  - **Deduplication Invariant**: For any two records $A$ and $B$ in the active registry list, $\text{normKey}(A) \neq \text{normKey}(B)$ and (when `schoolId` is present) $\text{normSchoolId}(A) \neq \text{normSchoolId}(B)$.
-- **Interactive Component & State Mapping**:
-  - **License Fetch & Merge**: On Creator Hub initialization or refresh, the backend returns valid deduplicated licenses; the client merger enriches each license with school directory fields from matching `school_id` or `license_id` without adding unlicensed schools.
-  - **Table Rendering (`Recent Key Activity` & `Master Key Registry`)**: Renders rows from the memoized deduplicated license list using composite row keys and updates the Inspector Drawer when a row is clicked.
-  - **Automated Verification**: API and security test suite verifies that `/api/license/list` excludes empty keys and deduplicates overlapping key/school records.
+### Interactive Component & State Mapping
+- **Server `/api/users` Route Handlers**: Switch middleware from `optionalAuthenticateToken` to `authenticateToken` across `GET`, `POST`, `PUT`, and `DELETE` handlers.
+- **Automated Verification Suite**: Add explicit Vitest assertions verifying that `GET /api/users` without a token returns `401` and `GET /api/users` with a forged Bearer token returns `403`, alongside existing authenticated CRUD tests.
