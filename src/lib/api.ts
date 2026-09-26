@@ -104,7 +104,7 @@ export const studentsApi = {
     // Offline / Local Dexie DB Fallback
     const local = await db.students.toArray();
     const normalizedLocal = local.map(s => normalizeStudentRecord(s));
-    return targetSchoolId ? normalizedLocal.filter((s: any) => !s.schoolId || s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : normalizedLocal;
+    return targetSchoolId ? normalizedLocal.filter((s: any) => s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : normalizedLocal;
   },
 
   getById: async (id: number | string, schoolId?: string) => {
@@ -136,7 +136,7 @@ export const studentsApi = {
 
     const local = await db.students.where('class').equals(className).toArray();
     const normalizedLocal = local.map(s => normalizeStudentRecord(s));
-    return targetSchoolId ? normalizedLocal.filter((s: any) => !s.schoolId || s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : normalizedLocal;
+    return targetSchoolId ? normalizedLocal.filter((s: any) => s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : normalizedLocal;
   },
 
   /**
@@ -611,9 +611,9 @@ export const classesApi = {
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           try {
-            await reconcileClassesInDexie(data);
+            await reconcileClassesInDexie(data, true);
           } catch (e) {}
           return data;
         }
@@ -628,9 +628,9 @@ export const classesApi = {
           .select('*')
           .eq("school_id", targetSchoolId);
 
-        if (!error && data && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           try {
-            await reconcileClassesInDexie(data);
+            await reconcileClassesInDexie(data, true);
           } catch (e) {}
           return data;
         }
@@ -639,7 +639,7 @@ export const classesApi = {
 
     // 3. Fallback to Local Dexie
     const local = await db.classes.toArray();
-    return targetSchoolId ? local.filter((c: any) => !c.schoolId || c.schoolId === targetSchoolId || c.school_id === targetSchoolId) : local;
+    return targetSchoolId ? local.filter((c: any) => c.schoolId === targetSchoolId || c.school_id === targetSchoolId) : local;
   },
 
   create: async (classData: { name: string; level: string; capacity?: number }, schoolId?: string) => {
@@ -794,9 +794,9 @@ export const subjectsApi = {
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           try {
-            await reconcileSubjectsInDexie(data);
+            await reconcileSubjectsInDexie(data, true);
           } catch (e) {}
           return data;
         }
@@ -811,13 +811,13 @@ export const subjectsApi = {
           .select('*')
           .eq("school_id", targetSchoolId);
 
-        if (!error && data && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const parsed = data.map((sub: any) => ({
             ...sub,
             applicableClasses: typeof sub.applicableClasses === 'string' ? JSON.parse(sub.applicableClasses || '[]') : (sub.applicableClasses || [])
           }));
           try {
-            await reconcileSubjectsInDexie(parsed);
+            await reconcileSubjectsInDexie(parsed, true);
           } catch (e) {}
           return parsed;
         }
@@ -826,7 +826,7 @@ export const subjectsApi = {
 
     // 3. Fallback to Local Dexie
     const local = await db.subjects.toArray();
-    return targetSchoolId ? local.filter((s: any) => !s.schoolId || s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : local;
+    return targetSchoolId ? local.filter((s: any) => s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : local;
   },
 
   create: async (subjectData: { name: string; code: string; applicableClasses?: string[] }, schoolId?: string) => {
@@ -981,9 +981,9 @@ export const teachersApi = {
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           try {
-            await reconcileTeachersInDexie(data);
+            await reconcileTeachersInDexie(data, true);
           } catch (e) {}
           return data;
         }
@@ -998,14 +998,14 @@ export const teachersApi = {
           .select('*')
           .eq("school_id", targetSchoolId);
 
-        if (!error && data && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const parsed = data.map((t: any) => ({
             ...t,
             assignedClasses: typeof t.assignedClasses === 'string' ? JSON.parse(t.assignedClasses || '[]') : (t.assignedClasses || []),
             subjects: typeof t.subjects === 'string' ? JSON.parse(t.subjects || '[]') : (t.subjects || [])
           }));
           try {
-            await reconcileTeachersInDexie(parsed);
+            await reconcileTeachersInDexie(parsed, true);
           } catch (e) {}
           return parsed;
         }
@@ -1014,7 +1014,7 @@ export const teachersApi = {
 
     // 3. Fallback to Local Dexie
     const local = await db.teachers.toArray();
-    return targetSchoolId ? local.filter((t: any) => !t.schoolId || t.schoolId === targetSchoolId || t.school_id === targetSchoolId) : local;
+    return targetSchoolId ? local.filter((t: any) => t.schoolId === targetSchoolId || t.school_id === targetSchoolId) : local;
   },
 
   create: async (teacher: any, schoolId?: string) => {
@@ -1166,11 +1166,11 @@ export const syncTenantAcademicData = async (targetSchoolId: string) => {
     if (res.ok) {
       const { data } = await res.json();
       if (data) {
-        // Hydrate local Dexie with tenant's records in-place without duplicating rows
-        if (Array.isArray(data.students)) await reconcileStudentsInDexie(data.students);
-        if (Array.isArray(data.teachers)) await reconcileTeachersInDexie(data.teachers);
-        if (Array.isArray(data.classes)) await reconcileClassesInDexie(data.classes);
-        if (Array.isArray(data.subjects)) await reconcileSubjectsInDexie(data.subjects);
+        // Hydrate local Dexie with tenant's records in-place and prune non-tenant rows
+        if (Array.isArray(data.students)) await reconcileStudentsInDexie(data.students, true);
+        if (Array.isArray(data.teachers)) await reconcileTeachersInDexie(data.teachers, true);
+        if (Array.isArray(data.classes)) await reconcileClassesInDexie(data.classes, true);
+        if (Array.isArray(data.subjects)) await reconcileSubjectsInDexie(data.subjects, true);
         if (Array.isArray(data.attendance)) await reconcileAttendanceInDexie(data.attendance);
         if (Array.isArray(data.results)) await reconcileResultsInDexie(data.results);
         return true;
@@ -1435,7 +1435,6 @@ export const licenseApi = {
   }
 };
 
-export const licensesApi = licenseApi;
 
 // ==========================================
 // 9. USERS & AUTHENTICATION API
@@ -1443,169 +1442,160 @@ export const licensesApi = licenseApi;
 export const usersApi = {
   getAll: async (schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
 
-      if (!error && Array.isArray(data) && data.length > 0) {
-        // Filter by school if school_id is present
-        const filtered = targetSchoolId 
-          ? data.filter(u => !u.school_id || u.school_id === targetSchoolId || u.role === 'super_admin')
-          : data;
-        return filtered.map(u => ({
-          id: u.id,
-          username: u.username,
-          fullName: u.full_name || u.fullName || u.username,
-          email: u.email,
-          phone: u.phone,
-          role: u.role,
-          status: u.status || 'active',
-          schoolId: u.school_id,
-          school_id: u.school_id,
-          createdAt: u.created_at || Date.now(),
-          lastLogin: u.last_login
-        }));
-      }
-    } catch (e) {
-      console.warn('Notice querying Supabase users:', e);
-    }
+    const normalizeUserItem = (u: any, canonicalSchoolId?: string | null) => {
+      const rawUsername = String(u?.username || '').trim().toLowerCase().replace(/^@+/, '');
+      const plainUsername = u?.baseUsername || (
+        rawUsername.includes('@') && !/\.(com|org|net|edu|gh|xyz|io|app|ac|co|gov)$/i.test(rawUsername.split('@')[1] || '')
+          ? rawUsername.split('@')[0]
+          : rawUsername
+      );
+      const effectiveSchool = u?.school_id || u?.schoolId || canonicalSchoolId || targetSchoolId;
+      return {
+        ...u,
+        id: u?.id,
+        username: plainUsername,
+        baseUsername: plainUsername,
+        scopedUsername: u?.scopedUsername || rawUsername,
+        fullName: u?.fullName || u?.full_name || plainUsername,
+        full_name: u?.full_name || u?.fullName || plainUsername,
+        email: u?.email || '',
+        phone: u?.phone || '',
+        role: u?.role || 'teacher',
+        status: u?.status || 'active',
+        schoolId: effectiveSchool,
+        school_id: effectiveSchool,
+        schoolName: u?.schoolName || u?.school_name || undefined,
+        createdAt: Number(u?.createdAt || u?.created_at || Date.now()),
+        lastLogin: u?.lastLogin || u?.last_login || null
+      };
+    };
 
+    // 1. Primary authoritative route: Server multi-tenant Supabase endpoint (/api/users)
     try {
-      const res = await fetch('/api/users');
+      const q = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
+      const res = await fetch(`/api/users${q}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.users)) {
-          return data.users;
+          const resolvedSchoolId = data.schoolId || targetSchoolId;
+          return data.users
+            .filter((u: any) => {
+              const r = String(u?.role || '').toLowerCase();
+              return r !== 'creator' && r !== 'super_admin';
+            })
+            .map((u: any) => normalizeUserItem(u, resolvedSchoolId));
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Notice fetching /api/users:', e);
+    }
 
-    // Offline / Local Dexie fallback
-    return await db.users.toArray();
+    // 2. Secondary direct Supabase query if user has an active Supabase Auth session
+    try {
+      let query = supabase
+        .from('users')
+        .select('*')
+        .neq('role', 'creator')
+        .neq('role', 'super_admin')
+        .order('created_at', { ascending: false });
+
+      if (targetSchoolId) {
+        query = query.eq('school_id', targetSchoolId);
+      }
+
+      const { data, error } = await query;
+      if (!error && Array.isArray(data)) {
+        return data
+          .filter(u => {
+            const r = String(u?.role || '').toLowerCase();
+            return r !== 'creator' && r !== 'super_admin';
+          })
+          .map(u => normalizeUserItem(u, targetSchoolId));
+      }
+    } catch {}
+
+    return [];
   },
 
   create: async (userData: any, schoolId?: string) => {
-    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const targetSchoolId = schoolId || userData.school_id || userData.schoolId || (await getCurrentSchoolId());
+    const safeRole = (userData.role === 'creator' || userData.role === 'super_admin') ? 'admin' : (userData.role || 'teacher');
+    const rawPassword = userData.password || userData.passwordHash || userData.password_hash || '';
+    const cleanUsername = String(userData.username || '').trim().toLowerCase().replace(/^@+/, '');
+
     const payload = {
-      username: userData.username.trim().toLowerCase(),
-      password_hash: userData.passwordHash || userData.password_hash || '',
-      full_name: userData.fullName || userData.full_name || userData.username,
+      ...userData,
+      username: cleanUsername,
+      password: rawPassword,
+      full_name: userData.fullName || userData.full_name || cleanUsername,
+      fullName: userData.fullName || userData.full_name || cleanUsername,
       email: userData.email || null,
       phone: userData.phone || null,
-      role: userData.role || 'teacher',
+      role: safeRole,
       status: userData.status || 'active',
-      school_id: userData.role === 'super_admin' ? null : targetSchoolId,
-      created_at: userData.createdAt || Date.now(),
-      updated_at: Date.now(),
-      last_login: Date.now()
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
     };
 
-    // Save to local Dexie
-    let localId: number | undefined;
-    try {
-      const allDb = await db.users.toArray();
-      const existing = allDb.find(u => u.username?.toLowerCase() === payload.username);
-      const dexieUserPayload = {
-        ...payload,
-        fullName: payload.full_name,
-        passwordHash: payload.password_hash,
-        createdAt: payload.created_at || Date.now()
-      };
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: getApiHeaders(targetSchoolId || undefined),
+      body: JSON.stringify(payload)
+    });
 
-      if (existing && existing.id) {
-        await db.users.update(existing.id, dexieUserPayload);
-        localId = existing.id;
-      } else {
-        localId = (await db.users.add(dexieUserPayload as any)) as number;
-      }
-    } catch (e) {}
-
-    // Insert/upsert into Supabase
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .upsert([payload], { onConflict: 'school_id,username' })
-        .select()
-        .single();
-
-      if (!error && data) {
-        return {
-          ...data,
-          id: data.id,
-          fullName: data.full_name,
-          passwordHash: data.password_hash
-        };
-      }
-    } catch (e) {
-      console.warn('Notice saving user to Supabase:', e);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false || !data.user?.id) {
+      throw new Error(data.error || `Failed to create user account in Supabase (HTTP ${res.status})`);
     }
 
-    // Call server API route
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) return data.user;
-      }
-    } catch (e) {}
+    const serverUser = data.user;
+    const linkedProfile = data.linkedProfile || null;
+    const canonicalSchoolId = serverUser.school_id || serverUser.schoolId || targetSchoolId;
 
-    return { ...payload, id: localId, fullName: payload.full_name };
+    return {
+      ...serverUser,
+      id: serverUser.id,
+      username: serverUser.username || cleanUsername,
+      fullName: serverUser.full_name || serverUser.fullName || payload.full_name,
+      schoolId: canonicalSchoolId,
+      school_id: canonicalSchoolId,
+      linkedProfile
+    };
   },
 
   update: async (id: number | string, updates: any) => {
-    // Update local Dexie
-    if (typeof id === 'number') {
-      await db.users.update(id, updates);
+    const targetSchoolId = updates.school_id || updates.schoolId || (await getCurrentSchoolId());
+
+    const res = await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: getApiHeaders(targetSchoolId || undefined),
+      body: JSON.stringify(updates)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `Failed to update user account in Supabase (HTTP ${res.status})`);
     }
 
-    // Update Supabase
-    try {
-      const supabaseUpdates: any = { updated_at: Date.now() };
-      if (updates.fullName) supabaseUpdates.full_name = updates.fullName;
-      if (updates.full_name) supabaseUpdates.full_name = updates.full_name;
-      if (updates.role) supabaseUpdates.role = updates.role;
-      if (updates.status) supabaseUpdates.status = updates.status;
-      if (updates.passwordHash) supabaseUpdates.password_hash = updates.passwordHash;
-      if (updates.password_hash) supabaseUpdates.password_hash = updates.password_hash;
-      if (updates.email !== undefined) supabaseUpdates.email = updates.email;
-      if (updates.phone !== undefined) supabaseUpdates.phone = updates.phone;
-      if (updates.lastLogin) supabaseUpdates.last_login = updates.lastLogin;
-
-      await supabase.from('users').update(supabaseUpdates).eq('id', id);
-    } catch (e) {
-      console.warn('Notice updating user on Supabase:', e);
-    }
-
-    // Update server endpoint
-    try {
-      await fetch(`/api/users/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      });
-    } catch (e) {}
-
-    return true;
+    return data.user || true;
   },
 
   delete: async (id: number | string) => {
-    if (typeof id === 'number') {
-      await db.users.delete(id);
+    const targetSchoolId = await getCurrentSchoolId();
+    const q = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
+
+    const res = await fetch(`/api/users/${id}${q}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(targetSchoolId || undefined)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `Failed to delete user account in Supabase (HTTP ${res.status})`);
     }
-
-    try {
-      await supabase.from('users').delete().eq('id', id);
-    } catch (e) {}
-
-    try {
-      await fetch(`/api/users/${id}`, { method: 'DELETE' });
-    } catch (e) {}
 
     return true;
   }
@@ -1777,5 +1767,115 @@ export const licenseCodesApi = {
     return data;
   }
 };
+
+// ==========================================
+// 12. CANONICAL SCHOOL LICENSES API (SUPABASE SINGLE SOURCE OF TRUTH)
+// ==========================================
+export const licensesApi = {
+  getStatus: licenseApi.getStatus,
+
+  getAll: async () => {
+    const res = await fetch('/api/license/list', {
+      headers: getApiHeaders()
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to fetch licenses from Supabase');
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  },
+
+  generate: async (payload: {
+    schoolName: string;
+    durationMonths?: string;
+    tier?: string;
+    activeModules?: string[];
+    clientEmail?: string;
+    contactPerson?: string;
+    sendEmail?: boolean;
+    googleAccessToken?: string;
+  }) => {
+    const headers = getApiHeaders();
+    if (payload.googleAccessToken) {
+      headers['Authorization'] = `Bearer ${payload.googleAccessToken}`;
+    }
+    const res = await fetch('/api/license/generate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success || !data.license) {
+      throw new Error(data.error || 'Failed to generate and persist license in Supabase');
+    }
+    return data;
+  },
+
+  update: async (payload: {
+    key?: string;
+    schoolId?: string;
+    schoolName?: string;
+    tier?: string;
+    status?: string;
+    expiryDate?: number | null;
+  }) => {
+    const res = await fetch('/api/license/update', {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to update license in Supabase');
+    }
+    return data;
+  },
+
+  revoke: async (payload: {
+    key?: string;
+    schoolId?: string;
+    schoolName?: string;
+    slug?: string;
+    status?: 'suspended' | 'active' | 'revoked';
+  }) => {
+    const res = await fetch('/api/license/revoke', {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to update license status in Supabase');
+    }
+    return data;
+  },
+
+  validate: async (key: string) => {
+    const res = await fetch('/api/license/validate', {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify({ key })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Invalid license key');
+    }
+    return data;
+  },
+
+  repairRelationships: async () => {
+    const res = await fetch('/api/license/repair-relationships', {
+      method: 'POST',
+      headers: getApiHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to reconcile school-license relationships');
+    }
+    return data;
+  }
+};
+
 
 

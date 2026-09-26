@@ -69,13 +69,13 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
 
   const fetchSchools = async () => {
     setIsLoading(true);
+    localStorage.removeItem('esepa_cached_tenants');
     try {
       const res = await fetch('/api/tenants');
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.tenants)) {
           setSchools(data.tenants);
-          localStorage.setItem('esepa_generated_licenses', JSON.stringify(data.tenants));
           setIsLoading(false);
           return;
         }
@@ -84,7 +84,6 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
       console.warn('Notice loading tenants:', err);
     }
 
-    // Fallback check
     try {
       const resOld = await fetch('/api/schools');
       if (resOld.ok) {
@@ -97,12 +96,6 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
       }
     } catch (e) {}
 
-    const cached = localStorage.getItem('esepa_generated_licenses');
-    if (cached) {
-      try {
-        setSchools(JSON.parse(cached));
-      } catch (e) {}
-    }
     setIsLoading(false);
   };
 
@@ -188,27 +181,41 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     showToast(`Switched active tenant to ${school.name || school.schoolName}`, 'success');
   };
 
-  const handleRevokeSchool = (key: string, schoolName: string) => {
+  const handleRevokeSchool = (key: string, schoolName: string, schoolObj?: any, targetStatus: 'suspended' | 'active' = 'suspended') => {
+    const isReactivating = targetStatus === 'active';
     confirm({
-      title: 'SUSPEND TENANT INSTANCE',
-      message: `Are you sure you want to suspend the subscription for ${schoolName}? All users associated with this tenant will be restricted.`,
-      confirmLabel: 'Suspend Tenant',
+      title: isReactivating ? 'REACTIVATE TENANT INSTANCE' : 'SUSPEND TENANT INSTANCE',
+      message: isReactivating
+        ? `Are you sure you want to reactivate the subscription and portal access for ${schoolName}?`
+        : `Are you sure you want to suspend the subscription for ${schoolName}? All users associated with this tenant will be restricted.`,
+      confirmLabel: isReactivating ? 'Reactivate Tenant' : 'Suspend Tenant',
       onConfirm: async () => {
         try {
           const res = await fetch('/api/license/revoke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
+            body: JSON.stringify({
+              key,
+              schoolId: schoolObj?.id || schoolObj?.school_id,
+              schoolName,
+              slug: schoolObj?.slug,
+              status: targetStatus
+            })
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            showToast('Tenant subscription suspended successfully', 'success');
+            showToast(
+              isReactivating
+                ? `Tenant ${schoolName} reactivated and synced to database`
+                : `Tenant ${schoolName} suspended and synced to database`,
+              'success'
+            );
             fetchSchools();
           } else {
-            showToast(data.error || 'Failed to suspend license', 'error');
+            showToast(data.error || `Failed to ${isReactivating ? 'reactivate' : 'suspend'} tenant`, 'error');
           }
         } catch (err) {
-          showToast('Network error suspending license', 'error');
+          showToast(`Network error updating tenant status`, 'error');
         }
       }
     });
@@ -489,11 +496,21 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
 
                           {!isSuspended && !isCurrentActive && (
                             <button
-                              onClick={() => handleRevokeSchool(key, schoolName)}
+                              onClick={() => handleRevokeSchool(key, schoolName, school, 'suspended')}
                               className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                               title="Suspend tenant"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {isSuspended && (
+                            <button
+                              onClick={() => handleRevokeSchool(key, schoolName, school, 'active')}
+                              className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer"
+                              title="Reactivate tenant"
+                            >
+                              Reactivate
                             </button>
                           )}
                         </div>

@@ -228,6 +228,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
 
   const fetchGeneratedLicenses = async (retries = 2) => {
     try {
+      localStorage.removeItem('esepa_generated_licenses');
       const res = await fetch('/api/license/list');
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
@@ -235,7 +236,6 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
           const data = await res.json();
           if (Array.isArray(data)) {
             setLicensesList(data);
-            localStorage.setItem('esepa_generated_licenses', JSON.stringify(data));
             return;
           }
         }
@@ -245,13 +245,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         setTimeout(() => fetchGeneratedLicenses(retries - 1), 1000);
         return;
       }
-      console.warn('Notice loading generated licenses (using cached offline copy):', err);
-    }
-    const cached = localStorage.getItem('esepa_generated_licenses');
-    if (cached) {
-      try {
-        setLicensesList(JSON.parse(cached));
-      } catch (e) {}
+      console.warn('Notice loading generated licenses from Supabase:', err);
     }
   };
 
@@ -364,7 +358,10 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       }
 
       if (res.ok && data.success && data.license) {
-        createdLicense = data.license;
+        createdLicense = {
+          ...data.license,
+          provisionedAdmin: data.provisionedAdmin || data.license?.provisionedAdmin || null
+        };
         emailNotice = data.emailNotice || data.message;
         emailDispatched = !!data.emailDispatched;
       } else if (data.error) {
@@ -373,42 +370,40 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         return;
       }
     } catch (err) {
-      console.warn('Network catch during license generation, applying fallback:', err);
+      console.warn('Network error during license generation:', err);
+      showToast('Failed to connect to server to generate license in Supabase.', 'error');
+      setIsGenerating(false);
+      return;
     }
 
     if (!createdLicense) {
-      const schoolPrefix = genSchoolName.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "SCH";
-      const tierPrefix = (genTier || "BASIC").trim().toUpperCase().slice(0, 3);
-      const randomHash = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const fallbackKey = `ESEPA-${schoolPrefix}-${tierPrefix}-${randomHash}`;
-      
-      let exp: number | null = null;
-      if (genDuration && genDuration !== "perpetual") {
-        exp = Date.now() + (parseInt(genDuration) * 30 * 24 * 60 * 60 * 1000);
-      }
-
-      createdLicense = {
-        key: fallbackKey,
-        schoolName: genSchoolName.trim().toUpperCase(),
-        tier: genTier || "Basic",
-        durationMonths: genDuration,
-        expiryDate: exp,
-        createdAt: Date.now(),
-        status: "active",
-        clientEmail: genClientEmail.trim() || null,
-        contactPerson: genContactPerson.trim() || null,
-        activeModules: genSelectedModules || ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees']
-      };
+      showToast('Failed to persist license key in Supabase database. Please verify connection and retry.', 'error');
+      setIsGenerating(false);
+      return;
     }
 
-    const existing = JSON.parse(localStorage.getItem('esepa_generated_licenses') || '[]');
-    const updated = [createdLicense, ...existing.filter((l: any) => l.key !== createdLicense.key)];
-    localStorage.setItem('esepa_generated_licenses', JSON.stringify(updated));
+    createdLicense = {
+      ...createdLicense,
+      used: false,
+      activatedAt: null
+    };
 
+    localStorage.removeItem('esepa_generated_licenses');
+    const updated = [
+      createdLicense,
+      ...licensesList.filter(
+        (l: any) =>
+          l.key !== createdLicense.key &&
+          (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
+          String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
+      )
+    ];
+
+    const loginHandle = createdLicense.provisionedAdmin?.scopedUsername || createdLicense.clientEmail || 'admin';
     if (emailDispatched && genClientEmail.trim()) {
-      showToast(`License issued & dispatched to ${genClientEmail.trim()} successfully! Key: ${createdLicense.key}`, 'success');
+      showToast(`License issued & dispatched! Client login ready: ${loginHandle} / Password: ${createdLicense.key}`, 'success');
     } else {
-      showToast(`Issued License Code: ${createdLicense.key}`, 'success');
+      showToast(`Issued License: ${createdLicense.key} — Client login ready (${loginHandle})`, 'success');
     }
 
     setGenSchoolName('');
@@ -488,6 +483,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   };
 
   const handleRevokeKey = async (key: string) => {
+    const matched = licensesList.find((l: any) => l.key === key || l.licenseKey === key);
     confirm({
       title: 'Revoke License Key & Suspend Software',
       message: `Are you sure you want to revoke key [ ${key} ]? This instantly blacklists the serial number and locks out any portals using it.`,
@@ -498,7 +494,12 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
           const res = await fetch('/api/license/revoke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key })
+            body: JSON.stringify({
+              key,
+              schoolId: matched?.school_id || matched?.id || matched?.school?.id,
+              schoolName: matched?.schoolName || matched?.name || matched?.school?.name,
+              status: 'suspended'
+            })
           });
           const data = await res.json();
           if (res.ok && data.success) {

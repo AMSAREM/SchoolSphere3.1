@@ -13,7 +13,7 @@ import {
   Loader2, 
   ArrowLeft,
   KeyRound,
-  Sparkles,
+  Home,
   Globe,
   HelpCircle,
   Send,
@@ -220,7 +220,7 @@ export function AuthScreens({
     setSuccessMessage(null);
 
     try {
-      const res = await handleLogin(identifier.trim(), password, detectedSchool?.id);
+      const res = await handleLogin(identifier.trim(), password, detectedSchool?.id || detectedSchool?.slug);
       if (res.success) {
         setSuccessMessage('Authentication successful. Redirecting to workspace...');
         if (onSuccess) onSuccess();
@@ -339,12 +339,36 @@ export function AuthScreens({
     }
   };
 
+  const handleReturnToHomepage = () => {
+    try {
+      if (window.location.search) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch (e) {}
+    if (onBackToGetStarted) {
+      onBackToGetStarted();
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">
       <DoodleBackground opacity={0.06} />
 
       {/* Main Centered Auth Form Container */}
-      <div className="w-full max-w-md mx-auto my-auto">
+      <div className="w-full max-w-md mx-auto my-auto relative z-10">
+        {/* Top Navigation: Return to Homepage */}
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleReturnToHomepage}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-transparent border-0 border-none h-[44px] w-[174.094px] text-xs font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 transition-all active:scale-[0.97] min-h-[44px] cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Return to Homepage</span>
+          </button>
+        </div>
         
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
@@ -467,7 +491,7 @@ export function AuthScreens({
               {/* Username or Email Input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#1f2a2e] block">
-                  Username or Institutional Email
+                  Username, Scoped Handle, or Client Email
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#6a7f84]">
@@ -478,7 +502,7 @@ export function AuthScreens({
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="e.g. admin or teacher@school.edu.gh"
+                    placeholder="e.g. admin, admin@school-slug, or client@school.edu.gh"
                     className="w-full pl-10 pr-4 py-3 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl text-sm font-medium text-[#1f2a2e] placeholder-[#6a7f84] focus:outline-none focus:border-[#1c4a59] focus:bg-white transition-all min-h-[44px]"
                   />
                 </div>
@@ -487,7 +511,7 @@ export function AuthScreens({
               {/* Password Input */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-[#1f2a2e]">Password</label>
+                  <label className="text-xs font-bold text-[#1f2a2e]">Password or License Key</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -509,7 +533,7 @@ export function AuthScreens({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your account password"
+                    placeholder="Enter your password or ESEPA-... license key"
                     className="w-full pl-10 pr-11 py-3 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl text-sm font-medium text-[#1f2a2e] placeholder-[#6a7f84] focus:outline-none focus:border-[#1c4a59] focus:bg-white transition-all min-h-[44px]"
                   />
                   <button
@@ -913,16 +937,34 @@ export function AuthScreens({
         </div>
 
         {/* Security & Multi-Role Note */}
-        <div className="mt-4 px-2 flex items-center justify-center gap-2 text-center text-[11px] text-[#6a7f84]">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
-          <span>Role-Based Access Control enforced directly via Supabase RLS</span>
+        <div className="mt-4 px-2 flex flex-col items-center justify-center gap-2 text-center text-[11px] text-[#6a7f84]">
+          <div className="flex items-center justify-center gap-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+            <span>Role-Based Access Control enforced directly via Supabase RLS</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReturnToHomepage}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1c4a59] hover:underline mt-1 cursor-pointer"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Return to Homepage</span>
+          </button>
         </div>
       </div>
 
       {/* Global Compliance & Regulatory Footer */}
-      <footer className="w-full max-w-2xl mx-auto pt-6 pb-2 border-t border-[#bac4c6] mt-8 text-center sm:flex sm:items-center sm:justify-between text-xs text-[#6a7f84]">
+      <footer className="w-full max-w-2xl mx-auto pt-6 pb-2 border-t border-[#bac4c6] mt-8 text-center sm:flex sm:items-center sm:justify-between text-xs text-[#6a7f84] relative z-10">
         <p>© {new Date().getFullYear()} SchoolSphere 3.1 & Akoko Solutions</p>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-2 sm:mt-0 font-medium">
+          <button
+            type="button"
+            onClick={handleReturnToHomepage}
+            className="hover:text-[#1c4a59] font-bold transition-colors cursor-pointer"
+          >
+            Homepage
+          </button>
+          <span>•</span>
           <button
             type="button"
             onClick={() => setShowPrivacy(true)}

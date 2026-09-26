@@ -54,6 +54,7 @@ export default function UserManagement() {
   const [newResetPassword, setNewResetPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Invite worker state
   const [inviteEmail, setInviteEmail] = useState('');
@@ -73,7 +74,12 @@ export default function UserManagement() {
     phone: '',
     password: '',
     role: 'teacher' as UserRole,
-    status: 'active'
+    status: 'active',
+    staffId: '',
+    subjects: '',
+    assignedClass: 'Basic 7',
+    studentId: '',
+    gender: 'Male'
   });
 
   useEffect(() => {
@@ -155,18 +161,22 @@ export default function UserManagement() {
     }
   };
 
+  const isTenantUser = (u: any) => {
+    const role = String(u?.role || '').toLowerCase();
+    if (role === 'creator' || role === 'super_admin') return false;
+    const uSchoolId = u?.school_id || u?.schoolId;
+    if (school?.id && school.id !== '00000000-0000-0000-0000-000000000001' && uSchoolId && uSchoolId !== '00000000-0000-0000-0000-000000000001') {
+      return String(uSchoolId).toLowerCase() === String(school.id).toLowerCase();
+    }
+    return true;
+  };
+
   const loadUsers = async () => {
     try {
       const fetched = await usersApi.getAll(school?.id);
-      if (Array.isArray(fetched) && fetched.length > 0) {
-        setUsers(fetched);
-      } else {
-        const local = await db.users.toArray();
-        setUsers(local);
-      }
+      setUsers(Array.isArray(fetched) ? fetched.filter(isTenantUser) : []);
     } catch (e) {
-      const local = await db.users.toArray();
-      setUsers(local);
+      setUsers([]);
     }
   };
 
@@ -174,38 +184,87 @@ export default function UserManagement() {
     e.preventDefault();
     setIsLoading(true);
     setFeedback(null);
+    setModalError(null);
 
     try {
-      const cleanUsername = formData.username.trim().toLowerCase();
-      const existing = users.find(u => u.username?.toLowerCase() === cleanUsername);
-      if (existing) {
-        setFeedback({ type: 'error', msg: 'Username already exists' });
+      const cleanUsername = formData.username.trim().toLowerCase().replace(/^@+/, '');
+      if (!cleanUsername) {
+        const msg = 'Please enter a valid username';
+        setModalError(msg);
+        setFeedback({ type: 'error', msg });
         setIsLoading(false);
         return;
       }
+
+      if (!formData.password || formData.password.length < 4) {
+        const msg = 'Initial password must be at least 4 characters';
+        setModalError(msg);
+        setFeedback({ type: 'error', msg });
+        setIsLoading(false);
+        return;
+      }
+
+      const existing = users.find(u => u.username?.toLowerCase() === cleanUsername);
+      if (existing) {
+        const msg = `Username "@${cleanUsername}" already exists in this school`;
+        setModalError(msg);
+        setFeedback({ type: 'error', msg });
+        setIsLoading(false);
+        return;
+      }
+
+      const safeRole = (formData.role === 'creator' || formData.role === 'super_admin') ? 'admin' : formData.role;
 
       const newUser: any = {
         username: cleanUsername,
         fullName: formData.fullName.trim() || cleanUsername,
         full_name: formData.fullName.trim() || cleanUsername,
-        email: formData.email.trim() || `${cleanUsername}@schoolsphere.xyz`,
+        email: formData.email.trim() || null,
         phone: formData.phone.trim() || '',
         password: formData.password,
-        role: formData.role,
+        role: safeRole,
         status: formData.status || 'active',
-        schoolId: formData.role === 'super_admin' ? undefined : school?.id,
-        school_id: formData.role === 'super_admin' ? undefined : school?.id,
+        schoolId: school?.id,
+        school_id: school?.id,
+        staffId: formData.staffId.trim() || undefined,
+        subjects: formData.subjects ? formData.subjects.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+        assignedClasses: formData.assignedClass ? [formData.assignedClass] : undefined,
+        studentId: formData.studentId.trim() || undefined,
+        class: formData.assignedClass || 'Basic 7',
+        gender: formData.gender || 'Male',
         createdAt: Date.now(),
         lastLogin: Date.now()
       };
 
-      await usersApi.create(newUser, school?.id);
-      setFeedback({ type: 'success', msg: 'User account created and synchronized successfully' });
+      const created = await usersApi.create(newUser, school?.id);
+      const profileNote = created?.linkedProfile
+        ? ` and linked to ${created.linkedProfile.type === 'teacher' ? `Teacher (${created.linkedProfile.staffId})` : `Student (${created.linkedProfile.studentId})`} profile`
+        : '';
+      const successMsg = `User account @${cleanUsername} provisioned in Supabase${profileNote}.`;
+
+      setFeedback({ type: 'success', msg: successMsg });
+      showToast(successMsg, 'success');
       setIsAddModalOpen(false);
-      setFormData({ username: '', fullName: '', email: '', phone: '', password: '', role: 'teacher', status: 'active' });
+      setFormData({
+        username: '',
+        fullName: '',
+        email: '',
+        phone: '',
+        password: '',
+        role: 'teacher',
+        status: 'active',
+        staffId: '',
+        subjects: '',
+        assignedClass: 'Basic 7',
+        studentId: '',
+        gender: 'Male'
+      });
       await loadUsers();
     } catch (err: any) {
-      setFeedback({ type: 'error', msg: err.message || 'Failed to create user' });
+      const errorMsg = err.message || 'Failed to create user account';
+      setModalError(errorMsg);
+      setFeedback({ type: 'error', msg: errorMsg });
+      showToast(errorMsg, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -221,11 +280,11 @@ export default function UserManagement() {
 
     const newStatus = (userToUpdate.status || 'active') === 'active' ? 'suspended' : 'active';
     try {
-      await usersApi.update(userToUpdate.id, { status: newStatus });
+      await usersApi.update(userToUpdate.id, { status: newStatus, school_id: school?.id });
       showToast(`User status updated to ${newStatus}`, "success");
       await loadUsers();
-    } catch (err) {
-      showToast("Failed to update status", "error");
+    } catch (err: any) {
+      showToast(err.message || "Failed to update status", "error");
     }
   };
 
@@ -240,7 +299,7 @@ export default function UserManagement() {
 
     setIsLoading(true);
     try {
-      await usersApi.update(resetPasswordUser.id, { password: newResetPassword });
+      await usersApi.update(resetPasswordUser.id, { password: newResetPassword, school_id: school?.id });
       showToast(`Password successfully reset for @${resetPasswordUser.username}`, "success");
       setResetPasswordUser(null);
       setNewResetPassword('');
@@ -281,6 +340,7 @@ export default function UserManagement() {
   };
 
   const filteredUsers = users.filter(u => {
+    if (u.role === 'creator' || u.role === 'super_admin') return false;
     const matchesSearch = (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.fullName || u.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.email || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -289,7 +349,7 @@ export default function UserManagement() {
     return matchesSearch && matchesRole;
   });
 
-  if (currentUser?.role !== 'super_admin' && currentUser?.role !== 'admin') {
+  if (currentUser?.role !== 'super_admin' && currentUser?.role !== 'creator' && currentUser?.role !== 'admin' && currentUser?.role !== 'headteacher') {
     return (
       <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
         <Shield className="w-12 h-12 text-rose-500 mx-auto mb-4" />
@@ -308,7 +368,10 @@ export default function UserManagement() {
           <p className="text-slate-500 dark:text-slate-400 text-sm">Configure authentication credentials, role matrices, and institutional permissions</p>
         </div>
         <button 
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={() => {
+            setModalError(null);
+            setIsAddModalOpen(true);
+          }}
           className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md shadow-indigo-500/20 text-sm"
         >
           <UserPlus className="w-4 h-4" />
@@ -338,7 +401,7 @@ export default function UserManagement() {
         {[
           { label: 'Total Users', value: users.length, icon: Users, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' },
           { label: 'Active Users', value: users.filter(u => (u.status || 'active') === 'active').length, icon: Activity, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
-          { label: 'Administrators', value: users.filter(u => u.role === 'super_admin' || u.role === 'admin' || u.role === 'headteacher').length, icon: Shield, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/40' },
+          { label: 'Administrators', value: users.filter(u => u.role === 'admin' || u.role === 'headteacher').length, icon: Shield, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/40' },
           { label: 'Suspended', value: users.filter(u => (u.status || 'active') === 'suspended' || u.status === 'inactive').length, icon: Ban, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/40' },
         ].map((stat, i) => (
           <div key={i} className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3.5">
@@ -360,7 +423,6 @@ export default function UserManagement() {
         </span>
         {[
           { id: 'all', label: 'All Roles' },
-          { id: 'super_admin', label: 'Super Admins' },
           { id: 'admin', label: 'Admins' },
           { id: 'headteacher', label: 'Head Teachers' },
           { id: 'teacher', label: 'Teachers' },
@@ -543,6 +605,16 @@ export default function UserManagement() {
               </div>
 
               <form onSubmit={handleAddUser} className="p-6 space-y-4">
+                {modalError && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="flex-1">{modalError}</span>
+                    <button type="button" onClick={() => setModalError(null)} className="hover:opacity-70">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Full Name</label>
                   <input 
@@ -565,6 +637,7 @@ export default function UserManagement() {
                     placeholder="e.g. jmensah"
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden font-mono"
                   />
+                  <p className="text-[11px] text-slate-400">Scoped to {school?.name || 'your school'}. User logs in with plain username.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -597,7 +670,7 @@ export default function UserManagement() {
                     type="password"
                     value={formData.password}
                     onChange={e => setFormData({...formData, password: e.target.value})}
-                    placeholder="Enter secure initial password"
+                    placeholder="Enter secure initial password (min 4 chars)"
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                   />
                 </div>
@@ -610,7 +683,6 @@ export default function UserManagement() {
                       onChange={e => setFormData({...formData, role: e.target.value as UserRole})}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                     >
-                      <option value="super_admin">Super Administrator</option>
                       <option value="admin">School Administrator</option>
                       <option value="headteacher">Head Teacher</option>
                       <option value="teacher">Teacher</option>
@@ -632,6 +704,70 @@ export default function UserManagement() {
                     </select>
                   </div>
                 </div>
+
+                {/* Role-specific Supabase profile auto-linking fields */}
+                {formData.role === 'teacher' && (
+                  <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/60 dark:border-indigo-800/40 space-y-3">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Auto-links or creates Teacher Profile in Supabase</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Assigned Class</label>
+                        <input
+                          type="text"
+                          value={formData.assignedClass}
+                          onChange={e => setFormData({...formData, assignedClass: e.target.value})}
+                          placeholder="e.g. Basic 7"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Subjects (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={formData.subjects}
+                          onChange={e => setFormData({...formData, subjects: e.target.value})}
+                          placeholder="Mathematics, Science"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {formData.role === 'student' && (
+                  <div className="p-3.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 space-y-3">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Auto-links or creates Student Profile in Supabase</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Class / Grade</label>
+                        <input
+                          type="text"
+                          value={formData.assignedClass}
+                          onChange={e => setFormData({...formData, assignedClass: e.target.value})}
+                          placeholder="e.g. Basic 7"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Gender</label>
+                        <select
+                          value={formData.gender}
+                          onChange={e => setFormData({...formData, gender: e.target.value})}
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white"
+                        >
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-3 flex gap-3">
                   <button 

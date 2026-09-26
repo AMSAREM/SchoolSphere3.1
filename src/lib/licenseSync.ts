@@ -1,51 +1,54 @@
 export interface LicenseRecord {
   key: string;
+  license_id?: number | null;
   schoolName: string;
+  school_id?: string | null;
   tier: string;
   durationMonths: string;
   expiryDate: number | null;
   createdAt: number;
-  status: 'active' | 'suspended' | 'expired';
+  activatedAt?: number | null;
+  used?: boolean;
+  status: 'active' | 'suspended' | 'expired' | 'revoked';
   syncStatus: 'synced' | 'local_only' | 'sync_failed';
   syncError?: string | null;
   activeModules?: string[];
   [key: string]: any;
 }
 
-const STORAGE_KEY = 'esepa_generated_licenses';
+const LEGACY_STORAGE_KEYS = [
+  'esepa_generated_licenses',
+  'esepa_cached_tenants'
+];
 
-export function getStoredLicenses(): LicenseRecord[] {
+export function purgeLegacyLicenseCaches(): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item) => ({
-          ...item,
-          syncStatus: item.syncStatus || 'local_only',
-        }));
-      }
+    for (const k of LEGACY_STORAGE_KEYS) {
+      localStorage.removeItem(k);
     }
   } catch (e) {
-    console.error('Error reading stored licenses:', e);
+    console.warn('Notice purging legacy license cache:', e);
   }
+}
+
+// Automatically purge stale local license caches on module load
+purgeLegacyLicenseCaches();
+
+export function getStoredLicenses(): LicenseRecord[] {
+  purgeLegacyLicenseCaches();
   return [];
 }
 
-export function saveStoredLicenses(licenses: LicenseRecord[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(licenses));
+export function saveStoredLicenses(_licenses: LicenseRecord[]): void {
+  purgeLegacyLicenseCaches();
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('esepa_licenses_updated'));
-  } catch (e) {
-    console.error('Error saving stored licenses:', e);
   }
 }
 
 export function getPendingSyncCount(): number {
-  const licenses = getStoredLicenses();
-  return licenses.filter(
-    (l) => l.syncStatus === 'local_only' || l.syncStatus === 'sync_failed'
-  ).length;
+  return 0;
 }
 
 export async function syncPendingLicenses(): Promise<{
@@ -54,54 +57,24 @@ export async function syncPendingLicenses(): Promise<{
   failedCount: number;
   licenses?: LicenseRecord[];
 }> {
-  const licenses = getStoredLicenses();
-  const pending = licenses.filter(
-    (l) => l.syncStatus !== 'synced'
-  );
-
-  if (pending.length === 0) {
-    return { success: true, syncedCount: 0, failedCount: 0, licenses };
-  }
-
+  purgeLegacyLicenseCaches();
   try {
-    const res = await fetch('/api/license/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ licenses: pending }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.results)) {
-        const resultMap = new Map<string, LicenseRecord>();
-        data.results.forEach((r: LicenseRecord) => resultMap.set(r.key, r));
-
-        const updated = licenses.map((lic) => {
-          if (resultMap.has(lic.key)) {
-            return resultMap.get(lic.key)!;
-          }
-          return lic;
-        });
-
-        saveStoredLicenses(updated);
+    const listRes = await fetch('/api/license/list');
+    if (listRes.ok) {
+      const licenses = await listRes.json();
+      if (Array.isArray(licenses)) {
         return {
           success: true,
-          syncedCount: data.syncedCount || 0,
-          failedCount: data.failedCount || 0,
-          licenses: updated,
+          syncedCount: licenses.length,
+          failedCount: 0,
+          licenses
         };
       }
     }
   } catch (err) {
-    console.warn('Notice syncing pending licenses (will retry when online):', err);
+    console.warn('Notice reading licenses from Supabase:', err);
   }
 
-  return { success: false, syncedCount: 0, failedCount: pending.length, licenses };
+  return { success: false, syncedCount: 0, failedCount: 0, licenses: [] };
 }
 
-// Auto-run sync on online event
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    syncPendingLicenses();
-  });
-}

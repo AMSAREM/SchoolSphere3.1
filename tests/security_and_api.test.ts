@@ -77,14 +77,34 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
       return this;
     }
 
+    neq(column: string, value: any) {
+      this.filters.push(row => row[column] !== value && String(row[column]) !== String(value));
+      return this;
+    }
+
+    ilike(column: string, value: any) {
+      const pattern = String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*');
+      const regex = new RegExp(`^${pattern}$`, 'i');
+      this.filters.push(row => regex.test(String(row[column] ?? '')));
+      return this;
+    }
+
     or(condition: string) {
-      const parts = condition.split(',');
+      const parts = String(condition || '').split(',').map(p => p.trim()).filter(Boolean);
       this.filters.push(row => {
         return parts.some(part => {
-          const [col, op, val] = part.split('.');
-          if (op === 'eq') return row[col] === val;
+          const tokens = part.split('.');
+          if (tokens.length < 3) return false;
+          const col = tokens[0];
+          const op = tokens[1];
+          const val = tokens.slice(2).join('.');
+          if (op === 'eq') return row[col] === val || String(row[col]) === String(val);
           if (op === 'is' && val === 'null') return row[col] == null;
-          return true;
+          if (op === 'ilike') {
+            const pattern = String(val ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*');
+            return new RegExp(`^${pattern}$`, 'i').test(String(row[col] ?? ''));
+          }
+          return false;
         });
       });
       return this;
@@ -191,7 +211,9 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     auth: {
       signInWithOtp: async () => ({ error: null }),
       admin: {
-        createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null })
+        createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
+        updateUserById: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
+        deleteUser: async () => ({ data: {}, error: null })
       }
     }
   };
@@ -202,12 +224,7 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
 vi.mock('../lib/supabase/server.js', () => ({
   getSupabaseAdmin: () => mockSupabaseClient,
   getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
-    let existing = testSupabaseDB.schools.find(s => s.name === schoolName || s.slug === schoolName);
-    if (!existing) {
-      existing = { id: `school-${Date.now()}`, name: schoolName, slug: schoolName.toLowerCase().replace(/\s+/g, '-'), status: 'active' };
-      testSupabaseDB.schools.push(existing);
-    }
-    return existing;
+    return testSupabaseDB.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
   }
 }));
 
@@ -689,4 +706,215 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(res.text).toContain('schoolsphere.app');
     });
   });
+
+  // ============================================================================
+  // 8. Tenant User Management (Supabase Provisioning + Role Auto-Linking + Scoping)
+  // ============================================================================
+  describe('8. Tenant User Management & Role Profile Auto-Linking', () => {
+    const sharedUsername = `jmensah_${Date.now()}`;
+
+    it('provisions a Teacher user in Supabase public.users and auto-links a Teacher profile in public.teachers', async () => {
+      const res = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('x-school-id', 'school-uuid-a')
+        .send({
+          username: sharedUsername,
+          fullName: 'John Mensah',
+          email: `${sharedUsername}@schoola.edu`,
+          phone: '0241234567',
+          password: 'Password123!',
+          role: 'teacher',
+          status: 'active',
+          assignedClasses: ['Basic 7'],
+          subjects: ['Mathematics', 'Science'],
+          school_id: 'school-uuid-a'
+        });
+
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.success).toBe(true);
+      expect(res.body.user).toBeDefined();
+      expect(res.body.user.username).toBe(sharedUsername);
+      expect(res.body.user.role).toBe('teacher');
+      expect(res.body.user.school_id).toBe('school-uuid-a');
+      expect(res.body.linkedProfile).toBeDefined();
+      expect(res.body.linkedProfile.type).toBe('teacher');
+
+      // Confirm persisted in Supabase public.users
+      const { data: userRows } = await mockSupabaseClient
+        .from('users')
+        .select('*')
+        .eq('school_id', 'school-uuid-a');
+      const persistedUser = (userRows || []).find((u: any) =>
+        String(u.username || '').startsWith(sharedUsername)
+      );
+      expect(persistedUser).toBeDefined();
+
+      // Confirm Teacher profile was auto-created in Supabase public.teachers
+      const { data: teacherRows } = await mockSupabaseClient
+        .from('teachers')
+        .select('*')
+        .eq('school_id', 'school-uuid-a');
+      const linkedTeacher = (teacherRows || []).find((t: any) =>
+        t.staffId === res.body.linkedProfile.staffId || t.email === `${sharedUsername}@schoola.edu`
+      );
+      expect(linkedTeacher).toBeDefined();
+    });
+
+    it('rejects duplicate username within the same tenant school with 409 Conflict', async () => {
+      const res = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('x-school-id', 'school-uuid-a')
+        .send({
+          username: sharedUsername,
+          fullName: 'Another John Mensah',
+          password: 'Password123!',
+          role: 'teacher',
+          school_id: 'school-uuid-a'
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('allows a different tenant school (School B) to create an account with the same plain username', async () => {
+      const res = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${adminTokenSchoolB}`)
+        .set('x-school-id', 'school-uuid-b')
+        .send({
+          username: sharedUsername,
+          fullName: 'John Mensah (School B)',
+          password: 'SchoolBPass123!',
+          role: 'student',
+          class: 'Basic 8',
+          gender: 'Male',
+          school_id: 'school-uuid-b'
+        });
+
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.success).toBe(true);
+      expect(res.body.user.username).toBe(sharedUsername);
+      expect(res.body.user.school_id).toBe('school-uuid-b');
+      expect(res.body.linkedProfile).toBeDefined();
+      expect(res.body.linkedProfile.type).toBe('student');
+
+      // Verify GET /api/users for School A and School B are isolated and return plain username
+      const listA = await request(app)
+        .get('/api/users')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('x-school-id', 'school-uuid-a');
+      expect(listA.status).toBe(200);
+      const userInA = (listA.body.users || []).find((u: any) => u.username === sharedUsername);
+      expect(userInA).toBeDefined();
+      expect(userInA.fullName).toBe('John Mensah');
+
+      const listB = await request(app)
+        .get('/api/users')
+        .set('Authorization', `Bearer ${adminTokenSchoolB}`)
+        .set('x-school-id', 'school-uuid-b');
+      expect(listB.status).toBe(200);
+      const userInB = (listB.body.users || []).find((u: any) => u.username === sharedUsername);
+      expect(userInB).toBeDefined();
+      expect(userInB.fullName).toBe('John Mensah (School B)');
+    });
+
+    it('allows newly provisioned tenant user to log in immediately with their plain username without mutating password_hash', async () => {
+      const userBefore = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
+      expect(userBefore).toBeDefined();
+      const originalHash = userBefore.password_hash;
+
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: sharedUsername,
+          password: 'Password123!',
+          schoolId: 'school-uuid-a'
+        });
+
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.success).toBe(true);
+      expect(loginRes.body.token).toBeDefined();
+      expect(loginRes.body.user.username).toBe(sharedUsername);
+      expect(loginRes.body.user.role).toBe('teacher');
+
+      // Verify password_hash in Supabase was NOT overwritten during login
+      const userAfter = testSupabaseDB.users.find((u: any) => u.id === userBefore.id);
+      expect(userAfter.password_hash).toBe(originalHash);
+    });
+
+    it('preserves existing license keys and user passwords untouched across GET /api/license/list, GET /api/schools, and invalid/demo login attempts', async () => {
+      const originalLicenseKey = testSupabaseDB.school_licenses[0].license_key;
+      const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
+      const originalPasswordHash = targetUser.password_hash;
+
+      const licListRes = await request(app).get('/api/license/list');
+      expect(licListRes.status).toBe(200);
+      expect(testSupabaseDB.school_licenses[0].license_key).toBe(originalLicenseKey);
+
+      const schoolsRes = await request(app).get('/api/schools');
+      expect(schoolsRes.status).toBe(200);
+      expect(testSupabaseDB.school_licenses[0].license_key).toBe(originalLicenseKey);
+
+      // Attempt login with demo123 or admin123 on existing user -> must be 401 and must NOT overwrite password_hash
+      const badLogin = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: sharedUsername,
+          password: 'admin123',
+          schoolId: 'school-uuid-a'
+        });
+      expect(badLogin.status).toBe(401);
+      expect(targetUser.password_hash).toBe(originalPasswordHash);
+    });
+
+    it('updates user password via PUT /api/users/:id directly in Supabase and deletes user via DELETE /api/users/:id', async () => {
+      const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
+      expect(targetUser).toBeDefined();
+      const oldHash = targetUser.password_hash;
+
+      // Reset password via PUT /api/users/:id
+      const updateRes = await request(app)
+        .put(`/api/users/${targetUser.id}`)
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('x-school-id', 'school-uuid-a')
+        .send({
+          password: 'NewResetPass456!',
+          school_id: 'school-uuid-a'
+        });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.success).toBe(true);
+
+      const updatedUserInDb = testSupabaseDB.users.find((u: any) => u.id === targetUser.id);
+      expect(updatedUserInDb.password_hash).not.toBe(oldHash);
+      expect(updatedUserInDb.password_hash).toMatch(/^\$2[aby]\$/);
+
+      // Verify login succeeds with new password
+      const newLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+          username: sharedUsername,
+          password: 'NewResetPass456!',
+          schoolId: 'school-uuid-a'
+        });
+      expect(newLoginRes.status).toBe(200);
+      expect(newLoginRes.body.success).toBe(true);
+
+      // Delete user via DELETE /api/users/:id
+      const deleteRes = await request(app)
+        .delete(`/api/users/${targetUser.id}?school_id=school-uuid-a`)
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('x-school-id', 'school-uuid-a');
+
+      expect(deleteRes.status).toBe(200);
+      expect(deleteRes.body.success).toBe(true);
+
+      const deletedCheck = testSupabaseDB.users.find((u: any) => u.id === targetUser.id);
+      expect(deletedCheck).toBeUndefined();
+    });
+  });
 });
+
+

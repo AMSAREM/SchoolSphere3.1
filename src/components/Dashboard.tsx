@@ -40,7 +40,6 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { formatCurrency, triggerPrint, cn } from '../lib/utils';
-import { ProductivePlannerTemplate } from './ProductivePlannerTemplate';
 
 interface DashboardProps {
   onViewChange: (view: any) => void;
@@ -114,7 +113,6 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
   }, [user, students]);
 
   const [selectedWardId, setSelectedWardId] = useState<string>('');
-  const [dashboardLayout, setDashboardLayout] = useState<'planner' | 'metrics' | 'both'>('planner');
 
   useEffect(() => {
     if (parentWards.length > 0 && !selectedWardId) {
@@ -229,10 +227,10 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
 
     if (isTeacher) {
       return [
-        { label: 'My Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', view: 'students' as const },
-        { label: 'Weekly Attendance', value: '94%', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', view: 'attendance' as const },
-        { label: 'Average Score', value: averageScoreString, icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50', view: 'results' as const },
-        { label: 'Graded Slates', value: results.length, icon: Edit2, color: 'text-purple-600', bg: 'bg-purple-50', view: 'results' as const }
+        { label: 'My Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
+        { label: 'Weekly Attendance', value: '94%', icon: CheckCircle2, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'attendance' as const, accent: 'border-[#e1c594]' },
+        { label: 'Average Score', value: averageScoreString, icon: BookOpen, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'results' as const, accent: 'border-[#e1c594]' },
+        { label: 'Graded Slates', value: results.length, icon: Edit2, color: 'text-[#807654]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'results' as const, accent: 'border-[#bac4c6]/60' }
       ];
     }
 
@@ -240,40 +238,114 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       const totalBilled = students?.reduce((acc, s) => acc + (s.totalFees || 0), 0) || 0;
       const collectionRate = totalBilled > 0 ? `${Math.round((totalFeesCollected / totalBilled) * 100)}%` : '0%';
       return [
-        { label: 'Total Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', view: 'students' as const },
-        { label: 'Total Billed', value: formatCurrency(totalBilled), icon: Wallet, color: 'text-indigo-600', bg: 'bg-indigo-50', view: 'fees' as const },
-        { label: 'Fees Collected', value: formatCurrency(totalFeesCollected), icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-50', view: 'fees' as const },
-        { label: 'Collection Rate', value: collectionRate, icon: CheckCircle2, color: 'text-purple-600', bg: 'bg-purple-50', view: 'fees' as const }
+        { label: 'Total Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
+        { label: 'Total Billed', value: formatCurrency(totalBilled), icon: Wallet, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'fees' as const, accent: 'border-[#e1c594]' },
+        { label: 'Fees Collected', value: formatCurrency(totalFeesCollected), icon: Wallet, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'fees' as const, accent: 'border-[#e1c594]' },
+        { label: 'Collection Rate', value: collectionRate, icon: CheckCircle2, color: 'text-[#807654]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'fees' as const, accent: 'border-[#bac4c6]/60' }
       ];
     }
 
     if (isStudent) {
       return [
-        { label: 'My Registered Class', value: studentRecord?.class || 'JHS 3 Gold', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', view: 'students' as const },
-        { label: 'My Attendance Rate', value: studentAttendance, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', view: 'attendance' as const },
-        { label: 'My Average Score', value: studentAverageScore, icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50', view: 'results' as const },
-        { label: 'Active Term Polls', value: '2 Active', icon: Edit2, color: 'text-purple-600', bg: 'bg-purple-50', view: 'evoting' as const }
+        { label: 'My Registered Class', value: studentRecord?.class || 'JHS 3 Gold', icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
+        { label: 'My Attendance Rate', value: studentAttendance, icon: CheckCircle2, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'attendance' as const, accent: 'border-[#e1c594]' },
+        { label: 'My Average Score', value: studentAverageScore, icon: BookOpen, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'results' as const, accent: 'border-[#e1c594]' },
+        { label: 'Active Term Polls', value: '2 Active', icon: Edit2, color: 'text-[#807654]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'evoting' as const, accent: 'border-[#bac4c6]/60' }
       ];
     }
 
     if (isParent) {
       const wardsCountLabel = parentWards.length === 1 ? '1 Child' : `${parentWards.length} Children`;
       return [
-        { label: 'Registered Wards', value: wardsCountLabel, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', view: 'students' as const },
-        { label: 'Ward Attendance', value: selectedWard ? selectedWardAttendance : 'N/A', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', view: 'attendance' as const },
-        { label: 'Academic Standing', value: selectedWard ? selectedWardStanding : 'N/A', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50', view: 'results' as const },
-        { label: 'Outstanding Fees', value: selectedWard ? selectedWardOutstandingFees : 'GHS 0.00', icon: Wallet, color: 'text-amber-600', bg: 'bg-amber-50', view: 'fees' as const }
+        { label: 'Registered Wards', value: wardsCountLabel, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
+        { label: 'Ward Attendance', value: selectedWard ? selectedWardAttendance : 'N/A', icon: CheckCircle2, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'attendance' as const, accent: 'border-[#e1c594]' },
+        { label: 'Academic Standing', value: selectedWard ? selectedWardStanding : 'N/A', icon: BookOpen, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'results' as const, accent: 'border-[#e1c594]' },
+        { label: 'Outstanding Fees', value: selectedWard ? selectedWardOutstandingFees : 'GHS 0.00', icon: Wallet, color: 'text-[#faae57]', bg: 'bg-[#faae57]/15', view: 'fees' as const, accent: 'border-[#bac4c6]/60' }
       ];
     }
 
     // Default Admin / Super Admin / Head Teacher
     return [
-      { label: 'Total Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', view: 'students' as const },
-      { label: 'Teachers & Staff', value: typeof teacherCount === 'number' ? teacherCount : 0, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', view: 'academic' as const },
-      { label: 'Fees Collected', value: formatCurrency(totalFeesCollected), icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-50', view: 'fees' as const },
-      { label: 'Attendance Rate', value: '94%', icon: CheckCircle2, color: 'text-indigo-600', bg: 'bg-indigo-50', view: 'attendance' as const },
+      { label: 'Total Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
+      { label: 'Teachers & Staff', value: typeof teacherCount === 'number' ? teacherCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'academic' as const, accent: 'border-[#e1c594]' },
+      { label: 'Fees Collected', value: formatCurrency(totalFeesCollected), icon: Wallet, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'fees' as const, accent: 'border-[#e1c594]' },
+      { label: 'Attendance Rate', value: '94%', icon: CheckCircle2, color: 'text-[#807654]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'attendance' as const, accent: 'border-[#bac4c6]/60' },
     ];
   }, [user, studentCount, teacherCount, totalFeesCollected, averageScoreString, results, students, parentWards, selectedWard, selectedWardAttendance, selectedWardStanding, selectedWardOutstandingFees, studentRecord, studentAttendance, studentAverageScore]);
+
+  const heroSummary = useMemo(() => {
+    const role = user?.role;
+    const totalBilled = students?.reduce((acc, s) => acc + (s.totalFees || 0), 0) || 0;
+    const feePct = totalBilled > 0 ? Math.min(100, Math.round((totalFeesCollected / totalBilled) * 100)) : 88;
+    const presentCount = attendanceRecords.filter(r => r.status === 'Present' || r.status === 'Late').length;
+    const attendancePct = attendanceRecords.length > 0 ? Math.round((presentCount / attendanceRecords.length) * 100) : 94;
+
+    if (role === 'teacher') {
+      return {
+        kicker: 'Faculty Operations',
+        title: "Today's Classroom Schedule & Assessment Progress",
+        subtitle: `Tracking ${typeof studentCount === 'number' ? studentCount : 0} students across active classes with ${results.length} graded records logged this term.`,
+        percentage: attendancePct,
+        ringLabel: 'Attendance',
+        primaryCta: 'Take Attendance',
+        primaryView: 'attendance',
+        secondaryCta: 'Enter Exam Results',
+        secondaryView: 'results'
+      };
+    }
+    if (role === 'accountant') {
+      return {
+        kicker: 'Bursary & Accounts',
+        title: 'Termly Tuition & Fee Collection Overview',
+        subtitle: `${formatCurrency(totalFeesCollected)} collected out of ${formatCurrency(totalBilled)} total billed across ${typeof studentCount === 'number' ? studentCount : 0} enrolled students.`,
+        percentage: feePct,
+        ringLabel: 'Collected',
+        primaryCta: 'Record Fee Payment',
+        primaryView: 'fees',
+        secondaryCta: 'Financial Reports',
+        secondaryView: 'reports'
+      };
+    }
+    if (role === 'parent') {
+      const wardPct = parseInt(selectedWardAttendance, 10) || 96;
+      return {
+        kicker: 'Parent & Guardian Portal',
+        title: `${selectedWard ? `${selectedWard.firstName}'s` : "Your Ward's"} Term Attendance & Academic Standing`,
+        subtitle: `Current standing: ${selectedWard ? selectedWardStanding : 'High Honors'} · Outstanding balance: ${selectedWard ? selectedWardOutstandingFees : 'GHS 0.00'}.`,
+        percentage: wardPct,
+        ringLabel: 'Attendance',
+        primaryCta: 'Review Fee Balance',
+        primaryView: 'fees',
+        secondaryCta: 'Academic Results',
+        secondaryView: 'results'
+      };
+    }
+    if (role === 'student') {
+      const stuPct = parseInt(studentAttendance, 10) || 97;
+      return {
+        kicker: 'Student Academic Portal',
+        title: `My Term Progress & Class Schedule (${studentRecord?.class || 'Active Class'})`,
+        subtitle: `Current average score: ${studentAverageScore} across ${studentResults.length || 5} subjects this term.`,
+        percentage: stuPct,
+        ringLabel: 'Attendance',
+        primaryCta: 'View My Results',
+        primaryView: 'results',
+        secondaryCta: 'Class Timetable',
+        secondaryView: 'timetable'
+      };
+    }
+    return {
+      kicker: 'Institutional Command Overview',
+      title: "Great, today's school operations are on track",
+      subtitle: `${typeof studentCount === 'number' ? studentCount : 0} active students · ${typeof teacherCount === 'number' ? teacherCount : 0} faculty members · ${formatCurrency(totalFeesCollected)} term revenue recorded.`,
+      percentage: attendancePct,
+      ringLabel: 'Attendance',
+      primaryCta: 'Take Attendance',
+      primaryView: 'attendance',
+      secondaryCta: 'School Timetable',
+      secondaryView: 'timetable'
+    };
+  }, [user, students, totalFeesCollected, attendanceRecords, studentCount, teacherCount, results.length, selectedWard, selectedWardAttendance, selectedWardStanding, selectedWardOutstandingFees, studentAttendance, studentRecord, studentAverageScore, studentResults.length]);
 
   // --- ANNOUNCEMENT BOARD STATE & SEEDING ---
   const announcementsSetting = useLiveQuery(() => 
@@ -742,101 +814,131 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Overview</h2>
+        <div>
+          <p className="text-xs font-bold text-[#6a7f84] tracking-wide">
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+          <h2 className="text-2xl sm:text-[28px] font-bold text-[#1f2a2e] tracking-tight mt-0.5">
+            Institutional <span className="text-[#1c4a59]">Overview</span>
+          </h2>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Layout Toggle */}
-          <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setDashboardLayout('planner')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg transition-all cursor-pointer",
-                dashboardLayout === 'planner'
-                  ? "bg-white text-[#163840] shadow-xs font-black"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              Productivity Planner
-            </button>
-            <button
-              type="button"
-              onClick={() => setDashboardLayout('metrics')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg transition-all cursor-pointer",
-                dashboardLayout === 'metrics'
-                  ? "bg-white text-[#163840] shadow-xs font-black"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              KPI Metrics
-            </button>
-            <button
-              type="button"
-              onClick={() => setDashboardLayout('both')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg transition-all cursor-pointer hidden md:block",
-                dashboardLayout === 'both'
-                  ? "bg-white text-[#163840] shadow-xs font-black"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              Combined View
-            </button>
-          </div>
-
+        <div className="flex flex-wrap items-center gap-2.5">
           <button 
             onClick={triggerPrint}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs active:scale-95 h-9 text-xs"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-all shadow-2xs active:scale-[0.97] min-h-[40px] text-xs cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Print</span>
+            <Printer className="w-3.5 h-3.5 text-[#1c4a59]" />
+            <span>Print Summary</span>
           </button>
         </div>
       </div>
 
-      {/* Productivity Planner Template (from uploaded template design) */}
-      {(dashboardLayout === 'planner' || dashboardLayout === 'both') && (
-        <div className="my-2">
-          <ProductivePlannerTemplate onNavigateView={onViewChange} />
-        </div>
-      )}
+      {/* Role-Aware Deep Teal Hero Summary Card */}
+      <div className="bg-[#1c4a59] rounded-3xl p-5 sm:p-7 text-white relative overflow-hidden shadow-[0_8px_24px_rgba(28,74,89,0.18)] print:hidden">
+        <div className="absolute -right-8 -bottom-8 w-44 h-44 rounded-full border-8 border-white/5 pointer-events-none" />
+        <div className="absolute -right-16 -bottom-16 w-64 h-64 rounded-full border-8 border-white/5 pointer-events-none" />
 
-      {/* Stats Grid */}
-      {(dashboardLayout === 'metrics' || dashboardLayout === 'both') && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-          {stats.map((stat, i) => (
-            <button 
-              key={i} 
-              onClick={() => {
-                if (stat.view) {
-                  onViewChange(stat.view);
-                }
-              }}
-              className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all text-left group cursor-pointer"
-            >
-              <div className="flex items-center justify-between mb-3.5">
-                <div className={`${stat.bg} p-2 sm:p-2.5 rounded-lg group-hover:scale-105 transition-transform`}>
-                  <stat.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${stat.color}`} />
-                </div>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                  <TrendingUp className="w-3 h-3" /> +2.4%
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
+          <div className="space-y-3 flex-1 min-w-0">
+            <span className="text-xs font-bold text-[#faae57] tracking-wide block">
+              {heroSummary.kicker}
+            </span>
+            <h3 className="text-lg sm:text-2xl font-bold leading-snug text-white max-w-2xl">
+              {heroSummary.title}
+            </h3>
+            <p className="text-xs sm:text-sm text-white/80 font-medium max-w-xl leading-relaxed">
+              {heroSummary.subtitle}
+            </p>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => onViewChange(heroSummary.primaryView)}
+                className="px-5 py-2.5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] font-bold text-xs shadow-md transition-all active:scale-[0.97] cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
+              >
+                <span>{heroSummary.primaryCta}</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onViewChange(heroSummary.secondaryView)}
+                className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all active:scale-[0.97] cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
+              >
+                <span>{heroSummary.secondaryCta}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Animated Amber Progress Ring */}
+          <div className="flex items-center gap-4 self-start sm:self-center shrink-0 bg-white/5 rounded-2xl p-3 sm:p-4 border border-white/10">
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center shrink-0">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  stroke="rgba(255, 255, 255, 0.15)"
+                  strokeWidth="9"
+                  fill="transparent"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  stroke="#faae57"
+                  strokeWidth="9"
+                  fill="transparent"
+                  strokeDasharray={2 * Math.PI * 40}
+                  strokeDashoffset={2 * Math.PI * 40 * (1 - heroSummary.percentage / 100)}
+                  strokeLinecap="round"
+                  className="transition-all duration-500 ease-out"
+                />
+              </svg>
+              <div className="absolute flex flex-col items-center justify-center">
+                <span className="text-base sm:text-xl font-bold text-white font-mono tabular-nums">
+                  {heroSummary.percentage}%
+                </span>
+                <span className="text-[10px] font-medium text-white/75">
+                  {heroSummary.ringLabel}
                 </span>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium tracking-tight">{stat.label}</p>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums font-mono">{stat.value}</h3>
-            </button>
-          ))}
+            </div>
+          </div>
         </div>
-      )}
+      </div>
 
-      {(dashboardLayout === 'metrics' || dashboardLayout === 'both') && (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        {stats.map((stat, i) => (
+          <button 
+            key={i} 
+            onClick={() => {
+              if (stat.view) {
+                onViewChange(stat.view);
+              }
+            }}
+            className={cn(
+              "bg-white p-5 rounded-2xl border shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:shadow-md transition-all text-left group cursor-pointer active:scale-[0.99]",
+              stat.accent || "border-[#bac4c6]/60"
+            )}
+          >
+            <div className="flex items-center justify-between mb-3.5">
+              <div className={cn("p-2.5 rounded-xl group-hover:scale-105 transition-transform", stat.bg)}>
+                <stat.icon className={cn("w-5 h-5", stat.color)} />
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#06d6a0] tabular-nums">
+                <TrendingUp className="w-3.5 h-3.5" /> Active
+              </span>
+            </div>
+            <p className="text-[#6a7f84] text-xs font-medium tracking-tight">{stat.label}</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-[#1f2a2e] mt-1 tabular-nums font-mono">{stat.value}</h3>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Main Analytics Chart */}
-        <div className={`bg-white p-4 sm:p-8 rounded-2xl border border-slate-200 shadow-sm overflow-hidden ${
+        <div className={`bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden ${
           (user?.role === 'student' || user?.role === 'parent') ? 'lg:col-span-3' : 'lg:col-span-2'
         }`}>
           {user?.role === 'teacher' || user?.role === 'student' || user?.role === 'parent' ? (
@@ -899,7 +1001,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                       cursor={{fill: '#f8fafc'}}
                       contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
                     />
-                    <Bar dataKey="score" fill="var(--color-indigo-600)" radius={[4, 4, 0, 0]} barSize={32} />
+                    <Bar dataKey="score" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -908,16 +1010,16 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
             // Accountant & Admin layout: Revenue overview
             <>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                <h3 className="text-lg font-bold text-slate-900">Revenue Overview</h3>
+                <h3 className="text-lg font-bold text-[#1f2a2e]">Revenue Overview</h3>
                 <div className="flex items-center gap-2">
-                  <select className="bg-slate-50 border border-slate-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <select className="bg-[#f6f8f7] border border-[#bac4c6] text-xs font-bold text-[#1f2a2e] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]">
                     <option>This Term</option>
                     <option>Last Term</option>
                   </select>
                   {(user?.role as string) !== 'teacher' && (
                     <button 
                       onClick={() => onViewChange('fees')}
-                      className="text-indigo-600 text-xs font-bold hover:underline whitespace-nowrap"
+                      className="px-3.5 py-2 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-xs font-bold transition-all whitespace-nowrap cursor-pointer"
                     >
                       View Fees
                     </button>
@@ -938,20 +1040,20 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                       dataKey="month" 
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
+                      tick={{fill: '#6a7f84', fontSize: 11}} 
                       dy={10} 
                     />
                     <YAxis 
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
-                      width={30}
+                      tick={{fill: '#6a7f84', fontSize: 11}} 
+                      width={36}
                     />
                     <Tooltip 
-                      cursor={{fill: '#f8fafc'}}
-                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
+                      cursor={{fill: '#f6f8f7'}}
+                      contentStyle={{borderRadius: '12px', border: '1px solid #bac4c6', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', fontSize: '12px'}}
                     />
-                    <Bar dataKey="amount" fill="var(--color-indigo-600)" radius={[4, 4, 0, 0]} barSize={32} />
+                    <Bar dataKey="amount" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -962,82 +1064,82 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
         {/* Quick Actions & Recent */}
         {(user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
           <div className="space-y-6 sm:space-y-8">
-            <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-6">Quick Actions</h3>
-              <div className="space-y-3 sm:space-y-4">
+            <div className="bg-white p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
+              <h3 className="text-base font-bold text-[#1f2a2e] mb-4">Quick Actions</h3>
+              <div className="grid grid-cols-1 gap-3">
                 <button 
                   onClick={() => onViewChange('students')}
-                  className="w-full flex items-center justify-between p-3 sm:p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-slate-50 transition-all group text-left"
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                      <Users className="w-4 h-4 text-indigo-600" />
+                    <div className="w-9 h-9 rounded-xl bg-[#1c4a59] flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4 text-[#faae57]" />
                     </div>
-                    <span className="text-sm font-semibold text-slate-700">
+                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">
                       {user?.role === 'admin' || user?.role === 'super_admin' ? 'Manage Students' : 'View Students'}
                     </span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-colors shrink-0" />
+                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
                 </button>
 
                 {(user?.role as string) !== 'teacher' && (user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
                   <button 
                     onClick={() => onViewChange('fees')}
-                    className="w-full flex items-center justify-between p-3 sm:p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-slate-50 transition-all group text-left"
+                    className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                        <Wallet className="w-4 h-4 text-emerald-600" />
+                      <div className="w-9 h-9 rounded-xl bg-[#faae57]/25 flex items-center justify-center shrink-0">
+                        <Wallet className="w-4 h-4 text-[#1c4a59]" />
                       </div>
-                      <span className="text-sm font-semibold text-slate-700">Record Fee Payment</span>
+                      <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Record Fee Payment</span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-colors shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
                   </button>
                 )}
 
                 {(user?.role as string) !== 'accountant' && (user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
                   <button 
                     onClick={() => onViewChange('results')}
-                    className="w-full flex items-center justify-between p-3 sm:p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-slate-50 transition-all group text-left"
+                    className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#1c4a59] hover:bg-[#163b47] text-white transition-all group text-left cursor-pointer min-h-[48px]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4 h-4 text-indigo-600" />
+                      <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                        <BookOpen className="w-4 h-4 text-[#faae57]" />
                       </div>
-                      <span className="text-sm font-semibold text-slate-700">Enter Exam Results</span>
+                      <span className="text-xs sm:text-sm font-bold text-white">Enter Exam Results</span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-colors shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-[#faae57] transition-colors shrink-0" />
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-slate-900">Recent Students</h3>
-                <button onClick={() => onViewChange('students')} className="text-indigo-600 text-xs font-bold hover:underline">View All</button>
+                <h3 className="text-base font-bold text-[#1f2a2e]">Recent Students</h3>
+                <button onClick={() => onViewChange('students')} className="text-[#1c4a59] text-xs font-bold hover:underline cursor-pointer">View All</button>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {recentStudents?.map(student => (
-                  <div key={student.id} className="flex items-center justify-between">
+                  <div key={student.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-[#f6f8f7] transition-colors">
                     <div className="flex items-center gap-3 truncate mr-2">
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <div className="w-9 h-9 rounded-xl bg-[#f6f8f7] flex-shrink-0 overflow-hidden border border-[#bac4c6]">
                         {student.photo ? (
                           <img src={student.photo} alt={student.firstName} className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase">
+                          <div className="w-full h-full flex items-center justify-center bg-[#1c4a59] text-white font-bold text-xs uppercase">
                             {student.firstName?.[0] || 'S'}
                           </div>
                         )}
                       </div>
                       <div className="truncate">
-                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{student.firstName} {student.lastName}</p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{student.class}</p>
+                        <p className="text-xs font-bold text-[#1f2a2e] truncate">{student.firstName} {student.lastName}</p>
+                        <p className="text-[11px] text-[#6a7f84] truncate">{student.class}</p>
                       </div>
                     </div>
                     <button 
                       onClick={() => onViewChange('students')}
-                      className="p-2 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all shrink-0"
+                      className="p-2 hover:bg-white rounded-lg text-[#6a7f84] hover:text-[#1c4a59] transition-all shrink-0 cursor-pointer"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -1052,21 +1154,21 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       {/* --- UPCOMING EVENTS & NOTIFICATIONS SECTION --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 mt-8">
         {/* --- COLUMN 1: UPCOMING EVENTS --- */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+        <div className="bg-white rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col">
+          <div className="p-5 sm:p-6 border-b border-[#bac4c6]/50 flex items-center justify-between bg-[#f6f8f7]">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
-                <Calendar className="w-4 h-4" />
+              <div className="w-10 h-10 rounded-xl bg-[#1c4a59] flex items-center justify-center text-[#faae57]">
+                <Calendar className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight">Upcoming School Events</h3>
-                <p className="text-[10px] text-slate-500 font-semibold">Scheduled academic and extracurricular events</p>
+                <h3 className="text-sm sm:text-base font-bold text-[#1f2a2e] tracking-tight">Upcoming School Events</h3>
+                <p className="text-xs text-[#6a7f84] font-medium">Scheduled academic and extracurricular events</p>
               </div>
             </div>
             {isStaff && (
               <button
                 onClick={() => setIsAddEventOpen(!isAddEventOpen)}
-                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all cursor-pointer border border-slate-200"
+                className="p-2 hover:bg-white rounded-xl text-[#1c4a59] transition-all cursor-pointer border border-[#bac4c6]"
                 title="Schedule Event"
               >
                 {isAddEventOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -1076,66 +1178,66 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
 
           {/* Inline Add Event Form */}
           {isStaff && isAddEventOpen && (
-            <div className="p-5 border-b border-slate-100 bg-orange-50/20">
+            <div className="p-5 border-b border-[#bac4c6]/50 bg-[#f6f8f7]">
               <form onSubmit={handleAddEvent} className="space-y-3.5">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-orange-950 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
+                <h4 className="text-xs font-bold text-[#1c4a59] flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-[#faae57]" />
                   <span>Create Upcoming School Event</span>
                 </h4>
                 
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Event Title</label>
+                  <label className="text-[11px] font-bold text-[#6a7f84] block">Event Title</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Inter-Houses Swimming Gala"
                     value={eventTitle}
                     onChange={(e) => setEventTitle(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                    className="w-full px-3 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Event Date</label>
+                    <label className="text-[11px] font-bold text-[#6a7f84] block">Event Date</label>
                     <input
                       type="date"
                       required
                       value={eventDate}
                       onChange={(e) => setEventDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                      className="w-full px-3 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Event Time</label>
+                    <label className="text-[11px] font-bold text-[#6a7f84] block">Event Time</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. 10:00 AM"
                       value={eventTime}
                       onChange={(e) => setEventTime(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                      className="w-full px-3 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Location</label>
+                    <label className="text-[11px] font-bold text-[#6a7f84] block">Location</label>
                     <input
                       type="text"
                       placeholder="e.g. Assembly Hall"
                       value={eventLocation}
                       onChange={(e) => setEventLocation(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                      className="w-full px-3 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Category</label>
+                    <label className="text-[11px] font-bold text-[#6a7f84] block">Category</label>
                     <select
                       value={eventCategory}
                       onChange={(e) => setEventCategory(e.target.value as any)}
-                      className="w-full px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                      className="w-full px-2 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                     >
                       <option value="General">General</option>
                       <option value="Academic">Academic</option>
@@ -1148,19 +1250,19 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">Event Description</label>
+                  <label className="text-[11px] font-bold text-[#6a7f84] block">Event Description</label>
                   <textarea
                     rows={2}
                     placeholder="Provide event overview, guidelines, or details..."
                     value={eventDescription}
                     onChange={(e) => setEventDescription(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                    className="w-full px-3 py-2 bg-white border border-[#bac4c6] rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-[#1f2a2e]"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider shadow-sm cursor-pointer transition-all active:scale-[0.98]"
+                  className="w-full py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full font-bold text-xs shadow-xs cursor-pointer transition-all active:scale-[0.98]"
                 >
                   Publish School Event
                 </button>
@@ -1174,14 +1276,14 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
               eventsList.map((evt) => (
                 <div
                   key={evt.id}
-                  className="p-4 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/30 transition-all flex items-start gap-4"
+                  className="p-4 rounded-2xl border border-[#e1c594] bg-[#f6f8f7] transition-all flex items-start gap-4"
                 >
                   {/* Left Date Block */}
-                  <div className="flex-shrink-0 w-14 py-2 px-1.5 rounded-lg bg-indigo-50 border border-indigo-100/50 flex flex-col items-center justify-center text-center">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400">
+                  <div className="flex-shrink-0 w-14 py-2 px-1.5 rounded-xl bg-[#1c4a59] text-white flex flex-col items-center justify-center text-center shadow-2xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#faae57]">
                       {new Date(evt.date).toLocaleDateString('en-US', { month: 'short' })}
                     </span>
-                    <span className="text-lg font-black text-indigo-700 leading-none mt-0.5">
+                    <span className="text-lg font-bold text-white leading-none mt-0.5 font-mono tabular-nums">
                       {new Date(evt.date).toLocaleDateString('en-US', { day: '2-digit' })}
                     </span>
                   </div>
@@ -1241,38 +1343,38 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
         </div>
 
         {/* --- COLUMN 2: LIVE NOTIFICATIONS --- */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+        <div className="bg-white rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden flex flex-col">
+          <div className="p-5 sm:p-6 border-b border-[#bac4c6]/50 flex items-center justify-between bg-[#f6f8f7]">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 relative">
-                <BellRing className="w-4 h-4" />
+              <div className="w-10 h-10 rounded-xl bg-[#faae57]/20 flex items-center justify-center text-[#1c4a59] relative">
+                <BellRing className="w-5 h-5" />
                 {notificationsList.some(n => !n.read) && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-600 rounded-full animate-ping" />
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#faae57] rounded-full animate-ping" />
                 )}
               </div>
               <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
+                <h3 className="text-sm sm:text-base font-bold text-[#1f2a2e] tracking-tight flex items-center gap-1.5">
                   <span>Live System Alerts</span>
                   {notificationsList.filter(n => !n.read).length > 0 && (
-                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-black rounded-md uppercase tracking-wider">
+                    <span className="px-2 py-0.5 bg-[#faae57] text-[#1f2a2e] text-[10px] font-bold rounded-full">
                       {notificationsList.filter(n => !n.read).length} New
                     </span>
                   )}
                 </h3>
-                <p className="text-[10px] text-slate-500 font-semibold">Real-time alerts, payment confirmations, and system notices</p>
+                <p className="text-xs text-[#6a7f84] font-medium">Real-time alerts, payment confirmations, and system notices</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={handleMarkAllNotificationsRead}
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-emerald-600 transition-all cursor-pointer"
+                className="p-1.5 hover:bg-white rounded-lg text-[#6a7f84] hover:text-[#06d6a0] transition-all cursor-pointer"
                 title="Mark all as read"
               >
                 <Check className="w-4 h-4" />
               </button>
               <button
                 onClick={handleClearAllNotifications}
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-rose-600 transition-all cursor-pointer"
+                className="p-1.5 hover:bg-white rounded-lg text-[#6a7f84] hover:text-[#ef476f] transition-all cursor-pointer"
                 title="Clear all"
               >
                 <Trash2 className="w-4 h-4" />
@@ -1280,7 +1382,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
               {isStaff && (
                 <button
                   onClick={() => setIsAddNotifOpen(!isAddNotifOpen)}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all cursor-pointer ml-1 border border-slate-200"
+                  className="p-1.5 hover:bg-white rounded-lg text-[#1c4a59] transition-all cursor-pointer ml-1 border border-[#bac4c6]"
                   title="Publish Alert"
                 >
                   {isAddNotifOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -1435,22 +1537,22 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       </div>
 
       {/* --- ANNOUNCEMENT BOARD / BULLETIN CENTER --- */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
-        <div className="p-6 sm:p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
+      <div className="bg-white rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden mt-8">
+        <div className="p-6 sm:p-8 border-b border-[#bac4c6]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#f6f8f7]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-              <Megaphone className="w-5 h-5 animate-bounce" />
+            <div className="w-10 h-10 rounded-xl bg-[#1c4a59] flex items-center justify-center text-[#faae57]">
+              <Megaphone className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Esepa Bulletin & Notice Board</h3>
-              <p className="text-xs text-slate-500 font-semibold mt-0.5">Official community guidelines, parent circulars, and PTA notifications</p>
+              <h3 className="text-lg font-bold text-[#1f2a2e] tracking-tight">School Bulletin & Notice Board</h3>
+              <p className="text-xs text-[#6a7f84] font-medium mt-0.5">Official community guidelines, parent circulars, and PTA notifications</p>
             </div>
           </div>
           
           {isStaff && (
             <button
               onClick={() => setIsAddFormOpen(!isAddFormOpen)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-sm shadow-indigo-100 self-start sm:self-auto"
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full font-bold transition-all text-xs shadow-sm self-start sm:self-auto cursor-pointer min-h-[40px]"
             >
               <Plus className="w-4 h-4" />
               <span>{isAddFormOpen ? 'Close Composer' : 'Publish New Circular'}</span>
@@ -1667,16 +1769,14 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
               </div>
             ))
           ) : (
-            <div className="p-16 text-center bg-slate-50 border border-slate-100 rounded-2xl">
-              <MessageSquare className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <p className="font-bold text-slate-500 text-sm">No circular notices found</p>
-              <p className="text-xs text-slate-400 mt-1">There are currently no active announcements published matching the chosen criteria.</p>
+            <div className="p-16 text-center bg-[#f6f8f7] border border-[#bac4c6]/60 rounded-2xl">
+              <MessageSquare className="w-10 h-10 text-[#6a7f84] mx-auto mb-3" />
+              <p className="font-bold text-[#1f2a2e] text-sm">No circular notices found</p>
+              <p className="text-xs text-[#6a7f84] mt-1">There are currently no active announcements published matching the chosen criteria.</p>
             </div>
           )}
         </div>
       </div>
-        </>
-      )}
     </div>
   );
 }

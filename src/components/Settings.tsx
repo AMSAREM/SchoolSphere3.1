@@ -146,6 +146,7 @@ export default function Settings() {
 
   const fetchGeneratedLicenses = async (retries = 2) => {
     try {
+      localStorage.removeItem('esepa_generated_licenses');
       const res = await fetch('/api/license/list');
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
@@ -153,7 +154,6 @@ export default function Settings() {
           const data = await res.json();
           if (Array.isArray(data)) {
             setLicensesList(data);
-            localStorage.setItem('esepa_generated_licenses', JSON.stringify(data));
             return;
           }
         }
@@ -163,13 +163,7 @@ export default function Settings() {
         setTimeout(() => fetchGeneratedLicenses(retries - 1), 1000);
         return;
       }
-      console.warn("Notice loading generated licenses (using cached offline copy):", err);
-    }
-    const cached = localStorage.getItem('esepa_generated_licenses');
-    if (cached) {
-      try {
-        setLicensesList(JSON.parse(cached));
-      } catch (e) {}
+      console.warn("Notice loading generated licenses from Supabase:", err);
     }
   };
 
@@ -212,35 +206,28 @@ export default function Settings() {
         return;
       }
     } catch (err) {
-      console.warn("Network catch generating key in Settings, using fallback:", err);
+      console.warn("Network error generating key in Settings:", err);
+      showToast("Failed to connect to server to generate license in Supabase.", "error");
+      setIsGenerating(false);
+      return;
     }
 
     if (!createdLicense) {
-      const schoolPrefix = genSchoolName.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "SCH";
-      const tierPrefix = (genTier || "BASIC").trim().toUpperCase().slice(0, 3);
-      const randomHash = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const fallbackKey = `ESEPA-${schoolPrefix}-${tierPrefix}-${randomHash}`;
-      
-      let exp: number | null = null;
-      if (genDuration && genDuration !== "perpetual") {
-        exp = Date.now() + (parseInt(genDuration) * 30 * 24 * 60 * 60 * 1000);
-      }
-
-      createdLicense = {
-        key: fallbackKey,
-        schoolName: genSchoolName.trim().toUpperCase(),
-        tier: genTier || "Basic",
-        durationMonths: genDuration,
-        expiryDate: exp,
-        createdAt: Date.now(),
-        status: "active",
-        activeModules: ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees']
-      };
+      showToast("Failed to persist license key in Supabase database.", "error");
+      setIsGenerating(false);
+      return;
     }
 
-    const existing = JSON.parse(localStorage.getItem('esepa_generated_licenses') || '[]');
-    const updated = [createdLicense, ...existing.filter((l: any) => l.key !== createdLicense.key)];
-    localStorage.setItem('esepa_generated_licenses', JSON.stringify(updated));
+    localStorage.removeItem('esepa_generated_licenses');
+    const updated = [
+      createdLicense,
+      ...licensesList.filter(
+        (l: any) =>
+          l.key !== createdLicense.key &&
+          (!createdLicense.school_id || l.school_id !== createdLicense.school_id) &&
+          String(l.schoolName || '').trim().toUpperCase() !== String(createdLicense.schoolName || '').trim().toUpperCase()
+      )
+    ];
 
     showToast(`Success! Generated activation key: ${createdLicense.key}`, "success");
     setGenSchoolName('');

@@ -1267,6 +1267,65 @@ export default function SalesSuite({
           </div>
         </form>
 
+        {/* Instant Tenant Login Credentials Banner for Latest License */}
+        {latestLicense && (
+          <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-extrabold text-emerald-950">
+                    Active Tenant Admin Login Ready — {latestLicense.schoolName}
+                  </h4>
+                  <p className="text-[11px] text-emerald-800">
+                    Client school can sign in immediately using their scoped handle, client email, or activation username alongside their license key or password.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const slug = (latestLicense.schoolSlug || latestLicense.provisionedAdmin?.schoolSlug || latestLicense.schoolName || 'school')
+                    .toString()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-|-$/g, '') || 'school';
+                  const scopedHandle = latestLicense.provisionedAdmin?.scopedUsername || `admin@${slug}`;
+                  const emailHandle = latestLicense.clientEmail || latestLicense.provisionedAdmin?.email || scopedHandle;
+                  const text = `SchoolSphere Portal Credentials — ${latestLicense.schoolName}\nLogin Handle: ${scopedHandle} (or ${emailHandle})\nInitial Password / License Key: ${latestLicense.key}`;
+                  navigator.clipboard.writeText(text);
+                  handleCopyKey(latestLicense.key);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                {copiedKey === latestLicense.key ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>Copy Client Login</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+              <div className="bg-white/90 px-3 py-2 rounded-xl border border-emerald-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Scoped Login Handle</span>
+                <span className="font-mono font-bold text-slate-800 select-all">
+                  {latestLicense.provisionedAdmin?.scopedUsername ||
+                    `admin@${(latestLicense.schoolName || 'school').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
+                </span>
+              </div>
+              <div className="bg-white/90 px-3 py-2 rounded-xl border border-emerald-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Client Email Login</span>
+                <span className="font-mono font-bold text-slate-800 select-all">
+                  {latestLicense.clientEmail || latestLicense.provisionedAdmin?.email || 'admin (with License Key)'}
+                </span>
+              </div>
+              <div className="bg-white/90 px-3 py-2 rounded-xl border border-emerald-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Initial Password / License Key</span>
+                <span className="font-mono font-bold text-emerald-700 select-all">{latestLicense.key}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Dynamic Serial Logs Index & Table */}
         <div className="space-y-4 pt-4 border-t border-slate-100">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1319,12 +1378,21 @@ export default function SalesSuite({
                 {filteredLicenses.map((lic) => {
                   const syncState = lic.syncStatus || 'local_only';
                   const isCopied = copiedKey === lic.key;
+                  const rowSlug = (lic.schoolSlug || lic.provisionedAdmin?.schoolSlug || lic.schoolName || 'school')
+                    .toString()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-|-$/g, '') || 'school';
+                  const rowScopedHandle = lic.provisionedAdmin?.scopedUsername || `admin@${rowSlug}`;
                   return (
                     <tr key={lic.key} className="hover:bg-slate-50/70 transition-colors group">
                       <td className="py-3.5 px-3 font-bold text-slate-800">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-slate-900 text-sm tracking-tight">{lic.schoolName}</span>
+                            <span className="text-[10px] bg-emerald-50 text-emerald-700 font-mono font-bold px-2 py-0.5 rounded-md border border-emerald-200/80" title="Tenant Admin Login Handle">
+                              {rowScopedHandle}
+                            </span>
                             {lic.clientEmail && (
                               <span className="text-[10px] bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-md flex items-center gap-1 border border-slate-200/70">
                                 <Mail className="w-3 h-3 text-indigo-500" />
@@ -1397,10 +1465,10 @@ export default function SalesSuite({
                         <span className={cn(
                           'px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wider border whitespace-nowrap inline-block',
                           lic.status === 'active' 
-                            ? (lic.used ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200') 
+                            ? ((lic.used && lic.activatedAt) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200') 
                             : 'bg-rose-50 text-rose-700 border-rose-200'
                         )}>
-                          {lic.status === 'active' ? (lic.used ? 'Used' : 'Active') : lic.status}
+                          {lic.status === 'active' ? ((lic.used && lic.activatedAt) ? 'Used' : 'Available') : lic.status}
                         </span>
                       </td>
                       <td className="py-3.5 px-3 text-right">

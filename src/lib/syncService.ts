@@ -4,8 +4,12 @@ import { supabase, getCurrentSchoolId } from './supabase';
 /**
  * Reconcile classes in Dexie IndexedDB in-place without creating duplicate rows
  */
-export async function reconcileClassesInDexie(remoteClasses: any[], isFullSync = true) {
+export async function reconcileClassesInDexie(remoteClasses: any[], isFullSync = false) {
   if (!Array.isArray(remoteClasses)) return;
+  if (isFullSync && remoteClasses.length === 0) {
+    await db.classes.clear();
+    return;
+  }
   const localClasses = await db.classes.toArray();
   const nameMap = new Map<string, any>();
   const idMap = new Map<string | number, any>();
@@ -63,8 +67,12 @@ export async function reconcileClassesInDexie(remoteClasses: any[], isFullSync =
 /**
  * Reconcile teachers in Dexie IndexedDB in-place without creating duplicate rows
  */
-export async function reconcileTeachersInDexie(remoteTeachers: any[], isFullSync = true) {
+export async function reconcileTeachersInDexie(remoteTeachers: any[], isFullSync = false) {
   if (!Array.isArray(remoteTeachers)) return;
+  if (isFullSync && remoteTeachers.length === 0) {
+    await db.teachers.clear();
+    return;
+  }
   const localTeachers = await db.teachers.toArray();
   const staffMap = new Map<string, any>();
   const idMap = new Map<string | number, any>();
@@ -129,8 +137,12 @@ export async function reconcileTeachersInDexie(remoteTeachers: any[], isFullSync
 /**
  * Reconcile subjects in Dexie IndexedDB in-place without creating duplicate rows
  */
-export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync = true) {
+export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync = false) {
   if (!Array.isArray(remoteSubjects)) return;
+  if (isFullSync && remoteSubjects.length === 0) {
+    await db.subjects.clear();
+    return;
+  }
   const localSubjects = await db.subjects.toArray();
   const codeMap = new Map<string, any>();
   const idMap = new Map<string | number, any>();
@@ -196,8 +208,12 @@ export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync
 /**
  * Reconcile students in Dexie IndexedDB in-place without creating duplicate rows
  */
-export async function reconcileStudentsInDexie(remoteStudents: any[], isFullSync = true) {
+export async function reconcileStudentsInDexie(remoteStudents: any[], isFullSync = false) {
   if (!Array.isArray(remoteStudents)) return;
+  if (isFullSync && remoteStudents.length === 0) {
+    await db.students.clear();
+    return;
+  }
   const localStudents = await db.students.toArray();
   const stuMap = new Map<string, any>();
   const idMap = new Map<string | number, any>();
@@ -373,13 +389,22 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
       const json = await res.json();
       const dataset = json.data || json;
       if (dataset && typeof dataset === 'object') {
-        if (Array.isArray(dataset.classes)) await reconcileClassesInDexie(dataset.classes);
-        if (Array.isArray(dataset.teachers)) await reconcileTeachersInDexie(dataset.teachers);
-        if (Array.isArray(dataset.subjects)) await reconcileSubjectsInDexie(dataset.subjects);
-        if (Array.isArray(dataset.students)) await reconcileStudentsInDexie(dataset.students);
-        if (Array.isArray(dataset.attendance)) await reconcileAttendanceInDexie(dataset.attendance);
-        if (Array.isArray(dataset.results)) await reconcileResultsInDexie(dataset.results);
-        if (Array.isArray(dataset.termReports)) await reconcileTermReportsInDexie(dataset.termReports);
+        if (Array.isArray(dataset.classes)) await reconcileClassesInDexie(dataset.classes, true);
+        if (Array.isArray(dataset.teachers)) await reconcileTeachersInDexie(dataset.teachers, true);
+        if (Array.isArray(dataset.subjects)) await reconcileSubjectsInDexie(dataset.subjects, true);
+        if (Array.isArray(dataset.students)) await reconcileStudentsInDexie(dataset.students, true);
+        if (Array.isArray(dataset.attendance)) {
+          if (dataset.attendance.length === 0) await db.attendance.clear();
+          else await reconcileAttendanceInDexie(dataset.attendance);
+        }
+        if (Array.isArray(dataset.results)) {
+          if (dataset.results.length === 0) await db.results.clear();
+          else await reconcileResultsInDexie(dataset.results);
+        }
+        if (Array.isArray(dataset.termReports)) {
+          if (dataset.termReports.length === 0) await db.termReports.clear();
+          else await reconcileTermReportsInDexie(dataset.termReports);
+        }
         if (Array.isArray(dataset.settings)) await reconcileSettingsInDexie(dataset.settings);
         
         // Notify other components of database reconciliation

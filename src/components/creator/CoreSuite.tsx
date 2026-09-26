@@ -151,9 +151,10 @@ export default function CoreSuite({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          key: selectedManageSchool.key,
+          key: selectedManageSchool.key || selectedManageSchool.licenseKey,
+          schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
           tier: editTier,
-          schoolName: editSchoolName,
+          schoolName: editSchoolName || selectedManageSchool.schoolName,
           expiryDate: expMs
         })
       });
@@ -190,7 +191,9 @@ export default function CoreSuite({
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              key: selectedManageSchool.key,
+              key: selectedManageSchool.key || selectedManageSchool.licenseKey,
+              schoolId: selectedManageSchool.school_id || selectedManageSchool.id || selectedManageSchool.school?.id,
+              schoolName: selectedManageSchool.schoolName || selectedManageSchool.name || selectedManageSchool.school?.name,
               status: newStatus
             })
           });

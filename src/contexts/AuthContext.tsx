@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { db, User, School } from '../db/schema';
+import { db, User, School, clearTenantLocalDatabase, purgeDemoRecordsFromDb } from '../db/schema';
 import { supabase } from '../lib/supabase/client';
 import { syncTenantAcademicData } from '../lib/api';
 import { AppPermission, UserRole, hasPermission as checkPermission, canAccessModule as checkModuleAccess, getRoleInfo } from '../lib/permissions';
@@ -62,14 +62,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setSchoolContext = async (targetSchool: School) => {
     if (!targetSchool) return;
+    const prevSchoolId = localStorage.getItem('esepa_active_school_id');
+    if (targetSchool.id && prevSchoolId && prevSchoolId !== targetSchool.id) {
+      await clearTenantLocalDatabase(targetSchool.id);
+    }
+    if (targetSchool.id) {
+      localStorage.setItem('esepa_active_school_id', targetSchool.id);
+      await purgeDemoRecordsFromDb(targetSchool.id);
+    }
     setSchool(targetSchool);
     localStorage.setItem('esepa_active_school', JSON.stringify(targetSchool));
 
     try {
       const existing = await db.settings.where('key').equals('schoolProfile').first();
       const profileData = {
-        schoolName: targetSchool.name || (targetSchool as any).schoolName || 'SCHOOL SPHERE ACADEMY',
-        logo: targetSchool.logo_url || (targetSchool as any).logo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png',
+        schoolName: targetSchool.name || (targetSchool as any).schoolName || 'SchoolSphere Portal',
+        logo: targetSchool.logo_url || (targetSchool as any).logo || '/sch sphere logo1.png',
         theme: targetSchool.theme || 'indigo',
         email: targetSchool.email || '',
         phone: targetSchool.phone || '',
@@ -322,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanUser = username.trim().toLowerCase();
 
     // 1. Authoritative query against backend /api/auth/login
-    // All credential hashing, validation, role scoping and JWT issuance is handled strictly on the server
+    // All credential hashing, validation, role scoping, license-email/key fallback, and JWT issuance is handled on the server
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -333,6 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (res.ok && data.success && data.user) {
+          const verifiedSchoolId = data.school?.id || data.user.schoolId || data.user.school_id;
           const verifiedUser: User = {
             id: data.user.id,
             username: data.user.username || cleanUser,
@@ -344,8 +353,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             phone: data.user.phone,
             role: data.user.role || 'admin',
             status: data.user.status || 'active',
-            schoolId: data.user.schoolId || data.user.school_id,
-            school_id: data.user.schoolId || data.user.school_id,
+            schoolId: verifiedSchoolId,
+            school_id: verifiedSchoolId,
             createdAt: data.user.createdAt || Date.now(),
             lastLogin: Date.now()
           };
@@ -359,23 +368,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('esepa_refresh_token', data.refreshToken);
           }
 
-          // Cache verified user locally in Dexie (without any credentials)
-          try {
-            const allDbUsers = await db.users.toArray();
-            const existing = allDbUsers.find(u => u.username?.trim().toLowerCase() === cleanUser);
-            if (existing && existing.id) {
-              await db.users.update(existing.id, verifiedUser);
-              verifiedUser.id = existing.id;
-            } else {
-              const newId = await db.users.add(verifiedUser);
-              verifiedUser.id = typeof data.user.id === 'number' ? data.user.id : newId as number;
+          // Cache verified tenant user locally in Dexie scoped by school_id (never cache platform creator/super_admin in client user store)
+          if (verifiedUser.role !== 'creator' && verifiedUser.role !== 'super_admin') {
+            try {
+              const allDbUsers = await db.users.toArray();
+              const existing = allDbUsers.find(u =>
+                (u.username?.trim().toLowerCase() === verifiedUser.username?.toLowerCase() || u.username?.trim().toLowerCase() === cleanUser) &&
+                (!verifiedSchoolId || u.schoolId === verifiedSchoolId || u.school_id === verifiedSchoolId)
+              );
+              if (existing && existing.id) {
+                await db.users.update(existing.id, verifiedUser);
+                verifiedUser.id = existing.id;
+              } else {
+                const newId = await db.users.add(verifiedUser);
+                verifiedUser.id = typeof data.user.id === 'number' ? data.user.id : newId as number;
+              }
+            } catch (e) {
+              console.warn("Caching verified user locally notice:", e);
             }
-          } catch (e) {
-            console.warn("Caching verified user locally notice:", e);
           }
 
           if (data.school) {
             await setSchoolContext(data.school);
+          } else if (verifiedSchoolId) {
+            localStorage.setItem('esepa_active_school_id', String(verifiedSchoolId));
           }
 
           // Update Context and local storage session
@@ -397,86 +413,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!email || !passwordCandidate) {
       return { success: false, error: "Please enter both email and password" };
     }
-    const cleanEmail = normalizeEmail(email);
+    const cleanEmail = email.trim().toLowerCase().includes('@') ? normalizeEmail(email) : email.trim().toLowerCase();
 
-    // 1. Try Supabase Auth direct client
-    try {
-      const { data: supaAuth, error: supaErr } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: passwordCandidate
-      });
-
-      if (!supaErr && supaAuth?.user) {
-        const authUser = supaAuth.user;
-        const accessToken = supaAuth.session?.access_token || null;
-        if (accessToken) {
-          setToken(accessToken);
-          localStorage.setItem('esepa_auth_token', accessToken);
-        }
-
-        let orgId = authUser.user_metadata?.organization_id || authUser.app_metadata?.organization_id;
-        let role = authUser.user_metadata?.role || 'admin';
-        let fullName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0];
-        let profile: any = null;
-
-        try {
-          const res = await supabase
-            .from('staff_profiles')
-            .select('*, schools(*)')
-            .eq('auth_user_id', authUser.id)
-            .maybeSingle();
-          profile = res.data;
-
-          if (profile) {
-            orgId = profile.organization_id || orgId;
-            role = profile.role || role;
-            fullName = profile.full_name || fullName;
-            if (profile.schools) {
-              await setSchoolContext(profile.schools);
-            }
-          }
-        } catch (e) {}
-
-        const userObj: User = {
-          id: (profile?.id as number) || Date.now(),
-          auth_user_id: authUser.id,
-          username: cleanEmail.split('@')[0],
-          fullName: fullName,
-          email: cleanEmail,
-          role: role,
-          status: 'active',
-          schoolId: orgId,
-          school_id: orgId,
-          createdAt: Date.now(),
-          lastLogin: Date.now()
-        };
-
-        setUser(userObj);
-        localStorage.setItem('esepa_user', JSON.stringify(userObj));
-
-        recordUserLogin({
-          auth_user_id: authUser.id,
-          organization_id: orgId,
-          email: cleanEmail,
-          status: 'success_supabase_auth'
-        });
-
-        return { success: true, user: userObj, token: accessToken || undefined };
-      }
-    } catch (e) {
-      console.warn("Supabase direct auth attempt notice:", e);
-    }
-
-    // 2. Authoritative backend sign-in
+    // 1. Authoritative backend multi-tenant sign-in first (issues server JWT + resolves school & license credentials)
     const result = await handleLogin(cleanEmail, passwordCandidate);
     if (result.success && result.user) {
+      // Optionally synchronize Supabase client session in the background if email/password exists in Supabase Auth
+      if (cleanEmail.includes('@')) {
+        supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: passwordCandidate
+        }).catch(() => {});
+      }
       recordUserLogin({
         auth_user_id: String(result.user.id),
         organization_id: result.user.school_id,
-        email: cleanEmail,
+        email: result.user.email || cleanEmail,
         status: 'success_api_login'
       });
       return { success: true, user: result.user, token: result.token, refreshToken: result.refreshToken, school: result.school };
+    }
+
+    // 2. Fallback to Supabase Auth direct client if backend didn't match
+    if (cleanEmail.includes('@')) {
+      try {
+        const { data: supaAuth, error: supaErr } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: passwordCandidate
+        });
+
+        if (!supaErr && supaAuth?.user) {
+          const authUser = supaAuth.user;
+          const accessToken = supaAuth.session?.access_token || null;
+          if (accessToken) {
+            setToken(accessToken);
+            localStorage.setItem('esepa_auth_token', accessToken);
+          }
+
+          let orgId = authUser.user_metadata?.school_id || authUser.user_metadata?.organization_id || authUser.app_metadata?.organization_id;
+          let role = authUser.user_metadata?.role || 'admin';
+          let fullName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0];
+          let profile: any = null;
+
+          try {
+            const res = await supabase
+              .from('users')
+              .select('*, schools(*)')
+              .or(`auth_user_id.eq.${authUser.id},email.ilike.${cleanEmail}`)
+              .maybeSingle();
+            profile = res.data;
+
+            if (profile) {
+              orgId = profile.school_id || profile.organization_id || orgId;
+              role = profile.role || role;
+              fullName = profile.full_name || fullName;
+              if (profile.schools) {
+                await setSchoolContext(profile.schools);
+              }
+            }
+          } catch (e) {}
+
+          const userObj: User = {
+            id: (profile?.id as number) || Date.now(),
+            auth_user_id: authUser.id,
+            username: profile?.username || cleanEmail.split('@')[0],
+            fullName: fullName,
+            email: cleanEmail,
+            role: role,
+            status: 'active',
+            schoolId: orgId,
+            school_id: orgId,
+            createdAt: Date.now(),
+            lastLogin: Date.now()
+          };
+
+          setUser(userObj);
+          localStorage.setItem('esepa_user', JSON.stringify(userObj));
+
+          recordUserLogin({
+            auth_user_id: authUser.id,
+            organization_id: orgId,
+            email: cleanEmail,
+            status: 'success_supabase_auth'
+          });
+
+          return { success: true, user: userObj, token: accessToken || undefined };
+        }
+      } catch (e) {
+        console.warn("Supabase direct auth attempt notice:", e);
+      }
     }
 
     const friendlyError = mapAuthErrorMessage(result.error);
@@ -495,6 +520,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: mapAuthErrorMessage(json.error) };
       }
 
+      // Ensure every new client/tenant starts on a 100% clean slate with zero residual data
+      await clearTenantLocalDatabase(json.organization?.id);
+      if (json.organization?.id) {
+        localStorage.setItem('esepa_active_school_id', json.organization.id);
+      }
+
       if (json.token) {
         setToken(json.token);
         localStorage.setItem('esepa_auth_token', json.token);
@@ -506,6 +537,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (json.user) {
         setUser(json.user);
         localStorage.setItem('esepa_user', JSON.stringify(json.user));
+        if (json.user.role !== 'creator' && json.user.role !== 'super_admin') {
+          try {
+            await db.users.add({
+              ...json.user,
+              fullName: json.user.fullName || json.user.full_name || json.user.username,
+              schoolId: json.organization?.id || json.user.school_id,
+              school_id: json.organization?.id || json.user.school_id,
+              status: 'active',
+              createdAt: Date.now()
+            });
+          } catch (e) {}
+        }
       }
       if (json.organization) {
         await setSchoolContext(json.organization);
@@ -533,6 +576,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const json = await res.json();
       if (!res.ok || !json.success) {
         return { success: false, error: mapAuthErrorMessage(json.error) };
+      }
+
+      await clearTenantLocalDatabase(json.organization?.id);
+      if (json.organization?.id) {
+        localStorage.setItem('esepa_active_school_id', json.organization.id);
       }
 
       if (json.token) {
@@ -575,6 +623,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('esepa_user');
     localStorage.removeItem('esepa_auth_token');
     localStorage.removeItem('esepa_refresh_token');
+    localStorage.removeItem('esepa_active_school_id');
+    clearTenantLocalDatabase().catch(() => {});
   };
 
   const register = async (

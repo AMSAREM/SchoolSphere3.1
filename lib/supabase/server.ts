@@ -44,15 +44,17 @@ export function getSupabaseAdmin() {
 }
 
 export async function getOrCreateSchoolBySlugOrName(schoolName: string, licenseKey?: string) {
+  const cleanName = (schoolName || '').trim();
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'default-school';
+
   try {
     const admin = getSupabaseAdmin();
-    const slug = schoolName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').trim() || 'default-school';
-    
-    // Check if school exists
+
+    // 1. Check if school exists via direct table query (read-only)
     const { data: existing } = await admin
       .from('schools')
       .select('*')
-      .or(`slug.eq.${slug},name.ilike.${schoolName}`)
+      .or(`slug.eq.${slug},name.ilike.${cleanName}`)
       .limit(1)
       .maybeSingle();
 
@@ -60,33 +62,32 @@ export async function getOrCreateSchoolBySlugOrName(schoolName: string, licenseK
       return existing;
     }
 
-    // Insert new school
-    const newSchool = {
-      name: schoolName,
-      slug: slug,
-      email: `contact@${slug}.edu`,
-      phone: '+233 20 000 0000',
-      address: 'Ghana',
-      status: 'active'
-    };
-
-    const { data: created, error } = await admin
-      .from('schools')
-      .insert([newSchool])
-      .select()
-      .single();
-
-    if (!error && created) {
-      return created;
-    }
+    // 2. Fallback: Check via SECURITY DEFINER RPC get_schools_directory (read-only)
+    try {
+      const { data: dirSchools } = await admin.rpc('get_schools_directory');
+      if (Array.isArray(dirSchools) && dirSchools.length > 0) {
+        const matched = dirSchools.find((s: any) =>
+          String(s.slug || '').toLowerCase() === slug ||
+          String(s.name || '').trim().toLowerCase() === cleanName.toLowerCase() ||
+          (licenseKey && String(s.license_key || '').trim().toUpperCase() === licenseKey.trim().toUpperCase())
+        );
+        if (matched) {
+          return {
+            id: matched.id,
+            name: matched.name,
+            slug: matched.slug || slug,
+            email: matched.email || `contact@${matched.slug || slug}.edu`,
+            phone: matched.phone || '',
+            address: matched.address || 'Ghana',
+            status: String(matched.status || 'active').toLowerCase()
+          };
+        }
+      }
+    } catch {}
   } catch (err: any) {
     console.warn('Notice in getOrCreateSchoolBySlugOrName:', err.message);
   }
 
-  return {
-    id: '00000000-0000-0000-0000-000000000001',
-    name: schoolName || 'ESEPA INTERNATIONAL SCHOOL',
-    slug: 'default-school',
-    status: 'active'
-  };
+  return null;
 }
+

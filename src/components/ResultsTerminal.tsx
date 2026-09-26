@@ -986,56 +986,25 @@ export default function ResultsTerminal() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm print:hidden">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:flex lg:flex-wrap items-end gap-4 sm:gap-6">
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Class</label>
-            <select 
-              value={selectedClass}
-              onChange={(e) => setSelectedClass(e.target.value)}
-              className="block w-full lg:w-32 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none h-10"
-            >
-              {classes?.length ? classes.map(c => <option key={c.id} value={c.name}>{c.name}</option>) : <option>P1</option>}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Subject</label>
-            <select 
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              className="block w-full lg:w-48 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none h-10"
-            >
-              {filteredSubjectsOptions?.length ? filteredSubjectsOptions.map(s => <option key={s.id} value={s.name}>{s.name}</option>) : <option>Mathematics</option>}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Term</label>
-            <select 
-              value={selectedTerm}
-              onChange={(e) => setSelectedTerm(e.target.value)}
-              className="block w-full lg:w-32 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none h-10"
-            >
-              {['Term 1', 'Term 2', 'Term 3'].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-
-          <div className="h-10 w-[1px] bg-slate-100 hidden lg:block self-center" />
-
-          <div className="col-span-2 md:col-span-1 lg:flex-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Quick Search</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Student name..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 h-10"
-              />
+      {/* Deep Teal Hero Header Card */}
+      <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col gap-5 print:hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-[#faae57]" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+                Continuous Assessment & Exam Matrix
+              </span>
             </div>
+            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+              Academic Results Terminal • {selectedClass}
+            </h2>
+            <p className="text-sm text-[#e1c594]/90 font-medium">
+              {selectedSubject || 'All Subjects'} • {selectedTerm} • CA (30%) + Exam (70%) Grading Matrix
+            </p>
           </div>
 
-          <div className="col-span-2 md:col-span-3 lg:w-auto flex flex-wrap items-center gap-2 sm:gap-3 lg:ml-auto">
+          <div className="flex flex-wrap items-center gap-2.5">
             <input 
               type="file" 
               id="import-results-csv" 
@@ -1045,28 +1014,75 @@ export default function ResultsTerminal() {
             />
             <button 
               onClick={downloadTemplate}
-              className="flex-1 lg:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all h-10 text-sm"
+              className="bg-white/10 hover:bg-white/20 text-white border border-white/15 px-4 py-2.5 rounded-full font-bold flex items-center justify-center gap-2 transition-all min-h-[44px] text-xs cursor-pointer"
               title="Download CSV Results Template"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span className="hidden sm:inline">CSV Template</span>
+              <FileSpreadsheet className="w-4 h-4 text-[#06d6a0]" />
+              <span>CSV Template</span>
             </button>
             <button 
               onClick={() => document.getElementById('import-results-csv')?.click()}
-              className="flex-1 lg:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all h-10 text-sm"
+              className="bg-white/10 hover:bg-white/20 text-white border border-white/15 px-4 py-2.5 rounded-full font-bold flex items-center justify-center gap-2 transition-all min-h-[44px] text-xs cursor-pointer"
               title="Import CSV Results File Only"
             >
-              <Download className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">Import CSV</span>
+              <Download className="w-4 h-4 text-[#faae57]" />
+              <span>Import CSV</span>
             </button>
             <button 
               onClick={handleBulkSave}
               disabled={isSaving}
-              className="w-full lg:w-auto bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-100 h-10 text-sm"
+              className="bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-6 py-2.5 rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-50 shadow-sm min-h-[44px] text-sm cursor-pointer"
             >
-              {isSaving ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{isSaving ? 'Saving...' : 'Save All'}</span>
+              {isSaving ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 stroke-[2.5]" />}
+              <span>{isSaving ? 'Saving...' : 'Save All Marks'}</span>
             </button>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-white/10 grid grid-cols-2 md:grid-cols-3 lg:flex lg:flex-wrap items-end gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#e1c594] uppercase tracking-wider">Class</label>
+            <select 
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className="block w-full lg:w-36 bg-white border border-[#bac4c6] rounded-full px-4 py-2 text-sm font-bold text-[#1f2a2e] focus:ring-2 focus:ring-[#faae57] outline-none min-h-[44px] cursor-pointer"
+            >
+              {classes?.length ? classes.map(c => <option key={c.id} value={c.name}>{c.name}</option>) : <option>P1</option>}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#e1c594] uppercase tracking-wider">Subject</label>
+            <select 
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="block w-full lg:w-52 bg-white border border-[#bac4c6] rounded-full px-4 py-2 text-sm font-bold text-[#1f2a2e] focus:ring-2 focus:ring-[#faae57] outline-none min-h-[44px] cursor-pointer"
+            >
+              {filteredSubjectsOptions?.length ? filteredSubjectsOptions.map(s => <option key={s.id} value={s.name}>{s.name}</option>) : <option>Mathematics</option>}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#e1c594] uppercase tracking-wider">Term</label>
+            <select 
+              value={selectedTerm}
+              onChange={(e) => setSelectedTerm(e.target.value)}
+              className="block w-full lg:w-36 bg-white border border-[#bac4c6] rounded-full px-4 py-2 text-sm font-bold text-[#1f2a2e] focus:ring-2 focus:ring-[#faae57] outline-none min-h-[44px] cursor-pointer"
+            >
+              {['Term 1', 'Term 2', 'Term 3'].map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div className="col-span-2 md:col-span-3 lg:flex-1">
+            <label className="text-[10px] font-bold text-[#e1c594] uppercase tracking-wider mb-1 block">Quick Student Search</label>
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84]" />
+              <input 
+                type="text" 
+                placeholder="Filter by student name or ID..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-[#bac4c6] rounded-full text-sm font-medium text-[#1f2a2e] outline-none focus:ring-2 focus:ring-[#faae57] min-h-[44px]"
+              />
+            </div>
           </div>
         </div>
       </div>

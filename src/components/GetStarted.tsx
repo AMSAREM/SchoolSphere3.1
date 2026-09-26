@@ -159,16 +159,30 @@ export default function GetStarted({
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          setLicenseValidation({
-            checking: false,
-            checked: true,
-            valid: true,
-            used: !!data.used,
-            schoolName: data.schoolName || '',
-            tier: data.tier || 'Standard'
-          });
-          if (data.schoolName && !setupSchoolName) {
-            setSetupSchoolName(data.schoolName);
+          const isSuspendedOrRevoked = data.status === 'suspended' || data.status === 'revoked';
+          const isKeyUsed = !!(data.used && data.activatedAt);
+          if (isSuspendedOrRevoked) {
+            setLicenseValidation({
+              checking: false,
+              checked: true,
+              valid: false,
+              used: false,
+              schoolName: data.schoolName || '',
+              tier: data.tier || 'Standard',
+              error: 'This license key is currently suspended. Please contact administration.'
+            });
+          } else {
+            setLicenseValidation({
+              checking: false,
+              checked: true,
+              valid: true,
+              used: isKeyUsed,
+              schoolName: data.schoolName || '',
+              tier: data.tier || 'Standard'
+            });
+            if (data.schoolName && !setupSchoolName) {
+              setSetupSchoolName(data.schoolName);
+            }
           }
         } else {
           setLicenseValidation({
@@ -263,6 +277,16 @@ export default function GetStarted({
 
     if (activatedData) {
       localStorage.setItem('esepa_active_license', JSON.stringify(activatedData));
+      try {
+        const cachedLics = JSON.parse(localStorage.getItem('esepa_generated_licenses') || '[]');
+        if (Array.isArray(cachedLics)) {
+          const cleanKey = licenseInput.trim().toUpperCase();
+          const updatedLics = cachedLics.map((l: any) =>
+            l.key === cleanKey ? { ...l, used: true, activatedAt: Date.now(), status: 'active' } : l
+          );
+          localStorage.setItem('esepa_generated_licenses', JSON.stringify(updatedLics));
+        }
+      } catch {}
       setSetupLicenseInfo(activatedData);
       
       const effectiveSchoolName = setupSchoolName.trim().toUpperCase() || (activatedData.schoolName || 'SCHOOL SPHERE ACADEMY').toUpperCase();

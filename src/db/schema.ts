@@ -603,3 +603,128 @@ export function calculateGrade(score: number): { grade: string, remarks: string 
   if (score >= 40) return { grade: 'E', remarks: 'Pass' };
   return { grade: 'F', remarks: 'Fail' };
 }
+
+/**
+ * Completely clears all tenant-scoped local IndexedDB tables so a new or switched tenant starts on a clean slate.
+ */
+export async function clearTenantLocalDatabase(activeSchoolId?: string): Promise<void> {
+  try {
+    await Promise.all([
+      db.students.clear(),
+      db.classes.clear(),
+      db.subjects.clear(),
+      db.teachers.clear(),
+      db.attendance.clear(),
+      db.results.clear(),
+      db.termReports.clear(),
+      db.inventory.clear(),
+      db.expenses.clear(),
+      db.promotionHistory.clear(),
+      db.polls.clear(),
+      db.candidates.clear(),
+      db.votes.clear()
+    ]);
+
+    await db.settings.where('key').anyOf(['timetable_slots', 'timetable_suggestions']).delete();
+
+    const allUsers = await db.users.toArray();
+    const userIdsToDelete: number[] = [];
+    for (const u of allUsers) {
+      const role = String(u.role || '').toLowerCase();
+      const uSchoolId = (u as any).school_id || u.schoolId;
+      if (role === 'creator' || role === 'super_admin' || (activeSchoolId && uSchoolId !== activeSchoolId)) {
+        if (typeof u.id === 'number') userIdsToDelete.push(u.id);
+      }
+    }
+    if (userIdsToDelete.length > 0) {
+      await db.users.bulkDelete(userIdsToDelete);
+    }
+  } catch (e) {
+    console.warn('Notice clearing tenant local database:', e);
+  }
+}
+
+/**
+ * Purges any legacy auto-seeded demo records (sample student STU-562185, unscoped default classes/subjects, sample timetable slots).
+ */
+export async function purgeDemoRecordsFromDb(activeSchoolId?: string): Promise<void> {
+  try {
+    // 1. Purge sample student STU-562185 and unscoped/foreign student records
+    const allStudents = await db.students.toArray();
+    const stuIdsToDelete: number[] = [];
+    for (const s of allStudents) {
+      const sid = String(s.studentId || (s as any).student_id || '').trim();
+      const sSchoolId = (s as any).school_id || s.schoolId;
+      const isDemoStudent =
+        sid === 'STU-562185' ||
+        (String(s.firstName || '').toLowerCase() === 'emmanuel' &&
+          String(s.lastName || '').toLowerCase() === 'amoako' &&
+          String(s.guardianName || '').toLowerCase() === 'john amoako');
+      const isUnscopedOrForeign = !sSchoolId || (Boolean(activeSchoolId) && sSchoolId !== activeSchoolId);
+      if ((isDemoStudent || isUnscopedOrForeign) && typeof s.id === 'number') {
+        stuIdsToDelete.push(s.id);
+      }
+    }
+    if (stuIdsToDelete.length > 0) {
+      await db.students.bulkDelete(stuIdsToDelete);
+    }
+
+    // 2. Purge unscoped legacy seeded classes
+    const allClasses = await db.classes.toArray();
+    const classIdsToDelete = allClasses
+      .filter(c => {
+        const cSchoolId = (c as any).school_id || (c as any).schoolId;
+        return !cSchoolId || (Boolean(activeSchoolId) && cSchoolId !== activeSchoolId);
+      })
+      .map(c => c.id)
+      .filter((id): id is number => typeof id === 'number');
+    if (classIdsToDelete.length > 0) {
+      await db.classes.bulkDelete(classIdsToDelete);
+    }
+
+    // 3. Purge unscoped legacy seeded subjects
+    const allSubjects = await db.subjects.toArray();
+    const subjectIdsToDelete = allSubjects
+      .filter(sub => {
+        const sSchoolId = (sub as any).school_id || (sub as any).schoolId;
+        return !sSchoolId || (Boolean(activeSchoolId) && sSchoolId !== activeSchoolId);
+      })
+      .map(sub => sub.id)
+      .filter((id): id is number => typeof id === 'number');
+    if (subjectIdsToDelete.length > 0) {
+      await db.subjects.bulkDelete(subjectIdsToDelete);
+    }
+
+    // 4. Purge sample timetable entries (id starting with 'sample-')
+    const ttSetting = await db.settings.where('key').equals('timetable_slots').first();
+    if (ttSetting && Array.isArray(ttSetting.value)) {
+      const cleanedSlots = ttSetting.value.filter(
+        (slot: any) => !String(slot?.id || '').startsWith('sample-')
+      );
+      if (cleanedSlots.length !== ttSetting.value.length) {
+        if (cleanedSlots.length === 0 && ttSetting.id) {
+          await db.settings.delete(ttSetting.id);
+        } else if (ttSetting.id) {
+          await db.settings.update(ttSetting.id, { value: cleanedSlots });
+        }
+      }
+    }
+
+    // 5. Purge creator/super_admin profiles from local users cache
+    const allUsers = await db.users.toArray();
+    const userIdsToDelete = allUsers
+      .filter(u => {
+        const role = String(u.role || '').toLowerCase();
+        const uSchoolId = (u as any).school_id || u.schoolId;
+        return role === 'creator' || role === 'super_admin' || (Boolean(activeSchoolId) && uSchoolId !== activeSchoolId);
+      })
+      .map(u => u.id)
+      .filter((id): id is number => typeof id === 'number');
+    if (userIdsToDelete.length > 0) {
+      await db.users.bulkDelete(userIdsToDelete);
+    }
+  } catch (e) {
+    console.warn('Notice purging demo records:', e);
+  }
+}
+

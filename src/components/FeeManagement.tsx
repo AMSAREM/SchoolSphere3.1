@@ -598,62 +598,69 @@ export default function FeeManagement() {
     return (
       <>
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-            <div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <Wallet className="w-6 h-6 text-indigo-600" />
+          {/* Deep Teal Hero Header Card */}
+          <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
+                <Wallet className="w-3.5 h-3.5 text-[#faae57]" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+                  Student Bursary & Billing
+                </span>
+              </div>
+              <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
                 {isStudent ? 'My Fees & Payments' : "Ward's Fees & Payments"}
               </h2>
-              <p className="text-xs text-slate-500 mt-1">
-                View your active ledger balances, itemized outstanding lists, and execute secure cashless payments instantly.
+              <p className="text-sm text-[#e1c594]/90 font-medium">
+                View active ledger balances, itemized fee schedules, and execute secure payments.
               </p>
             </div>
             
-            {isParent && parentWards.length > 1 && (
-              <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 px-3 rounded-xl shadow-sm">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Select Child:</span>
-                <select
-                  value={selectedStudentId || ''}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="bg-transparent font-bold text-xs text-slate-700 outline-none cursor-pointer py-1"
-                >
-                  {parentWards.map(w => (
-                    <option key={w.id || w.studentId} value={w.studentId}>
-                      {w.firstName} {w.lastName} ({w.class})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {isParent && parentWards.length > 1 && (
+                <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-[#bac4c6] min-h-[44px]">
+                  <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider">Child:</span>
+                  <select
+                    value={selectedStudentId || ''}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    className="bg-transparent font-bold text-xs text-[#1f2a2e] outline-none cursor-pointer"
+                  >
+                    {parentWards.map(w => (
+                      <option key={w.id || w.studentId} value={w.studentId}>
+                        {w.firstName} {w.lastName} ({w.class})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-          {/* View Switcher Tabs */}
-          <div className="flex bg-slate-100 p-1 rounded-xl self-start print:hidden max-w-full overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setActiveTab('dashboard')}
-              className={cn(
-                "px-3 sm:px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider whitespace-nowrap",
-                activeTab === 'dashboard'
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              )}
-            >
-              Fee Overview & Payments
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('ledger')}
-              className={cn(
-                "px-3 sm:px-4 py-2 rounded-lg text-xs font-black transition-all uppercase tracking-wider whitespace-nowrap",
-                activeTab === 'ledger'
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              )}
-            >
-              Detailed Ledger
-            </button>
+              {/* View Switcher Tabs */}
+              <div className="flex items-center bg-white/10 p-1 rounded-full border border-white/15">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dashboard')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer min-h-[38px]",
+                    activeTab === 'dashboard'
+                      ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
+                      : "text-white/85 hover:text-white"
+                  )}
+                >
+                  Fee Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('ledger')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer min-h-[38px]",
+                    activeTab === 'ledger'
+                      ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
+                      : "text-white/85 hover:text-white"
+                  )}
+                >
+                  Detailed Ledger
+                </button>
+              </div>
+            </div>
           </div>
 
           {activeTab === 'ledger' ? (
@@ -1119,26 +1126,34 @@ export default function FeeManagement() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-          <div className="space-y-1">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-indigo-600" />
-              Financial Management
+        {/* Deep Teal Hero Header Card */}
+        <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
+              <Wallet className="w-3.5 h-3.5 text-[#faae57]" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+                Bursary & Accounts Office
+              </span>
+            </div>
+            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+              Financial & Fee Management
             </h2>
-            <p className="text-xs text-slate-400 font-medium">Configure billings, view live transaction ledgers, and receive secure payments.</p>
+            <p className="text-sm text-[#e1c594]/90 font-medium">
+              Configure fee structures, monitor live transaction ledgers, and issue official receipts.
+            </p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* View Switcher Tabs */}
-            <div className="flex bg-slate-100 p-1 rounded-xl print:hidden shadow-inner border border-slate-200/50">
+            <div className="flex items-center bg-white/10 p-1 rounded-full border border-white/15 print:hidden">
               <button
                 type="button"
                 onClick={() => setActiveTab('dashboard')}
                 className={cn(
-                  "px-4 py-1.5 rounded-lg text-xs font-black transition-all uppercase tracking-wider",
+                  "px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
                   activeTab === 'dashboard'
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
+                    : "text-white/85 hover:text-white"
                 )}
               >
                 Overview & Payments
@@ -1147,10 +1162,10 @@ export default function FeeManagement() {
                 type="button"
                 onClick={() => setActiveTab('ledger')}
                 className={cn(
-                  "px-4 py-1.5 rounded-lg text-xs font-black transition-all uppercase tracking-wider",
+                  "px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
                   activeTab === 'ledger'
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
+                    : "text-white/85 hover:text-white"
                 )}
               >
                 Student Ledgers
@@ -1161,14 +1176,14 @@ export default function FeeManagement() {
               <>
                 <button 
                   onClick={triggerPrint}
-                  className="flex-1 sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-all shadow-sm h-11 cursor-pointer"
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-full text-white font-bold transition-all text-xs min-h-[44px] cursor-pointer"
                 >
-                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <Printer className="w-4 h-4 text-[#faae57]" />
                   <span>Print Report</span>
                 </button>
                 <button 
                   onClick={exportFees}
-                  className="flex-1 sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-all shadow-sm h-11 cursor-pointer"
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-[#1c4a59] rounded-full font-bold hover:bg-[#f6f8f7] transition-all shadow-xs text-xs min-h-[44px] cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                   <span>Export CSV</span>

@@ -11,6 +11,8 @@ export interface RegisterOrgInput {
   adminFullName: string;
   email: string;
   password: string;
+  subdomain?: string;
+  slug?: string;
   phone?: string;
   address?: string;
 }
@@ -37,6 +39,7 @@ export interface StaffProfile {
   phone?: string;
   role: string;
   status: string;
+  password_hash?: string;
   created_at: number;
   updated_at: number;
 }
@@ -57,6 +60,10 @@ const invitationsStore = new Map<string, WorkerInvitation>();
 const staffProfilesStore = new Map<string, StaffProfile>();
 const loginActivitiesStore: UserLoginActivity[] = [];
 
+export function getInMemoryStaffProfiles(): StaffProfile[] {
+  return Array.from(staffProfilesStore.values());
+}
+
 /**
  * Generate a URL-friendly slug from an organization name
  */
@@ -76,7 +83,7 @@ export function slugify(text: string): string {
  * Register a new enterprise organization workspace and provisions its initial Administrator.
  */
 export async function registerOrganization(input: RegisterOrgInput) {
-  const { organizationName, facilityType, facilityCode, adminFullName, email, password, phone, address } = input;
+  const { organizationName, facilityType, facilityCode, adminFullName, email, password, subdomain, slug, phone, address } = input;
 
   if (!organizationName || !organizationName.trim()) {
     throw new Error('Organization name is required');
@@ -84,8 +91,8 @@ export async function registerOrganization(input: RegisterOrgInput) {
   if (!adminFullName || !adminFullName.trim()) {
     throw new Error('Administrator full name is required');
   }
-  if (!password || password.length < 8) {
-    throw new Error('Password must be at least 8 characters long');
+  if (!password || password.length < 4) {
+    throw new Error('Password must be at least 4 characters long');
   }
 
   // Validate email
@@ -100,26 +107,9 @@ export async function registerOrganization(input: RegisterOrgInput) {
   const cleanEmail = emailValidation.normalizedEmail;
   const admin = getSupabaseAdmin();
 
-  // Check if user with this email already exists
-  try {
-    const { data: existingUsers } = await admin
-      .from('users')
-      .select('id, email')
-      .ilike('email', cleanEmail)
-      .limit(1);
-
-    if (existingUsers && existingUsers.length > 0) {
-      throw new Error(`An account with email ${cleanEmail} is already registered. Please sign in instead.`);
-    }
-  } catch (checkErr: any) {
-    if (checkErr.message?.includes('already registered')) {
-      throw checkErr;
-    }
-  }
-
   const orgId = crypto.randomUUID();
-  let orgSlug = slugify(organizationName);
-  if (facilityCode && facilityCode.trim()) {
+  let orgSlug = slugify(subdomain || slug || organizationName);
+  if (!subdomain && !slug && facilityCode && facilityCode.trim()) {
     orgSlug = `${orgSlug}-${slugify(facilityCode)}`;
   }
   if (!orgSlug) {
@@ -143,7 +133,10 @@ export async function registerOrganization(input: RegisterOrgInput) {
   };
 
   try {
-    await admin.from('schools').insert([newOrg]);
+    const { data: createdSch } = await admin.from('schools').insert([newOrg]).select('id, slug').maybeSingle();
+    if (createdSch?.id) {
+      newOrg.id = createdSch.id;
+    }
   } catch (insertErr: any) {
     console.warn('[Register Org] Notice inserting school into Supabase:', insertErr?.message);
   }
@@ -153,12 +146,41 @@ export async function registerOrganization(input: RegisterOrgInput) {
   const passwordHash = await bcrypt.hash(password, salt);
 
   const authUserId = crypto.randomUUID();
-  const username = cleanEmail.split('@')[0] + '_' + Math.floor(100 + Math.random() * 900);
+  const baseHandle = cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'admin';
+  let username = baseHandle;
+
+  // Check if baseHandle is already taken in public.users by another tenant
+  try {
+    const { data: existingHandle } = await admin
+      .from('users')
+      .select('id, school_id')
+      .eq('username', baseHandle)
+      .maybeSingle();
+
+    if (existingHandle && existingHandle.school_id !== newOrg.id) {
+      username = `${baseHandle}@${orgSlug}`;
+    }
+  } catch (e) {}
+
+  // Also create/update in Supabase Auth (auth.users) so email+password login works natively
+  try {
+    await admin.auth.admin.createUser({
+      email: cleanEmail,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: adminFullName.trim(),
+        role: 'admin',
+        school_id: newOrg.id,
+        organization_id: newOrg.id
+      }
+    });
+  } catch (e) {}
 
   // 3. Insert Admin into 'users' table
   const userRecord = {
     auth_user_id: authUserId,
-    school_id: orgId,
+    school_id: newOrg.id,
     username: username,
     password_hash: passwordHash,
     full_name: adminFullName.trim(),
@@ -180,6 +202,18 @@ export async function registerOrganization(input: RegisterOrgInput) {
 
     if (!userError && createdUser?.id) {
       insertedUserId = createdUser.id;
+    } else if (userError) {
+      // Fallback with unique scoped handle if username constraint triggered
+      const fallbackUsername = `${baseHandle}@${orgSlug}-${Math.floor(100 + Math.random() * 900)}`;
+      const { data: retryUser } = await admin
+        .from('users')
+        .insert([{ ...userRecord, username: fallbackUsername }])
+        .select('id')
+        .maybeSingle();
+      if (retryUser?.id) {
+        insertedUserId = retryUser.id;
+        username = fallbackUsername;
+      }
     }
   } catch (userErr: any) {
     console.warn('[Register Org] Notice inserting user into Supabase:', userErr?.message);
@@ -190,19 +224,21 @@ export async function registerOrganization(input: RegisterOrgInput) {
   const staffProfile: StaffProfile = {
     id: profileId,
     auth_user_id: authUserId,
-    organization_id: orgId,
+    organization_id: newOrg.id,
     full_name: adminFullName.trim(),
     email: cleanEmail,
     phone: phone || '',
     role: 'admin',
     status: 'active',
+    password_hash: passwordHash,
     created_at: Date.now(),
     updated_at: Date.now()
   };
 
   // Try writing to staff_profiles in Supabase
   try {
-    await admin.from('staff_profiles').insert([staffProfile]);
+    const { password_hash: _ph, ...dbStaffProfile } = staffProfile;
+    await admin.from('staff_profiles').insert([dbStaffProfile]);
   } catch (spErr) {
     // If table not present yet, stored in memory cache
   }
@@ -214,7 +250,9 @@ export async function registerOrganization(input: RegisterOrgInput) {
     await admin.from('school_licenses').insert([{
       license_key: generatedKey,
       school_name: organizationName.trim(),
-      school_id: orgId,
+      school_id: newOrg.id,
+      client_email: cleanEmail,
+      contact_person: adminFullName.trim(),
       tier: 'Enterprise',
       active_status: 'active',
       expiry_date: Date.now() + 365 * 24 * 60 * 60 * 1000,
@@ -231,9 +269,9 @@ export async function registerOrganization(input: RegisterOrgInput) {
     username: username,
     email: cleanEmail,
     role: 'admin',
-    school_id: orgId,
-    schoolId: orgId,
-    organization_id: orgId,
+    school_id: newOrg.id,
+    schoolId: newOrg.id,
+    organization_id: newOrg.id,
     fullName: adminFullName.trim()
   };
 
@@ -243,7 +281,7 @@ export async function registerOrganization(input: RegisterOrgInput) {
   recordUserLoginActivity({
     id: crypto.randomUUID(),
     auth_user_id: authUserId,
-    organization_id: orgId,
+    organization_id: newOrg.id,
     email: cleanEmail,
     status: 'organization_registered',
     login_timestamp: Date.now()
@@ -251,6 +289,8 @@ export async function registerOrganization(input: RegisterOrgInput) {
 
   return {
     organization: newOrg,
+    licenseKey: generatedKey,
+    passwordHash,
     user: {
       id: insertedUserId,
       authUserId,
@@ -258,8 +298,9 @@ export async function registerOrganization(input: RegisterOrgInput) {
       fullName: adminFullName.trim(),
       email: cleanEmail,
       role: 'admin',
-      organizationId: orgId,
-      schoolId: orgId,
+      organizationId: newOrg.id,
+      schoolId: newOrg.id,
+      school_id: newOrg.id,
       status: 'active'
     },
     staffProfile,
@@ -444,7 +485,14 @@ export async function joinWithInvitation(input: {
   const passwordHash = await bcrypt.hash(password, salt);
 
   const authUserId = crypto.randomUUID();
-  const username = cleanEmail.split('@')[0] + '_' + Math.floor(100 + Math.random() * 900);
+  const baseHandle = cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'staff';
+  let username = baseHandle;
+  try {
+    const { data: existH } = await admin.from('users').select('id').eq('username', baseHandle).maybeSingle();
+    if (existH) {
+      username = `${baseHandle}_${Math.floor(100 + Math.random() * 900)}`;
+    }
+  } catch (e) {}
 
   // Insert into 'users' table
   const userRecord = {
@@ -485,12 +533,14 @@ export async function joinWithInvitation(input: {
     phone: phone || '',
     role: designatedRole,
     status: 'active',
+    password_hash: passwordHash,
     created_at: Date.now(),
     updated_at: Date.now()
   };
 
   try {
-    await admin.from('staff_profiles').insert([staffProfile]);
+    const { password_hash: _ph, ...dbStaffProfile } = staffProfile;
+    await admin.from('staff_profiles').insert([dbStaffProfile]);
   } catch (e) {}
   staffProfilesStore.set(profileId, staffProfile);
 
@@ -533,6 +583,7 @@ export async function joinWithInvitation(input: {
 
   return {
     organization: verification.organization,
+    passwordHash,
     user: {
       id: insertedUserId,
       authUserId,
@@ -542,6 +593,7 @@ export async function joinWithInvitation(input: {
       role: designatedRole,
       organizationId: orgId,
       schoolId: orgId,
+      school_id: orgId,
       status: 'active'
     },
     staffProfile,
@@ -557,30 +609,39 @@ export async function listOrganizationWorkers(orgId: string) {
   let workers: any[] = [];
   let pendingInvitations: any[] = [];
 
-  // Fetch users belonging to this organization
+  // Fetch users belonging to this organization (excluding platform creator and super_admin)
   try {
     const { data: dbUsers, error } = await admin
       .from('users')
       .select('id, username, full_name, email, phone, role, status, created_at')
-      .eq('school_id', orgId);
+      .eq('school_id', orgId)
+      .neq('role', 'creator')
+      .neq('role', 'super_admin');
 
     if (!error && Array.isArray(dbUsers)) {
-      workers = dbUsers.map(u => ({
-        id: u.id,
-        username: u.username,
-        fullName: u.full_name,
-        email: u.email,
-        phone: u.phone,
-        role: u.role,
-        status: u.status,
-        createdAt: u.created_at
-      }));
+      workers = dbUsers
+        .filter(u => u.role !== 'creator' && u.role !== 'super_admin')
+        .map(u => ({
+          id: u.id,
+          username: u.username,
+          fullName: u.full_name,
+          email: u.email,
+          phone: u.phone,
+          role: u.role,
+          status: u.status,
+          createdAt: u.created_at
+        }));
     }
   } catch (e) {}
 
-  // Merge in-memory staff profiles if missing
+  // Merge in-memory staff profiles if missing (excluding creator and super_admin)
   for (const profile of staffProfilesStore.values()) {
-    if (profile.organization_id === orgId && !workers.some(w => w.email === profile.email)) {
+    if (
+      profile.organization_id === orgId &&
+      profile.role !== ('creator' as any) &&
+      profile.role !== ('super_admin' as any) &&
+      !workers.some(w => w.email === profile.email)
+    ) {
       workers.push({
         id: profile.id,
         fullName: profile.full_name,

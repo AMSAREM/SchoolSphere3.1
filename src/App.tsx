@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import { db } from './db/schema';
+import { db, purgeDemoRecordsFromDb } from './db/schema';
 import { initRealtimeAndAutoSync, syncAllDataFromBackend } from './lib/syncService';
 import Dashboard from './components/Dashboard';
 import StudentManagement from './components/StudentManagement';
@@ -92,7 +92,7 @@ const ALL_DEFAULT_MODULES = [
 ];
 
 function AppContent() {
-  const { user, logout, isLoading: authLoading, switchRole, login, register } = useAuth();
+  const { user, school, logout, isLoading: authLoading, switchRole, login, register } = useAuth();
   const { showToast } = useNotifications();
   const [activeView, setActiveView] = useState<View>(() => {
     return (localStorage.getItem('esepa_active_view') as View) || 'dashboard';
@@ -186,16 +186,23 @@ function AppContent() {
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolProfile = useMemo(() => 
-    settings.find(s => s.key === 'schoolProfile')?.value || { schoolName: 'SCHOOL SPHERE ACADEMY', logo: 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png' }, 
-    [settings]
-  );
+  const schoolProfile = useMemo(() => {
+    const profile = settings.find(s => s.key === 'schoolProfile')?.value;
+    if (school?.name) {
+      return {
+        ...(profile || {}),
+        schoolName: school.name,
+        logo: school.logo_url || (school as any).logo || profile?.logo || '/sch sphere logo1.png'
+      };
+    }
+    return profile || { schoolName: 'SchoolSphere Portal', logo: '/sch sphere logo1.png' };
+  }, [settings, school]);
   const activeSirenBroadcast = useMemo(() => 
     settings.find(s => s.key === 'activeSirenBroadcast')?.value,
     [settings]
   );
   const schoolName = schoolProfile.schoolName;
-  const schoolLogo = schoolProfile.logo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png';
+  const schoolLogo = schoolProfile.logo || '/sch sphere logo1.png';
 
   // Uniform design tokens for SchoolSphere palette (#f6f8f7 canvas background, #1c4a59 institutional surface, #faae57 CTA)
   useEffect(() => {
@@ -554,73 +561,8 @@ function AppContent() {
   }, [activeSirenBroadcast]);
 
   useEffect(() => {
-    const seedData = async () => {
-      try {
-        const classCount = await db.classes.count();
-        if (classCount === 0) {
-          await db.classes.bulkAdd([
-            { name: 'P1', level: 'Lower Primary' },
-            { name: 'P2', level: 'Lower Primary' },
-            { name: 'JHS 1', level: 'Junior High School' }
-          ]);
-        }
-
-        const subjectCount = await db.subjects.count();
-        if (subjectCount === 0) {
-          await db.subjects.bulkAdd([
-            { name: 'Mathematics', code: 'MATH', applicableClasses: ['All'] },
-            { name: 'English Language', code: 'ENG', applicableClasses: ['All'] },
-            { name: 'Integrated Science', code: 'SCI', applicableClasses: ['All'] }
-          ]);
-        }
-
-        const settingsCount = await db.settings.count();
-        if (settingsCount === 0) {
-          await db.settings.bulkAdd([
-            { key: 'schoolProfile', value: { schoolName: 'SCHOOL SPHERE ACADEMY', schoolAddress: 'Accra, Ghana', schoolPhone: '+233 24 000 0000', schoolEmail: 'info@schoolsphere.edu.gh', logo: 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png' } },
-            { key: 'academicConfig', value: { academicYear: '2025/2026', currentTerm: 'Term 1', nextTermBegins: '2026-09-08' } }
-          ]);
-        }
-
-        // Only seed initial student if local student table is completely empty
-        const studentCount = await db.students.count();
-        if (studentCount === 0) {
-          const emmanuelData = {
-            studentId: 'STU-562185',
-            firstName: 'Emmanuel',
-            lastName: 'Amoako',
-            class: 'P2',
-            gender: 'Male' as const,
-            dateOfBirth: '2013-01-15',
-            house: 'green',
-            department: 'Primary',
-            guardianName: 'john',
-            guardianPhone: '0254012541',
-            feesPaid: 0,
-            totalFees: 2400,
-            feeBreakdown: {
-              tuition: 1000,
-              admission: 200,
-              ict: 150,
-              library: 50,
-              pta: 100,
-              exam: 120,
-              sports: 80,
-              canteen: 300,
-              transport: 250,
-              utility: 150
-            },
-            feePaidBreakdown: {},
-            createdAt: Date.now()
-          };
-          await db.students.add(emmanuelData);
-        }
-      } catch (err) {
-        console.error("Failed to seed database:", err);
-      }
-    };
-    seedData();
-  }, []);
+    purgeDemoRecordsFromDb(school?.id);
+  }, [school?.id]);
 
   // Initialize Live Supabase Realtime & Auto-Sync Engine
   useEffect(() => {
@@ -984,35 +926,44 @@ function AppContent() {
           </div>
 
           <nav className="flex-1 mt-4 px-3 space-y-1.5 overflow-y-auto no-scrollbar">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                id={`nav-${item.id}`}
-                onClick={() => handleNavClick(item.id as View)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative min-h-[44px]",
-                  activeView === item.id 
-                    ? "bg-[#1c4a59] text-white shadow-xs font-bold" 
-                    : "text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] font-medium"
-                )}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
-                {(sidebarOpen || mobileMenuOpen) && (
-                  <motion.span 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="font-bold text-sm tracking-wide whitespace-nowrap"
-                  >
-                    {item.label}
-                  </motion.span>
-                )}
-                {!sidebarOpen && windowWidth >= 1024 && !mobileMenuOpen && (
-                  <div className="absolute left-16 bg-[#1c4a59] text-white px-3 py-2 rounded-lg text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold shadow-md">
-                    {item.label}
-                  </div>
-                )}
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const isActive = activeView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  id={`nav-${item.id}`}
+                  onClick={() => handleNavClick(item.id as View)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl transition-all duration-200 group relative min-h-[44px] cursor-pointer",
+                    isActive 
+                      ? "bg-[#1c4a59] text-white shadow-[0_4px_14px_rgba(28,74,89,0.2)] font-bold" 
+                      : "text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] font-medium"
+                  )}
+                >
+                  <item.icon className={cn(
+                    "w-5 h-5 flex-shrink-0 transition-colors",
+                    isActive ? "text-[#faae57]" : "text-[#807654] group-hover:text-[#1c4a59]"
+                  )} />
+                  {(sidebarOpen || mobileMenuOpen) && (
+                    <motion.span 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="font-bold text-sm tracking-wide whitespace-nowrap flex-1 text-left"
+                    >
+                      {item.label}
+                    </motion.span>
+                  )}
+                  {isActive && (sidebarOpen || mobileMenuOpen) && (
+                    <span className="w-2 h-2 rounded-full bg-[#faae57] shrink-0" />
+                  )}
+                  {!sidebarOpen && windowWidth >= 1024 && !mobileMenuOpen && (
+                    <div className="absolute left-16 bg-[#1c4a59] text-white px-3 py-2 rounded-xl text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold shadow-md border border-[#faae57]/30">
+                      {item.label}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="p-4 border-t border-[#bac4c6] hidden lg:block shrink-0">
@@ -1111,8 +1062,8 @@ function AppContent() {
                   />
                   <div className="hidden lg:flex items-center gap-2">
                     <div className="h-4 w-px bg-[#bac4c6] mx-1" />
-                    <span className="px-2.5 py-0.5 rounded-lg bg-[#f6f8f7] text-[#1c4a59] text-xs font-bold capitalize border border-[#bac4c6]">
-                      {activeView.replace('-', ' ')}
+                    <span className="px-3 py-1 rounded-full bg-[#1c4a59] text-[#faae57] text-xs font-bold capitalize shadow-2xs">
+                      {activeView.replace('_', ' ').replace('-', ' ')}
                     </span>
                   </div>
                 </>
@@ -1127,8 +1078,8 @@ function AppContent() {
                     {schoolName}
                   </h1>
                   <div className="hidden sm:block h-4 w-px bg-[#bac4c6] mx-1" />
-                  <span className="hidden sm:inline-flex px-2.5 py-0.5 rounded-lg bg-[#f6f8f7] text-[#1c4a59] text-xs font-bold capitalize border border-[#bac4c6]">
-                    {activeView.replace('-', ' ')}
+                  <span className="hidden sm:inline-flex px-3 py-1 rounded-full bg-[#1c4a59] text-[#faae57] text-xs font-bold capitalize shadow-2xs">
+                    {activeView.replace('_', ' ').replace('-', ' ')}
                   </span>
                 </div>
               )}
@@ -1220,14 +1171,14 @@ function AppContent() {
                   className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left group cursor-pointer min-h-[44px]"
                   title="View Profile, Permissions & Change Password"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center font-bold text-xs shadow-2xs group-hover:bg-[#163b47] transition-colors">
+                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 flex items-center justify-center font-bold text-xs shadow-2xs group-hover:bg-[#163b47] transition-colors">
                     {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                   </div>
                   <div className="text-left hidden sm:block">
                     <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[120px]">
                       {user.fullName || user.username}
                     </p>
-                    <p className="text-[10px] text-[#6a7f84] font-bold uppercase tracking-wider mt-0.5">
+                    <p className="text-[10px] text-[#807654] font-bold uppercase tracking-wider mt-0.5">
                       {user.role?.replace('_', ' ')}
                     </p>
                   </div>
@@ -1248,7 +1199,7 @@ function AppContent() {
         {/* View Container */}
         <div className={cn(
           "flex-1 relative print:p-0 print:overflow-visible print:h-auto print:block",
-          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-8"
+          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8"
         )}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -1326,6 +1277,93 @@ function AppContent() {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Floating Mobile Bottom Navigation Bar (< 1024px) */}
+        {activeView !== 'creator' && navItems.length > 1 && (
+          <div className="lg:hidden fixed bottom-3 left-3 right-3 z-30 print:hidden pointer-events-none">
+            <div className="max-w-md mx-auto bg-white border border-[#bac4c6]/90 rounded-full px-3 py-2 shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex items-center justify-around pointer-events-auto">
+              {navItems.slice(0, 2).map((item) => {
+                const isActive = activeView === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNavClick(item.id as View)}
+                    className={cn(
+                      "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
+                      isActive ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
+                    )}
+                  >
+                    <item.icon className={cn("w-5 h-5", isActive && "text-[#1c4a59] stroke-[2.5]")} />
+                    <span className={cn(
+                      "text-[9px] mt-0.5 tracking-tight truncate max-w-[56px]",
+                      isActive ? "font-extrabold text-[#1c4a59]" : "font-semibold text-[#6a7f84]"
+                    )}>
+                      {item.label.split(' ')[0]}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Central Raised Warm Amber FAB */}
+              {(() => {
+                const fabTarget: View =
+                  user.role === 'teacher' ? 'attendance' :
+                  user.role === 'accountant' ? 'fees' :
+                  user.role === 'parent' ? 'fees' :
+                  user.role === 'student' ? 'timetable' :
+                  'students';
+                const effectiveTarget = navItems.some(i => i.id === fabTarget) ? fabTarget : (navItems[0]?.id as View || 'dashboard');
+                const FabIcon = navItems.find(i => i.id === effectiveTarget)?.icon || LayoutDashboard;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => handleNavClick(effectiveTarget)}
+                    className="w-12 h-12 -mt-5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] shadow-[0_6px_18px_rgba(250,174,87,0.45)] border-2 border-white flex items-center justify-center transition-transform active:scale-95 cursor-pointer shrink-0"
+                    title="Quick Action"
+                  >
+                    <FabIcon className="w-5 h-5 stroke-[2.5]" />
+                  </button>
+                );
+              })()}
+
+              {navItems.slice(2, 3).map((item) => {
+                const isActive = activeView === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNavClick(item.id as View)}
+                    className={cn(
+                      "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
+                      isActive ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
+                    )}
+                  >
+                    <item.icon className={cn("w-5 h-5", isActive && "text-[#1c4a59] stroke-[2.5]")} />
+                    <span className={cn(
+                      "text-[9px] mt-0.5 tracking-tight truncate max-w-[56px]",
+                      isActive ? "font-extrabold text-[#1c4a59]" : "font-semibold text-[#6a7f84]"
+                    )}>
+                      {item.label.split(' ')[0]}
+                    </span>
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className={cn(
+                  "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
+                  mobileMenuOpen ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
+                )}
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-[9px] mt-0.5 font-semibold tracking-tight">More</span>
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Security & Role Privileges Modal */}

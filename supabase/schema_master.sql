@@ -648,3 +648,194 @@ DROP TRIGGER IF EXISTS trg_users_updated_at ON public.users;
 CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON public.users
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
+
+-- ==============================================================================
+-- 18. ATOMIC TENANT & LICENSE SYNCHRONIZATION / SUSPENSION PROCEDURES
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.sync_school_license(
+  p_school_name TEXT,
+  p_license_key TEXT,
+  p_tier TEXT DEFAULT 'Standard',
+  p_email TEXT DEFAULT NULL,
+  p_phone TEXT DEFAULT NULL,
+  p_address TEXT DEFAULT 'Ghana',
+  p_duration_months TEXT DEFAULT '12',
+  p_expiry_date BIGINT DEFAULT NULL,
+  p_modules JSONB DEFAULT '["students", "academic", "timetable", "attendance", "results", "reports", "fees", "siren", "evoting", "inventory"]'::JSONB,
+  p_status TEXT DEFAULT 'active'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_school_id UUID;
+  v_license_id BIGINT;
+  v_clean_name TEXT;
+  v_slug TEXT;
+  v_clean_key TEXT;
+  v_tier TEXT;
+  v_status TEXT;
+  v_school_status TEXT;
+BEGIN
+  v_clean_name := TRIM(p_school_name);
+  v_clean_key := TRIM(UPPER(p_license_key));
+  v_tier := COALESCE(p_tier, 'Standard');
+  v_status := LOWER(TRIM(COALESCE(p_status, 'active')));
+  IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'pending_activation') THEN
+    v_status := 'active';
+  END IF;
+  v_school_status := CASE WHEN v_status = 'revoked' THEN 'suspended' ELSE v_status END;
+
+  v_slug := LOWER(REGEXP_REPLACE(v_clean_name, '[^a-zA-Z0-9]+', '-', 'g'));
+  v_slug := TRIM(BOTH '-' FROM v_slug);
+  IF v_slug = '' THEN
+    v_slug := 'school-' || SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 6);
+  END IF;
+
+  SELECT id INTO v_school_id 
+  FROM public.schools 
+  WHERE slug = v_slug OR LOWER(name) = LOWER(v_clean_name)
+  LIMIT 1;
+
+  IF v_school_id IS NULL THEN
+    v_school_id := gen_random_uuid();
+    INSERT INTO public.schools (
+      id, name, slug, license_id, theme, email, phone, address,
+      academic_year, current_term, status, created_at, updated_at
+    ) VALUES (
+      v_school_id, v_clean_name, v_slug, NULL, 'indigo',
+      COALESCE(p_email, 'admin@' || v_slug || '.edu.gh'),
+      COALESCE(p_phone, '+233 24 000 0000'),
+      COALESCE(p_address, 'Ghana'),
+      '2026/2027', 'Term 1', v_school_status,
+      (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+      (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    );
+  ELSE
+    UPDATE public.schools SET
+      name = v_clean_name,
+      status = v_school_status,
+      updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE id = v_school_id;
+  END IF;
+
+  INSERT INTO public.school_licenses (
+    license_key, school_name, school_id, tier, expiry_date,
+    active_status, active_modules, created_at, updated_at
+  ) VALUES (
+    v_clean_key, v_clean_name, v_school_id, v_tier, p_expiry_date,
+    v_status, p_modules,
+    (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+    (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  )
+  ON CONFLICT (license_key) DO UPDATE SET
+    school_name = EXCLUDED.school_name,
+    school_id = v_school_id,
+    tier = EXCLUDED.tier,
+    expiry_date = COALESCE(EXCLUDED.expiry_date, public.school_licenses.expiry_date),
+    active_status = v_status,
+    active_modules = EXCLUDED.active_modules,
+    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  RETURNING id INTO v_license_id;
+
+  UPDATE public.schools 
+  SET license_id = v_license_id,
+      status = v_school_status,
+      updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE id = v_school_id;
+
+  UPDATE public.school_licenses
+  SET active_status = v_status,
+      updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE school_id = v_school_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'school_id', v_school_id,
+    'school_name', v_clean_name,
+    'slug', v_slug,
+    'license_id', v_license_id,
+    'license_key', v_clean_key,
+    'status', v_school_status,
+    'active_status', v_status,
+    'tier', v_tier
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.sync_school_license TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.set_school_tenant_status(
+  p_school_id UUID DEFAULT NULL,
+  p_school_name TEXT DEFAULT NULL,
+  p_license_key TEXT DEFAULT NULL,
+  p_status TEXT DEFAULT 'suspended'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_school_id UUID := p_school_id;
+  v_school_name TEXT;
+  v_status TEXT := LOWER(TRIM(COALESCE(p_status, 'suspended')));
+  v_school_status TEXT;
+BEGIN
+  IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'pending_activation') THEN
+    v_status := 'suspended';
+  END IF;
+  v_school_status := CASE WHEN v_status = 'revoked' THEN 'suspended' ELSE v_status END;
+
+  IF v_school_id IS NULL AND p_license_key IS NOT NULL AND TRIM(p_license_key) <> '' THEN
+    SELECT school_id, school_name INTO v_school_id, v_school_name
+    FROM public.school_licenses
+    WHERE UPPER(license_key) = UPPER(TRIM(p_license_key))
+       OR id::TEXT = TRIM(p_license_key)
+    LIMIT 1;
+  END IF;
+
+  IF v_school_id IS NULL AND p_school_name IS NOT NULL AND TRIM(p_school_name) <> '' THEN
+    SELECT id, name INTO v_school_id, v_school_name
+    FROM public.schools
+    WHERE LOWER(name) = LOWER(TRIM(p_school_name))
+       OR LOWER(slug) = LOWER(TRIM(p_school_name))
+    LIMIT 1;
+  END IF;
+
+  IF v_school_id IS NOT NULL THEN
+    UPDATE public.schools
+    SET status = v_school_status,
+        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE id = v_school_id
+    RETURNING name INTO v_school_name;
+
+    UPDATE public.school_licenses
+    SET active_status = v_status,
+        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE school_id = v_school_id;
+  END IF;
+
+  IF p_license_key IS NOT NULL AND TRIM(p_license_key) <> '' THEN
+    UPDATE public.school_licenses
+    SET active_status = v_status,
+        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE UPPER(license_key) = UPPER(TRIM(p_license_key))
+       OR id::TEXT = TRIM(p_license_key);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', v_school_id IS NOT NULL,
+    'school_id', v_school_id,
+    'school_name', v_school_name,
+    'status', v_school_status,
+    'active_status', v_status
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.set_school_tenant_status TO anon, authenticated, service_role;
+

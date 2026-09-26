@@ -855,64 +855,98 @@ export default function StudentManagement() {
         </div>
       </div>
 
-      {/* Tab Switcher */}
-      <div className="flex border-b border-slate-200 print:hidden pb-1 gap-2">
-        <button
-          onClick={() => setActiveTab('registry')}
-          className={cn(
-            "px-5 py-3 font-bold text-sm border-b-2 transition-all relative top-[2px] flex items-center gap-2 cursor-pointer",
-            activeTab === 'registry' 
-              ? "border-indigo-600 text-indigo-600" 
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          )}
-        >
-          <Users className="w-4 h-4" />
-          <span>Active Students Registry</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('promotions')}
-          className={cn(
-            "px-5 py-3 font-bold text-sm border-b-2 transition-all relative top-[2px] flex items-center gap-2 cursor-pointer",
-            activeTab === 'promotions' 
-              ? "border-indigo-600 text-indigo-600" 
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          )}
-        >
-          <History className="w-4 h-4" />
-          <span>Promotion History & Audits</span>
-          {promotionHistory.length > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-200 dark:border-indigo-800">
-              {promotionHistory.length}
+      {/* Deep Teal Hero Header Card */}
+      <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
+            <Users className="w-3.5 h-3.5 text-[#faae57]" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+              Student Enrollment & Records
             </span>
+          </div>
+          <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+            Students Directory & Class Registry
+          </h2>
+          <p className="text-sm text-[#e1c594]/90 font-medium">
+            {allStudents?.length || 0} active students across {classes?.length || 0} classes • {activeFilter || 'All Class Streams'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Tab Switcher Pills inside Teal Header */}
+          <div className="flex items-center bg-white/10 p-1 rounded-full border border-white/15">
+            <button
+              onClick={() => setActiveTab('registry')}
+              className={cn(
+                "px-4 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-2 cursor-pointer min-h-[38px]",
+                activeTab === 'registry' 
+                  ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
+                  : "text-white/85 hover:text-white"
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Active Registry</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('promotions')}
+              className={cn(
+                "px-4 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-2 cursor-pointer min-h-[38px]",
+                activeTab === 'promotions' 
+                  ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
+                  : "text-white/85 hover:text-white"
+              )}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Promotions</span>
+              {promotionHistory.length > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#1c4a59] text-[#faae57] rounded-full">
+                  {promotionHistory.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {isAdmin && (
+            <button 
+              id="add-student-btn"
+              onClick={() => {
+                setEditingStudent(null);
+                setIsAddModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full font-bold active:scale-[0.97] transition-all shadow-sm min-h-[44px] text-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Add Student</span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {activeTab === 'registry' && (
         <>
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 print:hidden">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 print:hidden bg-white p-4 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
         <div className="relative flex-1 max-w-2xl">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84]" />
           <input 
             type="text"
-            placeholder="Search students..."
+            placeholder="Search students by name, ID, or guardian..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-sm"
+            className="w-full pl-10 pr-4 py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c4a59] focus:bg-white transition-all text-sm text-[#1f2a2e]"
           />
         </div>
         
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           <div className="relative">
             <button 
               onClick={() => setIsFilterOpen(!isFilterOpen)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 border rounded-xl font-medium transition-all text-sm h-10 sm:h-11",
-                activeFilter ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                "flex items-center gap-2 px-3.5 py-2.5 border rounded-full font-bold transition-all text-xs min-h-[44px] cursor-pointer",
+                activeFilter ? "bg-[#1c4a59] border-[#1c4a59] text-white" : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
               )}
             >
-              <Filter className="w-4 h-4" />
-              <span>{activeFilter || 'Filter'}</span>
+              <Filter className="w-3.5 h-3.5" />
+              <span>{activeFilter || 'Filter Class'}</span>
             </button>
             
             <AnimatePresence>
@@ -923,7 +957,7 @@ export default function StudentManagement() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-30 overflow-hidden"
+                    className="absolute right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
                   >
                     <div className="p-2 space-y-1">
                       <button 
@@ -931,7 +965,7 @@ export default function StudentManagement() {
                           setActiveFilter(null);
                           setIsFilterOpen(false);
                         }}
-                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-slate-50 font-medium"
+                        className="w-full text-left px-3 py-2 text-sm rounded-xl hover:bg-[#f6f8f7] font-bold text-[#1f2a2e]"
                       >
                         All Classes
                       </button>
@@ -943,8 +977,8 @@ export default function StudentManagement() {
                             setIsFilterOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-sm rounded-lg font-medium",
-                            activeFilter === c.name ? "bg-indigo-50 text-indigo-600" : "hover:bg-slate-50"
+                            "w-full text-left px-3 py-2 text-sm rounded-xl font-bold",
+                            activeFilter === c.name ? "bg-[#1c4a59] text-[#faae57]" : "hover:bg-[#f6f8f7] text-[#1f2a2e]"
                           )}
                         >
                           {c.name}
@@ -962,10 +996,10 @@ export default function StudentManagement() {
               <>
                 <button 
                   onClick={downloadTemplate}
-                  className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 transition-colors text-sm h-11"
+                  className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
                   title="Download CSV Template"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <FileSpreadsheet className="w-4 h-4 text-[#06d6a0]" />
                   <span className="hidden sm:inline">CSV Template</span>
                 </button>
                 <input 
@@ -978,17 +1012,17 @@ export default function StudentManagement() {
                 <button 
                   disabled={isImporting}
                   onClick={() => document.getElementById('import-csv')?.click()}
-                  className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm h-11 cursor-pointer"
+                  className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs min-h-[44px] cursor-pointer"
                   title="Import CSV File Only"
                 >
                   {isImporting ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-[#1c4a59]/30 border-t-[#1c4a59] rounded-full animate-spin" />
                       <span className="hidden sm:inline">Importing CSV...</span>
                     </>
                   ) : (
                     <>
-                      <Plus className="w-4 h-4 text-indigo-600" />
+                      <Plus className="w-4 h-4 text-[#1c4a59]" />
                       <span className="hidden sm:inline">Import CSV</span>
                     </>
                   )}
@@ -997,37 +1031,37 @@ export default function StudentManagement() {
             )}
             <button 
               onClick={exportToExcel}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 transition-colors text-sm h-11"
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 text-[#1c4a59]" />
               <span className="hidden sm:inline">Export</span>
             </button>
             <button 
               onClick={triggerPrint}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-colors text-sm h-11"
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
               title="Print List"
             >
-              <Printer className="w-4 h-4 text-indigo-600" />
+              <Printer className="w-4 h-4 text-[#1c4a59]" />
               <span className="hidden sm:inline">Print</span>
             </button>
             <button 
               disabled={isBackendSyncing}
               onClick={() => refreshFromBackend(true)}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white border border-indigo-200 text-indigo-700 font-bold hover:bg-indigo-50 transition-colors text-sm h-11 rounded-xl shadow-xs"
-              title="Option C: Query and sync directly with server / Supabase backend"
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] text-[#1c4a59] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] rounded-full cursor-pointer"
+              title="Query and sync directly with server / Supabase backend"
             >
-              <RefreshCw className={cn("w-4 h-4 text-indigo-600", isBackendSyncing && "animate-spin")} />
-              <span className="hidden sm:inline">{isBackendSyncing ? "Syncing..." : "Sync Backend"}</span>
+              <RefreshCw className={cn("w-4 h-4 text-[#1c4a59]", isBackendSyncing && "animate-spin")} />
+              <span className="hidden sm:inline">{isBackendSyncing ? "Syncing..." : "Sync"}</span>
             </button>
             {isAdmin && (
               <button 
                 disabled={isBackendPushing}
                 onClick={pushAllLocalToBackend}
-                className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors text-sm h-11 rounded-xl shadow-xs"
-                title="Option B: Push all local students and records into Supabase backend database"
+                className="flex items-center gap-2 px-3.5 py-2 bg-[#1c4a59] text-white font-bold hover:bg-[#163b47] transition-colors text-xs min-h-[44px] rounded-full shadow-xs cursor-pointer"
+                title="Push all local students and records into Supabase backend database"
               >
-                <UploadCloud className={cn("w-4 h-4 text-emerald-400", isBackendPushing && "animate-pulse")} />
-                <span className="hidden sm:inline">{isBackendPushing ? "Pushing..." : "Push to Database"}</span>
+                <UploadCloud className={cn("w-4 h-4 text-[#faae57]", isBackendPushing && "animate-pulse")} />
+                <span className="hidden sm:inline">{isBackendPushing ? "Pushing..." : "Push to DB"}</span>
               </button>
             )}
           </div>
@@ -1036,21 +1070,10 @@ export default function StudentManagement() {
             <div className="flex items-center gap-2 ml-auto sm:ml-0">
               <button 
                 onClick={() => setIsPromotionModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-sm h-11 text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-[#06d6a0] text-[#1f2a2e] rounded-full font-bold hover:opacity-90 transition-all shadow-xs min-h-[44px] text-xs cursor-pointer"
               >
                 <TrendingUp className="w-4 h-4" />
-                <span>Promote Students</span>
-              </button>
-              <button 
-                id="add-student-btn"
-                onClick={() => {
-                  setEditingStudent(null);
-                  setIsAddModalOpen(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm h-11 text-sm cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Student</span>
+                <span>Promote Class</span>
               </button>
             </div>
           )}
