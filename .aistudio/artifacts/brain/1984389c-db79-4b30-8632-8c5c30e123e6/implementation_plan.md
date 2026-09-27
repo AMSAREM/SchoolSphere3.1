@@ -1,89 +1,102 @@
-# User Management — Supabase Database Persistence & Table Display Plan
+# Attendance Module — Live Supabase Synchronization & Full Status Support
 
-Users created in **User & Role Management** will be reliably persisted into Supabase (`auth.users`, `public.users`, and linked `public.teachers` / `public.students` role profiles) and immediately displayed in the User Management table with complete identity, contact, and profile linkage details.
+Connect the **Attendance** module directly to Supabase (`public.attendance`, `public.students`, and `public.classes`) so every attendance entry, status update, bulk action, and note is persisted to and loaded from Supabase in real time, without modifying any other module.
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following product and design decisions have been confirmed from your responses and incorporated into this plan:
+> The following decisions were confirmed during clarification and govern this Attendance-only implementation:
 
-- **Confirmed Decision 1 (Supabase Multi-Table Provisioning)**: Creating a user in User Management automatically populates `auth.users`, `public.users`, and the corresponding role profile table (`public.teachers` for teachers/headteachers, `public.students` for students).
-- **Confirmed Decision 2 (User Identity Column Details)**: The first column (`User Identity`) of the User Management table will display the user's full name, `@username`, email address, phone number, and linked profile badge (e.g., Staff ID or Student ID/Class).
+- **Confirmed Decision 1 — Immediate Sync on Every Click & Bulk Action**: Marking an individual student or clicking a bulk "Mark All" action immediately writes to `public.attendance` in Supabase and awaits database confirmation before finalizing state.
+- **Confirmed Decision 2 — Auto-Migrate Existing Local Data on Load**: On initial load, any local attendance records (along with any locally enrolled students/classes needed for the roll call) that are not yet in Supabase are automatically migrated into `public.attendance` so zero historical entries are lost.
+- **Confirmed Decision 3 — Four Statuses + Optional Note (`Present`, `Late`, `Absent`, `Excused`)**: Every student row supports **Present**, **Late**, **Absent**, and **Excused** (matching the `public.attendance` database check constraint) plus an optional reason/note stored in `public.attendance.reason`.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Eliminates the disconnect between user creation, Supabase database persistence, and the User Management table display. Every created user is written to Supabase (`auth.users` + `public.users` + role profile) under the active school's canonical UUID and appears immediately in the User Management table.
-- **Target Audience / Persona**: School Administrators, Head Teachers, and Platform Creators managing staff, teacher, accountant, student, and parent accounts.
-- **Key Value**: Guarantees that newly created accounts are visible in both the application UI and the Supabase table editor, and can sign in immediately across devices.
+- **What It Does**: Upgrades the **Daily Roll Call & Register** (`Attendance`) screen from local-only IndexedDB storage to a full bi-directional Supabase data pipeline. Both the class roster and daily attendance records are fetched live from Supabase, and every single or bulk attendance action writes directly to `public.attendance`.
+- **Target Audience / Persona**: School Administrators, Headteachers, and Class Teachers taking daily roll call, as well as Parents viewing their linked wards' live attendance records.
+- **Key Value**: Ensures attendance records taken on any device are immediately available in Supabase across all authorized sessions, with full support for excused absences and teacher remarks.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Create User Account**: Administrator opens the **Add User Account** modal, enters username, full name, email, phone, password, and role (plus optional Staff ID/Subjects or Student ID/Class), and submits.
-  2. **Immediate Table Update & Verification**: Upon confirmation from `/api/users`, the modal closes, the newly provisioned user is immediately merged into the table state and re-verified via `GET /api/users`, and a confirmation banner shows the Supabase status and linked profile identifier.
-  3. **Rich User Identity Cell (`td:nth-of-type(1)`)**: Each row's first column renders the user's avatar initial, full name, `@username`, email, phone number, and linked profile indicator (`Teacher · TEA-xxxx` or `Student · STU-xxxx`) using clean unboxed metadata separators (`·`).
+  1. **Live Fetch & Auto-Migration on Open**: Opening the Attendance screen or changing the selected date/class fetches the latest attendance records, class list, and student roster from Supabase. Any local attendance records not yet in Supabase are automatically pushed and reconciled in the background.
+  2. **One-Tap Individual Marking (`Present` · `Late` · `Absent` · `Excused`)**: Clicking any of the four status buttons on a student card immediately upserts the row `(school_id, student_id, date)` in `public.attendance` and updates the live header counters (`Present`, `Late`, `Absent`, `Excused`).
+  3. **Optional Attendance Note / Reason**: Clicking the note icon on a student card reveals a compact inline input to record or update a reason (e.g., *"Medical clinic visit"*, *"Traffic delay"*), which saves directly to `public.attendance.reason` in Supabase.
+  4. **Bulk Roll-Call Actions**: Clicking **Mark All Present**, **Mark All Late**, **Mark All Absent**, or **Mark All Excused** performs a single batch upsert to Supabase for all students in the currently selected class and date.
+  5. **Parent Read-Only View & Exports**: Parents view their linked wards' live Supabase attendance status and notes without edit controls. Exporting to CSV, PDF, or Print includes the synchronized status and reason/note for every student.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: High-craft light-mode institutional SaaS console aligned with the SchoolSphere 3.1 palette.
-  - *Color Palette & Mood*: `#f6f8f7` base canvas, `#ffffff` table surface, `#1c4a59` primary deep teal accents, `#faae57` primary CTA, `#1f2a2e` primary body text, `#6a7f84` muted metadata text, `#06d6a0` active status, and `#ef476f` suspended/alert status.
-  - *Typography & Hierarchy*: Clean sans-serif for names and labels paired with monospace tabular numerals (`JetBrains Mono`, `tabular-nums`) for `@username`, email, phone numbers, and staff/student IDs.
-- **Interactive Feedback & Motion**:
-  - Smooth row entrance transition, clear loading state during provisioning, and instant status toggle/password reset feedback.
+  - Strictly adheres to the SchoolSphere 3.1 light palette:
+    - Base surface `#f6f8f7`, card surface `#ffffff`, borders `#bac4c6`.
+    - Deep Teal `#1c4a59` hero header card with a live **Supabase Sync Chip** (`Attendance Synced · N records`, `Saving to Supabase…`, or `Sync Error — Retry`).
+    - Status colors paired with clear icons and labels: **Present** (`#06d6a0` + Check icon), **Late** (`#faae57` + Clock icon), **Absent** (`#ef476f` + X icon), and **Excused** (`#e4ae67` / `#1c4a59` + FileText/Shield icon).
+  - All counters, dates, and student IDs use `JetBrains Mono` / `tabular-nums`, and all interactive buttons maintain $\ge 44\text{px}$ touch targets with `active:scale-[0.97]` micro-interaction feedback.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Dual-Path Supabase Provisioning (`auth.signUp` Trigger + RPC/Authenticated Client)**
-  - *Chosen Approach*: In `POST /api/users`, when `auth.admin.createUser` is restricted (such as when running with an `anon` key), invoke `auth.signUp` on an isolated non-persisting Supabase client with `options.data` containing `full_name`, `username`, `role`, `school_id` (resolved to a real UUID in `public.schools`), and `phone`.
-  - *Why*: In Supabase, `auth.signUp` works with the `anon` key, creates the `auth.users` record, and fires the `SECURITY DEFINER` trigger `on_auth_user_created` (`public.handle_new_user()`), which inserts the row directly into `public.users` as the database owner. Additionally, using the resulting authenticated session token grants the `authenticated` Postgres role (`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated`) so `password_hash`, `phone`, `public.teachers`, and `public.students` rows can be written directly to Supabase.
-- **Decision 2: Canonical `school_id` Resolution & Frontend Tenant Matching**
-  - *Chosen Approach*: Treat placeholder IDs (`00000000-0000-0000-0000-000000000001`) as unresolved in `resolveTenantSchoolForUsers` so the backend always resolves an existing school UUID from `public.schools` (or provisions the school row first). On the frontend, update `UserManagement.tsx` so `loadUsers` and `handleAddUser` reconcile the backend's canonical `schoolId` instead of filtering out valid tenant rows when the local school context held a placeholder ID or slug.
-  - *Why*: Prevents foreign-key failures (`users_school_id_fkey`) in PostgreSQL and prevents client-side filtering from hiding newly created users in the table.
+- **Decision 1 — Upsert on `(school_id, student_id, date)` in `public.attendance`**
+  - *Chosen Approach*: Use the composite key `(school_id, student_id, date)` when writing single or bulk attendance records to `public.attendance`, storing `class`, `status`, `reason`, `recorded_by`, and `created_at`.
+  - *Why*: Matches the database's `uq_school_student_date` unique constraint, preventing duplicate attendance rows for the same student on the same day while allowing instant status or note updates.
+- **Decision 2 — Scoped Strictly to the Attendance Module**
+  - *Chosen Approach*: Implement dedicated `/api/attendance`, `/api/attendance/bulk`, and `/api/attendance/sync` endpoints on the backend and wire them exclusively to the Attendance view, using Dexie only as a read-through cache after Supabase confirms writes.
+  - *Why*: Delivers full Supabase persistence and retrieval for Attendance while respecting the strict boundary not to touch any other module.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Architecture & Data Flow Diagram
+### Architecture & Data Flow
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                   UserManagement View (Client UI)                         │
-│  ┌─────────────────────────┐       ┌───────────────────────────────────┐  │
-│  │ Create User Modal       │──────▶│ User Identity Table Cell (td[1])  │  │
-│  │ (Role, Contact, Profile)│       │ Name · @username · Email · Phone  │  │
-│  └────────────┬────────────┘       │ + Linked Teacher/Student Profile  │  │
-│               │                    └─────────────────▲─────────────────┘  │
-└───────────────┼──────────────────────────────────────┼────────────────────┘
-                │ POST /api/users                      │ GET /api/users
-                ▼                                      │ (Merged & Deduplicated)
-┌──────────────────────────────────────────────────────┴────────────────────┐
-│                     Express API Server (/api/users)                       │
-│  1. resolveTenantSchoolForUsers() -> Resolves real UUID in public.schools │
-│  2. Supabase Auth Provisioning    -> admin.createUser() OR auth.signUp()  │
-│  3. public.users Persistence      -> Trigger handle_new_user() + RPC/Upsert│
-│  4. Role Profile Auto-Link        -> public.teachers / public.students    │
-└───────────────┬──────────────────────┬──────────────────────┬─────────────┘
-                │                      │                      │
-                ▼                      ▼                      ▼
-       ┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-       │   auth.users    │───▶│  public.users   │    │ public.teachers  │
-       │ (Supabase Auth) │    │ (Tenant Scoped) │    │ public.students  │
-       └─────────────────┘    └─────────────────┘    └──────────────────┘
-        (on_auth_user_created trigger)
+┌────────────────────────────────────────────────────────────────────────────┐
+│                     Attendance Roll Call UI (React)                        │
+│                                                                            │
+│  ┌──────────────────────────────────┐  ┌────────────────────────────────┐  │
+│  │   Live Header & Sync Status      │  │   Student Roll-Call Cards      │  │
+│  │  • Date & Class Selectors        │  │  • Present / Late / Absent /   │  │
+│  │  • Present/Late/Absent/Excused   │  │    Excused (≥44px buttons)     │  │
+│  │  • Mark All Bulk Actions         │  │  • Optional Note/Reason Input  │  │
+│  └────────────────┬─────────────────┘  └───────────────┬────────────────┘  │
+└───────────────────┼────────────────────────────────────┼───────────────────┘
+                    │ GET / POST (Bulk & Auto-Sync)      │ POST (Single Upsert)
+                    ▼                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                 Express Attendance API (/api/attendance*)                  │
+│                                                                            │
+│  • GET  /api/attendance       (Fetch attendance + students + classes)      │
+│  • POST /api/attendance       (Upsert single student attendance + reason)  │
+│  • POST /api/attendance/bulk  (Batch upsert Mark All for class & date)     │
+│  • POST /api/attendance/sync  (Reconcile & auto-migrate local records)     │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                       Supabase PostgreSQL Database                         │
+│                                                                            │
+│  public.attendance                                                         │
+│  • id, school_id, student_id, class, date, status                          │
+│  • reason (optional note), recorded_by, created_at                         │
+│  • UNIQUE (school_id, student_id, date)                                    │
+│                                                                            │
+│  public.students & public.classes (read/hydrated for class roll call)      │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Interactive Component & State Mapping
 
-1. **Canonical Tenant School Resolution (`resolveTenantSchoolForUsers`)**:
-   - Ignores synthetic placeholder UUID `00000000-0000-0000-0000-000000000001` when matching `public.schools` and falls back to matching by school name/slug or selecting the active school from `get_schools_directory()` so `school_id` always references a valid row in `public.schools`.
-2. **Supabase `auth.users` & `public.users` Persistence (`POST /api/users` & `GET /api/users`)**:
-   - Attempts `adminClient.auth.admin.createUser`; if unavailable under the current key, calls `authClient.auth.signUp` with user metadata (`full_name`, `username`, `role`, `school_id`, `phone`), triggering `public.handle_new_user()` to insert into `public.users`.
-   - Uses the authenticated session client (or `provision_tenant_user` RPC) to persist `password_hash`, `phone`, `status`, and linked profile metadata (`staffId`, `studentId`, `assignedClasses`, `subjects`), and queries `public.users` via both service/authenticated client and `get_tenant_users` RPC in `GET /api/users`.
-3. **User Management Table Display (`UserManagement.tsx`)**:
-   - Updates `isTenantUser` and `handleAddUser` so newly created users are immediately appended to the table state and retained when `loadUsers()` refreshes, even if the frontend's initial `school.id` was a placeholder or slug.
-   - Updates the first table cell (`td:nth-of-type(1)`) to display full name, `@username`, email, phone number, and linked profile metadata (`Teacher · TEA-...` or `Student · STU-...`).
+1. **Initial Load & Auto-Migration (`/api/attendance` & `/api/attendance/sync`)**:
+   - On component mount and when `selectedDate` or `selectedClass` changes, query `/api/attendance?school_id=...` (with direct Supabase client fallback).
+   - Compare local IndexedDB `attendance` rows against Supabase `public.attendance` rows by `(studentId, date)`. If unsynced local rows exist, send them to `/api/attendance/sync` so they are persisted in Supabase, then update the local read-through cache with the authoritative Supabase dataset.
+2. **Single Student Status & Note Upsert (`markAttendance` & `saveAttendanceNote`)**:
+   - Clicking **Present**, **Late**, **Absent**, or **Excused** sets `syncState = 'saving'`, sends `POST /api/attendance` with `{ school_id, studentId, class: student.class, date: selectedDate, status, reason, recordedBy }`, awaits the confirmed Supabase row, updates remote state and read-through cache, and sets `syncState = 'synced'`.
+   - Updating a student's optional note/reason saves via the same upsert endpoint and displays a subtle note badge on the student card.
+3. **Bulk Class Marking (`markAll`)**:
+   - Clicking **Mark All Present**, **Mark All Late**, **Mark All Absent**, or **Mark All Excused** sends all students in the active class view to `POST /api/attendance/bulk` in one request, awaits confirmation from Supabase, and refreshes the class attendance state.

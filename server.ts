@@ -224,13 +224,17 @@ let localFallbackDb: Record<string, any[]> = {
   polls: [],
   candidates: [],
   votes: [],
-  promotionHistory: []
+  promotionHistory: [],
+  timetableSlots: [],
+  timetableSuggestions: []
 };
 
 function saveToFallback(table: string, record: any) {
   if (!localFallbackDb[table]) localFallbackDb[table] = [];
   const idx = localFallbackDb[table].findIndex((item: any) => 
     (record.id && String(item.id) === String(record.id)) ||
+    ((record.slotId || record.slot_id) && (item.slotId || item.slot_id || item.id) === (record.slotId || record.slot_id)) ||
+    ((record.suggestionId || record.suggestion_id) && (item.suggestionId || item.suggestion_id || item.id) === (record.suggestionId || record.suggestion_id)) ||
     ((record.studentId || record.student_id) && (item.studentId || item.student_id) === (record.studentId || record.student_id)) ||
     ((record.staffId || record.staff_id) && (item.staffId || item.staff_id) === (record.staffId || record.staff_id)) ||
     (record.code && item.code && String(item.code).toLowerCase() === String(record.code).toLowerCase()) ||
@@ -12605,6 +12609,1914 @@ async function doStartServer() {
       return res.json({ success: true, message: "Subject deleted successfully" });
     } catch (err: any) {
       invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // TIMETABLE & COURSE SCHEDULER SUPABASE ENDPOINTS (timetable_periods & timetable_entries)
+  // =========================================================================
+
+  const TIMETABLE_DAY_TO_NUM: Record<string, number> = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5
+  };
+
+  const TIMETABLE_NUM_TO_DAY: Record<number, 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday'> = {
+    1: 'Monday',
+    2: 'Tuesday',
+    3: 'Wednesday',
+    4: 'Thursday',
+    5: 'Friday'
+  };
+
+  const normalizeHHMM = (raw: any, fallback = '08:00'): string => {
+    const str = String(raw || fallback).trim();
+    const match = str.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return fallback;
+    const hh = match[1].padStart(2, '0');
+    const mm = match[2];
+    return `${hh}:${mm}`;
+  };
+
+  const timeToMinutes = (hhmm: string): number => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
+  const normalizeTimetableSlotRecord = (raw: any, defaultSchoolId?: string | null) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const slotId = String(raw.slot_id || raw.slotId || raw.id || `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+    const classId = String(raw.class_id || raw.classId || raw.class_name || raw.class || '').trim();
+    const subjectName = String(raw.subject_name || raw.subjectName || raw.subject || '').trim();
+    const teacherName = String(raw.teacher_name || raw.teacherName || raw.teacher || '').trim();
+    const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    let day = 'Monday';
+    if (typeof raw.day_of_week === 'number' && TIMETABLE_NUM_TO_DAY[raw.day_of_week]) {
+      day = TIMETABLE_NUM_TO_DAY[raw.day_of_week];
+    } else {
+      const rawDay = String(raw.day || 'Monday').trim();
+      const matchedDay = validDays.find(d => d.toLowerCase() === rawDay.toLowerCase());
+      day = matchedDay || 'Monday';
+    }
+    const startTime = normalizeHHMM(raw.start_time || raw.startTime, '08:00');
+    const endTime = normalizeHHMM(raw.end_time || raw.endTime, '08:45');
+    const room = String(raw.room || 'Room A').trim() || 'Room A';
+    const notes = raw.notes !== undefined && raw.notes !== null ? String(raw.notes).trim() : '';
+    const schoolId = String(raw.school_id || raw.schoolId || defaultSchoolId || '').trim();
+    const createdAt = Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now();
+    const updatedAt = Number(raw.updated_at ?? raw.updatedAt ?? Date.now()) || Date.now();
+
+    return {
+      id: slotId,
+      slotId,
+      slot_id: slotId,
+      dbId: typeof raw.id === 'number' ? raw.id : (/^\d+$/.test(slotId) ? Number(slotId) : undefined),
+      periodId: raw.period_id ?? raw.periodId,
+      subjectId: raw.subject_id ?? raw.subjectId,
+      teacherId: raw.teacher_id ?? raw.teacherId,
+      classId,
+      class_id: classId,
+      class_name: classId,
+      subjectName,
+      subject_name: subjectName,
+      teacherName,
+      teacher_name: teacherName,
+      day,
+      day_of_week: TIMETABLE_DAY_TO_NUM[day.toLowerCase()] || 1,
+      startTime,
+      start_time: startTime,
+      endTime,
+      end_time: endTime,
+      room,
+      notes,
+      schoolId,
+      school_id: schoolId,
+      createdAt,
+      created_at: createdAt,
+      updatedAt,
+      updated_at: updatedAt
+    };
+  };
+
+  const normalizeTimetableSuggestionRecord = (raw: any, defaultSchoolId?: string | null) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const suggestionId = String(raw.suggestion_id || raw.suggestionId || raw.id || `sug-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`).trim();
+    const classId = String(raw.class_id || raw.classId || raw.class_name || raw.class || '').trim();
+    const subjectName = String(raw.subject_name || raw.subjectName || raw.subject || '').trim();
+    const teacherName = String(raw.teacher_name || raw.teacherName || raw.teacher || '').trim();
+    const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const rawDay = String(raw.day || 'Monday').trim();
+    const day = validDays.find(d => d.toLowerCase() === rawDay.toLowerCase()) || 'Monday';
+    const startTime = normalizeHHMM(raw.start_time || raw.startTime, '08:00');
+    const endTime = normalizeHHMM(raw.end_time || raw.endTime, '08:45');
+    const room = String(raw.room || 'Room A').trim() || 'Room A';
+    const notes = raw.notes !== undefined && raw.notes !== null ? String(raw.notes).trim() : '';
+    const rawStatus = String(raw.status || 'pending').trim().toLowerCase();
+    const status = (rawStatus === 'approved' || rawStatus === 'rejected') ? rawStatus : 'pending';
+    const suggestedBy = String(raw.suggested_by || raw.suggestedBy || teacherName || 'Teacher').trim();
+    const schoolId = String(raw.school_id || raw.schoolId || defaultSchoolId || '').trim();
+    const createdAt = Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now();
+    const updatedAt = Number(raw.updated_at ?? raw.updatedAt ?? Date.now()) || Date.now();
+
+    return {
+      id: suggestionId,
+      suggestionId,
+      suggestion_id: suggestionId,
+      dbId: typeof raw.id === 'number' ? raw.id : undefined,
+      classId,
+      class_id: classId,
+      subjectName,
+      subject_name: subjectName,
+      teacherName,
+      teacher_name: teacherName,
+      day,
+      startTime,
+      start_time: startTime,
+      endTime,
+      end_time: endTime,
+      room,
+      notes,
+      status,
+      suggestedBy,
+      suggested_by: suggestedBy,
+      schoolId,
+      school_id: schoolId,
+      createdAt,
+      created_at: createdAt,
+      updatedAt,
+      updated_at: updatedAt
+    };
+  };
+
+  async function resolveTimetableSchoolId(req: any): Promise<string> {
+    const adminClient = getSupabaseAdmin();
+    const rawCandidates = [
+      req.user?.school_id,
+      req.user?.schoolId,
+      req.query?.school_id,
+      req.query?.schoolId,
+      req.headers?.['x-school-id'],
+      req.body?.school_id,
+      req.body?.schoolId
+    ];
+
+    const candidates = rawCandidates
+      .map(v => String(v || '').trim())
+      .filter(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) && v !== '00000000-0000-0000-0000-000000000001');
+
+    try {
+      const { data: schoolsList } = await adminClient
+        .from('schools')
+        .select('id, name, updated_at')
+        .order('updated_at', { ascending: false });
+
+      const validSchools = Array.isArray(schoolsList) ? schoolsList : [];
+      const validIds = new Set(validSchools.map(s => String(s.id)));
+
+      for (const c of candidates) {
+        if (validIds.has(c)) {
+          return c;
+        }
+      }
+
+      // Check if authenticated user has a school_id in public.users
+      if (req.user?.email || req.user?.username) {
+        const { data: uRow } = await adminClient
+          .from('users')
+          .select('school_id')
+          .or(`email.eq.${req.user.email || ''},username.eq.${req.user.username || ''}`)
+          .limit(1)
+          .maybeSingle();
+        if (uRow?.school_id && validIds.has(String(uRow.school_id))) {
+          return String(uRow.school_id);
+        }
+      }
+
+      // Check if incoming class name belongs to a specific school in public.classes
+      const hintClass = String(
+        req.body?.classId ||
+        req.body?.class_id ||
+        req.body?.slots?.[0]?.classId ||
+        req.body?.slots?.[0]?.class_id ||
+        ''
+      ).trim();
+      if (hintClass) {
+        const { data: clsMatch } = await adminClient
+          .from('classes')
+          .select('school_id')
+          .ilike('name', hintClass)
+          .limit(1)
+          .maybeSingle();
+        if (clsMatch?.school_id && validIds.has(String(clsMatch.school_id))) {
+          return String(clsMatch.school_id);
+        }
+      }
+
+      // Prefer a school that has classes/subjects configured (most recently updated)
+      const { data: activeCls } = await adminClient
+        .from('classes')
+        .select('school_id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (activeCls?.school_id && validIds.has(String(activeCls.school_id))) {
+        return String(activeCls.school_id);
+      }
+
+      if (validSchools.length > 0) {
+        return String(validSchools[0].id);
+      }
+    } catch (err) {
+      console.warn('Notice resolving timetable school_id:', err);
+    }
+
+    return candidates[0] || '';
+  }
+
+  async function readTimetableMetadataFromSchoolSettings(schoolId: string): Promise<{
+    notesByEntryId: Record<string, string>;
+    suggestions: any[];
+  }> {
+    const adminClient = getSupabaseAdmin();
+    const defaultMeta = { notesByEntryId: {} as Record<string, string>, suggestions: [] as any[] };
+    if (!schoolId) return defaultMeta;
+
+    try {
+      const { data, error } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const streamsVal = data.streams;
+        if (streamsVal && typeof streamsVal === 'object' && !Array.isArray(streamsVal)) {
+          const notesByEntryId = (streamsVal as any).timetable_notes && typeof (streamsVal as any).timetable_notes === 'object'
+            ? (streamsVal as any).timetable_notes
+            : {};
+          const suggestions = Array.isArray((streamsVal as any).timetable_suggestions)
+            ? (streamsVal as any).timetable_suggestions.map((s: any) => normalizeTimetableSuggestionRecord(s, schoolId))
+            : [];
+          return { notesByEntryId, suggestions };
+        }
+      }
+    } catch {}
+    return defaultMeta;
+  }
+
+  async function writeTimetableMetadataToSchoolSettings(
+    schoolId: string,
+    updates: { notesByEntryId?: Record<string, string>; suggestions?: any[] }
+  ): Promise<void> {
+    const adminClient = getSupabaseAdmin();
+    if (!schoolId) return;
+
+    try {
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams = existing?.streams;
+      let streamItems: any[] = [];
+      let prevNotes: Record<string, string> = {};
+      let prevSuggestions: any[] = [];
+
+      if (Array.isArray(existingStreams)) {
+        streamItems = existingStreams;
+      } else if (existingStreams && typeof existingStreams === 'object') {
+        streamItems = Array.isArray((existingStreams as any).items) ? (existingStreams as any).items : [];
+        prevNotes = (existingStreams as any).timetable_notes || {};
+        prevSuggestions = Array.isArray((existingStreams as any).timetable_suggestions) ? (existingStreams as any).timetable_suggestions : [];
+      }
+
+      const nextStreamsObj = {
+        items: streamItems,
+        timetable_notes: updates.notesByEntryId !== undefined ? updates.notesByEntryId : prevNotes,
+        timetable_suggestions: updates.suggestions !== undefined ? updates.suggestions : prevSuggestions
+      };
+
+      const payload = {
+        school_id: schoolId,
+        grade_boundaries: existing?.grade_boundaries || [],
+        terms: existing?.terms || [],
+        streams: nextStreamsObj,
+        updated_at: Date.now()
+      };
+
+      await adminClient
+        .from('school_settings')
+        .upsert([payload], { onConflict: 'school_id' });
+    } catch (err) {
+      console.warn('Notice saving timetable metadata to school_settings:', err);
+    }
+  }
+
+  const STANDARD_SCHOOL_PERIOD_WINDOWS = [
+    { startTime: '08:00', endTime: '08:45' },
+    { startTime: '08:45', endTime: '09:30' },
+    { startTime: '09:30', endTime: '10:15' },
+    { startTime: '10:45', endTime: '11:30' },
+    { startTime: '11:30', endTime: '12:15' },
+    { startTime: '13:00', endTime: '13:45' },
+    { startTime: '13:45', endTime: '14:30' },
+    { startTime: '14:30', endTime: '15:15' }
+  ];
+
+  const sanitizeTimetableSlotWindow = (
+    startRaw: any,
+    endRaw: any,
+    fallbackIndex = 0
+  ): { startTime: string; endTime: string } => {
+    const fallbackWin = STANDARD_SCHOOL_PERIOD_WINDOWS[fallbackIndex % STANDARD_SCHOOL_PERIOD_WINDOWS.length];
+    let startTime = normalizeHHMM(startRaw, fallbackWin.startTime);
+    let endTime = normalizeHHMM(endRaw, fallbackWin.endTime);
+
+    // Repair accidental midnight (00:00) or inverted time windows
+    if (startTime === '00:00' || timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      startTime = fallbackWin.startTime;
+      endTime = fallbackWin.endTime;
+    }
+    return { startTime, endTime };
+  };
+
+  const formatSharedTimetablePeriodName = (slot: {
+    day: string;
+    startTime: string;
+    endTime: string;
+    classId: string;
+    subjectName: string;
+    teacherName: string;
+    room: string;
+  }): string => {
+    const day = String(slot.day || 'Monday').trim().slice(0, 3);
+    const startTime = normalizeHHMM(slot.startTime, '08:00');
+    const endTime = normalizeHHMM(slot.endTime, '08:45');
+    const classId = String(slot.classId || 'Class').trim().slice(0, 10);
+    const subjectName = String(slot.subjectName || 'Subject').trim();
+    return `${day} ${startTime}-${endTime}|${classId}|${subjectName}`.slice(0, 50);
+  };
+
+  const computeSharedTimetableSortOrder = (dayOfWeek: number, startTime: string, uniqueSeed = 0): number => {
+    const base = (Number(dayOfWeek) || 1) * 100000 + timeToMinutes(startTime) * 100;
+    const offset = Math.abs(Number(uniqueSeed) || 0) % 97;
+    return base + offset;
+  };
+
+  async function syncDedicatedPeriodInSupabase(
+    schoolId: string,
+    params: {
+      existingPeriodId?: number | null;
+      canUpdateExistingInPlace?: boolean;
+      day: string;
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      classId: string;
+      subjectName: string;
+      teacherName: string;
+      room: string;
+      createdAt?: number;
+      uniqueSeed?: number;
+    }
+  ): Promise<{ id: number; name: string; startTime: string; endTime: string; sortOrder: number }> {
+    const adminClient = getSupabaseAdmin();
+    const { startTime, endTime } = sanitizeTimetableSlotWindow(params.startTime, params.endTime, 0);
+
+    const { data: existingSchoolPeriods } = await adminClient
+      .from('timetable_periods')
+      .select('id, name, sort_order')
+      .eq('school_id', schoolId);
+
+    const takenNames = new Set<string>();
+    const takenSorts = new Set<number>();
+    for (const p of (existingSchoolPeriods || [])) {
+      if (params.existingPeriodId != null && Number(p.id) === Number(params.existingPeriodId)) continue;
+      if (p.name) takenNames.add(String(p.name).trim());
+      if (p.sort_order != null) takenSorts.add(Number(p.sort_order));
+    }
+
+    let sharedName = formatSharedTimetablePeriodName({
+      day: params.day,
+      startTime,
+      endTime,
+      classId: params.classId,
+      subjectName: params.subjectName,
+      teacherName: params.teacherName,
+      room: params.room
+    });
+    if (takenNames.has(sharedName)) {
+      let suffix = 2;
+      while (takenNames.has(`${sharedName.slice(0, 46)} #${suffix}`)) {
+        suffix++;
+      }
+      sharedName = `${sharedName.slice(0, 46)} #${suffix}`;
+    }
+
+    let sortOrder = computeSharedTimetableSortOrder(
+      params.dayOfWeek,
+      startTime,
+      params.uniqueSeed ?? params.existingPeriodId ?? Date.now()
+    );
+    while (takenSorts.has(sortOrder)) {
+      sortOrder++;
+    }
+
+    if (params.existingPeriodId != null && params.canUpdateExistingInPlace) {
+      const { data: updatedPeriod, error: updErr } = await adminClient
+        .from('timetable_periods')
+        .update({
+          name: sharedName,
+          start_time: startTime,
+          end_time: endTime,
+          is_break: false,
+          sort_order: sortOrder
+        })
+        .eq('id', params.existingPeriodId)
+        .eq('school_id', schoolId)
+        .select()
+        .maybeSingle();
+
+      if (!updErr && updatedPeriod?.id != null) {
+        return {
+          id: Number(updatedPeriod.id),
+          name: sharedName,
+          startTime,
+          endTime,
+          sortOrder
+        };
+      }
+    }
+
+    const { data: created, error: insErr } = await adminClient
+      .from('timetable_periods')
+      .insert([{
+        school_id: schoolId,
+        name: sharedName,
+        start_time: startTime,
+        end_time: endTime,
+        is_break: false,
+        sort_order: sortOrder,
+        created_at: params.createdAt || Date.now()
+      }])
+      .select()
+      .single();
+
+    if (insErr || !created) {
+      throw new Error(`Failed to synchronize timetable_periods in Supabase: ${insErr?.message || 'Unknown error'}`);
+    }
+
+    return {
+      id: Number(created.id),
+      name: sharedName,
+      startTime,
+      endTime,
+      sortOrder
+    };
+  }
+
+  async function ensureTimetableClassInSupabase(schoolId: string, classIdRaw?: string): Promise<void> {
+    const adminClient = getSupabaseAdmin();
+    const className = String(classIdRaw || '').trim();
+    if (!schoolId || !className) return;
+
+    const { data: classesList } = await adminClient
+      .from('classes')
+      .select('id, name, level')
+      .eq('school_id', schoolId);
+
+    const matched = (classesList || []).find(
+      (c: any) => String(c.name || '').trim().toLowerCase() === className.toLowerCase()
+    );
+    if (matched) return;
+
+    await adminClient
+      .from('classes')
+      .insert([{
+        school_id: schoolId,
+        name: className,
+        level: className,
+        created_at: Date.now()
+      }]);
+  }
+
+  async function ensureTimetableSubjectInSupabase(schoolId: string, subjectNameRaw: string, classIdRaw?: string): Promise<number | null> {
+    const adminClient = getSupabaseAdmin();
+    const subjectName = String(subjectNameRaw || '').trim();
+    const className = String(classIdRaw || '').trim();
+    if (!subjectName) return null;
+
+    const { data: subjectsList } = await adminClient
+      .from('subjects')
+      .select('id, name, code, applicable_classes')
+      .eq('school_id', schoolId);
+
+    const matched = (subjectsList || []).find(
+      (s: any) => String(s.name || '').trim().toLowerCase() === subjectName.toLowerCase()
+    );
+    if (matched && matched.id != null) {
+      if (className) {
+        const existingApp: string[] = Array.isArray(matched.applicable_classes)
+          ? matched.applicable_classes.map((c: any) => String(c || '').trim()).filter(Boolean)
+          : [];
+        const hasAll = existingApp.some(c => c.toLowerCase() === 'all');
+        const hasClass = existingApp.some(c => c.toLowerCase() === className.toLowerCase());
+        if (!hasAll && !hasClass && existingApp.length > 0) {
+          await adminClient
+            .from('subjects')
+            .update({ applicable_classes: [...existingApp, className] })
+            .eq('id', matched.id)
+            .eq('school_id', schoolId);
+        }
+      }
+      return Number(matched.id);
+    }
+
+    const cleanAlpha = subjectName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const baseCode = (cleanAlpha.slice(0, 5) || 'SUBJ') + '-' + String(Math.floor(10 + Math.random() * 89));
+    const { data: createdSubj, error: insErr } = await adminClient
+      .from('subjects')
+      .insert([{
+        school_id: schoolId,
+        name: subjectName,
+        code: baseCode,
+        is_core: false,
+        applicable_classes: className ? [className] : ['All'],
+        created_at: Date.now()
+      }])
+      .select()
+      .single();
+
+    if (!insErr && createdSubj?.id != null) {
+      return Number(createdSubj.id);
+    }
+    return null;
+  }
+
+  async function ensureTimetableTeacherInSupabase(
+    schoolId: string,
+    teacherNameRaw: string,
+    classIdRaw?: string,
+    subjectNameRaw?: string
+  ): Promise<number | null> {
+    const adminClient = getSupabaseAdmin();
+    const teacherName = String(teacherNameRaw || '').trim();
+    const className = String(classIdRaw || '').trim();
+    const subjectName = String(subjectNameRaw || '').trim();
+    if (!teacherName) return null;
+
+    const { data: teachersList } = await adminClient
+      .from('teachers')
+      .select('id, first_name, last_name, staff_id, assigned_classes, subjects')
+      .eq('school_id', schoolId);
+
+    const normTarget = teacherName.toLowerCase().replace(/\s+/g, ' ');
+    const matched = (teachersList || []).find((t: any) => {
+      const full = `${t.first_name || ''} ${t.last_name || ''}`.trim().toLowerCase().replace(/\s+/g, ' ');
+      return full === normTarget || full.includes(normTarget) || normTarget.includes(full);
+    });
+    if (matched && matched.id != null) {
+      const existingClasses: string[] = Array.isArray(matched.assigned_classes)
+        ? matched.assigned_classes.map((c: any) => String(c || '').trim()).filter(Boolean)
+        : [];
+      const existingSubjects: string[] = Array.isArray(matched.subjects)
+        ? matched.subjects.map((s: any) => String(s || '').trim()).filter(Boolean)
+        : [];
+
+      const needClassAdd = Boolean(className) && !existingClasses.some(c => c.toLowerCase() === className.toLowerCase());
+      const needSubjAdd = Boolean(subjectName) && !existingSubjects.some(s => s.toLowerCase() === subjectName.toLowerCase());
+
+      if (needClassAdd || needSubjAdd) {
+        const nextClasses = needClassAdd ? [...existingClasses, className] : existingClasses;
+        const nextSubjects = needSubjAdd ? [...existingSubjects, subjectName] : existingSubjects;
+        await adminClient
+          .from('teachers')
+          .update({
+            assigned_classes: nextClasses,
+            subjects: nextSubjects
+          })
+          .eq('id', matched.id)
+          .eq('school_id', schoolId);
+      }
+      return Number(matched.id);
+    }
+
+    const parts = teacherName.split(/\s+/);
+    const firstName = parts[0] || 'Teacher';
+    const lastName = parts.slice(1).join(' ') || 'Staff';
+    const staffId = `TEA-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const { data: createdTeacher, error: insErr } = await adminClient
+      .from('teachers')
+      .insert([{
+        school_id: schoolId,
+        staff_id: staffId,
+        first_name: firstName,
+        last_name: lastName,
+        assigned_classes: className ? [className] : [],
+        subjects: subjectName ? [subjectName] : [],
+        status: 'active',
+        created_at: Date.now()
+      }])
+      .select()
+      .single();
+
+    if (!insErr && createdTeacher?.id != null) {
+      return Number(createdTeacher.id);
+    }
+    return null;
+  }
+
+  async function fetchSchoolTimetableFromSupabase(schoolId: string): Promise<{
+    slots: any[];
+    suggestions: any[];
+    periods: any[];
+    classes: any[];
+    subjects: any[];
+    teachers: any[];
+  }> {
+    const adminClient = getSupabaseAdmin();
+    if (!schoolId) {
+      return { slots: [], suggestions: [], periods: [], classes: [], subjects: [], teachers: [] };
+    }
+
+    const [entriesRes, periodsRes, classesRes, subjectsRes, teachersRes, meta] = await Promise.all([
+      adminClient.from('timetable_entries').select('*').eq('school_id', schoolId).order('id', { ascending: true }),
+      adminClient.from('timetable_periods').select('*').eq('school_id', schoolId).order('sort_order', { ascending: true }),
+      adminClient.from('classes').select('id, name, level').eq('school_id', schoolId).order('name', { ascending: true }),
+      adminClient.from('subjects').select('id, name, code, applicable_classes').eq('school_id', schoolId).order('name', { ascending: true }),
+      adminClient.from('teachers').select('id, staff_id, first_name, last_name, assigned_classes, subjects').eq('school_id', schoolId).order('first_name', { ascending: true }),
+      readTimetableMetadataFromSchoolSettings(schoolId)
+    ]);
+
+    if (entriesRes.error) {
+      throw new Error(`Failed to fetch timetable_entries from Supabase: ${entriesRes.error.message}`);
+    }
+
+    const periodsById = new Map<number, any>();
+    for (const p of (periodsRes.data || [])) {
+      periodsById.set(Number(p.id), p);
+    }
+
+    const subjectsById = new Map<number, any>();
+    for (const s of (subjectsRes.data || [])) {
+      subjectsById.set(Number(s.id), s);
+    }
+
+    const teachersById = new Map<number, any>();
+    for (const t of (teachersRes.data || [])) {
+      teachersById.set(Number(t.id), t);
+    }
+
+    // Reconcile timetable_entries and timetable_periods 1-to-1 so both tables share identical data and row counts
+    const rawEntries = entriesRes.data || [];
+    const claimedPeriodIds = new Set<number>();
+    const occupiedCollisionSet = new Set<string>();
+    const synchronizedSlots: any[] = [];
+    const synchronizedPeriods: any[] = [];
+
+    for (let idx = 0; idx < rawEntries.length; idx++) {
+      const entry = rawEntries[idx];
+      const existingPeriod = entry.period_id != null ? periodsById.get(Number(entry.period_id)) : null;
+      const subject = entry.subject_id != null ? subjectsById.get(Number(entry.subject_id)) : null;
+      const teacher = entry.teacher_id != null ? teachersById.get(Number(entry.teacher_id)) : null;
+
+      const dayOfWeek = Number(entry.day_of_week) || 1;
+      const day = TIMETABLE_NUM_TO_DAY[dayOfWeek] || 'Monday';
+      const classId = String(entry.class_name || 'Class').trim();
+      const subjectName = subject?.name ? String(subject.name).trim() : 'General Subject';
+      const teacherName = teacher
+        ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim()
+        : 'Assigned Teacher';
+      const room = String(entry.room || 'Room A').trim() || 'Room A';
+      const entryIdStr = String(entry.id);
+      const notes = meta.notesByEntryId[entryIdStr] || '';
+
+      const rawStart = existingPeriod ? normalizeHHMM(existingPeriod.start_time, '08:00') : '08:00';
+      const rawEnd = existingPeriod ? normalizeHHMM(existingPeriod.end_time, '08:45') : '08:45';
+
+      // Choose a valid, collision-free school time window if rawStart was 00:00 or collides on the same teacher/class
+      let { startTime, endTime } = sanitizeTimetableSlotWindow(rawStart, rawEnd, idx);
+      const curClassKey = `cls:${day}:${startTime}:${classId.toLowerCase()}`;
+      const curTeacherKey = `tch:${day}:${startTime}:${teacherName.toLowerCase()}`;
+      if (rawStart === '00:00' || occupiedCollisionSet.has(curClassKey) || occupiedCollisionSet.has(curTeacherKey)) {
+        for (let wIdx = 0; wIdx < STANDARD_SCHOOL_PERIOD_WINDOWS.length; wIdx++) {
+          const candidateWin = STANDARD_SCHOOL_PERIOD_WINDOWS[(idx + wIdx) % STANDARD_SCHOOL_PERIOD_WINDOWS.length];
+          const classKey = `cls:${day}:${candidateWin.startTime}:${classId.toLowerCase()}`;
+          const teacherKey = `tch:${day}:${candidateWin.startTime}:${teacherName.toLowerCase()}`;
+          if (!occupiedCollisionSet.has(classKey) && !occupiedCollisionSet.has(teacherKey)) {
+            startTime = candidateWin.startTime;
+            endTime = candidateWin.endTime;
+            break;
+          }
+        }
+      }
+      occupiedCollisionSet.add(`cls:${day}:${startTime}:${classId.toLowerCase()}`);
+      occupiedCollisionSet.add(`tch:${day}:${startTime}:${teacherName.toLowerCase()}`);
+
+      const canClaimExistingPeriod =
+        existingPeriod != null &&
+        !claimedPeriodIds.has(Number(existingPeriod.id));
+
+      const syncedPeriod = await syncDedicatedPeriodInSupabase(schoolId, {
+        existingPeriodId: canClaimExistingPeriod ? Number(existingPeriod.id) : null,
+        canUpdateExistingInPlace: canClaimExistingPeriod,
+        day,
+        dayOfWeek,
+        startTime,
+        endTime,
+        classId,
+        subjectName,
+        teacherName,
+        room,
+        createdAt: entry.created_at || Date.now(),
+        uniqueSeed: Number(entry.id) || idx
+      });
+      const syncedPeriodId = syncedPeriod.id;
+      claimedPeriodIds.add(syncedPeriodId);
+
+      if (Number(entry.period_id) !== syncedPeriodId) {
+        await adminClient
+          .from('timetable_entries')
+          .update({ period_id: syncedPeriodId })
+          .eq('id', entry.id)
+          .eq('school_id', schoolId);
+      }
+
+      const unifiedRecord = {
+        ...normalizeTimetableSlotRecord({
+          id: entryIdStr,
+          slotId: entryIdStr,
+          slot_id: entryIdStr,
+          entryId: entry.id,
+          entry_id: entry.id,
+          periodId: syncedPeriodId,
+          period_id: syncedPeriodId,
+          subjectId: entry.subject_id,
+          subject_id: entry.subject_id,
+          teacherId: entry.teacher_id,
+          teacher_id: entry.teacher_id,
+          classId,
+          subjectName,
+          teacherName,
+          day,
+          day_of_week: dayOfWeek,
+          startTime,
+          endTime,
+          room,
+          notes,
+          school_id: entry.school_id,
+          created_at: entry.created_at
+        }, schoolId),
+        name: syncedPeriod.name,
+        sortOrder: syncedPeriod.sortOrder,
+        sort_order: syncedPeriod.sortOrder
+      };
+
+      synchronizedSlots.push(unifiedRecord);
+      synchronizedPeriods.push({
+        ...unifiedRecord,
+        id: syncedPeriodId,
+        periodId: syncedPeriodId,
+        period_id: syncedPeriodId,
+        entryId: entry.id,
+        entry_id: entry.id,
+        slotId: entryIdStr,
+        slot_id: entryIdStr
+      });
+    }
+
+    // Remove any orphaned timetable_periods rows that are not linked to an active timetable_entries row
+    const orphanPeriodIds = (periodsRes.data || [])
+      .map((p: any) => Number(p.id))
+      .filter((pid: number) => !claimedPeriodIds.has(pid));
+
+    if (orphanPeriodIds.length > 0) {
+      await adminClient
+        .from('timetable_periods')
+        .delete()
+        .in('id', orphanPeriodIds)
+        .eq('school_id', schoolId);
+    }
+
+    const sortByTimeThenDay = (a: any, b: any) => {
+      const t = String(a.startTime || '').localeCompare(String(b.startTime || ''));
+      if (t !== 0) return t;
+      return (TIMETABLE_DAY_TO_NUM[String(a.day || '').toLowerCase()] || 1) -
+             (TIMETABLE_DAY_TO_NUM[String(b.day || '').toLowerCase()] || 1);
+    };
+
+    synchronizedSlots.sort(sortByTimeThenDay);
+    synchronizedPeriods.sort(sortByTimeThenDay);
+
+    const suggestions = [...meta.suggestions].sort(
+      (a: any, b: any) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
+    );
+
+    const classes = (classesRes.data || []).map((c: any) => ({
+      id: c.id,
+      name: String(c.name || '').trim(),
+      level: String(c.level || c.name || '').trim()
+    })).filter((c: any) => Boolean(c.name));
+
+    const subjects = (subjectsRes.data || []).map((s: any) => ({
+      id: s.id,
+      name: String(s.name || '').trim(),
+      code: String(s.code || '').trim(),
+      applicableClasses: Array.isArray(s.applicable_classes)
+        ? s.applicable_classes.map((ac: any) => String(ac || '').trim()).filter(Boolean)
+        : [],
+      applicable_classes: Array.isArray(s.applicable_classes)
+        ? s.applicable_classes.map((ac: any) => String(ac || '').trim()).filter(Boolean)
+        : []
+    })).filter((s: any) => Boolean(s.name));
+
+    const teachers = (teachersRes.data || []).map((t: any) => {
+      const firstName = String(t.first_name || '').trim();
+      const lastName = String(t.last_name || '').trim();
+      const fullName = `${firstName} ${lastName}`.trim();
+      const assignedClasses = Array.isArray(t.assigned_classes)
+        ? t.assigned_classes.map((ac: any) => String(ac || '').trim()).filter(Boolean)
+        : [];
+      const teacherSubjects = Array.isArray(t.subjects)
+        ? t.subjects.map((sub: any) => String(sub || '').trim()).filter(Boolean)
+        : [];
+      return {
+        id: t.id,
+        staffId: String(t.staff_id || '').trim(),
+        firstName,
+        lastName,
+        fullName,
+        assignedClasses,
+        assigned_classes: assignedClasses,
+        subjects: teacherSubjects
+      };
+    }).filter((t: any) => Boolean(t.fullName));
+
+    return {
+      slots: synchronizedSlots,
+      suggestions,
+      periods: synchronizedPeriods,
+      classes,
+      subjects,
+      teachers
+    };
+  }
+
+  async function upsertTimetableSlotInSupabase(schoolId: string, rawSlot: any): Promise<any> {
+    const adminClient = getSupabaseAdmin();
+    const cleanSlot = normalizeTimetableSlotRecord(rawSlot, schoolId);
+    if (!schoolId) {
+      throw new Error('A valid school_id is required to save timetable entries in Supabase.');
+    }
+
+    const { startTime, endTime } = sanitizeTimetableSlotWindow(cleanSlot.startTime, cleanSlot.endTime, 0);
+    cleanSlot.startTime = startTime;
+    cleanSlot.start_time = startTime;
+    cleanSlot.endTime = endTime;
+    cleanSlot.end_time = endTime;
+
+    const dayOfWeek = TIMETABLE_DAY_TO_NUM[String(cleanSlot.day || 'Monday').toLowerCase()] || 1;
+    await ensureTimetableClassInSupabase(schoolId, cleanSlot.classId);
+    const subjectId = await ensureTimetableSubjectInSupabase(schoolId, cleanSlot.subjectName, cleanSlot.classId);
+    const teacherId = await ensureTimetableTeacherInSupabase(
+      schoolId,
+      cleanSlot.teacherName,
+      cleanSlot.classId,
+      cleanSlot.subjectName
+    );
+
+    const rawIdClean = String(cleanSlot.id || '').replace(/^(slot-|entry-)/i, '').trim();
+    const candidateNumericId = /^\d+$/.test(rawIdClean) && rawIdClean.length < 11 ? Number(rawIdClean) : null;
+
+    let targetEntry: any = null;
+
+    if (candidateNumericId !== null) {
+      const { data: existingById } = await adminClient
+        .from('timetable_entries')
+        .select('*')
+        .eq('id', candidateNumericId)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+
+      if (existingById?.id != null) {
+        targetEntry = existingById;
+      }
+    }
+
+    if (!targetEntry) {
+      // Check if an identical slot already exists in timetable_entries (same school, class, day, and overlapping/same period time)
+      const { data: sameClassDayEntries } = await adminClient
+        .from('timetable_entries')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('class_name', cleanSlot.classId)
+        .eq('day_of_week', dayOfWeek);
+
+      if (Array.isArray(sameClassDayEntries) && sameClassDayEntries.length > 0) {
+        const periodIdsToInspect = sameClassDayEntries.map(e => e.period_id).filter(Boolean);
+        const { data: periodsForDay } = periodIdsToInspect.length > 0
+          ? await adminClient.from('timetable_periods').select('*').in('id', periodIdsToInspect).eq('school_id', schoolId)
+          : { data: [] as any[] };
+        const pMap = new Map<number, any>((periodsForDay || []).map((p: any) => [Number(p.id), p]));
+
+        const matchingExisting = sameClassDayEntries.find(e => {
+          const p = pMap.get(Number(e.period_id));
+          if (!p) return false;
+          const pStart = normalizeHHMM(p.start_time, '');
+          const pEnd = normalizeHHMM(p.end_time, '');
+          return pStart === startTime && pEnd === endTime && (subjectId === null || Number(e.subject_id) === Number(subjectId));
+        });
+
+        if (matchingExisting) {
+          targetEntry = matchingExisting;
+        }
+      }
+    }
+
+    let canReusePeriodInPlace = false;
+    const existingPeriodId = targetEntry?.period_id != null ? Number(targetEntry.period_id) : null;
+    if (existingPeriodId != null && targetEntry?.id != null) {
+      const { data: otherRefs } = await adminClient
+        .from('timetable_entries')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('period_id', existingPeriodId)
+        .neq('id', targetEntry.id)
+        .limit(1);
+      canReusePeriodInPlace = !otherRefs || otherRefs.length === 0;
+    }
+
+    const syncedPeriod = await syncDedicatedPeriodInSupabase(schoolId, {
+      existingPeriodId,
+      canUpdateExistingInPlace: canReusePeriodInPlace,
+      day: cleanSlot.day,
+      dayOfWeek,
+      startTime,
+      endTime,
+      classId: cleanSlot.classId,
+      subjectName: cleanSlot.subjectName,
+      teacherName: cleanSlot.teacherName,
+      room: cleanSlot.room || 'Room A',
+      createdAt: cleanSlot.createdAt || Date.now()
+    });
+
+    const periodId = syncedPeriod.id;
+    let savedEntry: any = null;
+
+    if (targetEntry?.id != null) {
+      const { data: updated, error: updErr } = await adminClient
+        .from('timetable_entries')
+        .update({
+          class_name: cleanSlot.classId,
+          day_of_week: dayOfWeek,
+          period_id: periodId,
+          subject_id: subjectId,
+          teacher_id: teacherId,
+          room: (cleanSlot.room || 'Room A').slice(0, 100)
+        })
+        .eq('id', targetEntry.id)
+        .eq('school_id', schoolId)
+        .select()
+        .single();
+
+      if (updErr) {
+        throw new Error(`Failed to update timetable_entries in Supabase: ${updErr.message}`);
+      }
+      savedEntry = updated;
+    } else {
+      const { data: inserted, error: insErr } = await adminClient
+        .from('timetable_entries')
+        .insert([{
+          school_id: schoolId,
+          class_name: cleanSlot.classId,
+          day_of_week: dayOfWeek,
+          period_id: periodId,
+          subject_id: subjectId,
+          teacher_id: teacherId,
+          room: (cleanSlot.room || 'Room A').slice(0, 100),
+          created_at: cleanSlot.createdAt || Date.now()
+        }])
+        .select()
+        .single();
+
+      if (insErr || !inserted) {
+        throw new Error(`Failed to insert into timetable_entries in Supabase: ${insErr?.message || 'Unknown error'}`);
+      }
+      savedEntry = inserted;
+    }
+
+    const entryIdStr = String(savedEntry.id);
+    if (cleanSlot.notes !== undefined) {
+      const meta = await readTimetableMetadataFromSchoolSettings(schoolId);
+      const nextNotes = { ...meta.notesByEntryId };
+      if (cleanSlot.notes) {
+        nextNotes[entryIdStr] = cleanSlot.notes;
+      } else {
+        delete nextNotes[entryIdStr];
+      }
+      await writeTimetableMetadataToSchoolSettings(schoolId, { notesByEntryId: nextNotes });
+    }
+
+    return {
+      ...normalizeTimetableSlotRecord({
+        ...cleanSlot,
+        id: entryIdStr,
+        slotId: entryIdStr,
+        slot_id: entryIdStr,
+        entryId: savedEntry.id,
+        entry_id: savedEntry.id,
+        periodId,
+        period_id: periodId,
+        subjectId,
+        subject_id: subjectId,
+        teacherId,
+        teacher_id: teacherId,
+        school_id: schoolId
+      }, schoolId),
+      name: syncedPeriod.name,
+      sortOrder: syncedPeriod.sortOrder,
+      sort_order: syncedPeriod.sortOrder
+    };
+  }
+
+  async function deleteTimetableSlotFromSupabase(schoolId: string, slotId: string): Promise<void> {
+    const adminClient = getSupabaseAdmin();
+    const rawIdClean = String(slotId || '').replace(/^(slot-|entry-)/i, '').trim();
+    if (!rawIdClean) return;
+
+    const numericId = /^\d+$/.test(rawIdClean) ? Number(rawIdClean) : null;
+    if (numericId !== null) {
+      const { data: existingEntry } = await adminClient
+        .from('timetable_entries')
+        .select('id, period_id')
+        .eq('id', numericId)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+
+      const { error: delErr } = await adminClient
+        .from('timetable_entries')
+        .delete()
+        .eq('id', numericId)
+        .eq('school_id', schoolId);
+
+      if (delErr) {
+        throw new Error(`Failed to delete timetable entry from Supabase: ${delErr.message}`);
+      }
+
+      if (existingEntry?.period_id != null) {
+        const { data: remainingForPeriod } = await adminClient
+          .from('timetable_entries')
+          .select('id')
+          .eq('school_id', schoolId)
+          .eq('period_id', existingEntry.period_id)
+          .limit(1);
+
+        if (!remainingForPeriod || remainingForPeriod.length === 0) {
+          await adminClient
+            .from('timetable_periods')
+            .delete()
+            .eq('id', existingEntry.period_id)
+            .eq('school_id', schoolId);
+        }
+      }
+
+      const meta = await readTimetableMetadataFromSchoolSettings(schoolId);
+      if (meta.notesByEntryId[String(numericId)]) {
+        const nextNotes = { ...meta.notesByEntryId };
+        delete nextNotes[String(numericId)];
+        await writeTimetableMetadataToSchoolSettings(schoolId, { notesByEntryId: nextNotes });
+      }
+    }
+  }
+
+  async function upsertTimetableSuggestionInSupabase(schoolId: string, rawSug: any): Promise<any> {
+    const cleanSug = normalizeTimetableSuggestionRecord(rawSug, schoolId);
+    const meta = await readTimetableMetadataFromSchoolSettings(schoolId);
+    const existingList = meta.suggestions || [];
+    const nextList = existingList.some((s: any) => String(s.id) === String(cleanSug.id))
+      ? existingList.map((s: any) => (String(s.id) === String(cleanSug.id) ? cleanSug : s))
+      : [cleanSug, ...existingList];
+
+    await writeTimetableMetadataToSchoolSettings(schoolId, { suggestions: nextList });
+    return cleanSug;
+  }
+
+  async function deleteTimetableSuggestionFromSupabase(schoolId: string, suggestionId: string): Promise<void> {
+    const cleanId = String(suggestionId || '').trim();
+    if (!cleanId) return;
+    const meta = await readTimetableMetadataFromSchoolSettings(schoolId);
+    const remaining = (meta.suggestions || []).filter(
+      (s: any) => String(s.id) !== cleanId && String(s.suggestionId) !== cleanId
+    );
+    await writeTimetableMetadataToSchoolSettings(schoolId, { suggestions: remaining });
+  }
+
+  // GET /api/timetable - Fetch all timetable slots, suggestions, periods, classes, subjects, and teachers from Supabase
+  app.get("/api/timetable", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveTimetableSchoolId(req);
+      const { slots, suggestions, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        slots,
+        suggestions,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/timetable/sync - Auto-migrate existing local slots & suggestions to Supabase and return merged list
+  app.post("/api/timetable/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const incomingSlots = Array.isArray(req.body?.slots) ? req.body.slots : [];
+      const incomingSuggestions = Array.isArray(req.body?.suggestions) ? req.body.suggestions : [];
+
+      for (const rawSlot of incomingSlots) {
+        if (rawSlot && (rawSlot.classId || rawSlot.class_id || rawSlot.class_name) && (rawSlot.subjectName || rawSlot.subject_name)) {
+          await upsertTimetableSlotInSupabase(schoolId, rawSlot);
+        }
+      }
+
+      for (const rawSug of incomingSuggestions) {
+        if (rawSug && (rawSug.classId || rawSug.class_id) && (rawSug.subjectName || rawSug.subject_name)) {
+          await upsertTimetableSuggestionInSupabase(schoolId, rawSug);
+        }
+      }
+
+      const { slots, suggestions, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        slots,
+        suggestions,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/timetable/slots - Create a new timetable slot in Supabase (timetable_periods + timetable_entries)
+  app.post("/api/timetable/slots", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const raw = req.body || {};
+      if (!raw.classId && !raw.class_id && !raw.class_name) {
+        return res.status(400).json({ success: false, error: "Class is required for timetable slot." });
+      }
+      if (!raw.subjectName && !raw.subject_name) {
+        return res.status(400).json({ success: false, error: "Subject is required for timetable slot." });
+      }
+      if (!raw.teacherName && !raw.teacher_name) {
+        return res.status(400).json({ success: false, error: "Teacher is required for timetable slot." });
+      }
+
+      const savedSlot = await upsertTimetableSlotInSupabase(schoolId, raw);
+      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        data: savedSlot,
+        slot: savedSlot,
+        slots,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/timetable/slots/:id - Update an existing timetable slot in Supabase
+  app.put("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const slotId = String(req.params.id || '').trim();
+      const raw = { ...req.body, id: slotId, slotId };
+
+      const updatedSlot = await upsertTimetableSlotInSupabase(schoolId, raw);
+      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        data: updatedSlot,
+        slot: updatedSlot,
+        slots,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/timetable/slots/:id - Delete a timetable slot from Supabase
+  app.delete("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const slotId = String(req.params.id || '').trim();
+
+      await deleteTimetableSlotFromSupabase(schoolId, slotId);
+      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: slotId,
+        slots,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/timetable/suggestions - Create a teacher period suggestion in Supabase
+  app.post("/api/timetable/suggestions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const raw = req.body || {};
+      if (!raw.classId && !raw.class_id) {
+        return res.status(400).json({ success: false, error: "Class is required for period suggestion." });
+      }
+      if (!raw.subjectName && !raw.subject_name) {
+        return res.status(400).json({ success: false, error: "Subject is required for period suggestion." });
+      }
+
+      const savedSuggestion = await upsertTimetableSuggestionInSupabase(schoolId, raw);
+      const { slots, suggestions, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        data: savedSuggestion,
+        suggestion: savedSuggestion,
+        slots,
+        suggestions,
+        periods,
+        classes,
+        subjects,
+        teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/timetable/suggestions/:id - Approve or reject a teacher period suggestion in Supabase
+  app.put("/api/timetable/suggestions/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const suggestionId = String(req.params.id || '').trim();
+      const current = await fetchSchoolTimetableFromSupabase(schoolId);
+      const existingSug = current.suggestions.find(s => String(s.id) === suggestionId || String(s.suggestionId) === suggestionId);
+
+      const mergedSugPayload = {
+        ...(existingSug || {}),
+        ...(req.body || {}),
+        id: suggestionId,
+        suggestionId
+      };
+
+      const updatedSuggestion = await upsertTimetableSuggestionInSupabase(schoolId, mergedSugPayload);
+
+      let approvedSlot: any = null;
+      if (
+        req.body?.approveAndSchedule ||
+        req.body?.approveSlot ||
+        (updatedSuggestion.status === 'approved' && existingSug?.status !== 'approved')
+      ) {
+        const slotSource = req.body?.slot || updatedSuggestion;
+        approvedSlot = await upsertTimetableSlotInSupabase(schoolId, {
+          classId: slotSource.classId || slotSource.class_id,
+          subjectName: slotSource.subjectName || slotSource.subject_name,
+          teacherName: slotSource.teacherName || slotSource.teacher_name,
+          day: slotSource.day,
+          startTime: slotSource.startTime || slotSource.start_time,
+          endTime: slotSource.endTime || slotSource.end_time,
+          room: slotSource.room || 'Room A',
+          notes: slotSource.notes || ''
+        });
+      }
+
+      const refreshed = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        data: updatedSuggestion,
+        suggestion: updatedSuggestion,
+        approvedSlot,
+        slot: approvedSlot,
+        slots: refreshed.slots,
+        suggestions: refreshed.suggestions,
+        periods: refreshed.periods,
+        classes: refreshed.classes,
+        subjects: refreshed.subjects,
+        teachers: refreshed.teachers
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/timetable/suggestions/:id - Delete a period suggestion from Supabase
+  app.delete("/api/timetable/suggestions/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveTimetableSchoolId(req);
+      const suggestionId = String(req.params.id || '').trim();
+
+      await deleteTimetableSuggestionFromSupabase(schoolId, suggestionId);
+      const { slots, suggestions, periods } = await fetchSchoolTimetableFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: suggestionId,
+        slots,
+        suggestions,
+        periods
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // ATTENDANCE SUPABASE ENDPOINTS (public.attendance + classes & students sync)
+  // =========================================================================
+
+  const normalizeAttendanceStatus = (rawStatus: any): 'Present' | 'Absent' | 'Late' | 'Excused' => {
+    const s = String(rawStatus || 'Present').trim().toLowerCase();
+    if (s === 'absent') return 'Absent';
+    if (s === 'late') return 'Late';
+    if (s === 'excused') return 'Excused';
+    return 'Present';
+  };
+
+  const normalizeAttendanceDate = (rawDate: any): string => {
+    const str = String(rawDate || '').trim();
+    const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+    return new Date().toISOString().slice(0, 10);
+  };
+
+  const normalizeAttendanceRecord = (raw: any, defaultSchoolId?: string | null) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const studentId = String(raw.student_id ?? raw.studentId ?? '').trim();
+    if (!studentId) return null;
+    const date = normalizeAttendanceDate(raw.date);
+    const status = normalizeAttendanceStatus(raw.status);
+    const className = raw.class !== undefined && raw.class !== null && String(raw.class).trim() !== ''
+      ? String(raw.class).trim()
+      : (raw.className || raw.class_name ? String(raw.className || raw.class_name).trim() : null);
+    const reasonRaw = raw.reason !== undefined && raw.reason !== null
+      ? String(raw.reason).trim()
+      : (raw.note !== undefined && raw.note !== null ? String(raw.note).trim() : '');
+    const recordedBy = raw.recorded_by || raw.recordedBy
+      ? String(raw.recorded_by || raw.recordedBy).trim()
+      : null;
+    const schoolId = String(raw.school_id || raw.schoolId || defaultSchoolId || '').trim();
+    const createdAt = Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now();
+
+    return {
+      id: raw.id !== undefined && raw.id !== null ? raw.id : undefined,
+      schoolId,
+      school_id: schoolId,
+      studentId,
+      student_id: studentId,
+      class: className,
+      date,
+      status,
+      reason: reasonRaw || null,
+      note: reasonRaw || '',
+      recordedBy,
+      recorded_by: recordedBy,
+      createdAt,
+      created_at: createdAt
+    };
+  };
+
+  async function resolveAttendanceSchoolId(req: any): Promise<string> {
+    const adminClient = getSupabaseAdmin();
+    const baseResolved = await resolveTimetableSchoolId(req);
+
+    // Also check if a student_id or class in the request belongs to a specific school in public.students
+    const hintStudentId = String(
+      req.body?.studentId ||
+      req.body?.student_id ||
+      req.body?.records?.[0]?.studentId ||
+      req.body?.records?.[0]?.student_id ||
+      req.query?.student_id ||
+      req.query?.studentId ||
+      ''
+    ).trim();
+
+    if (hintStudentId) {
+      try {
+        const { data: stuMatch } = await adminClient
+          .from('students')
+          .select('school_id')
+          .eq('student_id', hintStudentId)
+          .limit(1)
+          .maybeSingle();
+        if (stuMatch?.school_id) {
+          return String(stuMatch.school_id);
+        }
+      } catch {}
+    }
+
+    const hintClass = String(
+      req.body?.class ||
+      req.body?.className ||
+      req.query?.class ||
+      req.body?.records?.[0]?.class ||
+      ''
+    ).trim();
+
+    if (hintClass) {
+      try {
+        const { data: stuClsMatch } = await adminClient
+          .from('students')
+          .select('school_id')
+          .ilike('class', hintClass)
+          .limit(1)
+          .maybeSingle();
+        if (stuClsMatch?.school_id) {
+          return String(stuClsMatch.school_id);
+        }
+      } catch {}
+    }
+
+    return baseResolved;
+  }
+
+  async function ensureAttendanceReferenceRecordsInSupabase(
+    schoolId: string,
+    classesInput: any[],
+    studentsInput: any[]
+  ): Promise<void> {
+    if (!schoolId) return;
+    const adminClient = getSupabaseAdmin();
+
+    // 1. Ensure classes exist in public.classes
+    if (Array.isArray(classesInput) && classesInput.length > 0) {
+      const classRows = classesInput
+        .map((c: any) => {
+          const name = String(typeof c === 'string' ? c : (c?.name || c?.class || '')).trim();
+          if (!name) return null;
+          const level = String(c?.level || (name.toUpperCase().startsWith('JHS') ? 'JHS' : 'Primary')).trim();
+          const capacity = Number(c?.capacity) > 0 ? Number(c.capacity) : 50;
+          return {
+            school_id: schoolId,
+            name,
+            level,
+            capacity,
+            created_at: Number(c?.created_at || c?.createdAt || Date.now()) || Date.now()
+          };
+        })
+        .filter(Boolean);
+
+      if (classRows.length > 0) {
+        try {
+          await adminClient
+            .from('classes')
+            .upsert(classRows as any[], { onConflict: 'school_id,name' });
+        } catch {}
+      }
+    }
+
+    // 2. Ensure students exist in public.students
+    if (Array.isArray(studentsInput) && studentsInput.length > 0) {
+      const seenStudentIds = new Set<string>();
+      const studentRows: any[] = [];
+
+      for (const s of studentsInput) {
+        if (!s || typeof s !== 'object') continue;
+        const studentId = String(s.studentId || s.student_id || '').trim();
+        if (!studentId || seenStudentIds.has(studentId)) continue;
+        seenStudentIds.add(studentId);
+
+        const firstName = String(s.firstName || s.first_name || 'Student').trim() || 'Student';
+        const lastName = String(s.lastName || s.last_name || studentId).trim() || studentId;
+        const className = String(s.class || s.className || 'P1').trim() || 'P1';
+        const rawGender = String(s.gender || 'Male').trim();
+        const gender = rawGender === 'Female' || rawGender === 'Other' ? rawGender : 'Male';
+        const rawDob = String(s.dateOfBirth || s.date_of_birth || '').trim();
+        const dobMatch = rawDob.match(/^(\d{4}-\d{2}-\d{2})/);
+
+        studentRows.push({
+          school_id: schoolId,
+          student_id: studentId,
+          first_name: firstName,
+          last_name: lastName,
+          class: className,
+          date_of_birth: dobMatch ? dobMatch[1] : null,
+          gender,
+          guardian_name: s.guardianName || s.guardian_name || null,
+          guardian_phone: s.guardianPhone || s.guardian_phone || null,
+          fees_paid: Math.max(0, Number(s.feesPaid ?? s.fees_paid ?? 0) || 0),
+          total_fees: Math.max(0, Number(s.totalFees ?? s.total_fees ?? 0) || 0),
+          house: s.house || null,
+          department: s.department || null,
+          photo: s.photo || null,
+          status: 'active',
+          created_at: Number(s.createdAt ?? s.created_at ?? Date.now()) || Date.now(),
+          updated_at: Date.now()
+        });
+      }
+
+      if (studentRows.length > 0) {
+        try {
+          await adminClient
+            .from('students')
+            .upsert(studentRows, { onConflict: 'school_id,student_id' });
+        } catch {}
+      }
+    }
+  }
+
+  async function upsertAttendanceRecordsInSupabase(
+    schoolId: string,
+    rawRecords: any[],
+    defaultRecordedBy?: string | null
+  ): Promise<any[]> {
+    if (!schoolId || !Array.isArray(rawRecords) || rawRecords.length === 0) return [];
+    const adminClient = getSupabaseAdmin();
+
+    // Normalize and deduplicate by (studentId, date)
+    const dedupedMap = new Map<string, ReturnType<typeof normalizeAttendanceRecord>>();
+    for (const item of rawRecords) {
+      const norm = normalizeAttendanceRecord(
+        {
+          ...item,
+          school_id: schoolId,
+          recorded_by: item?.recorded_by || item?.recordedBy || defaultRecordedBy || null
+        },
+        schoolId
+      );
+      if (norm && norm.studentId && norm.date) {
+        dedupedMap.set(`${norm.studentId}|${norm.date}`, norm);
+      }
+    }
+
+    const normalizedList = Array.from(dedupedMap.values()).filter(Boolean) as NonNullable<ReturnType<typeof normalizeAttendanceRecord>>[];
+    if (normalizedList.length === 0) return [];
+
+    // Resolve missing class names from public.students when not supplied on a record
+    const missingClassStudentIds = Array.from(
+      new Set(normalizedList.filter(r => !r.class).map(r => r.studentId))
+    );
+    const studentClassMap = new Map<string, string>();
+    if (missingClassStudentIds.length > 0) {
+      try {
+        const { data: stuRows } = await adminClient
+          .from('students')
+          .select('student_id, class')
+          .eq('school_id', schoolId)
+          .in('student_id', missingClassStudentIds);
+        for (const st of (stuRows || [])) {
+          if (st.student_id && st.class) {
+            studentClassMap.set(String(st.student_id), String(st.class));
+          }
+        }
+      } catch {}
+    }
+
+    const dbPayload = normalizedList.map(r => ({
+      school_id: schoolId,
+      student_id: r.studentId,
+      class: r.class || studentClassMap.get(r.studentId) || null,
+      date: r.date,
+      status: r.status,
+      reason: r.reason || null,
+      recorded_by: r.recordedBy || defaultRecordedBy || null,
+      created_at: r.createdAt || Date.now()
+    }));
+
+    // 1. Primary atomic upsert on (school_id, student_id, date)
+    const { data: upsertedRows, error: upsertErr } = await adminClient
+      .from('attendance')
+      .upsert(dbPayload, { onConflict: 'school_id,student_id,date' })
+      .select();
+
+    if (!upsertErr && Array.isArray(upsertedRows)) {
+      return upsertedRows
+        .map(row => normalizeAttendanceRecord(row, schoolId))
+        .filter(Boolean);
+    }
+
+    // 2. Fallback: individual select + update/insert if onConflict constraint differs
+    const savedResults: any[] = [];
+    for (const row of dbPayload) {
+      try {
+        const { data: existing } = await adminClient
+          .from('attendance')
+          .select('id')
+          .eq('school_id', schoolId)
+          .eq('student_id', row.student_id)
+          .eq('date', row.date)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing?.id != null) {
+          const { data: updated, error: updErr } = await adminClient
+            .from('attendance')
+            .update({
+              status: row.status,
+              class: row.class,
+              reason: row.reason,
+              recorded_by: row.recorded_by
+            })
+            .eq('id', existing.id)
+            .eq('school_id', schoolId)
+            .select()
+            .maybeSingle();
+          if (updErr) throw new Error(updErr.message);
+          if (updated) savedResults.push(normalizeAttendanceRecord(updated, schoolId));
+        } else {
+          const { data: inserted, error: insErr } = await adminClient
+            .from('attendance')
+            .insert([row])
+            .select()
+            .maybeSingle();
+          if (insErr) throw new Error(insErr.message);
+          if (inserted) savedResults.push(normalizeAttendanceRecord(inserted, schoolId));
+        }
+      } catch (innerErr: any) {
+        throw new Error(innerErr?.message || upsertErr?.message || 'Failed to save attendance record to Supabase');
+      }
+    }
+
+    return savedResults.filter(Boolean);
+  }
+
+  async function fetchSchoolAttendanceFromSupabase(
+    schoolId: string,
+    filters?: { date?: string; className?: string; studentId?: string }
+  ): Promise<{
+    attendance: any[];
+    dateAttendance: any[];
+    classes: any[];
+    students: any[];
+  }> {
+    const adminClient = getSupabaseAdmin();
+    if (!schoolId) {
+      return { attendance: [], dateAttendance: [], classes: [], students: [] };
+    }
+
+    const [attRes, clsRes, stuRes] = await Promise.all([
+      adminClient
+        .from('attendance')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('date', { ascending: false })
+        .order('id', { ascending: true }),
+      adminClient
+        .from('classes')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('name', { ascending: true }),
+      adminClient
+        .from('students')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('first_name', { ascending: true })
+    ]);
+
+    const students = Array.isArray(stuRes.data)
+      ? stuRes.data.map((s: any) => normalizeServerStudentRecord(s))
+      : [];
+    const studentClassLookup = new Map<string, string>();
+    students.forEach((s: any) => {
+      if (s?.studentId && s?.class) {
+        studentClassLookup.set(String(s.studentId), String(s.class));
+      }
+    });
+
+    const classes = Array.isArray(clsRes.data)
+      ? clsRes.data.map((c: any) => normalizeServerClassRecord(c))
+      : [];
+
+    const attendance = Array.isArray(attRes.data)
+      ? attRes.data
+          .map((row: any) => {
+            const norm = normalizeAttendanceRecord(row, schoolId);
+            if (!norm) return null;
+            if (!norm.class && studentClassLookup.has(norm.studentId)) {
+              norm.class = studentClassLookup.get(norm.studentId) || null;
+            }
+            return norm;
+          })
+          .filter(Boolean)
+      : [];
+
+    const targetDate = filters?.date ? normalizeAttendanceDate(filters.date) : '';
+    const targetClass = filters?.className && filters.className !== 'All' ? String(filters.className).trim().toLowerCase() : '';
+    const targetStudentId = filters?.studentId ? String(filters.studentId).trim() : '';
+
+    const dateAttendance = attendance.filter((a: any) => {
+      if (targetDate && a.date !== targetDate) return false;
+      if (targetStudentId && a.studentId !== targetStudentId) return false;
+      if (targetClass) {
+        const recordClass = String(a.class || studentClassLookup.get(a.studentId) || '').trim().toLowerCase();
+        if (recordClass && recordClass !== targetClass) return false;
+      }
+      return true;
+    });
+
+    return {
+      attendance,
+      dateAttendance,
+      classes,
+      students
+    };
+  }
+
+  // GET /api/attendance - Fetch attendance records, classes, and students for the active school from Supabase
+  app.get("/api/attendance", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveAttendanceSchoolId(req);
+      const date = req.query.date ? String(req.query.date).trim() : undefined;
+      const className = req.query.class ? String(req.query.class).trim() : undefined;
+      const studentId = (req.query.student_id || req.query.studentId)
+        ? String(req.query.student_id || req.query.studentId).trim()
+        : undefined;
+
+      const { attendance, dateAttendance, classes, students } = await fetchSchoolAttendanceFromSupabase(schoolId, {
+        date,
+        className,
+        studentId
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        attendance,
+        dateAttendance,
+        classes,
+        students
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/attendance - Save single or bulk attendance entries directly to Supabase (public.attendance)
+  app.post("/api/attendance", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'parent' || userRole === 'student') {
+        return res.status(403).json({
+          success: false,
+          error: "Parents and students are not permitted to modify attendance records."
+        });
+      }
+
+      const schoolId = await resolveAttendanceSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for attendance." });
+      }
+
+      const body = req.body || {};
+      const recordedBy = String(
+        body.recordedBy ||
+        body.recorded_by ||
+        req.user?.full_name ||
+        (req.user as any)?.fullName ||
+        req.user?.username ||
+        'Staff'
+      ).trim();
+
+      // If student/class metadata is included, ensure they exist in Supabase
+      const classesToEnsure = Array.isArray(body.classes)
+        ? body.classes
+        : (body.class ? [{ name: body.class }] : []);
+      const studentsToEnsure = Array.isArray(body.students)
+        ? body.students
+        : (body.student ? [body.student] : []);
+      if (classesToEnsure.length > 0 || studentsToEnsure.length > 0) {
+        await ensureAttendanceReferenceRecordsInSupabase(schoolId, classesToEnsure, studentsToEnsure);
+      }
+
+      const incomingRecords = Array.isArray(body.records)
+        ? body.records
+        : [body];
+
+      const validRecords = incomingRecords.filter(
+        (r: any) => r && (r.studentId || r.student_id)
+      );
+
+      if (validRecords.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "At least one attendance record with studentId is required."
+        });
+      }
+
+      const saved = await upsertAttendanceRecordsInSupabase(schoolId, validRecords, recordedBy);
+      const filterDate = body.date || validRecords[0]?.date;
+      const { attendance, dateAttendance, classes, students } = await fetchSchoolAttendanceFromSupabase(schoolId, {
+        date: filterDate
+      });
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        saved,
+        record: saved[0] || null,
+        attendance,
+        dateAttendance,
+        classes,
+        students
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/attendance/sync - Auto-migrate local attendance, students, and classes to Supabase on load
+  app.post("/api/attendance/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveAttendanceSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve school_id for attendance sync." });
+      }
+
+      const body = req.body || {};
+      const incomingClasses = Array.isArray(body.classes) ? body.classes : [];
+      const incomingStudents = Array.isArray(body.students) ? body.students : [];
+      const incomingAttendance = Array.isArray(body.attendance)
+        ? body.attendance
+        : (Array.isArray(body.records) ? body.records : []);
+      const recordedBy = String(
+        body.recordedBy ||
+        body.recorded_by ||
+        req.user?.full_name ||
+        (req.user as any)?.fullName ||
+        req.user?.username ||
+        'System Sync'
+      ).trim();
+
+      if (incomingClasses.length > 0 || incomingStudents.length > 0) {
+        await ensureAttendanceReferenceRecordsInSupabase(schoolId, incomingClasses, incomingStudents);
+      }
+
+      const userRole = String(req.user?.role || '').toLowerCase();
+      let saved: any[] = [];
+      if (incomingAttendance.length > 0 && userRole !== 'parent' && userRole !== 'student') {
+        saved = await upsertAttendanceRecordsInSupabase(schoolId, incomingAttendance, recordedBy);
+      }
+
+      const filterDate = body.date ? String(body.date).trim() : undefined;
+      const { attendance, dateAttendance, classes, students } = await fetchSchoolAttendanceFromSupabase(schoolId, {
+        date: filterDate
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        migratedCount: saved.length,
+        attendance,
+        dateAttendance,
+        classes,
+        students
+      });
+    } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });

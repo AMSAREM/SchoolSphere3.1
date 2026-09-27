@@ -565,6 +565,52 @@ CREATE INDEX IF NOT EXISTS idx_subscription_invoices_school ON public.subscripti
 CREATE INDEX IF NOT EXISTS idx_subscription_invoices_status ON public.subscription_invoices (status);
 
 -- ==============================================================================
+-- 15C. TIMETABLE & COURSE SCHEDULER (SLOTS & PERIOD SUGGESTIONS)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.timetable_slots (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  slot_id VARCHAR(100) NOT NULL,
+  class_id VARCHAR(100) NOT NULL,
+  subject_name VARCHAR(255) NOT NULL,
+  teacher_name VARCHAR(255) NOT NULL,
+  day VARCHAR(20) NOT NULL CHECK (day IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')),
+  start_time VARCHAR(20) NOT NULL,
+  end_time VARCHAR(20) NOT NULL,
+  room VARCHAR(150) NOT NULL DEFAULT 'Room A',
+  notes TEXT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_timetable_slot UNIQUE (school_id, slot_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_timetable_slots_school_id ON public.timetable_slots (school_id);
+CREATE INDEX IF NOT EXISTS idx_timetable_slots_class_day ON public.timetable_slots (school_id, class_id, day);
+
+CREATE TABLE IF NOT EXISTS public.timetable_suggestions (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  suggestion_id VARCHAR(100) NOT NULL,
+  class_id VARCHAR(100) NOT NULL,
+  subject_name VARCHAR(255) NOT NULL,
+  teacher_name VARCHAR(255) NOT NULL,
+  day VARCHAR(20) NOT NULL CHECK (day IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')),
+  start_time VARCHAR(20) NOT NULL,
+  end_time VARCHAR(20) NOT NULL,
+  room VARCHAR(150) NOT NULL DEFAULT 'Room A',
+  notes TEXT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  suggested_by VARCHAR(255) NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_timetable_suggestion UNIQUE (school_id, suggestion_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_timetable_suggestions_school_id ON public.timetable_suggestions (school_id);
+CREATE INDEX IF NOT EXISTS idx_timetable_suggestions_status ON public.timetable_suggestions (school_id, status);
+
+-- ==============================================================================
 -- 16. ROW LEVEL SECURITY (RLS) POLICIES ENFORCEMENT
 -- ==============================================================================
 
@@ -591,6 +637,8 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.two_factor_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscription_invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.timetable_slots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.timetable_suggestions ENABLE ROW LEVEL SECURITY;
 
 -- Policy helper: Super Admin & Service Role bypass
 DROP POLICY IF EXISTS "Super admin full access on licenses" ON public.school_licenses;
@@ -700,6 +748,14 @@ DROP POLICY IF EXISTS "Tenant isolation for two_factor_settings" ON public.two_f
 CREATE POLICY "Tenant isolation for two_factor_settings" ON public.two_factor_settings
   FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
+DROP POLICY IF EXISTS "Tenant isolation for timetable_slots" ON public.timetable_slots;
+CREATE POLICY "Tenant isolation for timetable_slots" ON public.timetable_slots
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+DROP POLICY IF EXISTS "Tenant isolation for timetable_suggestions" ON public.timetable_suggestions;
+CREATE POLICY "Tenant isolation for timetable_suggestions" ON public.timetable_suggestions
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
 -- ==============================================================================
 -- 17. AUTOMATED TRIGGERS FOR TIMESTAMPS & AUDITING
 -- ==============================================================================
@@ -722,6 +778,16 @@ CREATE TRIGGER trg_students_updated_at
 DROP TRIGGER IF EXISTS trg_users_updated_at ON public.users;
 CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON public.users
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
+
+DROP TRIGGER IF EXISTS trg_timetable_slots_updated_at ON public.timetable_slots;
+CREATE TRIGGER trg_timetable_slots_updated_at
+  BEFORE UPDATE ON public.timetable_slots
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
+
+DROP TRIGGER IF EXISTS trg_timetable_suggestions_updated_at ON public.timetable_suggestions;
+CREATE TRIGGER trg_timetable_suggestions_updated_at
+  BEFORE UPDATE ON public.timetable_suggestions
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
 
 -- ==============================================================================

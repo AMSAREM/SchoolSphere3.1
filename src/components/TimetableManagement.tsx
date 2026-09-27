@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -9,7 +9,6 @@ import {
   Trash2, 
   Edit2, 
   Printer, 
-  Sparkles, 
   AlertTriangle, 
   CheckCircle, 
   Building, 
@@ -18,12 +17,15 @@ import {
   UserCheck, 
   FileText,
   BookOpen,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { triggerPrint } from '../lib/utils';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getApiHeaders } from '../lib/api';
+import { supabase } from '../lib/supabase/client';
 
 // Standard timetable slot structure
 interface TimetableSlot {
@@ -41,9 +43,9 @@ interface TimetableSlot {
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 
 export default function TimetableManagement() {
-  const { user } = useAuth();
+  const { user, school } = useAuth();
   const { showToast, confirm } = useNotifications();
-  
+
   // Tab states: View Timetable, Class Grid View, Edit Slots, Conflict Diagnostics, Period Suggestions
   const [activeTab, setActiveTab] = useState<'view' | 'class_view' | 'manage' | 'diagnose' | 'suggestions'>('view');
   
@@ -69,6 +71,31 @@ export default function TimetableManagement() {
   const [formRoom, setFormRoom] = useState('Room A');
   const [formNotes, setFormNotes] = useState('');
 
+  // Supabase remote state & sync status
+  const [remoteSlots, setRemoteSlots] = useState<TimetableSlot[] | null>(null);
+  const [remoteSuggestions, setRemoteSuggestions] = useState<any[] | null>(null);
+  const [remotePeriods, setRemotePeriods] = useState<Array<{
+    id?: string | number;
+    periodId?: string | number;
+    entryId?: string | number;
+    name: string;
+    startTime: string;
+    endTime: string;
+    day?: TimetableSlot['day'];
+    classId?: string;
+    subjectName?: string;
+    teacherName?: string;
+    room?: string;
+    notes?: string;
+  }>>([]);
+  const [remoteClasses, setRemoteClasses] = useState<Array<{ name: string; level?: string }>>([]);
+  const [remoteSubjects, setRemoteSubjects] = useState<Array<{ name: string; code?: string; applicableClasses: string[] }>>([]);
+  const [remoteTeachers, setRemoteTeachers] = useState<Array<{ fullName: string; firstName: string; lastName: string; assignedClasses: string[]; subjects: string[] }>>([]);
+  const [syncState, setSyncState] = useState<'loading' | 'saving' | 'synced' | 'error'>('loading');
+  const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(true);
+  const [savingQuickId, setSavingQuickId] = useState<string | null>(null);
+  const migratedIdsRef = useRef<Set<string>>(new Set());
+
   // Settings & DB queries
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
@@ -79,10 +106,32 @@ export default function TimetableManagement() {
   const subjectsInDB = useLiveQuery(() => db.subjects.toArray()) || [];
   const studentsInDB = useLiveQuery(() => db.students.toArray()) || [];
 
+  const activeSchoolId = useMemo(() => {
+    const candidates = [
+      school?.id,
+      (user as any)?.school_id,
+      (user as any)?.schoolId,
+      typeof localStorage !== 'undefined' ? localStorage.getItem('esepa_active_school_id') : null,
+      (classesInDB[0] as any)?.school_id,
+      (classesInDB[0] as any)?.schoolId,
+      (subjectsInDB[0] as any)?.school_id,
+      (subjectsInDB[0] as any)?.schoolId,
+      (teachersInDB[0] as any)?.school_id,
+      (teachersInDB[0] as any)?.schoolId
+    ];
+    for (const c of candidates) {
+      const str = String(c || '').trim();
+      if (str && str !== '00000000-0000-0000-0000-000000000001' && /^[0-9a-f-]{36}$/i.test(str)) {
+        return str;
+      }
+    }
+    return '';
+  }, [school?.id, user, classesInDB, subjectsInDB, teachersInDB]);
+
   const isStudent = user?.role === 'student';
   const isParent = user?.role === 'parent';
   const isTeacher = user?.role === 'teacher';
-  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'headteacher';
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'creator' || user?.role === 'admin' || user?.role === 'headteacher';
 
   // Find student record matching current user's full name to identify their class
   const studentRecord = useMemo(() => {
@@ -131,13 +180,477 @@ export default function TimetableManagement() {
       setActiveTab('view');
     }
   }, [isStudent, isParent, isTeacher, activeTab]);
-  
-  // Fetch slots from dexie appsettings (highly resilient, zero migration worries)
+
+  const getSlotSignature = useCallback((s: TimetableSlot) => {
+    return `${String(s.classId || '').trim().toLowerCase()}|${String(s.day || '').trim().toLowerCase()}|${String(s.startTime || '').slice(0, 5)}|${String(s.endTime || '').slice(0, 5)}|${String(s.subjectName || '').trim().toLowerCase()}`;
+  }, []);
+
+  // Helper to update local Dexie read-through cache after Supabase confirmation
+  const persistLocalTimetableCache = useCallback(async (nextSlots: TimetableSlot[], nextSuggestions: any[]) => {
+    try {
+      const existingSlotSetting = await db.settings.where('key').equals('timetable_slots').first();
+      if (existingSlotSetting && existingSlotSetting.id !== undefined) {
+        await db.settings.update(existingSlotSetting.id, { value: nextSlots });
+      } else {
+        await db.settings.add({ key: 'timetable_slots', value: nextSlots });
+      }
+
+      const existingSugSetting = await db.settings.where('key').equals('timetable_suggestions').first();
+      if (existingSugSetting && existingSugSetting.id !== undefined) {
+        await db.settings.update(existingSugSetting.id, { value: nextSuggestions });
+      } else {
+        await db.settings.add({ key: 'timetable_suggestions', value: nextSuggestions });
+      }
+    } catch (e) {
+      console.warn('Notice updating local timetable read-through cache:', e);
+    }
+  }, []);
+
+  const applyRemoteReferenceLists = useCallback((payload: any) => {
+    if (!payload) return;
+    if (Array.isArray(payload.periods)) {
+      setRemotePeriods(
+        payload.periods
+          .filter((p: any) => !p?.is_break && !p?.isBreak)
+          .map((p: any) => {
+            const rawStart = String(p?.startTime || p?.start_time || '08:00').trim().slice(0, 5);
+            const rawEnd = String(p?.endTime || p?.end_time || '08:45').trim().slice(0, 5);
+            const startTime = rawStart === '00:00' ? '08:00' : rawStart;
+            const endTime = rawStart === '00:00' ? '08:45' : rawEnd;
+            const rawName = String(p?.name || `${startTime} - ${endTime}`).trim();
+
+            // Parse encoded shared metadata from period name ("Mon 08:00-08:45|JHS 3|Mathematics") if present
+            let parsedDay: TimetableSlot['day'] | undefined;
+            let parsedClass = '';
+            let parsedSubject = '';
+            if (rawName.includes('|')) {
+              const parts = rawName.split('|').map(s => s.trim());
+              const dayPrefix = (parts[0] || '').split(/\s+/)[0]?.toLowerCase();
+              const dayMap: Record<string, TimetableSlot['day']> = {
+                mon: 'Monday',
+                monday: 'Monday',
+                tue: 'Tuesday',
+                tuesday: 'Tuesday',
+                wed: 'Wednesday',
+                wednesday: 'Wednesday',
+                thu: 'Thursday',
+                thursday: 'Thursday',
+                fri: 'Friday',
+                friday: 'Friday'
+              };
+              if (dayPrefix && dayMap[dayPrefix]) {
+                parsedDay = dayMap[dayPrefix];
+              }
+              parsedClass = parts[1] || '';
+              parsedSubject = parts[2] || '';
+            }
+
+            return {
+              id: p?.id ?? p?.periodId ?? p?.period_id,
+              periodId: p?.periodId ?? p?.period_id ?? p?.id,
+              entryId: p?.entryId ?? p?.entry_id ?? p?.slotId ?? p?.slot_id,
+              name: rawName,
+              startTime,
+              endTime,
+              day: p?.day || parsedDay,
+              classId: String(p?.classId || p?.class_id || p?.class_name || parsedClass || '').trim(),
+              subjectName: String(p?.subjectName || p?.subject_name || parsedSubject || '').trim(),
+              teacherName: String(p?.teacherName || p?.teacher_name || '').trim(),
+              room: String(p?.room || 'Room A').trim(),
+              notes: String(p?.notes || '').trim()
+            };
+          })
+          .filter((p: any) => Boolean(p.startTime && p.endTime))
+      );
+    }
+    if (Array.isArray(payload.classes)) {
+      setRemoteClasses(
+        payload.classes
+          .map((c: any) => ({
+            name: String(c?.name || '').trim(),
+            level: String(c?.level || c?.name || '').trim()
+          }))
+          .filter((c: any) => Boolean(c.name))
+      );
+    }
+    if (Array.isArray(payload.subjects)) {
+      setRemoteSubjects(
+        payload.subjects
+          .map((s: any) => ({
+            name: String(s?.name || '').trim(),
+            code: String(s?.code || '').trim(),
+            applicableClasses: Array.isArray(s?.applicableClasses || s?.applicable_classes)
+              ? (s.applicableClasses || s.applicable_classes).map((ac: any) => String(ac || '').trim()).filter(Boolean)
+              : []
+          }))
+          .filter((s: any) => Boolean(s.name))
+      );
+    }
+    if (Array.isArray(payload.teachers)) {
+      setRemoteTeachers(
+        payload.teachers
+          .map((t: any) => {
+            const firstName = String(t?.firstName || t?.first_name || '').trim();
+            const lastName = String(t?.lastName || t?.last_name || '').trim();
+            const fullName = String(t?.fullName || `${firstName} ${lastName}`).trim();
+            const assignedClasses = Array.isArray(t?.assignedClasses || t?.assigned_classes)
+              ? (t.assignedClasses || t.assigned_classes).map((ac: any) => String(ac || '').trim()).filter(Boolean)
+              : [];
+            const subjects = Array.isArray(t?.subjects)
+              ? t.subjects.map((sub: any) => String(sub || '').trim()).filter(Boolean)
+              : [];
+            return { fullName, firstName, lastName, assignedClasses, subjects };
+          })
+          .filter((t: any) => Boolean(t.fullName))
+      );
+    }
+  }, []);
+
+  // Normalize raw database row into frontend TimetableSlot shape
+  const normalizeSlotFromRow = useCallback((raw: any): TimetableSlot => {
+    const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+    const numToDay: Record<number, TimetableSlot['day']> = {
+      1: 'Monday',
+      2: 'Tuesday',
+      3: 'Wednesday',
+      4: 'Thursday',
+      5: 'Friday'
+    };
+    const rawDay = typeof raw?.day_of_week === 'number' && numToDay[raw.day_of_week]
+      ? numToDay[raw.day_of_week]
+      : String(raw?.day || 'Monday').trim();
+    const day = (validDays.includes(rawDay as any) ? rawDay : 'Monday') as TimetableSlot['day'];
+    const rawStart = String(raw?.startTime || raw?.start_time || '08:00').trim().slice(0, 5);
+    const rawEnd = String(raw?.endTime || raw?.end_time || '08:45').trim().slice(0, 5);
+    const normStart = rawStart === '00:00' ? '08:00' : rawStart;
+    const normEnd = rawStart === '00:00' ? '08:45' : rawEnd;
+    return {
+      id: String(raw?.id || raw?.slot_id || raw?.slotId || raw?.entryId || raw?.entry_id || `slot-${Date.now()}`),
+      classId: String(raw?.classId || raw?.class_id || raw?.class_name || '').trim(),
+      subjectName: String(raw?.subjectName || raw?.subject_name || '').trim(),
+      teacherName: String(raw?.teacherName || raw?.teacher_name || '').trim(),
+      day,
+      startTime: normStart,
+      endTime: normEnd,
+      room: String(raw?.room || 'Room A').trim() || 'Room A',
+      notes: raw?.notes ? String(raw.notes).trim() : ''
+    };
+  }, []);
+
+  const normalizeSuggestionFromRow = useCallback((raw: any) => {
+    const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+    const rawDay = String(raw?.day || 'Monday').trim();
+    const day = (validDays.includes(rawDay as any) ? rawDay : 'Monday') as TimetableSlot['day'];
+    const rawStart = String(raw?.startTime || raw?.start_time || '08:00').trim().slice(0, 5);
+    const rawEnd = String(raw?.endTime || raw?.end_time || '08:45').trim().slice(0, 5);
+    return {
+      id: String(raw?.id || raw?.suggestion_id || raw?.suggestionId || `sug-${Date.now()}`),
+      classId: String(raw?.classId || raw?.class_id || raw?.class_name || '').trim(),
+      subjectName: String(raw?.subjectName || raw?.subject_name || '').trim(),
+      teacherName: String(raw?.teacherName || raw?.teacher_name || '').trim(),
+      day,
+      startTime: rawStart === '00:00' ? '08:00' : rawStart,
+      endTime: rawStart === '00:00' ? '08:45' : rawEnd,
+      room: String(raw?.room || 'Room A').trim() || 'Room A',
+      notes: raw?.notes ? String(raw.notes).trim() : '',
+      status: raw?.status === 'approved' || raw?.status === 'rejected' ? raw.status : 'pending',
+      suggestedBy: String(raw?.suggestedBy || raw?.suggested_by || 'Teacher').trim(),
+      createdAt: Number(raw?.createdAt || raw?.created_at || Date.now())
+    };
+  }, []);
+
+  // Fetch timetable slots & suggestions from Supabase and auto-migrate any unsynced local entries
+  const fetchTimetableFromSupabase = useCallback(async (manualRefresh = false) => {
+    setSyncState('loading');
+    try {
+      const localSlotSetting = await db.settings.where('key').equals('timetable_slots').first();
+      const localSlots: TimetableSlot[] = Array.isArray(localSlotSetting?.value)
+        ? localSlotSetting.value.map(normalizeSlotFromRow).filter((s: TimetableSlot) => Boolean(s.classId && s.subjectName))
+        : [];
+
+      const localSugSetting = await db.settings.where('key').equals('timetable_suggestions').first();
+      const localSuggestions: any[] = Array.isArray(localSugSetting?.value)
+        ? localSugSetting.value.map(normalizeSuggestionFromRow).filter((s: any) => Boolean(s.classId && s.subjectName))
+        : [];
+
+      let fetchedSlots: TimetableSlot[] = [];
+      let fetchedSuggestions: any[] = [];
+      let fetchedOk = false;
+
+      // 1. Primary fetch via Backend Supabase API (/api/timetable)
+      try {
+        const res = await fetch(`/api/timetable?school_id=${encodeURIComponent(activeSchoolId)}`, {
+          headers: getApiHeaders(activeSchoolId)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.success) {
+            fetchedSlots = Array.isArray(json.slots) ? json.slots.map(normalizeSlotFromRow) : [];
+            fetchedSuggestions = Array.isArray(json.suggestions) ? json.suggestions.map(normalizeSuggestionFromRow) : [];
+            applyRemoteReferenceLists(json);
+            fetchedOk = true;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('Notice fetching /api/timetable, trying direct Supabase client:', apiErr);
+      }
+
+      // 2. Direct Supabase client fallback (queries timetable_entries & timetable_periods) if Express route is unreachable
+      if (!fetchedOk && activeSchoolId) {
+        const [entriesRes, periodsRes, classesRes, subjectsRes, teachersRes] = await Promise.all([
+          supabase.from('timetable_entries').select('*').eq('school_id', activeSchoolId),
+          supabase.from('timetable_periods').select('*').eq('school_id', activeSchoolId),
+          supabase.from('classes').select('id, name, level').eq('school_id', activeSchoolId),
+          supabase.from('subjects').select('id, name, code, applicable_classes').eq('school_id', activeSchoolId),
+          supabase.from('teachers').select('id, staff_id, first_name, last_name, assigned_classes, subjects').eq('school_id', activeSchoolId)
+        ]);
+        if (!entriesRes.error && Array.isArray(entriesRes.data)) {
+          const periodsMap = new Map((periodsRes.data || []).map((p: any) => [Number(p.id), p]));
+          const subjectsMap = new Map((subjectsRes.data || []).map((s: any) => [Number(s.id), s]));
+          const teachersMap = new Map((teachersRes.data || []).map((t: any) => [Number(t.id), t]));
+
+          applyRemoteReferenceLists({
+            periods: periodsRes.data || [],
+            classes: classesRes.data || [],
+            subjects: subjectsRes.data || [],
+            teachers: teachersRes.data || []
+          });
+
+          fetchedSlots = entriesRes.data.map((entry: any) => {
+            const p = periodsMap.get(Number(entry.period_id));
+            const s = subjectsMap.get(Number(entry.subject_id));
+            const t = teachersMap.get(Number(entry.teacher_id));
+            return normalizeSlotFromRow({
+              id: String(entry.id),
+              class_name: entry.class_name,
+              day_of_week: entry.day_of_week,
+              start_time: p?.start_time || '08:00',
+              end_time: p?.end_time || '08:45',
+              subjectName: s?.name || 'General Subject',
+              teacherName: t ? `${t.first_name || ''} ${t.last_name || ''}`.trim() : 'Assigned Teacher',
+              room: entry.room || 'Room A'
+            });
+          });
+          fetchedOk = true;
+        }
+      }
+
+      if (!fetchedOk) {
+        setSyncState('error');
+        if (manualRefresh) {
+          showToast('Could not reach Supabase to refresh timetable.', 'error');
+        }
+        return;
+      }
+
+      // Record all remote IDs and semantic signatures so we know what is already in Supabase
+      const remoteSlotIds = new Set(fetchedSlots.map(s => s.id));
+      const remoteSlotSignatures = new Set(fetchedSlots.map(getSlotSignature));
+      const remoteSugIds = new Set(fetchedSuggestions.map(s => s.id));
+
+      fetchedSlots.forEach(s => {
+        migratedIdsRef.current.add(s.id);
+        migratedIdsRef.current.add(getSlotSignature(s));
+      });
+      fetchedSuggestions.forEach(s => migratedIdsRef.current.add(s.id));
+
+      // Check for existing local entries that haven't been pushed to Supabase yet
+      const unsyncedLocalSlots = localSlots.filter(s => {
+        const sig = getSlotSignature(s);
+        return (
+          !remoteSlotIds.has(s.id) &&
+          !remoteSlotSignatures.has(sig) &&
+          !migratedIdsRef.current.has(s.id) &&
+          !migratedIdsRef.current.has(sig)
+        );
+      });
+      const unsyncedLocalSuggestions = localSuggestions.filter(
+        s => !remoteSugIds.has(s.id) && !migratedIdsRef.current.has(s.id)
+      );
+
+      if (unsyncedLocalSlots.length > 0 || unsyncedLocalSuggestions.length > 0) {
+        try {
+          const syncRes = await fetch('/api/timetable/sync', {
+            method: 'POST',
+            headers: getApiHeaders(activeSchoolId),
+            body: JSON.stringify({
+              school_id: activeSchoolId,
+              slots: unsyncedLocalSlots,
+              suggestions: unsyncedLocalSuggestions
+            })
+          });
+          if (syncRes.ok) {
+            const syncJson = await syncRes.json();
+            if (syncJson && syncJson.success) {
+              unsyncedLocalSlots.forEach(s => {
+                migratedIdsRef.current.add(s.id);
+                migratedIdsRef.current.add(getSlotSignature(s));
+              });
+              unsyncedLocalSuggestions.forEach(s => migratedIdsRef.current.add(s.id));
+              fetchedSlots = Array.isArray(syncJson.slots) ? syncJson.slots.map(normalizeSlotFromRow) : [...fetchedSlots, ...unsyncedLocalSlots];
+              fetchedSuggestions = Array.isArray(syncJson.suggestions) ? syncJson.suggestions.map(normalizeSuggestionFromRow) : [...fetchedSuggestions, ...unsyncedLocalSuggestions];
+              applyRemoteReferenceLists(syncJson);
+            }
+          } else {
+            // Keep local slots intact if sync endpoint returned an error
+            fetchedSlots = [...fetchedSlots, ...unsyncedLocalSlots];
+            fetchedSuggestions = [...fetchedSuggestions, ...unsyncedLocalSuggestions];
+          }
+        } catch (syncErr) {
+          console.warn('Notice auto-migrating local timetable entries to Supabase:', syncErr);
+          fetchedSlots = [...fetchedSlots, ...unsyncedLocalSlots];
+          fetchedSuggestions = [...fetchedSuggestions, ...unsyncedLocalSuggestions];
+        }
+      }
+
+      setRemoteSlots(fetchedSlots);
+      setRemoteSuggestions(fetchedSuggestions);
+      await persistLocalTimetableCache(fetchedSlots, fetchedSuggestions);
+      setSyncState('synced');
+      if (manualRefresh) {
+        showToast('Timetable synchronized with Supabase.', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to synchronize timetable with Supabase:', err);
+      setSyncState('error');
+    }
+  }, [activeSchoolId, applyRemoteReferenceLists, getSlotSignature, normalizeSlotFromRow, normalizeSuggestionFromRow, persistLocalTimetableCache, showToast]);
+
+  useEffect(() => {
+    fetchTimetableFromSupabase(false);
+  }, [fetchTimetableFromSupabase]);
+
+  // Unified Timetable Slots & Periods (guarantees timetable_entries and timetable_periods share identical data in UI and Quick Suggestions)
   const timetableSetting = settings.find(s => s.key === 'timetable_slots');
-  const slots: TimetableSlot[] = listSlotsSorted(timetableSetting?.value || []);
+  const activeSlotsSource: TimetableSlot[] = useMemo(() => {
+    const baseSlots: TimetableSlot[] = remoteSlots !== null
+      ? remoteSlots
+      : (Array.isArray(timetableSetting?.value) ? timetableSetting.value.map(normalizeSlotFromRow) : []);
+    const bySig = new Map<string, TimetableSlot>();
+    baseSlots.forEach(s => {
+      if (s && s.classId && s.subjectName) {
+        bySig.set(getSlotSignature(s), s);
+      }
+    });
+    // Also merge any period records that carry slot details so timetable_periods and timetable_entries never diverge
+    remotePeriods.forEach(p => {
+      if (p.classId && p.subjectName) {
+        const candidate = normalizeSlotFromRow({
+          id: p.entryId || p.id,
+          classId: p.classId,
+          subjectName: p.subjectName,
+          teacherName: p.teacherName || 'Assigned Teacher',
+          day: p.day || 'Monday',
+          startTime: p.startTime,
+          endTime: p.endTime,
+          room: p.room || 'Room A',
+          notes: p.notes || ''
+        });
+        const sig = getSlotSignature(candidate);
+        if (!bySig.has(sig)) {
+          bySig.set(sig, candidate);
+        }
+      }
+    });
+    return Array.from(bySig.values());
+  }, [remoteSlots, timetableSetting?.value, normalizeSlotFromRow, getSlotSignature, remotePeriods]);
+
+  const slots: TimetableSlot[] = listSlotsSorted(activeSlotsSource);
+
+  // Unified normalized periods list (combines Supabase timetable_periods + synced timetable_entries so periods is always defined and in parity with slots)
+  const periods = useMemo(() => {
+    const unified: Array<{
+      id: string;
+      name: string;
+      startTime: string;
+      endTime: string;
+      day: TimetableSlot['day'];
+      classId: string;
+      subjectName: string;
+      teacherName: string;
+      room: string;
+      notes: string;
+    }> = [];
+    const seenKeys = new Set<string>();
+
+    remotePeriods.forEach((p, idx) => {
+      const startTime = String(p.startTime || '08:00').slice(0, 5);
+      const endTime = String(p.endTime || '08:45').slice(0, 5);
+      const classId = String(p.classId || '').trim();
+      const subjectName = String(p.subjectName || '').trim();
+      const day = (p.day || 'Monday') as TimetableSlot['day'];
+      const key = `${day.toLowerCase()}|${startTime}|${endTime}|${classId.toLowerCase()}|${subjectName.toLowerCase()}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        unified.push({
+          id: String(p.id ?? p.periodId ?? `period-${idx}`),
+          name: String(p.name || `${startTime} - ${endTime}`).trim(),
+          startTime,
+          endTime,
+          day,
+          classId,
+          subjectName,
+          teacherName: String(p.teacherName || '').trim(),
+          room: String(p.room || 'Room A').trim(),
+          notes: String(p.notes || '').trim()
+        });
+      }
+    });
+
+    slots.forEach((s, idx) => {
+      const startTime = String(s.startTime || '08:00').slice(0, 5);
+      const endTime = String(s.endTime || '08:45').slice(0, 5);
+      const classId = String(s.classId || '').trim();
+      const subjectName = String(s.subjectName || '').trim();
+      const day = s.day || 'Monday';
+      const key = `${day.toLowerCase()}|${startTime}|${endTime}|${classId.toLowerCase()}|${subjectName.toLowerCase()}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        unified.push({
+          id: String(s.id || `slot-period-${idx}`),
+          name: `${day.slice(0, 3)} ${startTime}-${endTime}|${classId}|${subjectName}`,
+          startTime,
+          endTime,
+          day,
+          classId,
+          subjectName,
+          teacherName: String(s.teacherName || '').trim(),
+          room: String(s.room || 'Room A').trim(),
+          notes: String(s.notes || '').trim()
+        });
+      }
+    });
+
+    return unified;
+  }, [remotePeriods, slots]);
 
   const suggestionsSetting = settings.find(s => s.key === 'timetable_suggestions');
-  const suggestions: any[] = suggestionsSetting?.value || [];
+  const suggestions: any[] = remoteSuggestions !== null ? remoteSuggestions : (suggestionsSetting?.value || []);
+
+  // Reactive check: if Dexie settings finish loading local slots after initial mount, auto-push them to Supabase
+  useEffect(() => {
+    if (syncState !== 'synced' || remoteSlots === null) return;
+    const localRaw: any[] = Array.isArray(timetableSetting?.value) ? timetableSetting.value : [];
+    if (localRaw.length === 0) return;
+
+    const remoteSigs = new Set(remoteSlots.map(getSlotSignature));
+    const remoteIds = new Set(remoteSlots.map(s => s.id));
+    const hasUnmigratedLocal = localRaw.some((raw: any) => {
+      const norm = normalizeSlotFromRow(raw);
+      if (!norm.classId || !norm.subjectName) return false;
+      const sig = getSlotSignature(norm);
+      return (
+        !remoteIds.has(norm.id) &&
+        !remoteSigs.has(sig) &&
+        !migratedIdsRef.current.has(norm.id) &&
+        !migratedIdsRef.current.has(sig)
+      );
+    });
+
+    if (hasUnmigratedLocal) {
+      fetchTimetableFromSupabase(false);
+    }
+  }, [timetableSetting?.value, remoteSlots, syncState, getSlotSignature, normalizeSlotFromRow, fetchTimetableFromSupabase]);
 
   function listSlotsSorted(arr: TimetableSlot[]): TimetableSlot[] {
     return [...arr].sort((a, b) => {
@@ -147,28 +660,208 @@ export default function TimetableManagement() {
     });
   }
 
-  // Derived filter categories for lookups
+  // Merged Classes, Subjects & Teachers from Supabase + Local DB + Active Timetable Slots
   const classesList = useMemo(() => {
     if (isParent) {
       return parentWardsClasses;
     }
-    return Array.from(new Set([
-      ...classesInDB.map(c => c.name),
-      ...studentsInDB.map(s => s.class),
-      ...teachersInDB.flatMap(t => t.assignedClasses || []),
-      ...slots.map(s => s.classId)
-    ])).filter(Boolean).sort();
-  }, [isParent, parentWardsClasses, classesInDB, studentsInDB, teachersInDB, slots]);
+    const map = new Map<string, string>();
+    const addClass = (raw: string | undefined) => {
+      const clean = String(raw || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (!map.has(key)) map.set(key, clean);
+    };
+    remoteClasses.forEach(c => addClass(c.name));
+    classesInDB.forEach(c => addClass(c.name));
+    studentsInDB.forEach(s => addClass(s.class));
+    remoteTeachers.forEach(t => (t.assignedClasses || []).forEach(addClass));
+    teachersInDB.forEach(t => (t.assignedClasses || []).forEach(addClass));
+    remoteSubjects.forEach(s => (s.applicableClasses || []).forEach(c => {
+      if (String(c).toLowerCase() !== 'all') addClass(c);
+    }));
+    subjectsInDB.forEach(s => (s.applicableClasses || []).forEach(c => {
+      if (String(c).toLowerCase() !== 'all') addClass(c);
+    }));
+    slots.forEach(s => addClass(s.classId));
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [isParent, parentWardsClasses, remoteClasses, classesInDB, studentsInDB, remoteTeachers, teachersInDB, remoteSubjects, subjectsInDB, slots]);
 
-  const teachersList = Array.from(new Set([
-    ...teachersInDB.map(t => `${t.firstName} ${t.lastName}`),
-    ...slots.map(s => s.teacherName)
-  ])).sort();
+  // Unified Subject Catalog with Applicable Classes (merged from Supabase subjects, local subjects, teacher assignments, and scheduled slots)
+  const mergedSubjectsCatalog = useMemo(() => {
+    const map = new Map<string, { name: string; applicableClasses: Set<string>; isUniversal: boolean }>();
+    const ensureSubj = (rawName: string | undefined) => {
+      const clean = String(rawName || '').trim();
+      if (!clean) return null;
+      const key = clean.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, { name: clean, applicableClasses: new Set<string>(), isUniversal: false });
+      }
+      return map.get(key)!;
+    };
 
-  const subjectsList = Array.from(new Set([
-    ...subjectsInDB.map(s => s.name),
-    ...slots.map(s => s.subjectName)
-  ])).sort();
+    const mergeSubjRecord = (name: string, appClasses: string[] | undefined) => {
+      const entry = ensureSubj(name);
+      if (!entry) return;
+      const list = Array.isArray(appClasses) ? appClasses.map(c => String(c || '').trim()).filter(Boolean) : [];
+      if (list.length === 0 || list.some(c => c.toLowerCase() === 'all')) {
+        entry.isUniversal = true;
+      } else {
+        list.forEach(c => entry.applicableClasses.add(c.toLowerCase()));
+      }
+    };
+
+    remoteSubjects.forEach(s => mergeSubjRecord(s.name, s.applicableClasses));
+    subjectsInDB.forEach(s => mergeSubjRecord(s.name, s.applicableClasses));
+
+    // Also link subjects taught by teachers assigned to specific classes
+    const linkTeacherSubjClasses = (subjNames: string[] | undefined, classNames: string[] | undefined) => {
+      const sList = Array.isArray(subjNames) ? subjNames : [];
+      const cList = Array.isArray(classNames) ? classNames : [];
+      sList.forEach(sName => {
+        const entry = ensureSubj(sName);
+        if (!entry) return;
+        cList.forEach(cName => {
+          const cleanC = String(cName || '').trim();
+          if (cleanC && cleanC.toLowerCase() !== 'all') {
+            entry.applicableClasses.add(cleanC.toLowerCase());
+          } else if (cleanC.toLowerCase() === 'all') {
+            entry.isUniversal = true;
+          }
+        });
+      });
+    };
+    remoteTeachers.forEach(t => linkTeacherSubjClasses(t.subjects, t.assignedClasses));
+    teachersInDB.forEach(t => linkTeacherSubjClasses(t.subjects, t.assignedClasses));
+
+    // Also link from active scheduled slots
+    slots.forEach(s => {
+      const entry = ensureSubj(s.subjectName);
+      if (entry && s.classId) {
+        entry.applicableClasses.add(s.classId.trim().toLowerCase());
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [remoteSubjects, subjectsInDB, remoteTeachers, teachersInDB, slots]);
+
+  // Unified Teacher Catalog with Assigned Classes & Subjects (merged from Supabase teachers, local teachers, and scheduled slots)
+  const mergedTeachersCatalog = useMemo(() => {
+    const map = new Map<string, { fullName: string; assignedClasses: Set<string>; subjects: Set<string>; classSubjectPairs: Set<string> }>();
+    const ensureTeacher = (rawName: string | undefined) => {
+      const clean = String(rawName || '').trim().replace(/\s+/g, ' ');
+      if (!clean) return null;
+      const key = clean.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          fullName: clean,
+          assignedClasses: new Set<string>(),
+          subjects: new Set<string>(),
+          classSubjectPairs: new Set<string>()
+        });
+      }
+      return map.get(key)!;
+    };
+
+    const mergeTeacherRecord = (fullName: string, assignedClasses: string[] | undefined, teacherSubjects: string[] | undefined) => {
+      const entry = ensureTeacher(fullName);
+      if (!entry) return;
+      (assignedClasses || []).forEach(c => {
+        const cleanC = String(c || '').trim().toLowerCase();
+        if (cleanC) entry.assignedClasses.add(cleanC);
+      });
+      (teacherSubjects || []).forEach(s => {
+        const cleanS = String(s || '').trim().toLowerCase();
+        if (cleanS) entry.subjects.add(cleanS);
+      });
+    };
+
+    remoteTeachers.forEach(t => mergeTeacherRecord(t.fullName, t.assignedClasses, t.subjects));
+    teachersInDB.forEach(t => mergeTeacherRecord(`${t.firstName} ${t.lastName}`, t.assignedClasses, t.subjects));
+
+    slots.forEach(s => {
+      const entry = ensureTeacher(s.teacherName);
+      if (!entry) return;
+      const cKey = String(s.classId || '').trim().toLowerCase();
+      const sKey = String(s.subjectName || '').trim().toLowerCase();
+      if (cKey) entry.assignedClasses.add(cKey);
+      if (sKey) entry.subjects.add(sKey);
+      if (cKey && sKey) entry.classSubjectPairs.add(`${cKey}|${sKey}`);
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [remoteTeachers, teachersInDB, slots]);
+
+  const subjectsList = useMemo(() => mergedSubjectsCatalog.map(s => s.name), [mergedSubjectsCatalog]);
+  const teachersList = useMemo(() => mergedTeachersCatalog.map(t => t.fullName), [mergedTeachersCatalog]);
+
+  // Connected Cascade Helper 1: Given Target Class -> split subjects into Matching for Class vs Other Subjects
+  const getSubjectsForClass = useCallback((targetClass: string) => {
+    const cleanClass = String(targetClass || '').trim().toLowerCase();
+    if (!cleanClass) {
+      return {
+        matched: mergedSubjectsCatalog.map(s => s.name),
+        others: [] as string[]
+      };
+    }
+
+    const matched: string[] = [];
+    const others: string[] = [];
+
+    for (const subj of mergedSubjectsCatalog) {
+      const appliesDirectly = subj.applicableClasses.has(cleanClass);
+      const appliesUniversally = subj.isUniversal && subj.applicableClasses.size === 0;
+      const isTaughtInClassByTeacher = mergedTeachersCatalog.some(
+        t => (t.assignedClasses.has(cleanClass) || t.assignedClasses.has('all')) && t.subjects.has(subj.name.toLowerCase())
+      );
+
+      if (appliesDirectly || appliesUniversally || isTaughtInClassByTeacher) {
+        matched.push(subj.name);
+      } else {
+        others.push(subj.name);
+      }
+    }
+
+    // If no subject had specific class metadata yet, treat all subjects as matched
+    if (matched.length === 0 && others.length > 0) {
+      return { matched: others, others: [] as string[] };
+    }
+
+    return { matched, others };
+  }, [mergedSubjectsCatalog, mergedTeachersCatalog]);
+
+  // Connected Cascade Helper 2: Given Target Class + Subject -> rank teachers into Exact Match (Class + Subject), Partial Match (Subject or Class), and Others
+  const getTeachersForClassAndSubject = useCallback((targetClass: string, targetSubject: string) => {
+    const cleanClass = String(targetClass || '').trim().toLowerCase();
+    const cleanSubject = String(targetSubject || '').trim().toLowerCase();
+
+    const exactMatch: string[] = [];
+    const subjectMatch: string[] = [];
+    const classMatch: string[] = [];
+    const others: string[] = [];
+
+    for (const t of mergedTeachersCatalog) {
+      const hasPair = cleanClass && cleanSubject && t.classSubjectPairs.has(`${cleanClass}|${cleanSubject}`);
+      const hasClass = Boolean(cleanClass) && (t.assignedClasses.has(cleanClass) || t.assignedClasses.has('all'));
+      const hasSubject = Boolean(cleanSubject) && (t.subjects.has(cleanSubject) || t.subjects.has('all'));
+
+      if (hasPair || (hasClass && hasSubject)) {
+        exactMatch.push(t.fullName);
+      } else if (hasSubject) {
+        subjectMatch.push(t.fullName);
+      } else if (hasClass) {
+        classMatch.push(t.fullName);
+      } else {
+        others.push(t.fullName);
+      }
+    }
+
+    return {
+      exactMatch,
+      subjectOrClassMatch: [...subjectMatch, ...classMatch],
+      others
+    };
+  }, [mergedTeachersCatalog]);
 
   const roomsList = Array.from(new Set([
     "Room A", "Room B", "Room C", "Science Lab", "ICT Suite", "Library", "Assembly Hall",
@@ -181,10 +874,93 @@ export default function TimetableManagement() {
     return (h || 0) * 60 + (m || 0);
   };
 
+  // Unified Period Presets: uses existing database periods & entries first, falling back to standard 45-min school slots only when empty
+  const standardPeriodFallbacks = useMemo(() => [
+    { label: 'Period 1', startTime: '08:00', endTime: '08:45', fromDatabase: false },
+    { label: 'Period 2', startTime: '08:45', endTime: '09:30', fromDatabase: false },
+    { label: 'Period 3', startTime: '09:30', endTime: '10:15', fromDatabase: false },
+    { label: 'Period 4', startTime: '10:45', endTime: '11:30', fromDatabase: false },
+    { label: 'Period 5', startTime: '11:30', endTime: '12:15', fromDatabase: false },
+    { label: 'Period 6', startTime: '13:00', endTime: '13:45', fromDatabase: false },
+    { label: 'Period 7', startTime: '13:45', endTime: '14:30', fromDatabase: false },
+    { label: 'Period 8', startTime: '14:30', endTime: '15:15', fromDatabase: false }
+  ], []);
+
+  const periodPresets = useMemo(() => {
+    const dbMap = new Map<string, {
+      label: string;
+      startTime: string;
+      endTime: string;
+      fromDatabase: boolean;
+      sharedSummary?: string;
+    }>();
+
+    // 1. Collect all time windows from unified periods & entries (shared source of truth)
+    periods.forEach((p, idx) => {
+      if (!p.startTime || !p.endTime || p.startTime === '00:00') return;
+      const key = `${p.startTime}-${p.endTime}`;
+      const existing = dbMap.get(key);
+      const summary = p.classId && p.subjectName ? `${p.classId} · ${p.subjectName}` : undefined;
+      if (!existing) {
+        dbMap.set(key, {
+          label: `${p.startTime} - ${p.endTime}`,
+          startTime: p.startTime,
+          endTime: p.endTime,
+          fromDatabase: true,
+          sharedSummary: summary
+        });
+      } else if (!existing.sharedSummary && summary) {
+        existing.sharedSummary = summary;
+      }
+    });
+
+    slots.forEach((s) => {
+      if (!s.startTime || !s.endTime || s.startTime === '00:00') return;
+      const key = `${s.startTime}-${s.endTime}`;
+      const existing = dbMap.get(key);
+      const summary = s.classId && s.subjectName ? `${s.classId} · ${s.subjectName}` : undefined;
+      if (!existing) {
+        dbMap.set(key, {
+          label: `${s.startTime} - ${s.endTime}`,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          fromDatabase: true,
+          sharedSummary: summary
+        });
+      } else if (!existing.sharedSummary && summary) {
+        existing.sharedSummary = summary;
+      }
+    });
+
+    const sortedDbPresets = Array.from(dbMap.values())
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .map((item, index) => ({
+        ...item,
+        label: `Period ${index + 1}`
+      }));
+
+    // Use existing periods from the database first; fallback to standard slots only when empty
+    if (sortedDbPresets.length > 0) {
+      return sortedDbPresets;
+    }
+
+    return standardPeriodFallbacks;
+  }, [periods, slots, standardPeriodFallbacks]);
+
   const getTimeSlotsSorted = () => {
     const timeRanges = new Set<string>();
+    periodPresets.forEach(p => {
+      timeRanges.add(`${p.startTime} - ${p.endTime}`);
+    });
     slots.forEach(s => {
-      timeRanges.add(`${s.startTime} - ${s.endTime}`);
+      if (s.startTime && s.endTime && s.startTime !== '00:00') {
+        timeRanges.add(`${s.startTime} - ${s.endTime}`);
+      }
+    });
+    periods.forEach(p => {
+      if (p.startTime && p.endTime && p.startTime !== '00:00') {
+        timeRanges.add(`${p.startTime} - ${p.endTime}`);
+      }
     });
     return Array.from(timeRanges).sort((a, b) => {
       const startA = a.split(' - ')[0] || '';
@@ -194,10 +970,6 @@ export default function TimetableManagement() {
   };
 
   // Check custom collision logic and diagnostics
-  // This engine detects if any slots overlap on the same day for:
-  // 1. Same Teacher (the teacher is in two classes simultaneously)
-  // 2. Same Class (the class is scheduled with two different subjects simultaneously)
-  // 3. Same Room (the physical room is occupied by two classes simultaneously)
   const getCollisions = (allSlots: TimetableSlot[]) => {
     const collisionsList: Array<{
       type: 'Teacher Check' | 'Class Room Conflict' | 'Class Double-Booking';
@@ -260,7 +1032,7 @@ export default function TimetableManagement() {
 
   const detectedConflicts = getCollisions(slots);
 
-  // Form Submission
+  // Form Submission — Saves directly to Supabase (timetable_periods & timetable_entries) and awaits confirmation
   const handleSaveSlot = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -314,20 +1086,42 @@ export default function TimetableManagement() {
         createdAt: Date.now()
       };
 
-      const existingSetting = await db.settings.where('key').equals('timetable_suggestions').first();
-      const currentSug = existingSetting?.value || [];
-      const updatedSug = [...currentSug, newSuggestion];
+      setSyncState('saving');
+      try {
+        const res = await fetch('/api/timetable/suggestions', {
+          method: 'POST',
+          headers: getApiHeaders(activeSchoolId),
+          body: JSON.stringify({
+            ...newSuggestion,
+            school_id: activeSchoolId
+          })
+        });
 
-      if (existingSetting) {
-        await db.settings.update(existingSetting.id!, { value: updatedSug });
-      } else {
-        await db.settings.add({ key: 'timetable_suggestions', value: updatedSug });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to save period suggestion to Supabase');
+        }
+
+        applyRemoteReferenceLists(json);
+        const savedSuggestion = (json.suggestion || json.data)
+          ? normalizeSuggestionFromRow(json.suggestion || json.data)
+          : newSuggestion;
+        migratedIdsRef.current.add(savedSuggestion.id);
+        const updatedSug = Array.isArray(json.suggestions)
+          ? json.suggestions.map(normalizeSuggestionFromRow)
+          : [...suggestions.filter(s => s.id !== savedSuggestion.id), savedSuggestion];
+        setRemoteSuggestions(updatedSug);
+        await persistLocalTimetableCache(slots, updatedSug);
+        setSyncState('synced');
+
+        showToast("Period suggestion saved to Supabase and submitted to Admin!", "success");
+        setIsFormOpen(false);
+        resetForm();
+        setActiveTab('suggestions');
+      } catch (err: any) {
+        setSyncState('error');
+        showToast(err?.message || "Failed to save suggestion to Supabase. Please retry.", "error");
       }
-
-      showToast("Period suggestion submitted successfully to Admin!", "success");
-      setIsFormOpen(false);
-      resetForm();
-      setActiveTab('suggestions');
       return;
     }
 
@@ -358,26 +1152,58 @@ export default function TimetableManagement() {
       if (!confirmForce) return;
     }
 
-    let updatedSlots = [];
-    if (editingSlotId) {
-      updatedSlots = slots.map(s => s.id === editingSlotId ? newSlot : s);
-    } else {
-      updatedSlots = [...slots, newSlot];
-    }
+    setSyncState('saving');
+    try {
+      const endpoint = editingSlotId
+        ? `/api/timetable/slots/${encodeURIComponent(editingSlotId)}`
+        : '/api/timetable/slots';
+      const method = editingSlotId ? 'PUT' : 'POST';
 
-    const existingSetting = await db.settings.where('key').equals('timetable_slots').first();
-    if (existingSetting) {
-      await db.settings.update(existingSetting.id!, { value: updatedSlots });
-    } else {
-      await db.settings.add({ key: 'timetable_slots', value: updatedSlots });
-    }
+      const res = await fetch(endpoint, {
+        method,
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          ...newSlot,
+          school_id: activeSchoolId
+        })
+      });
 
-    showToast(editingSlotId ? "Timetable slot updated successfully!" : "New slot added to timetable schedule!", "success");
-    setIsFormOpen(false);
-    resetForm();
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to save timetable slot to Supabase');
+      }
+
+      const rawSaved = json.slot || json.data || newSlot;
+      const savedSlot = normalizeSlotFromRow(rawSaved);
+      migratedIdsRef.current.add(savedSlot.id);
+      migratedIdsRef.current.add(getSlotSignature(savedSlot));
+      applyRemoteReferenceLists(json);
+
+      const updatedSlots = Array.isArray(json.slots)
+        ? json.slots.map(normalizeSlotFromRow)
+        : editingSlotId
+        ? slots.map(s => s.id === editingSlotId ? savedSlot : s)
+        : [...slots.filter(s => s.id !== savedSlot.id), savedSlot];
+
+      setRemoteSlots(updatedSlots);
+      if (Array.isArray(json.periods)) {
+        setRemotePeriods(json.periods.map(normalizeSlotFromRow));
+      } else {
+        setRemotePeriods(updatedSlots);
+      }
+      await persistLocalTimetableCache(updatedSlots, suggestions);
+      setSyncState('synced');
+
+      showToast(editingSlotId ? "Timetable entry & period updated in Supabase!" : "New entry & period synced to Supabase!", "success");
+      setIsFormOpen(false);
+      resetForm();
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || "Failed to save timetable slot to Supabase. Please retry.", "error");
+    }
   };
 
-  // Suggestion Actions
+  // Suggestion Actions — Persist directly to Supabase
   const handleApproveSuggestion = async (sugId: string) => {
     const sug = suggestions.find(s => s.id === sugId);
     if (!sug) return;
@@ -403,53 +1229,727 @@ export default function TimetableManagement() {
       return;
     }
 
-    const updatedSlots = [...slots, newSlot];
-    const existingSlotSetting = await db.settings.where('key').equals('timetable_slots').first();
-    if (existingSlotSetting) {
-      await db.settings.update(existingSlotSetting.id!, { value: updatedSlots });
-    } else {
-      await db.settings.add({ key: 'timetable_slots', value: updatedSlots });
-    }
+    setSyncState('saving');
+    try {
+      const res = await fetch(`/api/timetable/suggestions/${encodeURIComponent(sugId)}`, {
+        method: 'PUT',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          ...sug,
+          status: 'approved',
+          approveAndSchedule: true,
+          slotId: newSlot.id,
+          school_id: activeSchoolId
+        })
+      });
 
-    const updatedSug = suggestions.map(s => s.id === sugId ? { ...s, status: 'approved' } : s);
-    const existingSugSetting = await db.settings.where('key').equals('timetable_suggestions').first();
-    if (existingSugSetting) {
-      await db.settings.update(existingSugSetting.id!, { value: updatedSug });
-    }
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to approve suggestion in Supabase');
+      }
 
-    showToast("Suggested period approved and successfully added to the timetable!", "success");
+      const rawApproved = json.approvedSlot || json.slot || newSlot;
+      const approvedSlot = normalizeSlotFromRow(rawApproved);
+      migratedIdsRef.current.add(approvedSlot.id);
+      migratedIdsRef.current.add(getSlotSignature(approvedSlot));
+      applyRemoteReferenceLists(json);
+
+      const updatedSlots = Array.isArray(json.slots)
+        ? json.slots.map(normalizeSlotFromRow)
+        : [...slots.filter(s => s.id !== approvedSlot.id), approvedSlot];
+      const updatedSug = Array.isArray(json.suggestions)
+        ? json.suggestions.map(normalizeSuggestionFromRow)
+        : suggestions.map(s => s.id === sugId ? { ...s, status: 'approved' } : s);
+
+      setRemoteSlots(updatedSlots);
+      if (Array.isArray(json.periods)) {
+        setRemotePeriods(json.periods.map(normalizeSlotFromRow));
+      } else {
+        setRemotePeriods(updatedSlots);
+      }
+      setRemoteSuggestions(updatedSug);
+      await persistLocalTimetableCache(updatedSlots, updatedSug);
+      setSyncState('synced');
+
+      showToast("Suggested period approved and synced to Supabase entries & periods!", "success");
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || "Failed to approve suggestion in Supabase.", "error");
+    }
   };
 
   const handleRejectSuggestion = async (sugId: string) => {
-    const updatedSug = suggestions.map(s => s.id === sugId ? { ...s, status: 'rejected' } : s);
-    const existingSugSetting = await db.settings.where('key').equals('timetable_suggestions').first();
-    if (existingSugSetting) {
-      await db.settings.update(existingSugSetting.id!, { value: updatedSug });
+    const sug = suggestions.find(s => s.id === sugId);
+    if (!sug) return;
+
+    setSyncState('saving');
+    try {
+      const res = await fetch(`/api/timetable/suggestions/${encodeURIComponent(sugId)}`, {
+        method: 'PUT',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          ...sug,
+          status: 'rejected',
+          school_id: activeSchoolId
+        })
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to reject suggestion in Supabase');
+      }
+
+      applyRemoteReferenceLists(json);
+      const updatedSug = Array.isArray(json.suggestions)
+        ? json.suggestions.map(normalizeSuggestionFromRow)
+        : suggestions.map(s => s.id === sugId ? { ...s, status: 'rejected' } : s);
+      setRemoteSuggestions(updatedSug);
+      await persistLocalTimetableCache(slots, updatedSug);
+      setSyncState('synced');
+
+      showToast("Suggested period has been rejected.", "info");
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || "Failed to update suggestion in Supabase.", "error");
     }
-    showToast("Suggested period has been rejected.", "info");
   };
 
   const handleDeleteSuggestion = async (sugId: string) => {
-    const updatedSug = suggestions.filter(s => s.id !== sugId);
-    const existingSugSetting = await db.settings.where('key').equals('timetable_suggestions').first();
-    if (existingSugSetting) {
-      await db.settings.update(existingSugSetting.id!, { value: updatedSug });
+    setSyncState('saving');
+    migratedIdsRef.current.add(sugId);
+    try {
+      const res = await fetch(`/api/timetable/suggestions/${encodeURIComponent(sugId)}?school_id=${encodeURIComponent(activeSchoolId)}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to delete suggestion from Supabase');
+      }
+
+      applyRemoteReferenceLists(json);
+      const updatedSug = Array.isArray(json.suggestions)
+        ? json.suggestions.map(normalizeSuggestionFromRow)
+        : suggestions.filter(s => s.id !== sugId);
+      setRemoteSuggestions(updatedSug);
+      await persistLocalTimetableCache(slots, updatedSug);
+      setSyncState('synced');
+
+      showToast("Suggestion deleted from Supabase.", "success");
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || "Failed to delete suggestion from Supabase.", "error");
     }
-    showToast("Suggestion deleted.", "success");
   };
 
-  // Reset Edit form state
-  const resetForm = () => {
+  // Connected Cascading Handlers: Target Class -> Subject -> Assigned Teacher
+  const handleFormClassChange = useCallback((nextClass: string) => {
+    setFormClass(nextClass);
+    const { matched: matchedSubjects, others: otherSubjects } = getSubjectsForClass(nextClass);
+
+    const isCurrentSubjMatched = matchedSubjects.some(
+      s => s.toLowerCase() === String(formSubject || '').trim().toLowerCase()
+    );
+    const nextSubject = isCurrentSubjMatched
+      ? formSubject
+      : (matchedSubjects[0] || otherSubjects[0] || formSubject || '');
+
+    setFormSubject(nextSubject);
+
+    const { exactMatch, subjectOrClassMatch, others: otherTeachers } = getTeachersForClassAndSubject(nextClass, nextSubject);
+    let nextTeacher = formTeacher;
+    if (exactMatch.length === 1) {
+      nextTeacher = exactMatch[0];
+    } else if (!exactMatch.some(t => t.toLowerCase() === String(formTeacher || '').trim().toLowerCase())) {
+      nextTeacher = exactMatch[0] || subjectOrClassMatch[0] || otherTeachers[0] || formTeacher || '';
+    }
+    setFormTeacher(nextTeacher);
+  }, [formSubject, formTeacher, getSubjectsForClass, getTeachersForClassAndSubject]);
+
+  const handleFormSubjectChange = useCallback((nextSubject: string) => {
+    setFormSubject(nextSubject);
+    const { exactMatch, subjectOrClassMatch, others: otherTeachers } = getTeachersForClassAndSubject(formClass, nextSubject);
+    let nextTeacher = formTeacher;
+    if (exactMatch.length === 1) {
+      nextTeacher = exactMatch[0];
+    } else if (!exactMatch.some(t => t.toLowerCase() === String(formTeacher || '').trim().toLowerCase())) {
+      nextTeacher = exactMatch[0] || subjectOrClassMatch[0] || otherTeachers[0] || formTeacher || '';
+    }
+    setFormTeacher(nextTeacher);
+  }, [formClass, formTeacher, getTeachersForClassAndSubject]);
+
+  const handleFormTeacherChange = useCallback((nextTeacher: string) => {
+    setFormTeacher(nextTeacher);
+    const profile = mergedTeachersCatalog.find(
+      t => t.fullName.toLowerCase() === String(nextTeacher || '').trim().toLowerCase()
+    );
+    if (!profile) return;
+
+    // If Class or Subject has not been chosen yet, cascade from the teacher's assignments
+    if (!formClass && profile.assignedClasses.size > 0) {
+      const firstAssigned = classesList.find(c => profile.assignedClasses.has(c.toLowerCase()));
+      if (firstAssigned) setFormClass(firstAssigned);
+    }
+    if (!formSubject && profile.subjects.size > 0) {
+      const firstSubj = subjectsList.find(s => profile.subjects.has(s.toLowerCase()));
+      if (firstSubj) setFormSubject(firstSubj);
+    }
+  }, [formClass, formSubject, mergedTeachersCatalog, classesList, subjectsList]);
+
+  const formSubjectGroups = useMemo(() => getSubjectsForClass(formClass), [formClass, getSubjectsForClass]);
+  const formTeacherGroups = useMemo(() => getTeachersForClassAndSubject(formClass, formSubject), [formClass, formSubject, getTeachersForClassAndSubject]);
+
+  // Check if a candidate (classId, teacherName, room, day, startTime, endTime) is collision-free against a given slot list
+  const checkWindowAvailability = useCallback((
+    candidate: {
+      classId: string;
+      teacherName: string;
+      room: string;
+      day: typeof WEEKDAYS[number];
+      startTime: string;
+      endTime: string;
+    },
+    againstSlots: TimetableSlot[] = slots,
+    ignoreSlotId?: string | null
+  ): { isFree: boolean; clashReason: string | null } => {
+    const startCand = toMinutes(candidate.startTime);
+    const endCand = toMinutes(candidate.endTime);
+    const cleanClass = String(candidate.classId || '').trim().toLowerCase();
+    const cleanTeacher = String(candidate.teacherName || '').trim().toLowerCase();
+    const cleanRoom = String(candidate.room || '').trim().toLowerCase();
+
+    for (const s of againstSlots) {
+      if (ignoreSlotId && s.id === ignoreSlotId) continue;
+      if (s.day !== candidate.day) continue;
+      const startS = toMinutes(s.startTime);
+      const endS = toMinutes(s.endTime);
+      if (!(startCand < endS && startS < endCand)) continue;
+
+      if (cleanClass && String(s.classId || '').trim().toLowerCase() === cleanClass) {
+        return { isFree: false, clashReason: `${candidate.classId} already has ${s.subjectName}` };
+      }
+      if (cleanTeacher && String(s.teacherName || '').trim().toLowerCase() === cleanTeacher) {
+        return { isFree: false, clashReason: `${candidate.teacherName} is teaching ${s.classId}` };
+      }
+      if (cleanRoom && String(s.room || '').trim().toLowerCase() === cleanRoom) {
+        return { isFree: false, clashReason: `${candidate.room} is occupied by ${s.classId}` };
+      }
+    }
+    return { isFree: true, clashReason: null };
+  }, [slots]);
+
+  // Find the earliest collision-free (day, startTime, endTime, room) for a given class + teacher
+  // Prioritizes existing periods from the database first, falling back to standard school slots only if needed
+  const findNextConflictFreeWindow = useCallback((
+    classId: string,
+    teacherName: string,
+    preferredRoom = 'Room A',
+    preferredDay?: typeof WEEKDAYS[number],
+    againstSlots: TimetableSlot[] = slots,
+    ignoreSlotId?: string | null,
+    preferredTimeWindow?: { startTime: string; endTime: string } | null
+  ): { day: typeof WEEKDAYS[number]; startTime: string; endTime: string; room: string; fromDatabase: boolean } => {
+    const orderedDays: Array<typeof WEEKDAYS[number]> = preferredDay
+      ? [preferredDay, ...WEEKDAYS.filter(d => d !== preferredDay)]
+      : [...WEEKDAYS];
+    const candidateRooms = Array.from(new Set([preferredRoom || 'Room A', ...roomsList]));
+
+    // 0. If this course already has a shared period time window in timetable_periods / timetable_entries, try that exact window on a free day first
+    if (preferredTimeWindow?.startTime && preferredTimeWindow?.endTime && preferredTimeWindow.startTime !== '00:00') {
+      for (const day of orderedDays) {
+        for (const room of candidateRooms) {
+          const check = checkWindowAvailability(
+            {
+              classId,
+              teacherName,
+              room,
+              day,
+              startTime: preferredTimeWindow.startTime,
+              endTime: preferredTimeWindow.endTime
+            },
+            againstSlots,
+            ignoreSlotId
+          );
+          if (check.isFree) {
+            return {
+              day,
+              startTime: preferredTimeWindow.startTime,
+              endTime: preferredTimeWindow.endTime,
+              room,
+              fromDatabase: true
+            };
+          }
+        }
+      }
+    }
+
+    // 1. First pass: check existing database period windows across all weekdays
+    for (const day of orderedDays) {
+      for (const preset of periodPresets) {
+        for (const room of candidateRooms) {
+          const check = checkWindowAvailability(
+            { classId, teacherName, room, day, startTime: preset.startTime, endTime: preset.endTime },
+            againstSlots,
+            ignoreSlotId
+          );
+          if (check.isFree) {
+            return {
+              day,
+              startTime: preset.startTime,
+              endTime: preset.endTime,
+              room,
+              fromDatabase: Boolean(preset.fromDatabase)
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Fallback pass: if all existing database period windows are occupied, check standard school periods
+    for (const day of orderedDays) {
+      for (const stdPreset of standardPeriodFallbacks) {
+        for (const room of candidateRooms) {
+          const check = checkWindowAvailability(
+            { classId, teacherName, room, day, startTime: stdPreset.startTime, endTime: stdPreset.endTime },
+            againstSlots,
+            ignoreSlotId
+          );
+          if (check.isFree) {
+            return {
+              day,
+              startTime: stdPreset.startTime,
+              endTime: stdPreset.endTime,
+              room,
+              fromDatabase: false
+            };
+          }
+        }
+      }
+    }
+
+    return {
+      day: preferredDay || 'Monday',
+      startTime: periodPresets[0]?.startTime || '08:00',
+      endTime: periodPresets[0]?.endTime || '08:45',
+      room: preferredRoom || 'Room A',
+      fromDatabase: Boolean(periodPresets[0]?.fromDatabase)
+    };
+  }, [slots, roomsList, periodPresets, standardPeriodFallbacks, checkWindowAvailability]);
+
+  // Modal Period Time Presets with live Free / Clash status for the active form inputs
+  const modalTimePresetsWithStatus = useMemo(() => {
+    return periodPresets.map(p => {
+      const check = checkWindowAvailability(
+        {
+          classId: formClass,
+          teacherName: formTeacher,
+          room: formRoom || 'Room A',
+          day: formDay,
+          startTime: p.startTime,
+          endTime: p.endTime
+        },
+        slots,
+        editingSlotId
+      );
+      const isSelected = formStartTime === p.startTime && formEndTime === p.endTime;
+      return {
+        ...p,
+        isFree: check.isFree,
+        clashReason: check.clashReason,
+        isSelected
+      };
+    });
+  }, [periodPresets, checkWindowAvailability, formClass, formTeacher, formRoom, formDay, slots, editingSlotId, formStartTime, formEndTime]);
+
+  // Smart Course & Time Quick Suggestions: shares the unified timetable_entries & timetable_periods dataset so there are zero discrepancies
+  const smartQuickSuggestions = useMemo(() => {
+    const targetClasses = (() => {
+      if (activeTab === 'class_view' && selectedClassForGrid && classesList.includes(selectedClassForGrid)) {
+        return [selectedClassForGrid];
+      }
+      if (selectedClassFilter !== 'All' && classesList.includes(selectedClassFilter)) {
+        return [selectedClassFilter];
+      }
+      if (isTeacher && user?.fullName) {
+        const cleanMyName = user.fullName.toLowerCase().trim();
+        const myProfile = mergedTeachersCatalog.find(
+          t => t.fullName.toLowerCase().includes(cleanMyName) || cleanMyName.includes(t.fullName.toLowerCase())
+        );
+        if (myProfile && myProfile.assignedClasses.size > 0) {
+          const matchedCls = classesList.filter(c => myProfile.assignedClasses.has(c.toLowerCase()));
+          if (matchedCls.length > 0) return matchedCls;
+        }
+      }
+      return classesList;
+    })();
+
+    const candidateCombos: Array<{
+      classId: string;
+      subjectName: string;
+      teacherName: string;
+      preferredRoom: string;
+      preferredTimeWindow: { startTime: string; endTime: string } | null;
+      scheduledCount: number;
+      hasExactTeacher: boolean;
+    }> = [];
+
+    for (const cls of targetClasses) {
+      const { matched: matchedSubjs, others: otherSubjs } = getSubjectsForClass(cls);
+      const subjPool = matchedSubjs.length > 0 ? matchedSubjs : otherSubjs;
+
+      for (const subj of subjPool) {
+        // Check existing synced timetable_entries & timetable_periods for this class + subject first so shared fields match 100%
+        const existingSyncedRecords = slots.filter(
+          s =>
+            String(s.classId || '').toLowerCase() === cls.toLowerCase() &&
+            String(s.subjectName || '').toLowerCase() === subj.toLowerCase()
+        );
+        const sharedRecord = existingSyncedRecords[0] || periods.find(
+          p =>
+            String(p.classId || '').toLowerCase() === cls.toLowerCase() &&
+            String(p.subjectName || '').toLowerCase() === subj.toLowerCase()
+        );
+
+        const { exactMatch, subjectOrClassMatch, others: otherTeachers } = getTeachersForClassAndSubject(cls, subj);
+        const bestTeacher =
+          (sharedRecord?.teacherName && sharedRecord.teacherName !== 'Unassigned' ? sharedRecord.teacherName : '') ||
+          exactMatch[0] ||
+          subjectOrClassMatch[0] ||
+          otherTeachers[0] ||
+          '';
+        if (!bestTeacher) continue;
+
+        if (selectedTeacherFilter !== 'All' && bestTeacher !== selectedTeacherFilter) {
+          continue;
+        }
+
+        const preferredRoom =
+          selectedRoomFilter !== 'All'
+            ? selectedRoomFilter
+            : (sharedRecord?.room || 'Room A');
+
+        const preferredTimeWindow =
+          sharedRecord?.startTime && sharedRecord?.endTime && sharedRecord.startTime !== '00:00'
+            ? { startTime: sharedRecord.startTime, endTime: sharedRecord.endTime }
+            : null;
+
+        candidateCombos.push({
+          classId: cls,
+          subjectName: subj,
+          teacherName: bestTeacher,
+          preferredRoom,
+          preferredTimeWindow,
+          scheduledCount: existingSyncedRecords.length,
+          hasExactTeacher: Boolean(sharedRecord?.teacherName) || exactMatch.length > 0
+        });
+      }
+    }
+
+    // Prioritize courses that already exist in synced periods/entries with fewer weekly occurrences or unscheduled courses
+    candidateCombos.sort((a, b) => {
+      if (a.scheduledCount !== b.scheduledCount) return a.scheduledCount - b.scheduledCount;
+      if (a.hasExactTeacher !== b.hasExactTeacher) return a.hasExactTeacher ? -1 : 1;
+      const cCmp = a.classId.localeCompare(b.classId);
+      if (cCmp !== 0) return cCmp;
+      return a.subjectName.localeCompare(b.subjectName);
+    });
+
+    // Allocate distinct conflict-free windows across the top recommendations using existing DB period windows first
+    const virtualSlots: TimetableSlot[] = [...slots];
+    const results: Array<{
+      key: string;
+      classId: string;
+      subjectName: string;
+      teacherName: string;
+      day: typeof WEEKDAYS[number];
+      startTime: string;
+      endTime: string;
+      room: string;
+      scheduledCount: number;
+      hasExactTeacher: boolean;
+      fromDatabase: boolean;
+    }> = [];
+
+    for (const combo of candidateCombos.slice(0, 6)) {
+      const preferredDay = WEEKDAYS[results.length % WEEKDAYS.length];
+      const freeWin = findNextConflictFreeWindow(
+        combo.classId,
+        combo.teacherName,
+        combo.preferredRoom,
+        preferredDay,
+        virtualSlots,
+        null,
+        combo.preferredTimeWindow
+      );
+
+      const key = `${combo.classId}|${combo.subjectName}|${combo.teacherName}|${freeWin.day}|${freeWin.startTime}`;
+      results.push({
+        key,
+        classId: combo.classId,
+        subjectName: combo.subjectName,
+        teacherName: combo.teacherName,
+        day: freeWin.day,
+        startTime: freeWin.startTime,
+        endTime: freeWin.endTime,
+        room: freeWin.room,
+        scheduledCount: combo.scheduledCount,
+        hasExactTeacher: combo.hasExactTeacher,
+        fromDatabase: freeWin.fromDatabase
+      });
+
+      virtualSlots.push({
+        id: `virtual-${results.length}`,
+        classId: combo.classId,
+        subjectName: combo.subjectName,
+        teacherName: combo.teacherName,
+        day: freeWin.day,
+        startTime: freeWin.startTime,
+        endTime: freeWin.endTime,
+        room: freeWin.room
+      });
+    }
+
+    return results;
+  }, [
+    activeTab,
+    selectedClassForGrid,
+    selectedClassFilter,
+    selectedTeacherFilter,
+    selectedRoomFilter,
+    classesList,
+    isTeacher,
+    user?.fullName,
+    mergedTeachersCatalog,
+    getSubjectsForClass,
+    getTeachersForClassAndSubject,
+    slots,
+    periods,
+    findNextConflictFreeWindow
+  ]);
+
+  // Contextual Course Quick Combos inside the Modal (scoped to formClass or all classes)
+  const modalCourseQuickCombos = useMemo(() => {
+    const targetCls = formClass || classesList[0] || '';
+    if (!targetCls) return [];
+    const { matched: matchedSubjs, others: otherSubjs } = getSubjectsForClass(targetCls);
+    const allSubjs = [...matchedSubjs, ...otherSubjs];
+    return allSubjs.slice(0, 6).map(subj => {
+      const existingSyncedRecords = slots.filter(
+        s =>
+          String(s.classId || '').toLowerCase() === targetCls.toLowerCase() &&
+          String(s.subjectName || '').toLowerCase() === subj.toLowerCase()
+      );
+      const sharedRecord = existingSyncedRecords[0] || periods.find(
+        p =>
+          String(p.classId || '').toLowerCase() === targetCls.toLowerCase() &&
+          String(p.subjectName || '').toLowerCase() === subj.toLowerCase()
+      );
+      const { exactMatch, subjectOrClassMatch, others: otherTeachers } = getTeachersForClassAndSubject(targetCls, subj);
+      const teacher =
+        (sharedRecord?.teacherName && sharedRecord.teacherName !== 'Unassigned' ? sharedRecord.teacherName : '') ||
+        exactMatch[0] ||
+        subjectOrClassMatch[0] ||
+        otherTeachers[0] ||
+        '';
+      return {
+        classId: targetCls,
+        subjectName: subj,
+        teacherName: teacher,
+        scheduledCount: existingSyncedRecords.length,
+        isExact: Boolean(sharedRecord?.teacherName) || exactMatch.length > 0
+      };
+    });
+  }, [formClass, classesList, getSubjectsForClass, getTeachersForClassAndSubject, slots, periods]);
+
+  // Jump form to next conflict-free slot for the currently selected Class + Teacher + Room
+  const handleJumpToNextFreeSlot = useCallback(() => {
+    const targetCls = formClass || classesList[0] || '';
+    const targetTch = formTeacher || teachersList[0] || '';
+    const nextWin = findNextConflictFreeWindow(
+      targetCls,
+      targetTch,
+      formRoom || 'Room A',
+      formDay,
+      slots,
+      editingSlotId
+    );
+    setFormDay(nextWin.day);
+    setFormStartTime(nextWin.startTime);
+    setFormEndTime(nextWin.endTime);
+    setFormRoom(nextWin.room);
+  }, [formClass, classesList, formTeacher, teachersList, findNextConflictFreeWindow, formRoom, formDay, slots, editingSlotId]);
+
+  // Apply a Quick Suggestion either by pre-filling the modal or immediately saving to Supabase
+  const handleApplyQuickSuggestion = useCallback(async (
+    rec: {
+      key: string;
+      classId: string;
+      subjectName: string;
+      teacherName: string;
+      day: typeof WEEKDAYS[number];
+      startTime: string;
+      endTime: string;
+      room: string;
+    },
+    mode: 'prefill' | 'instant'
+  ) => {
+    if (mode === 'prefill') {
+      setEditingSlotId(null);
+      setFormClass(rec.classId);
+      setFormSubject(rec.subjectName);
+      setFormTeacher(rec.teacherName);
+      setFormDay(rec.day);
+      setFormStartTime(rec.startTime);
+      setFormEndTime(rec.endTime);
+      setFormRoom(rec.room || 'Room A');
+      setFormNotes('');
+      setIsFormOpen(true);
+      return;
+    }
+
+    // Instant save to Supabase (writes to both timetable_entries and timetable_periods)
+    setSavingQuickId(rec.key);
+    setSyncState('saving');
+
+    try {
+      if (isTeacher) {
+        const newSuggestion = {
+          id: `sug-${Date.now()}`,
+          classId: rec.classId,
+          subjectName: rec.subjectName,
+          teacherName: rec.teacherName,
+          day: rec.day,
+          startTime: rec.startTime,
+          endTime: rec.endTime,
+          room: rec.room || 'Room A',
+          notes: 'Quick suggested conflict-free period',
+          status: 'pending',
+          suggestedBy: user?.fullName || 'Teacher',
+          createdAt: Date.now()
+        };
+
+        const res = await fetch('/api/timetable/suggestions', {
+          method: 'POST',
+          headers: getApiHeaders(activeSchoolId),
+          body: JSON.stringify({
+            ...newSuggestion,
+            school_id: activeSchoolId
+          })
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to save quick suggestion to Supabase');
+        }
+
+        applyRemoteReferenceLists(json);
+        const savedSuggestion = (json.suggestion || json.data)
+          ? normalizeSuggestionFromRow(json.suggestion || json.data)
+          : newSuggestion;
+        migratedIdsRef.current.add(savedSuggestion.id);
+        const updatedSug = Array.isArray(json.suggestions)
+          ? json.suggestions.map(normalizeSuggestionFromRow)
+          : [...suggestions.filter(s => s.id !== savedSuggestion.id), savedSuggestion];
+        setRemoteSuggestions(updatedSug);
+        await persistLocalTimetableCache(slots, updatedSug);
+        setSyncState('synced');
+        showToast(`Suggested ${rec.subjectName} (${rec.classId}) on ${rec.day} ${rec.startTime}–${rec.endTime}!`, 'success');
+      } else {
+        const newSlot: TimetableSlot = {
+          id: `slot-${Date.now()}`,
+          classId: rec.classId,
+          subjectName: rec.subjectName,
+          teacherName: rec.teacherName,
+          day: rec.day,
+          startTime: rec.startTime,
+          endTime: rec.endTime,
+          room: rec.room || 'Room A',
+          notes: ''
+        };
+
+        const res = await fetch('/api/timetable/slots', {
+          method: 'POST',
+          headers: getApiHeaders(activeSchoolId),
+          body: JSON.stringify({
+            ...newSlot,
+            school_id: activeSchoolId
+          })
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to save quick slot to Supabase');
+        }
+
+        applyRemoteReferenceLists(json);
+        const rawSaved = json.slot || json.data || newSlot;
+        const savedSlot = normalizeSlotFromRow(rawSaved);
+        migratedIdsRef.current.add(savedSlot.id);
+        migratedIdsRef.current.add(getSlotSignature(savedSlot));
+
+        const updatedSlots = Array.isArray(json.slots)
+          ? json.slots.map(normalizeSlotFromRow)
+          : [...slots.filter(s => s.id !== savedSlot.id), savedSlot];
+
+        setRemoteSlots(updatedSlots);
+        if (Array.isArray(json.periods)) {
+          setRemotePeriods(json.periods.map(normalizeSlotFromRow));
+        } else {
+          setRemotePeriods(updatedSlots);
+        }
+        await persistLocalTimetableCache(updatedSlots, suggestions);
+        setSyncState('synced');
+        showToast(`Scheduled ${rec.subjectName} for ${rec.classId} (${rec.day} ${rec.startTime}–${rec.endTime}) in Supabase entries & periods!`, 'success');
+      }
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || 'Failed to save quick suggestion to Supabase.', 'error');
+    } finally {
+      setSavingQuickId(null);
+    }
+  }, [
+    isTeacher,
+    user?.fullName,
+    activeSchoolId,
+    normalizeSuggestionFromRow,
+    suggestions,
+    persistLocalTimetableCache,
+    slots,
+    showToast,
+    applyRemoteReferenceLists,
+    normalizeSlotFromRow,
+    getSlotSignature
+  ]);
+
+  // Reset Edit form state with connected defaults (Class -> Subject -> Assigned Teacher) and next conflict-free time window
+  const resetForm = useCallback(() => {
     setEditingSlotId(null);
-    setFormClass(classesList[0] || '');
-    setFormSubject(subjectsList[0] || '');
-    setFormTeacher(teachersList[0] || '');
-    setFormDay('Monday');
-    setFormStartTime('08:00');
-    setFormEndTime('08:45');
-    setFormRoom('Room A');
+    const preferredClass =
+      selectedClassFilter !== 'All' && classesList.includes(selectedClassFilter)
+        ? selectedClassFilter
+        : (classesList[0] || '');
+    const { matched: matchedSubjects, others: otherSubjects } = getSubjectsForClass(preferredClass);
+    const preferredSubject = matchedSubjects[0] || otherSubjects[0] || '';
+    const { exactMatch, subjectOrClassMatch, others: otherTeachers } = getTeachersForClassAndSubject(preferredClass, preferredSubject);
+    const preferredTeacher = exactMatch[0] || subjectOrClassMatch[0] || otherTeachers[0] || '';
+    const nextFree = findNextConflictFreeWindow(preferredClass, preferredTeacher, 'Room A', 'Monday', slots, null);
+
+    setFormClass(preferredClass);
+    setFormSubject(preferredSubject);
+    setFormTeacher(preferredTeacher);
+    setFormDay(nextFree.day);
+    setFormStartTime(nextFree.startTime);
+    setFormEndTime(nextFree.endTime);
+    setFormRoom(nextFree.room);
     setFormNotes('');
-  };
+  }, [selectedClassFilter, classesList, getSubjectsForClass, getTeachersForClassAndSubject, findNextConflictFreeWindow, slots]);
+
+  // Ensure form defaults populate if Supabase reference data finishes loading while modal is open
+  useEffect(() => {
+    if (!isFormOpen || editingSlotId) return;
+    if (!formClass && classesList.length > 0) {
+      resetForm();
+    }
+  }, [isFormOpen, editingSlotId, formClass, classesList.length, resetForm]);
 
   const handleEditClick = (slot: TimetableSlot) => {
     setEditingSlotId(slot.id);
@@ -467,17 +1967,46 @@ export default function TimetableManagement() {
   const handleDeleteSlot = async (id: string, name: string) => {
     const isOk = await confirm({
       title: "Remove Period Slot?",
-      message: `Are you sure you want to remove the scheduled slot for "${name}" from this timetable? This cannot be undone.`,
+      message: `Are you sure you want to remove the scheduled slot for "${name}" from this timetable? This will remove the shared record from both timetable_entries and timetable_periods.`,
       confirmLabel: "Delete Slot"
     });
     if (!isOk) return;
 
-    const filtered = slots.filter(s => s.id !== id);
-    const existing = await db.settings.where('key').equals('timetable_slots').first();
-    if (existing) {
-      await db.settings.update(existing.id!, { value: filtered });
+    const targetSlot = slots.find(s => s.id === id);
+    setSyncState('saving');
+    migratedIdsRef.current.add(id);
+    if (targetSlot) {
+      migratedIdsRef.current.add(getSlotSignature(targetSlot));
     }
-    showToast("Class timetable block successfully updated.", "info");
+
+    try {
+      const res = await fetch(`/api/timetable/slots/${encodeURIComponent(id)}?school_id=${encodeURIComponent(activeSchoolId)}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to delete timetable slot from Supabase');
+      }
+
+      applyRemoteReferenceLists(json);
+      const filtered = Array.isArray(json.slots)
+        ? json.slots.map(normalizeSlotFromRow)
+        : slots.filter(s => s.id !== id);
+      setRemoteSlots(filtered);
+      if (Array.isArray(json.periods)) {
+        setRemotePeriods(json.periods.map(normalizeSlotFromRow));
+      } else {
+        setRemotePeriods(filtered);
+      }
+      await persistLocalTimetableCache(filtered, suggestions);
+      setSyncState('synced');
+      showToast("Timetable entry & period removed from Supabase.", "info");
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || "Failed to delete timetable slot from Supabase.", "error");
+    }
   };
 
   // Filter slots based on state
@@ -526,9 +2055,33 @@ export default function TimetableManagement() {
         <div className="absolute -right-16 -bottom-16 w-60 h-60 rounded-full border-8 border-white/5 pointer-events-none" />
 
         <div className="space-y-1.5 relative z-10">
-          <span className="text-xs font-bold text-[#faae57] tracking-wide block">
-            Academic Schedule & Period Matrix
-          </span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-xs font-bold text-[#faae57] tracking-wide">
+              Academic Schedule & Period Matrix
+            </span>
+            <button
+              type="button"
+              onClick={() => fetchTimetableFromSupabase(true)}
+              disabled={syncState === 'loading' || syncState === 'saving'}
+              title="Sync timetable entries & periods with Supabase"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                syncState === 'error'
+                  ? 'bg-[#ef476f] text-white'
+                  : syncState === 'saving' || syncState === 'loading'
+                  ? 'bg-white/15 text-white'
+                  : 'bg-[#06d6a0]/20 text-[#06d6a0] hover:bg-[#06d6a0]/30'
+              }`}
+            >
+              <RefreshCw className={`w-3 h-3 ${syncState === 'loading' || syncState === 'saving' ? 'animate-spin' : ''}`} />
+              {syncState === 'loading'
+                ? 'Loading Supabase…'
+                : syncState === 'saving'
+                ? 'Saving to Supabase…'
+                : syncState === 'error'
+                ? 'Sync Error — Retry'
+                : `Entries & Periods Synced (${slots.length})`}
+            </button>
+          </div>
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
             <Calendar className="w-6 h-6 text-[#faae57]" />
             Timetable & Course Scheduler
@@ -538,23 +2091,20 @@ export default function TimetableManagement() {
           </p>
         </div>
 
-        {isAdmin && (
+        {(isAdmin || isTeacher) && (
           <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto relative z-10">
             <button
-              onClick={() => {
-                resetForm();
-                setIsFormOpen(true);
-              }}
-              className="px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-xs font-bold flex items-center gap-2 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px]"
+              type="button"
+              onClick={() => setIsQuickPanelOpen(prev => !prev)}
+              className={`px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border ${
+                isQuickPanelOpen
+                  ? 'bg-white/15 text-white border-white/30'
+                  : 'bg-white/5 text-white/85 border-white/15 hover:bg-white/10'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              Add Time Block
+              <Clock className="w-3.5 h-3.5 text-[#faae57]" />
+              {isQuickPanelOpen ? 'Hide Quick Suggestions' : 'Quick Suggestions'}
             </button>
-          </div>
-        )}
-
-        {isTeacher && (
-          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto relative z-10">
             <button
               onClick={() => {
                 resetForm();
@@ -563,11 +2113,112 @@ export default function TimetableManagement() {
               className="px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-xs font-bold flex items-center gap-2 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px]"
             >
               <Plus className="w-4 h-4" />
-              Suggest Period
+              {isTeacher ? 'Suggest Period' : 'Add Time Block'}
             </button>
           </div>
         )}
       </div>
+
+      {/* On-Page Smart Quick Suggestion Panel (Course Combos + Conflict-Free Time Slots sharing unified entries & periods data) */}
+      {(isAdmin || isTeacher) && isQuickPanelOpen && smartQuickSuggestions.length > 0 && (
+        <div className="bg-white border border-[#bac4c6] rounded-2xl p-4 sm:p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] space-y-3.5 print:hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#bac4c6]/50 pb-3">
+            <div className="space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Clock className="w-4 h-4 text-[#1c4a59]" />
+                <h3 className="text-sm font-bold text-[#1f2a2e]">
+                  Quick Time & Course Suggestions
+                </h3>
+                <span className="text-xs font-medium text-[#6a7f84]">
+                  · Unified <span className="font-mono">timetable_entries</span> & <span className="font-mono">timetable_periods</span> ({slots.length} synced records)
+                </span>
+              </div>
+              <p className="text-xs text-[#6a7f84] font-medium">
+                Click <span className="font-bold text-[#1f2a2e]">Pre-fill</span> to customize in the scheduler modal or <span className="font-bold text-[#1c4a59]">{isTeacher ? 'Suggest Now' : 'Schedule Now'}</span> to sync directly to both Supabase tables.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (smartQuickSuggestions[0]) {
+                    handleApplyQuickSuggestion(smartQuickSuggestions[0], 'prefill');
+                  }
+                }}
+                className="px-3 py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/40 text-[#1c4a59] border border-[#bac4c6] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97]"
+              >
+                Open Next Free Slot
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {smartQuickSuggestions.map((rec) => {
+              const isSavingThis = savingQuickId === rec.key;
+              return (
+                <div
+                  key={rec.key}
+                  className="p-3.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl flex flex-col justify-between gap-3 hover:border-[#1c4a59] transition-colors"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-[#1c4a59]">
+                        {rec.classId} · {rec.subjectName}
+                      </span>
+                      <span className="text-[11px] font-medium text-[#6a7f84] font-mono tabular-nums">
+                        {rec.scheduledCount === 0 ? 'Unscheduled' : `${rec.scheduledCount}x/wk`}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-[#1f2a2e] font-medium flex items-center justify-between gap-2">
+                      <span className="truncate" title={rec.teacherName}>
+                        {rec.teacherName}
+                      </span>
+                      <span className="text-[#6a7f84] shrink-0">
+                        {rec.room}
+                      </span>
+                    </div>
+
+                    <div className="pt-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-mono tabular-nums font-bold text-[#1f2a2e]">
+                        <span className="w-2 h-2 rounded-full bg-[#06d6a0]" />
+                        {rec.day.slice(0, 3)} {rec.startTime} - {rec.endTime}
+                      </span>
+                      <span className="text-[11px] text-[#6a7f84]">
+                        {rec.fromDatabase ? 'DB Period' : 'Standard Slot'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#bac4c6]/60">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyQuickSuggestion(rec, 'prefill')}
+                      disabled={syncState === 'saving'}
+                      className="px-3 py-1.5 bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border border-[#bac4c6] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50"
+                    >
+                      Pre-fill
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyQuickSuggestion(rec, 'instant')}
+                      disabled={syncState === 'saving'}
+                      className="px-3.5 py-1.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {isSavingThis
+                        ? 'Saving…'
+                        : isTeacher
+                        ? 'Suggest Now'
+                        : 'Schedule Now'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Tabs navigation & Print Action row */}
       <div className="flex border-b border-[#bac4c6] items-center justify-between overflow-x-auto print:hidden">
@@ -604,7 +2255,7 @@ export default function TimetableManagement() {
                   : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
               }`}
             >
-              <Sparkles className="w-4 h-4 text-[#faae57]" />
+              <Clock className="w-4 h-4 text-[#faae57]" />
               Period Suggestions
               {isAdmin && suggestions.filter(s => s.status === 'pending').length > 0 && (
                 <span className="ml-1 px-1.5 py-0.5 bg-[#faae57] text-[#1f2a2e] font-bold text-[10px] rounded-full">
@@ -1120,7 +2771,7 @@ export default function TimetableManagement() {
             <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-1 text-center md:text-left">
                 <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center justify-center md:justify-start gap-2">
-                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                  <Clock className="w-5 h-5 text-[#1c4a59]" />
                   Lesson Period Suggestions
                 </h4>
                 <p className="text-xs text-slate-500 font-semibold max-w-[550px]">
@@ -1137,7 +2788,7 @@ export default function TimetableManagement() {
                     resetForm();
                     setIsFormOpen(true);
                   }}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-md shadow-indigo-600/10 shrink-0 uppercase tracking-wider"
+                  className="px-4 py-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md shrink-0 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   Suggest New Period
@@ -1147,7 +2798,7 @@ export default function TimetableManagement() {
 
             {suggestions.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center space-y-3 shadow-sm">
-                <Sparkles className="w-12 h-12 text-slate-300 mx-auto" />
+                <Clock className="w-12 h-12 text-slate-300 mx-auto" />
                 <h5 className="font-black text-slate-800 text-sm uppercase">No Suggestions Logged</h5>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
                   {isAdmin ? "No teacher has submitted any lesson block suggestions yet." : "You haven't submitted any slot suggestions yet. Click the button above to suggest one!"}
@@ -1403,13 +3054,18 @@ export default function TimetableManagement() {
                 {/* Class and Subject */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                      Target Class
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <span>Target Class</span>
+                      {formClass && (
+                        <span className="text-[9px] font-bold text-[#1c4a59] bg-[#1c4a59]/10 px-1.5 py-0.5 rounded normal-case tracking-normal">
+                          1. Active
+                        </span>
+                      )}
                     </label>
                     <select
                       value={formClass}
-                      onChange={(e) => setFormClass(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800 bg-white"
+                      onChange={(e) => handleFormClassChange(e.target.value)}
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
                       required
                     >
                       <option value="" disabled>Select Class</option>
@@ -1420,40 +3076,160 @@ export default function TimetableManagement() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                      Subject
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <span>Subject</span>
+                      {formClass && (
+                        <span className="text-[9px] font-bold text-[#1c4a59] bg-[#e1c594]/40 px-1.5 py-0.5 rounded normal-case tracking-normal truncate max-w-[110px]">
+                          For {formClass} ({formSubjectGroups.matched.length})
+                        </span>
+                      )}
                     </label>
                     <select
                       value={formSubject}
-                      onChange={(e) => setFormSubject(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800 bg-white"
+                      onChange={(e) => handleFormSubjectChange(e.target.value)}
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
                       required
                     >
                       <option value="" disabled>Select Subject</option>
-                      {subjectsList.map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
+                      {formClass && formSubjectGroups.others.length > 0 ? (
+                        <>
+                          {formSubjectGroups.matched.length > 0 && (
+                            <optgroup label={`Subjects for ${formClass}`}>
+                              {formSubjectGroups.matched.map(s => (
+                                <option key={`match-subj-${s}`} value={s}>{s}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <optgroup label="All Other School Subjects">
+                            {formSubjectGroups.others.map(s => (
+                              <option key={`other-subj-${s}`} value={s}>{s}</option>
+                            ))}
+                          </optgroup>
+                        </>
+                      ) : (
+                        subjectsList.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))
+                      )}
                     </select>
                   </div>
                 </div>
 
                 {/* Teacher input */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                    Assigned Teacher
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                    <span>Assigned Teacher</span>
+                    {(formClass || formSubject) && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${
+                        formTeacherGroups.exactMatch.length > 0
+                          ? 'text-[#1c4a59] bg-[#06d6a0]/20'
+                          : 'text-[#6a7f84] bg-[#f6f8f7]'
+                      }`}>
+                        {formTeacherGroups.exactMatch.length > 0
+                          ? `${formTeacherGroups.exactMatch.length} matched for ${formClass || 'Class'} • ${formSubject || 'Subject'}`
+                          : formTeacherGroups.subjectOrClassMatch.length > 0
+                          ? `${formTeacherGroups.subjectOrClassMatch.length} related teacher(s)`
+                          : 'Showing all teachers'}
+                      </span>
+                    )}
                   </label>
                   <select
                     value={formTeacher}
-                    onChange={(e) => setFormTeacher(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800 bg-white"
+                    onChange={(e) => handleFormTeacherChange(e.target.value)}
+                    className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
                     required
                   >
                     <option value="" disabled>Select Teacher</option>
-                    {teachersList.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
+                    {(formTeacherGroups.exactMatch.length > 0 || formTeacherGroups.subjectOrClassMatch.length > 0) &&
+                     (formTeacherGroups.others.length > 0 || (formTeacherGroups.exactMatch.length > 0 && formTeacherGroups.subjectOrClassMatch.length > 0)) ? (
+                      <>
+                        {formTeacherGroups.exactMatch.length > 0 && (
+                          <optgroup label={`Assigned to ${formClass || 'Selected Class'} • ${formSubject || 'Selected Subject'}`}>
+                            {formTeacherGroups.exactMatch.map(t => (
+                              <option key={`exact-t-${t}`} value={t}>{t} ★</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {formTeacherGroups.subjectOrClassMatch.length > 0 && (
+                          <optgroup label={`Matching ${formSubject || 'Subject'} or ${formClass || 'Class'} Teachers`}>
+                            {formTeacherGroups.subjectOrClassMatch.map(t => (
+                              <option key={`rel-t-${t}`} value={t}>{t}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {formTeacherGroups.others.length > 0 && (
+                          <optgroup label="All Other School Teachers">
+                            {formTeacherGroups.others.map(t => (
+                              <option key={`other-t-${t}`} value={t}>{t}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    ) : (
+                      teachersList.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))
+                    )}
                   </select>
                 </div>
+
+                {/* Quick Course Combos for Selected Class */}
+                {modalCourseQuickCombos.length > 0 && (
+                  <div className="space-y-1.5 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-[#1c4a59]">
+                        Quick Course Suggestions {formClass ? `for ${formClass}` : ''}
+                      </span>
+                      <span className="text-[11px] text-[#6a7f84]">
+                        Click to auto-fill Subject, Teacher & next free time
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {modalCourseQuickCombos.map(combo => {
+                        const isActiveCombo =
+                          formSubject.toLowerCase() === combo.subjectName.toLowerCase() &&
+                          formTeacher.toLowerCase() === combo.teacherName.toLowerCase();
+                        return (
+                          <button
+                            key={`${combo.classId}-${combo.subjectName}`}
+                            type="button"
+                            onClick={() => {
+                              setFormClass(combo.classId);
+                              setFormSubject(combo.subjectName);
+                              if (combo.teacherName) {
+                                setFormTeacher(combo.teacherName);
+                              }
+                              const freeWin = findNextConflictFreeWindow(
+                                combo.classId,
+                                combo.teacherName || formTeacher,
+                                formRoom || 'Room A',
+                                formDay,
+                                slots,
+                                editingSlotId
+                              );
+                              setFormDay(freeWin.day);
+                              setFormStartTime(freeWin.startTime);
+                              setFormEndTime(freeWin.endTime);
+                              setFormRoom(freeWin.room);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.97] border flex items-center gap-1.5 ${
+                              isActiveCombo
+                                ? 'bg-[#1c4a59] text-white border-[#1c4a59]'
+                                : 'bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border-[#bac4c6]'
+                            }`}
+                          >
+                            <span>{combo.subjectName}</span>
+                            {combo.teacherName && (
+                              <span className={`text-[10px] ${isActiveCombo ? 'text-white/80' : 'text-[#6a7f84]'}`}>
+                                · {combo.teacherName.split(' ')[0]}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Day selector */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1464,7 +3240,7 @@ export default function TimetableManagement() {
                     <select
                       value={formDay}
                       onChange={(e) => setFormDay(e.target.value as any)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800 bg-white"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white"
                     >
                       {WEEKDAYS.map(day => (
                         <option key={day} value={day}>{day}</option>
@@ -1482,7 +3258,7 @@ export default function TimetableManagement() {
                       value={formRoom}
                       onChange={(e) => setFormRoom(e.target.value)}
                       placeholder="e.g. Room A"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
                     />
                     <datalist id="rooms-autocomplete">
                       {roomsList.map(r => <option key={r} value={r} />)}
@@ -1490,32 +3266,86 @@ export default function TimetableManagement() {
                   </div>
                 </div>
 
+                {/* Quick Time Period Suggestions & Auto-Find Conflict-Free Slot */}
+                <div className="space-y-2 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-[#1c4a59] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#faae57]" />
+                      Quick Time Period Suggestions ({formDay})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleJumpToNextFreeSlot}
+                      className="px-2.5 py-1 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97]"
+                    >
+                      Auto-Pick Next Free Slot
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {modalTimePresetsWithStatus.map((preset) => (
+                      <button
+                        key={`${preset.startTime}-${preset.endTime}`}
+                        type="button"
+                        onClick={() => {
+                          setFormStartTime(preset.startTime);
+                          setFormEndTime(preset.endTime);
+                        }}
+                        title={preset.isFree ? `${preset.label}: Conflict-free on ${formDay}` : `Clash: ${preset.clashReason}`}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition-all cursor-pointer active:scale-[0.97] ${
+                          preset.isSelected
+                            ? 'bg-[#1c4a59] text-white border-[#1c4a59]'
+                            : preset.isFree
+                            ? 'bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border-[#bac4c6]'
+                            : 'bg-white/70 text-[#6a7f84] border-[#ef476f]/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-bold truncate">
+                            {preset.label}
+                          </span>
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              preset.isFree ? 'bg-[#06d6a0]' : 'bg-[#ef476f]'
+                            }`}
+                          />
+                        </div>
+                        <div className={`text-[11px] font-mono tabular-nums font-bold mt-0.5 ${
+                          preset.isSelected ? 'text-white' : 'text-[#1f2a2e]'
+                        }`}>
+                          {preset.startTime}-{preset.endTime}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Time picker */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                      <Clock className="w-3.5 h-3.5 text-[#1c4a59]" />
                       Start Time
                     </label>
                     <input
                       type="time"
                       value={formStartTime}
                       onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
                       required
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                      <Clock className="w-3.5 h-3.5 text-[#1c4a59]" />
                       End Time
                     </label>
                     <input
                       type="time"
                       value={formEndTime}
                       onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
                       required
                     />
                   </div>
@@ -1539,15 +3369,23 @@ export default function TimetableManagement() {
                   <button
                     type="button"
                     onClick={() => setIsFormOpen(false)}
-                    className="px-4 py-2 hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors"
+                    disabled={syncState === 'saving'}
+                    className="px-4 py-2 hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all shadow-md shadow-indigo-600/10"
+                    disabled={syncState === 'saving'}
+                    className="px-4 py-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl transition-all shadow-md disabled:opacity-50 cursor-pointer"
                   >
-                    {isTeacher ? 'Submit Suggestion' : (editingSlotId ? 'Update Block' : 'Add Slot')}
+                    {syncState === 'saving'
+                      ? 'Saving to Supabase…'
+                      : isTeacher
+                      ? 'Submit Suggestion'
+                      : editingSlotId
+                      ? 'Update Block'
+                      : 'Add Slot'}
                   </button>
                 </div>
               </form>
