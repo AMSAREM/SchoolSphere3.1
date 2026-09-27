@@ -64,6 +64,62 @@ export function createAuthenticatedSupabaseClient(accessToken?: string | null) {
   });
 }
 
+let cachedCreatorSession: { accessToken: string; expiresAt: number } | null = null;
+
+export async function getCreatorAuthenticatedClient() {
+  const now = Date.now();
+  if (cachedCreatorSession && cachedCreatorSession.expiresAt > now + 60_000) {
+    return createAuthenticatedSupabaseClient(cachedCreatorSession.accessToken);
+  }
+
+  const admin = getSupabaseAdmin();
+  try {
+    const creatorEmail = 'creator@schoolsphere.app';
+    let linkRes = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: creatorEmail,
+    });
+
+    if (linkRes.error || !linkRes.data?.properties?.hashed_token) {
+      await admin.auth.admin.createUser({
+        email: creatorEmail,
+        password: process.env.CREATOR_PASSWORD || 'july94bab',
+        email_confirm: true,
+        user_metadata: {
+          full_name: 'Platform Creator',
+          username: 'creator',
+          role: 'creator',
+          school_id: null,
+        },
+      });
+      linkRes = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: creatorEmail,
+      });
+    }
+
+    const hashedToken = linkRes.data?.properties?.hashed_token;
+    if (hashedToken) {
+      const tempClient = createAuthenticatedSupabaseClient();
+      const otpRes = await tempClient.auth.verifyOtp({
+        token_hash: hashedToken,
+        type: 'magiclink',
+      });
+      if (otpRes.data?.session?.access_token) {
+        cachedCreatorSession = {
+          accessToken: otpRes.data.session.access_token,
+          expiresAt: now + ((otpRes.data.session.expires_in || 3600) * 1000),
+        };
+        return createAuthenticatedSupabaseClient(cachedCreatorSession.accessToken);
+      }
+    }
+  } catch (err: any) {
+    console.warn('Notice obtaining creator RLS session:', err?.message);
+  }
+
+  return admin;
+}
+
 export async function getOrCreateSchoolBySlugOrName(schoolName: string, licenseKey?: string) {
   const cleanName = (schoolName || '').trim();
   const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'default-school';

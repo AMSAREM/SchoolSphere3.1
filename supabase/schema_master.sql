@@ -980,3 +980,62 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.set_school_tenant_status TO anon, authenticated, service_role;
 
+-- ==============================================================================
+-- 19. SUPABASE AUTH <-> PUBLIC.USERS AUTO-LINKING & RLS ALIASES
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_my_school_id()
+RETURNS UUID AS $$
+BEGIN
+  RETURN public.get_auth_school_id();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION public.is_creator()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN public.is_super_admin();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_school_id UUID;
+  v_role TEXT;
+  v_username TEXT;
+  v_full_name TEXT;
+BEGIN
+  BEGIN
+    v_school_id := NULLIF(NEW.raw_user_meta_data ->> 'school_id', '')::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_school_id := NULL;
+  END;
+
+  v_role := COALESCE(NULLIF(LOWER(NEW.raw_user_meta_data ->> 'role'), ''), 'admin');
+  v_username := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'username', ''), SPLIT_PART(NEW.email, '@', 1));
+  v_full_name := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'full_name', ''), v_username);
+
+  -- Link existing public.users record if matched by email or (school_id, username)
+  UPDATE public.users
+  SET auth_user_id = NEW.id,
+      updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE auth_user_id IS NULL
+    AND (
+      LOWER(email) = LOWER(NEW.email)
+      OR (v_school_id IS NOT NULL AND school_id = v_school_id AND LOWER(username) = LOWER(v_username))
+    );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+

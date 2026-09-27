@@ -275,6 +275,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const email = session.user.email?.toLowerCase();
         if (!email) return;
 
+        // If handleLogin already established a verified server session for this user, preserve the server JWT and school context
+        const existingStoredUserRaw = localStorage.getItem('esepa_user');
+        const existingStoredToken = localStorage.getItem('esepa_auth_token');
+        if (existingStoredUserRaw && existingStoredToken) {
+          try {
+            const parsedExisting = JSON.parse(existingStoredUserRaw);
+            if (
+              parsedExisting &&
+              (parsedExisting.auth_user_id === session.user.id ||
+                String(parsedExisting.email || '').toLowerCase() === email ||
+                parsedExisting.school_id)
+            ) {
+              if (!parsedExisting.auth_user_id && session.user.id) {
+                const enriched = { ...parsedExisting, auth_user_id: session.user.id };
+                setUser(enriched);
+                localStorage.setItem('esepa_user', JSON.stringify(enriched));
+              }
+              if (session.access_token) {
+                localStorage.setItem('esepa_supabase_access_token', session.access_token);
+              }
+              return;
+            }
+          } catch {}
+        }
+
         try {
           // Fetch or resolve user profile in Supabase
           const { data: dbUser } = await supabase
@@ -283,22 +308,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .or(`auth_user_id.eq.${session.user.id},email.ilike.${email}`)
             .maybeSingle();
 
+          const resolvedSchoolId = dbUser?.school_id || session.user.user_metadata?.school_id || session.user.user_metadata?.organization_id;
+
           const authUserObj: User = {
             id: dbUser?.id || Date.now(),
-            username: dbUser?.username || email.split('@')[0],
+            auth_user_id: session.user.id,
+            username: dbUser?.username || session.user.user_metadata?.username || email.split('@')[0],
             fullName: dbUser?.full_name || session.user.user_metadata?.full_name || email.split('@')[0],
             email: email,
-            role: dbUser?.role || 'admin',
+            role: dbUser?.role || session.user.user_metadata?.role || 'admin',
             status: dbUser?.status || 'active',
-            schoolId: dbUser?.school_id,
-            school_id: dbUser?.school_id,
+            schoolId: resolvedSchoolId,
+            school_id: resolvedSchoolId,
             createdAt: Date.now(),
             lastLogin: Date.now()
           };
 
           if (session.access_token) {
-            setToken(session.access_token);
-            localStorage.setItem('esepa_auth_token', session.access_token);
+            localStorage.setItem('esepa_supabase_access_token', session.access_token);
+            if (!existingStoredToken) {
+              setToken(session.access_token);
+              localStorage.setItem('esepa_auth_token', session.access_token);
+            }
           }
 
           setUser(authUserObj);
@@ -306,8 +337,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (dbUser?.schools) {
             await setSchoolContext(dbUser.schools);
-          } else if (dbUser?.school_id) {
-            const { data: sch } = await supabase.from('schools').select('*').eq('id', dbUser.school_id).maybeSingle();
+          } else if (resolvedSchoolId) {
+            const { data: sch } = await supabase.from('schools').select('*').eq('id', resolvedSchoolId).maybeSingle();
             if (sch) {
               await setSchoolContext(sch);
             }
@@ -342,8 +373,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         if (res.ok && data.success && data.user) {
           const verifiedSchoolId = data.school?.id || data.user.schoolId || data.user.school_id;
+          const verifiedAuthUid = data.user.auth_user_id || data.user.authUserId || data.supabaseSession?.user?.id || undefined;
           const verifiedUser: User = {
             id: data.user.id,
+            auth_user_id: verifiedAuthUid,
             username: data.user.username || cleanUser,
             passwordHash: '',
             password_hash: '',
@@ -366,6 +399,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (data.refreshToken) {
             setRefreshToken(data.refreshToken);
             localStorage.setItem('esepa_refresh_token', data.refreshToken);
+          }
+
+          // Update Context and local storage session before setting Supabase session so onAuthStateChange sees verified state
+          setUser(verifiedUser);
+          localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
+
+          // Hydrate browser Supabase client with RLS session token when returned by backend
+          if (data.supabaseSession?.access_token && data.supabaseSession?.refresh_token) {
+            localStorage.setItem('esepa_supabase_access_token', data.supabaseSession.access_token);
+            supabase.auth.setSession({
+              access_token: data.supabaseSession.access_token,
+              refresh_token: data.supabaseSession.refresh_token
+            }).catch(() => {});
+          } else if (data.supabaseAccessToken) {
+            localStorage.setItem('esepa_supabase_access_token', data.supabaseAccessToken);
           }
 
           // Cache verified tenant user locally in Dexie scoped by school_id (never cache platform creator/super_admin in client user store)
@@ -394,9 +442,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('esepa_active_school_id', String(verifiedSchoolId));
           }
 
-          // Update Context and local storage session
-          setUser(verifiedUser);
-          localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
           return { success: true, user: verifiedUser, token: data.token, refreshToken: data.refreshToken, school: data.school };
         } else if (data.error) {
           return { success: false, error: data.error };
@@ -415,18 +460,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const cleanEmail = email.trim().toLowerCase().includes('@') ? normalizeEmail(email) : email.trim().toLowerCase();
 
-    // 1. Authoritative backend multi-tenant sign-in first (issues server JWT + resolves school & license credentials)
+    // 1. Authoritative backend multi-tenant sign-in first (issues server JWT + Supabase RLS session + resolves school & license credentials)
     const result = await handleLogin(cleanEmail, passwordCandidate);
     if (result.success && result.user) {
-      // Optionally synchronize Supabase client session in the background if email/password exists in Supabase Auth
-      if (cleanEmail.includes('@')) {
-        supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: passwordCandidate
-        }).catch(() => {});
-      }
       recordUserLogin({
-        auth_user_id: String(result.user.id),
+        auth_user_id: String(result.user.auth_user_id || result.user.id),
         organization_id: result.user.school_id,
         email: result.user.email || cleanEmail,
         status: 'success_api_login'
@@ -623,7 +661,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('esepa_user');
     localStorage.removeItem('esepa_auth_token');
     localStorage.removeItem('esepa_refresh_token');
+    localStorage.removeItem('esepa_supabase_access_token');
     localStorage.removeItem('esepa_active_school_id');
+    supabase.auth.signOut().catch(() => {});
     clearTenantLocalDatabase().catch(() => {});
   };
 

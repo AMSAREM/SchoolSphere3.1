@@ -1,77 +1,145 @@
-# Fix Cloud Run Container Startup & Port 3000 Health Check Timeout
+# Multi-Tenant Supabase Authentication, Joyce Admin Access & Row Level Security (RLS)
 
-Resolve the Cloud Run deployment failure (`The user-provided container failed to start and listen on the port defined provided by the PORT=3000 environment variable within the allocated timeout`) so the production server starts and binds to `0.0.0.0:3000` immediately.
+Unify authentication across the entire platform so every user is backed by a verified Supabase Auth identity (`auth_user_id`) with an active RLS-scoped session token, and repair the **JOYCE** school administrator account so the admin can sign in immediately and access their tenant portal.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Root Causes Identified in Production Startup (`NODE_ENV=production`)**:
-> 1. **Top-Level Vite Import & Direct `node server.ts` Execution**: `server.ts` imports `vite` at the top level (`import { createServer as createViteServer } from "vite"`) even in production, and uses extensionless/mismatched relative imports (`./lib/multiTenantAuth.js`, `./lib/supabase/server`, `./lib/auth`, `./lib/auditLogger`, `./lib/twoFactorAuth`) plus TypeScript `enum` declarations that fail when `node server.ts` runs directly in production Node.js without a TypeScript loader.
-> 2. **Blocking `await initDatabase()` Before `app.listen`**: `doStartServer()` awaits a live remote network round-trip to Supabase (`initDatabase()`) before registering routes and calling `app.listen(PORT, "0.0.0.0")`, delaying port binding during Cloud Run cold starts.
-> 3. **Stale `Dockerfile` & Build Script Overhead**: `Dockerfile` references deleted JSON fallback files (`school_db_fallback.json`, `generated_licenses.json`, `license_status.json`, `sync_logs.json`) and omits `server.ts` and `lib/` in the runner stage, while `npm run build` runs the full Vitest suite before `vite build`.
+> The following architectural decisions have been confirmed based on your preferences and will govern the implementation:
 
-- **Immediate Port Binding (`0.0.0.0:${PORT}`)**: Bind to `Number(process.env.PORT) || 3000` immediately after registering Express routes and run the initial Supabase connectivity check asynchronously with a strict timeout so Cloud Run TCP/HTTP startup probes succeed in milliseconds.
-- **Native `node server.ts` & `tsx` Production Compatibility**: Dynamically import `vite` only in development mode, align relative imports and enum constants for native Node TypeScript execution, include `tsx` in production dependencies, and update `Dockerfile` and `package.json` for fast, deterministic builds.
+- **Confirmed Decision 1 — Joyce Administrator Access & Credentials**: The **JOYCE** school administrator (`admin@joyce`, `admin@joyce.edu.gh`, `admin@joyce.com`, or `admin` scoped to Joyce) will be authenticated in Supabase Auth and `public.users` and will accept both the official school license key (`ESEPA-JOYC-STA-OW7FHO`) and `admin123` (while cleaning up conflicting test license overrides).
+- **Confirmed Decision 2 — Universal Supabase Auth Provisioning (`auth_user_id`)**: Every existing and newly created user across all schools (`admin`, `headteacher`, `teacher`, `accountant`, `student`, `creator`) will be automatically provisioned and linked to a real Supabase Auth account (`auth.users` $\leftrightarrow$ `public.users.auth_user_id`) during startup reconciliation, user creation, and login.
+- **Confirmed Decision 3 — Row Level Security (RLS) Tenant Isolation**: All database operations will enforce `school_id` tenant isolation for school-scoped roles (`admin`, `headteacher`, `teacher`, `accountant`, `student`) while granting global cross-tenant oversight to `creator` and `super_admin` accounts.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Ensures the full-stack Express + React SPA container builds cleanly and listens on `0.0.0.0:3000` (`process.env.PORT`) within milliseconds of container launch on Google Cloud Run.
-- **Target Audience / Persona**: Institutional administrators, staff, parents, and students accessing the deployed SchoolSphere 3.1 production URL.
-- **Key Value**: Eliminates Cloud Run cold-start timeouts, broken Docker layer copies, and module resolution crashes when running `npm start` (`node server.ts`) in production.
+- **What It Does**:
+  - Repairs and authenticates the **JOYCE** school administrator account so signing in with `admin@joyce`, `admin@joyce.edu.gh`, `admin@joyce.com`, or `admin` (with school `JOYCE` selected) succeeds immediately using `ESEPA-JOYC-STA-OW7FHO` or `admin123`.
+  - Ensures all multi-license lookups check the school's canonical linked license (`schools.license_id`) and all active school licenses rather than failing when a secondary test license record exists.
+  - Automatically links every user in `public.users` to a real Supabase Auth record (`auth_user_id`) and issues an authenticated session token (`supabaseAccessToken` + signed JWT with `sub: auth_user_id`, `school_id`, and `role`) on every login.
+  - Enforces strict Row Level Security (RLS) across all tenant tables and backend queries so users only read and write records belonging to their authenticated `school_id` (with global access for Platform Creators).
+- **Target Audience / Persona**:
+  - **Joyce School Administrator**: Needs immediate, reliable sign-in access to manage students, teachers, classes, attendance, fees, and academic records for the JOYCE campus.
+  - **School Staff & Students**: Teachers, headteachers, accountants, and students signing in to their respective school portals with strict tenant isolation.
+  - **Platform Creator / Super Admin**: Manages institutional licenses, school onboarding, and cross-tenant health.
+- **Key Value**: Eliminates unlinked or unauthenticated tenant admin accounts, guarantees every user has a real Supabase Auth identity (`auth_user_id`), and enforces end-to-end multi-tenant data isolation.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Cloud Run Container Boot**: Container starts via `npm start`, registers all `/api/*` and static SPA routes immediately, binds to `0.0.0.0:3000`, and passes Cloud Run startup and liveness checks (`/api/health` and `/`).
-  2. **Background Database Warmup**: Supabase connectivity status initializes asynchronously without delaying HTTP port binding.
-  3. **Zero UI Changes to Application Modules**: Existing SchoolSphere 3.1 screens (Timetable, Attendance, Students, Fees, Results, etc.) preserve their exact `#f6f8f7` / `#1c4a59` / `#faae57` light-theme interface and behavior.
+  1. **Joyce Admin Sign-In Flow**:
+     - The administrator opens the login portal and enters `admin@joyce` (or `admin@joyce.edu.gh`, `admin@joyce.com`, or `admin` with school `JOYCE`) and password `ESEPA-JOYC-STA-OW7FHO` or `admin123`.
+     - The authentication engine verifies the credential against Joyce's canonical license and user record, ensures the Supabase Auth identity (`auth_user_id`) is active and synchronized, establishes an RLS-authenticated Supabase session on both client and server, and routes directly into the **JOYCE** dashboard.
+  2. **Universal User Provisioning & Sign-In Flow**:
+     - When a School Admin creates a staff or student user in User Management, or when any existing user signs in, the backend ensures a matching `auth.users` account exists, writes `auth_user_id` into `public.users`, and returns a valid Supabase Auth session token alongside the application session.
+  3. **Authenticated RLS Data Access Flow**:
+     - All API requests and client Supabase calls include the user's authenticated token and verified `school_id` claim. Non-creator users cannot read or mutate records from other schools even if a different `school_id` query parameter or header is supplied.
 - **Visual Identity & Theme**:
-  - Preserves the SchoolSphere 3.1 brand palette (`#f6f8f7` base background, `#1c4a59` deep teal primary surface, `#faae57` amber CTA, `#06d6a0` functional emerald, `#ef476f` functional coral, `#1f2a2e` ink text) and typography (`Inter` + `JetBrains Mono` with `tabular-nums`).
+  - *Aesthetic Direction*: High-density enterprise SaaS dashboard with clean single-elevation surfaces (`border border-slate-200`), crisp typographic hierarchy, and zero decorative clutter.
+  - *Color Palette & Mood*:
+    - Dominant Neutral Canvas (`60%`): Cool alabaster (`#F8FAFC`) and pure white (`#FFFFFF`) structural surfaces.
+    - Structural Surfaces (`30%`): Deep slate sidebar (`#0F172A`), subtle hairline dividers (`#E2E8F0`), and muted slate metadata (`#64748B`).
+    - Accent & Semantic Budget (`10%`): Institutional Indigo (`#4F46E5`) for primary actions, Emerald (`#16A34A`) for verified/authenticated status, Amber (`#D97706`) for pending states, and Crimson (`#DC2626`) for authentication or permission alerts.
+  - *Typography & Hierarchy*:
+    - Display & Navigation: `Plus Jakarta Sans` / `Cabinet Grotesk` with balanced headline wrapping.
+    - Body & Controls: Single-line controls (`whitespace-nowrap`) with clean unboxed metadata separated by middle dots (`·`).
+    - Tabular Data: Monospace tabular numerals (`font-mono tabular-nums`) for user IDs, license serial keys, and timestamps.
+- **Interactive Feedback & Motion**:
+  - Immediate ($\le 150\text{ms}$) validation feedback on login and user creation forms, clear status indicators showing whether each user account in User Management has a linked Supabase Auth identity, and smooth transition into the tenant-scoped dashboard upon login.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Dynamic Vite Import & Native Node.js TypeScript Compatibility**
-  - *Chosen Approach*: Load `vite` dynamically via `await import("vite")` only when `process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test"`, ensure all server-side relative imports resolve cleanly in both `node` and `tsx`, convert TypeScript `enum` declarations in ` auditLogger` to `as const` objects (supported natively by Node's TypeScript strip-types), and keep `tsx` available in `dependencies`.
-  - *Why*: Cloud Run executes `"start": "node server.ts"`. Eliminating top-level dev bundler imports and strip-types incompatibilities guarantees instant startup across Node 20 and Node 22 environments.
-- **Decision 2: Non-Blocking Database Initialization & Explicit `process.env.PORT`**
-  - *Chosen Approach*: Use `const PORT = Number(process.env.PORT) || 3000;`, register all Express routes synchronously inside `doStartServer()`, bind `app.listen(PORT, "0.0.0.0")` immediately, and run `initDatabase()` with a 3-second AbortController/timeout without blocking port binding in production.
-  - *Why*: Cloud Run terminates containers that do not open the `PORT` socket quickly. Separating socket binding from remote database warmup prevents network latency from causing deployment failures.
-- **Decision 3: Clean `Dockerfile` & Fast `npm run build`**
-  - *Chosen Approach*: Remove deleted `.json` fallback file `COPY` instructions from `Dockerfile`, copy `server.ts`, `lib/`, and `src/lib/` into the production runner stage, and set `"build": "vite build"` in `package.json` (keeping `"test": "vitest run --passWithNoTests"` as a dedicated script).
-  - *Why*: Prevents Docker build failures on missing JSON files and avoids running integration test suites during container image builds.
+- **Decision 1: Automatic Supabase Auth (`auth.users`) Backfill & Sync on Login and Provisioning**
+  - *Chosen Approach*: Whenever the server boots, provisions a license/user, or processes a login for a user whose `auth_user_id` is missing or out of sync, automatically create or locate the corresponding Supabase Auth user (`auth.admin.createUser` / `signInWithPassword` / `updateUserById`) and persist `auth_user_id` into `public.users`.
+  - *Why*: Guarantees zero downtime for existing accounts like Joyce's Admin (`id: 163`) while ensuring every user in `public.users` is a first-class Supabase Auth user capable of satisfying `auth.uid()` RLS policies.
+  - *Alternatives Considered*: Requiring manual password resets or deleting and recreating existing users was rejected because it would disrupt active school data and require manual intervention.
+- **Decision 2: Canonical License Resolution for Multi-Row School Licenses**
+  - *Chosen Approach*: Update school license resolution during login and verification to check the school's linked `schools.license_id` and all active license keys associated with the school (`ESEPA-JOYC-STA-OW7FHO`), rather than only inspecting the single most recently modified row. Also clean up synthetic `'TEST'` license overrides on the `JOYCE` tenant.
+  - *Why*: Prevents test artifacts from shadowing a school's real issued license key (`ESEPA-JOYC-STA-OW7FHO`) during administrator authentication.
+  - *Alternatives Considered*: Relying solely on `ORDER BY updated_at DESC LIMIT 1` was rejected because any secondary row blocks the primary license key.
+- **Decision 3: Dual-Layer RLS Enforcement (Database Policies + Authenticated Request Guard)**
+  - *Chosen Approach*: Enforce tenant isolation at both the Supabase client/database policy layer (using the user's Supabase Auth JWT and `school_id` metadata) and the Express API middleware layer (strictly binding non-creator requests to `req.user.school_id` and requiring authentication across tenant data endpoints).
+  - *Why*: Provides defense-in-depth so tenant isolation holds regardless of whether queries execute via the frontend Supabase client or backend API routes.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Architecture & Startup Lifecycle Diagram
+- **Architecture & Component Diagram**:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Cloud Run Container Startup (PORT=3000)              │
-│                                                                         │
-│  npm start ("node server.ts")                                           │
-│       │                                                                 │
-│       ├──► 1. Register Express Middleware & /api/* Routes (Synchronous) │
-│       │                                                                 │
-│       ├──► 2. Mount Static SPA Assets from dist/ (NODE_ENV=production)  │
-│       │       (Dynamic import("vite") skipped in production)            │
-│       │                                                                 │
-│       ├──► 3. Bind app.listen(Number(process.env.PORT) || 3000,         │
-│       │       "0.0.0.0") ──► Cloud Run TCP/HTTP Probe Succeeds (<200ms) │
-│       │                                                                 │
-│       └──► 4. Async initDatabase() Warmup (Non-blocking in production)  │
-│               └──► Connects to Supabase PostgreSQL                      │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        FRONTEND CLIENT (React + Vite)                        │
+│                                                                              │
+│  ┌─────────────────────────┐    ┌─────────────────────────────────────────┐  │
+│  │  Login & Auth Context   │───▶│  Supabase Client (RLS Session Sync)     │  │
+│  │  - Handle / Email Login │    │  - supabase.auth.setSession()           │  │
+│  │  - School Scope Hints   │    │  - Bearer Token + x-school-id Headers   │  │
+│  └────────────┬────────────┘    └────────────────────┬────────────────────┘  │
+└───────────────┼──────────────────────────────────────┼───────────────────────┘
+                │ POST /api/auth/login                 │ Authenticated API /
+                │ (admin@joyce, ESEPA-JOYC-STA-OW7FHO) │ Direct Supabase RLS
+                ▼                                      ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     BACKEND AUTH & RLS ENGINE (Express)                      │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Universal Auth & Joyce Admin Reconciler                             │  │
+│  │    - Resolves JOYCE school (a0a24be2-cf17-4de7-a6a4-2739e250f955)      │  │
+│  │    - Validates canonical license (ESEPA-JOYC-STA-OW7FHO) & admin123    │  │
+│  │    - Auto-links auth.users <-> public.users.auth_user_id               │  │
+│  └───────────────────────────────────┬────────────────────────────────────┘  │
+│                                      ▼                                       │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ 2. Tenant RLS Request Guard (authenticateToken & resolveTenantScope)   │  │
+│  │    - Verifies JWT & Supabase Auth identity (auth_user_id)              │  │
+│  │    - Enforces school_id = req.user.school_id for all non-creator roles │  │
+│  │    - Allows global tenant switching only for creator / super_admin     │  │
+│  └───────────────────────────────────┬────────────────────────────────────┘  │
+└──────────────────────────────────────┼───────────────────────────────────────┘
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        SUPABASE POSTGRESQL + AUTH + RLS                      │
+│                                                                              │
+│  ┌──────────────────────┐   1:1 link    ┌─────────────────────────────────┐  │
+│  │     auth.users       │◀─────────────▶│          public.users           │  │
+│  │ - id (UUID)          │               │ - id, username, email, role     │  │
+│  │ - email              │               │ - auth_user_id (UUID NOT NULL)  │  │
+│  │ - user_metadata:     │               │ - school_id (UUID)              │  │
+│  │   {school_id, role}  │               └────────────────┬────────────────┘  │
+│  └──────────────────────┘                                │                   │
+│                                                          ▼                   │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ RLS Policies on Tenant Tables (schools, users, students, classes,      │  │
+│  │ attendance, results, term_reports, fee_payments, teachers, etc.)       │  │
+│  │ - SELECT/INSERT/UPDATE/DELETE: school_id = get_my_school_id()          │  │
+│  │   OR get_my_role() IN ('creator', 'super_admin')                       │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Interactive Component & State Mapping
-- **Startup Probe & Health Check (`/api/health` & `/healthz`)**: Responds immediately once Express is listening on `0.0.0.0:3000` so Cloud Run marks the revision healthy and routes traffic.
-- **Production JWT Fallback Safety**: If `JWT_SECRET` or `SUPABASE_JWT_SECRET` is not explicitly injected in Cloud Run environment variables, derives a deterministic production signing secret fallback with a warning instead of crashing request handlers with an unhandled exception, while preserving unit test expectations when tested explicitly.
-- **Static SPA Fallback (`dist/index.html`)**: Serves compiled Vite assets from `dist/` with proper cache headers and SPA fallback routing.
+- **Data Model & State**:
+  - **Joyce Tenant Record (`public.schools`)**: `id = 'a0a24be2-cf17-4de7-a6a4-2739e250f955'`, `name = 'JOYCE'`, `slug = 'joyce'`, `license_id = 23`, `status = 'active'`.
+  - **Joyce Canonical License (`public.school_licenses`)**: `id = 23`, `license_key = 'ESEPA-JOYC-STA-OW7FHO'`, `school_id = 'a0a24be2-cf17-4de7-a6a4-2739e250f955'`, `active_status = 'active'`.
+  - **Joyce Admin Record (`public.users` & `auth.users`)**:
+    - Linked to `school_id = 'a0a24be2-cf17-4de7-a6a4-2739e250f955'`, `role = 'admin'`, `status = 'active'`.
+    - Authenticated with a valid `auth_user_id` in Supabase Auth (`auth.users`) with `user_metadata: { school_id: 'a0a24be2-cf17-4de7-a6a4-2739e250f955', role: 'admin', full_name: 'Joyce Head Administrator' }`.
+    - Accepts both `ESEPA-JOYC-STA-OW7FHO` and `admin123` across login handles `admin`, `admin@joyce`, `admin@joyce.edu.gh`, and `admin@joyce.com`.
+- **Interactive Component & State Mapping**:
+  - **Startup & On-Demand Auth Reconciler**:
+    - Scans `public.users` (including Joyce's admin `id: 163` and any other unlinked users) and ensures each user has a valid `auth.users` account and non-null `auth_user_id` in `public.users`.
+    - Repairs Joyce's admin password hash and canonical license binding so `ESEPA-JOYC-STA-OW7FHO` and `admin123` both authenticate cleanly.
+  - **Login Handler & Session Token Issuance**:
+    - Checks all active licenses for a school (including `schools.license_id`) so a valid license key always authenticates the school's admin.
+    - When a user logs in, ensures their `auth_user_id` is populated in `public.users`, signs or retrieves a real Supabase Auth session (`access_token` & `refresh_token`) alongside the application JWT (`sub = auth_user_id`), and returns both to the client.
+  - **Client Auth Context & Supabase Session Hydration**:
+    - Hydrates the browser Supabase client with the returned Supabase Auth session (`supabase.auth.setSession`) on login and session restore so direct client-side Supabase queries carry the authenticated user's RLS JWT.
+  - **Strict Tenant RLS Enforcement**:
+    - Updates backend tenant scope resolution so every authenticated non-creator user is strictly locked to their token's `school_id` (preventing cross-tenant spoofing via query parameters or headers) and ensures all protected API routes verify authentication and `auth_user_id`.
+    - Synchronizes Supabase RLS policies and helper functions (`get_my_school_id()`, `get_my_role()`) so both `auth.jwt() -> 'user_metadata' ->> 'school_id'` and `public.users.auth_user_id = auth.uid()` resolve accurately for every authenticated user.

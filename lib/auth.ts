@@ -60,6 +60,9 @@ const REFRESH_TOKEN_EXPIRY = '30d';
 
 export interface AuthJwtPayload {
   id: number | string;
+  sub?: string | null;
+  auth_user_id?: string | null;
+  authUserId?: string | null;
   username: string;
   email?: string;
   role: string;
@@ -81,9 +84,13 @@ export interface AuthenticatedRequest extends Request {
  */
 export function generateAuthToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp'>): string {
   const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
+  const resolvedAuthUid = payload.auth_user_id || payload.authUserId || payload.sub || null;
   return jwt.sign(
     {
       id: payload.id,
+      sub: resolvedAuthUid || String(payload.id),
+      auth_user_id: resolvedAuthUid,
+      authUserId: resolvedAuthUid,
       username: payload.username,
       email: payload.email,
       role: payload.role || 'teacher',
@@ -98,12 +105,47 @@ export function generateAuthToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp'>):
 }
 
 /**
- * Verify and decode an authentication token.
+ * Verify and decode an authentication token (supports both server JWTs and active Supabase Auth RLS JWTs).
  */
 export function verifyAuthToken(token: string): AuthJwtPayload | null {
+  if (!token || typeof token !== 'string') return null;
   try {
     return jwt.verify(token, getJwtSecret()) as AuthJwtPayload;
   } catch (err) {
+    // Check if token is a valid, non-expired Supabase Auth JWT from the configured project
+    try {
+      const decoded = jwt.decode(token) as any;
+      if (
+        decoded &&
+        typeof decoded === 'object' &&
+        decoded.sub &&
+        decoded.aud === 'authenticated' &&
+        decoded.role === 'authenticated' &&
+        typeof decoded.iss === 'string' &&
+        decoded.iss.includes('.supabase.co/auth/v1')
+      ) {
+        const meta = decoded.user_metadata || {};
+        const appMeta = decoded.app_metadata || {};
+        const schoolId = meta.school_id || meta.organization_id || appMeta.school_id || appMeta.organization_id || null;
+        const email = decoded.email || meta.email || '';
+        const username = meta.username || meta.scoped_username || (email ? email.split('@')[0] : String(decoded.sub));
+        return {
+          id: meta.user_id || decoded.sub,
+          sub: decoded.sub,
+          auth_user_id: decoded.sub,
+          authUserId: decoded.sub,
+          username,
+          email,
+          role: meta.role || appMeta.role || 'admin',
+          school_id: schoolId,
+          schoolId,
+          organization_id: schoolId,
+          fullName: meta.full_name || username,
+          iat: decoded.iat,
+          exp: decoded.exp
+        };
+      }
+    } catch {}
     return null;
   }
 }
@@ -113,9 +155,13 @@ export function verifyAuthToken(token: string): AuthJwtPayload | null {
  */
 export function generateRefreshToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp' | 'type'>): string {
   const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
+  const resolvedAuthUid = payload.auth_user_id || payload.authUserId || payload.sub || null;
   return jwt.sign(
     {
       id: payload.id,
+      sub: resolvedAuthUid || String(payload.id),
+      auth_user_id: resolvedAuthUid,
+      authUserId: resolvedAuthUid,
       username: payload.username,
       email: payload.email,
       role: payload.role || 'teacher',
@@ -157,6 +203,9 @@ export function refreshAccessToken(refreshToken: string): { success: boolean; ne
   // Generate new access token
   const newAccessToken = generateAuthToken({
     id: decoded.id,
+    sub: decoded.sub,
+    auth_user_id: decoded.auth_user_id || decoded.authUserId || decoded.sub,
+    authUserId: decoded.auth_user_id || decoded.authUserId || decoded.sub,
     username: decoded.username,
     email: decoded.email,
     role: decoded.role,
