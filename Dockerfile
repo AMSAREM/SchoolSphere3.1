@@ -1,5 +1,5 @@
 # Stage 1: Build stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Set working directory inside container
 WORKDIR /app
@@ -13,33 +13,31 @@ RUN npm ci
 # Copy the entire workspace to build the application
 COPY . .
 
-# Run the build process (produces dist/ folder containing built SPA and server.cjs)
+# Run the build process (produces dist/ folder containing built SPA)
 RUN npm run build
 
 # Stage 2: Runner stage
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 # Set working directory inside container
 WORKDIR /app
 
-# Set production environment
+# Set production environment and default port
 ENV NODE_ENV=production
+ENV PORT=3000
 
 # Copy dependency definition files
 COPY package.json package-lock.json ./
 
-# Install ONLY production dependencies since esbuild bundles server code but keeps node_modules external
-RUN npm ci --only=production
+# Install production dependencies
+RUN npm ci --omit=dev
 
-# Copy the compiled production outputs from the builder stage
+# Copy the compiled production SPA and server runtime files from the builder stage
 COPY --from=builder /app/dist ./dist
-
-# Copy specific configuration files and local JSON data storage files required at runtime
-COPY --from=builder /app/firebase-applet-config.json ./firebase-applet-config.json
-COPY --from=builder /app/school_db_fallback.json ./school_db_fallback.json
-COPY --from=builder /app/generated_licenses.json ./generated_licenses.json
-COPY --from=builder /app/license_status.json ./license_status.json
-COPY --from=builder /app/sync_logs.json ./sync_logs.json
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/lib ./lib
+COPY --from=builder /app/src/lib ./src/lib
+COPY --from=builder /app/public ./public
 COPY --from=builder /app/database.sql ./database.sql
 
 # Expose the application port

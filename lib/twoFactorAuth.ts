@@ -3,7 +3,7 @@
  * Provides TOTP-based 2FA for enhanced security, especially for admin accounts
  */
 
-import { getSupabaseAdmin } from './supabase/server';
+import { getSupabaseAdmin } from './supabase/server.ts';
 import crypto from 'crypto';
 
 // Note: otplib and qrcode need to be installed via npm for full 2FA functionality

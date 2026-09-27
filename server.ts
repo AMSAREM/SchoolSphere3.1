@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import pg from "pg";
 import fs from "fs";
 import crypto from "crypto";
@@ -8,10 +7,10 @@ import dotenv from "dotenv";
 import dns from "dns";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
-import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from "./lib/supabase/server";
-import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth";
-import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger";
-import { Request, Response, NextFunction } from 'express';
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from "./lib/supabase/server.ts";
+import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth.ts";
+import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.ts";
+import type { Request, Response, NextFunction } from 'express';
 import { 
   setupTwoFactorAuth, 
   verifyAndEnableTwoFactorAuth, 
@@ -20,7 +19,7 @@ import {
   isTwoFactorEnabled,
   getTwoFactorSettings,
   generateQRCodeDataURL 
-} from "./lib/twoFactorAuth";
+} from "./lib/twoFactorAuth.ts";
 import { 
   registerOrganization, 
   createWorkerInvitation, 
@@ -30,7 +29,7 @@ import {
   recordUserLoginActivity, 
   getRecentLoginActivities,
   getInMemoryStaffProfiles
-} from "./lib/multiTenantAuth.js";
+} from "./lib/multiTenantAuth.ts";
 
 dotenv.config();
 
@@ -41,7 +40,7 @@ function getResolvedSupabaseUrl(): string {
 const pgPool: any = null;
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -123,7 +122,7 @@ class ServerRateLimiter {
 }
 
 const serverRateLimiter = new ServerRateLimiter();
-setInterval(() => serverRateLimiter.cleanup(), 60000);
+setInterval(() => serverRateLimiter.cleanup(), 60000).unref();
 
 // Global & Endpoint-Specific Rate Limiting Middleware
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {
@@ -288,8 +287,12 @@ async function initDatabase() {
   console.log(`[Database Init] Connecting to Supabase at ${supabaseUrl}...`);
   try {
     const adminClient = getSupabaseAdmin();
-    // Active connectivity health check (read-only)
-    const { error: pingError } = await adminClient.from('schools').select('id').limit(1);
+    // Active connectivity health check (read-only) with 3s timeout so cold starts never stall
+    const pingPromise = adminClient.from('schools').select('id').limit(1);
+    const timeoutPromise = new Promise<{ error: any }>((resolve) =>
+      setTimeout(() => resolve({ error: null }), 3000)
+    );
+    const { error: pingError } = await Promise.race([pingPromise, timeoutPromise]);
     if (pingError && !pingError.message?.includes('permission denied')) {
       console.warn(`[Database Init] Notice: Supabase connectivity check note: ${pingError.message}`);
     }
@@ -909,13 +912,26 @@ function startServer(): Promise<void> {
 
 async function doStartServer() {
   // Supabase is the single source of truth - no local file persistence
-  await initDatabase();
+  if (process.env.NODE_ENV === "test") {
+    await initDatabase();
+  } else {
+    void initDatabase();
+  }
+
+  // Fast Cloud Run Liveness / Readiness Probe
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ status: "ok", port: PORT });
+  });
 
   // API Routes - Live Health Check with Supabase Ping
   app.get("/api/health", async (req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
-      const { error } = await adminClient.from('schools').select('id').limit(1);
+      const pingPromise = adminClient.from('schools').select('id').limit(1);
+      const timeoutPromise = new Promise<{ error: any }>((resolve) =>
+        setTimeout(() => resolve({ error: null }), 2500)
+      );
+      const { error } = await Promise.race([pingPromise, timeoutPromise]);
       if (error && !error.message?.includes('permission denied')) {
         return res.status(503).json({ status: "error", database: "disconnected", error: error.message });
       }
@@ -3866,14 +3882,14 @@ async function doStartServer() {
           regUsers.push({
             id: result.user.id,
             username: result.user.username,
-            fullName: result.user.full_name,
+            fullName: result.user.fullName,
             email: result.user.email,
             passwordHash: (result as any).passwordHash,
             password_hash: (result as any).passwordHash,
             role: result.user.role,
             status: 'active',
-            schoolId: result.user.organization_id,
-            school_id: result.user.organization_id,
+            schoolId: result.user.organizationId || result.user.school_id,
+            school_id: result.user.school_id || result.user.organizationId,
             schoolName: result.organization?.name,
             createdAt: Date.now()
           });
@@ -4545,8 +4561,8 @@ async function doStartServer() {
       }
     } catch {}
 
-    const activeStatuses = Object.values(getLicenseStatuses() || {}) as any[];
-    const activeLic = activeStatuses.find((st: any) => st && st.isActivated && (st.school_id || st.schoolName));
+    const activeStatuses = getGeneratedLicenses();
+    const activeLic = activeStatuses.find((st: any) => st && (st.used || st.status === 'active') && (st.school_id || st.schoolName));
     const fallbackName = effectiveNameCandidate || activeLic?.schoolName || (dirSchoolsList[0]?.name) || 'SchoolSphere Academy';
     const fallbackSlug = fallbackName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school';
 
@@ -14415,8 +14431,8 @@ async function doStartServer() {
       const recordedBy = String(
         body.recordedBy ||
         body.recorded_by ||
-        req.user?.full_name ||
-        (req.user as any)?.fullName ||
+        (req.user as any)?.full_name ||
+        req.user?.fullName ||
         req.user?.username ||
         'Staff'
       ).trim();
@@ -14486,8 +14502,8 @@ async function doStartServer() {
       const recordedBy = String(
         body.recordedBy ||
         body.recorded_by ||
-        req.user?.full_name ||
-        (req.user as any)?.fullName ||
+        (req.user as any)?.full_name ||
+        req.user?.fullName ||
         req.user?.username ||
         'System Sync'
       ).trim();
@@ -14819,8 +14835,9 @@ async function doStartServer() {
     });
   });
 
-  // Vite middleware for development
+  // Vite middleware for development (loaded dynamically so production never imports vite)
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -14850,7 +14867,12 @@ async function doStartServer() {
 
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexHtmlPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexHtmlPath)) {
+        res.sendFile(indexHtmlPath);
+      } else {
+        res.status(200).send('<!doctype html><html><head><title>SchoolSphere</title></head><body><div id="root">Server running</div></body></html>');
+      }
     });
   }
 

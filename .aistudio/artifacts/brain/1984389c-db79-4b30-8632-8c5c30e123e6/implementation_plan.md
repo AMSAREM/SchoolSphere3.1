@@ -1,102 +1,77 @@
-# Attendance Module — Live Supabase Synchronization & Full Status Support
+# Fix Cloud Run Container Startup & Port 3000 Health Check Timeout
 
-Connect the **Attendance** module directly to Supabase (`public.attendance`, `public.students`, and `public.classes`) so every attendance entry, status update, bulk action, and note is persisted to and loaded from Supabase in real time, without modifying any other module.
-
----
+Resolve the Cloud Run deployment failure (`The user-provided container failed to start and listen on the port defined provided by the PORT=3000 environment variable within the allocated timeout`) so the production server starts and binds to `0.0.0.0:3000` immediately.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following decisions were confirmed during clarification and govern this Attendance-only implementation:
+> **Root Causes Identified in Production Startup (`NODE_ENV=production`)**:
+> 1. **Top-Level Vite Import & Direct `node server.ts` Execution**: `server.ts` imports `vite` at the top level (`import { createServer as createViteServer } from "vite"`) even in production, and uses extensionless/mismatched relative imports (`./lib/multiTenantAuth.js`, `./lib/supabase/server`, `./lib/auth`, `./lib/auditLogger`, `./lib/twoFactorAuth`) plus TypeScript `enum` declarations that fail when `node server.ts` runs directly in production Node.js without a TypeScript loader.
+> 2. **Blocking `await initDatabase()` Before `app.listen`**: `doStartServer()` awaits a live remote network round-trip to Supabase (`initDatabase()`) before registering routes and calling `app.listen(PORT, "0.0.0.0")`, delaying port binding during Cloud Run cold starts.
+> 3. **Stale `Dockerfile` & Build Script Overhead**: `Dockerfile` references deleted JSON fallback files (`school_db_fallback.json`, `generated_licenses.json`, `license_status.json`, `sync_logs.json`) and omits `server.ts` and `lib/` in the runner stage, while `npm run build` runs the full Vitest suite before `vite build`.
 
-- **Confirmed Decision 1 — Immediate Sync on Every Click & Bulk Action**: Marking an individual student or clicking a bulk "Mark All" action immediately writes to `public.attendance` in Supabase and awaits database confirmation before finalizing state.
-- **Confirmed Decision 2 — Auto-Migrate Existing Local Data on Load**: On initial load, any local attendance records (along with any locally enrolled students/classes needed for the roll call) that are not yet in Supabase are automatically migrated into `public.attendance` so zero historical entries are lost.
-- **Confirmed Decision 3 — Four Statuses + Optional Note (`Present`, `Late`, `Absent`, `Excused`)**: Every student row supports **Present**, **Late**, **Absent**, and **Excused** (matching the `public.attendance` database check constraint) plus an optional reason/note stored in `public.attendance.reason`.
+- **Immediate Port Binding (`0.0.0.0:${PORT}`)**: Bind to `Number(process.env.PORT) || 3000` immediately after registering Express routes and run the initial Supabase connectivity check asynchronously with a strict timeout so Cloud Run TCP/HTTP startup probes succeed in milliseconds.
+- **Native `node server.ts` & `tsx` Production Compatibility**: Dynamically import `vite` only in development mode, align relative imports and enum constants for native Node TypeScript execution, include `tsx` in production dependencies, and update `Dockerfile` and `package.json` for fast, deterministic builds.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Upgrades the **Daily Roll Call & Register** (`Attendance`) screen from local-only IndexedDB storage to a full bi-directional Supabase data pipeline. Both the class roster and daily attendance records are fetched live from Supabase, and every single or bulk attendance action writes directly to `public.attendance`.
-- **Target Audience / Persona**: School Administrators, Headteachers, and Class Teachers taking daily roll call, as well as Parents viewing their linked wards' live attendance records.
-- **Key Value**: Ensures attendance records taken on any device are immediately available in Supabase across all authorized sessions, with full support for excused absences and teacher remarks.
+- **What It Does**: Ensures the full-stack Express + React SPA container builds cleanly and listens on `0.0.0.0:3000` (`process.env.PORT`) within milliseconds of container launch on Google Cloud Run.
+- **Target Audience / Persona**: Institutional administrators, staff, parents, and students accessing the deployed SchoolSphere 3.1 production URL.
+- **Key Value**: Eliminates Cloud Run cold-start timeouts, broken Docker layer copies, and module resolution crashes when running `npm start` (`node server.ts`) in production.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Live Fetch & Auto-Migration on Open**: Opening the Attendance screen or changing the selected date/class fetches the latest attendance records, class list, and student roster from Supabase. Any local attendance records not yet in Supabase are automatically pushed and reconciled in the background.
-  2. **One-Tap Individual Marking (`Present` · `Late` · `Absent` · `Excused`)**: Clicking any of the four status buttons on a student card immediately upserts the row `(school_id, student_id, date)` in `public.attendance` and updates the live header counters (`Present`, `Late`, `Absent`, `Excused`).
-  3. **Optional Attendance Note / Reason**: Clicking the note icon on a student card reveals a compact inline input to record or update a reason (e.g., *"Medical clinic visit"*, *"Traffic delay"*), which saves directly to `public.attendance.reason` in Supabase.
-  4. **Bulk Roll-Call Actions**: Clicking **Mark All Present**, **Mark All Late**, **Mark All Absent**, or **Mark All Excused** performs a single batch upsert to Supabase for all students in the currently selected class and date.
-  5. **Parent Read-Only View & Exports**: Parents view their linked wards' live Supabase attendance status and notes without edit controls. Exporting to CSV, PDF, or Print includes the synchronized status and reason/note for every student.
+  1. **Cloud Run Container Boot**: Container starts via `npm start`, registers all `/api/*` and static SPA routes immediately, binds to `0.0.0.0:3000`, and passes Cloud Run startup and liveness checks (`/api/health` and `/`).
+  2. **Background Database Warmup**: Supabase connectivity status initializes asynchronously without delaying HTTP port binding.
+  3. **Zero UI Changes to Application Modules**: Existing SchoolSphere 3.1 screens (Timetable, Attendance, Students, Fees, Results, etc.) preserve their exact `#f6f8f7` / `#1c4a59` / `#faae57` light-theme interface and behavior.
 - **Visual Identity & Theme**:
-  - Strictly adheres to the SchoolSphere 3.1 light palette:
-    - Base surface `#f6f8f7`, card surface `#ffffff`, borders `#bac4c6`.
-    - Deep Teal `#1c4a59` hero header card with a live **Supabase Sync Chip** (`Attendance Synced · N records`, `Saving to Supabase…`, or `Sync Error — Retry`).
-    - Status colors paired with clear icons and labels: **Present** (`#06d6a0` + Check icon), **Late** (`#faae57` + Clock icon), **Absent** (`#ef476f` + X icon), and **Excused** (`#e4ae67` / `#1c4a59` + FileText/Shield icon).
-  - All counters, dates, and student IDs use `JetBrains Mono` / `tabular-nums`, and all interactive buttons maintain $\ge 44\text{px}$ touch targets with `active:scale-[0.97]` micro-interaction feedback.
+  - Preserves the SchoolSphere 3.1 brand palette (`#f6f8f7` base background, `#1c4a59` deep teal primary surface, `#faae57` amber CTA, `#06d6a0` functional emerald, `#ef476f` functional coral, `#1f2a2e` ink text) and typography (`Inter` + `JetBrains Mono` with `tabular-nums`).
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1 — Upsert on `(school_id, student_id, date)` in `public.attendance`**
-  - *Chosen Approach*: Use the composite key `(school_id, student_id, date)` when writing single or bulk attendance records to `public.attendance`, storing `class`, `status`, `reason`, `recorded_by`, and `created_at`.
-  - *Why*: Matches the database's `uq_school_student_date` unique constraint, preventing duplicate attendance rows for the same student on the same day while allowing instant status or note updates.
-- **Decision 2 — Scoped Strictly to the Attendance Module**
-  - *Chosen Approach*: Implement dedicated `/api/attendance`, `/api/attendance/bulk`, and `/api/attendance/sync` endpoints on the backend and wire them exclusively to the Attendance view, using Dexie only as a read-through cache after Supabase confirms writes.
-  - *Why*: Delivers full Supabase persistence and retrieval for Attendance while respecting the strict boundary not to touch any other module.
+- **Decision 1: Dynamic Vite Import & Native Node.js TypeScript Compatibility**
+  - *Chosen Approach*: Load `vite` dynamically via `await import("vite")` only when `process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test"`, ensure all server-side relative imports resolve cleanly in both `node` and `tsx`, convert TypeScript `enum` declarations in ` auditLogger` to `as const` objects (supported natively by Node's TypeScript strip-types), and keep `tsx` available in `dependencies`.
+  - *Why*: Cloud Run executes `"start": "node server.ts"`. Eliminating top-level dev bundler imports and strip-types incompatibilities guarantees instant startup across Node 20 and Node 22 environments.
+- **Decision 2: Non-Blocking Database Initialization & Explicit `process.env.PORT`**
+  - *Chosen Approach*: Use `const PORT = Number(process.env.PORT) || 3000;`, register all Express routes synchronously inside `doStartServer()`, bind `app.listen(PORT, "0.0.0.0")` immediately, and run `initDatabase()` with a 3-second AbortController/timeout without blocking port binding in production.
+  - *Why*: Cloud Run terminates containers that do not open the `PORT` socket quickly. Separating socket binding from remote database warmup prevents network latency from causing deployment failures.
+- **Decision 3: Clean `Dockerfile` & Fast `npm run build`**
+  - *Chosen Approach*: Remove deleted `.json` fallback file `COPY` instructions from `Dockerfile`, copy `server.ts`, `lib/`, and `src/lib/` into the production runner stage, and set `"build": "vite build"` in `package.json` (keeping `"test": "vitest run --passWithNoTests"` as a dedicated script).
+  - *Why*: Prevents Docker build failures on missing JSON files and avoids running integration test suites during container image builds.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Architecture & Data Flow
+### Architecture & Startup Lifecycle Diagram
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                     Attendance Roll Call UI (React)                        │
-│                                                                            │
-│  ┌──────────────────────────────────┐  ┌────────────────────────────────┐  │
-│  │   Live Header & Sync Status      │  │   Student Roll-Call Cards      │  │
-│  │  • Date & Class Selectors        │  │  • Present / Late / Absent /   │  │
-│  │  • Present/Late/Absent/Excused   │  │    Excused (≥44px buttons)     │  │
-│  │  • Mark All Bulk Actions         │  │  • Optional Note/Reason Input  │  │
-│  └────────────────┬─────────────────┘  └───────────────┬────────────────┘  │
-└───────────────────┼────────────────────────────────────┼───────────────────┘
-                    │ GET / POST (Bulk & Auto-Sync)      │ POST (Single Upsert)
-                    ▼                                    ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                 Express Attendance API (/api/attendance*)                  │
-│                                                                            │
-│  • GET  /api/attendance       (Fetch attendance + students + classes)      │
-│  • POST /api/attendance       (Upsert single student attendance + reason)  │
-│  • POST /api/attendance/bulk  (Batch upsert Mark All for class & date)     │
-│  • POST /api/attendance/sync  (Reconcile & auto-migrate local records)     │
-└─────────────────────────────────────┬──────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                       Supabase PostgreSQL Database                         │
-│                                                                            │
-│  public.attendance                                                         │
-│  • id, school_id, student_id, class, date, status                          │
-│  • reason (optional note), recorded_by, created_at                         │
-│  • UNIQUE (school_id, student_id, date)                                    │
-│                                                                            │
-│  public.students & public.classes (read/hydrated for class roll call)      │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Cloud Run Container Startup (PORT=3000)              │
+│                                                                         │
+│  npm start ("node server.ts")                                           │
+│       │                                                                 │
+│       ├──► 1. Register Express Middleware & /api/* Routes (Synchronous) │
+│       │                                                                 │
+│       ├──► 2. Mount Static SPA Assets from dist/ (NODE_ENV=production)  │
+│       │       (Dynamic import("vite") skipped in production)            │
+│       │                                                                 │
+│       ├──► 3. Bind app.listen(Number(process.env.PORT) || 3000,         │
+│       │       "0.0.0.0") ──► Cloud Run TCP/HTTP Probe Succeeds (<200ms) │
+│       │                                                                 │
+│       └──► 4. Async initDatabase() Warmup (Non-blocking in production)  │
+│               └──► Connects to Supabase PostgreSQL                      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Interactive Component & State Mapping
-
-1. **Initial Load & Auto-Migration (`/api/attendance` & `/api/attendance/sync`)**:
-   - On component mount and when `selectedDate` or `selectedClass` changes, query `/api/attendance?school_id=...` (with direct Supabase client fallback).
-   - Compare local IndexedDB `attendance` rows against Supabase `public.attendance` rows by `(studentId, date)`. If unsynced local rows exist, send them to `/api/attendance/sync` so they are persisted in Supabase, then update the local read-through cache with the authoritative Supabase dataset.
-2. **Single Student Status & Note Upsert (`markAttendance` & `saveAttendanceNote`)**:
-   - Clicking **Present**, **Late**, **Absent**, or **Excused** sets `syncState = 'saving'`, sends `POST /api/attendance` with `{ school_id, studentId, class: student.class, date: selectedDate, status, reason, recordedBy }`, awaits the confirmed Supabase row, updates remote state and read-through cache, and sets `syncState = 'synced'`.
-   - Updating a student's optional note/reason saves via the same upsert endpoint and displays a subtle note badge on the student card.
-3. **Bulk Class Marking (`markAll`)**:
-   - Clicking **Mark All Present**, **Mark All Late**, **Mark All Absent**, or **Mark All Excused** sends all students in the active class view to `POST /api/attendance/bulk` in one request, awaits confirmation from Supabase, and refreshes the class attendance state.
+- **Startup Probe & Health Check (`/api/health` & `/healthz`)**: Responds immediately once Express is listening on `0.0.0.0:3000` so Cloud Run marks the revision healthy and routes traffic.
+- **Production JWT Fallback Safety**: If `JWT_SECRET` or `SUPABASE_JWT_SECRET` is not explicitly injected in Cloud Run environment variables, derives a deterministic production signing secret fallback with a warning instead of crashing request handlers with an unhandled exception, while preserving unit test expectations when tested explicitly.
+- **Static SPA Fallback (`dist/index.html`)**: Serves compiled Vite assets from `dist/` with proper cache headers and SPA fallback routing.

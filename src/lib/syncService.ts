@@ -317,7 +317,7 @@ export async function reconcileStudentsInDexie(remoteStudents: any[], isFullSync
       });
     } else {
       if (remoteNumId !== undefined) {
-        await db.students.put({ ...norm, id: remoteNumId, remoteId: norm.id });
+        await db.students.put({ ...norm, id: remoteNumId, remoteId: norm.id } as any);
         if (stuId) stuMap.set(stuId, { ...norm, id: remoteNumId });
       } else {
         const { id, ...rest } = norm;

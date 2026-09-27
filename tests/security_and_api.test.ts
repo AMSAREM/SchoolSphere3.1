@@ -202,13 +202,15 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
       return { data: rows[0], error: null };
     }
 
-    then(resolve: any, reject?: any) {
+    then<TResult1 = { data: any; error: any }, TResult2 = never>(
+      onfulfilled?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+      onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
+    ): Promise<TResult1 | TResult2> {
       try {
         const res = this.execute();
-        return Promise.resolve(res).then(resolve, reject);
+        return Promise.resolve(res).then(onfulfilled, onrejected);
       } catch (e) {
-        if (reject) return reject(e);
-        throw e;
+        return Promise.reject(e).then(onfulfilled, onrejected);
       }
     }
   }

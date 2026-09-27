@@ -1872,13 +1872,14 @@ export const usersApi = {
     usernameOrOpts?: string | { username?: string; school_id?: string; schoolId?: string },
     schoolId?: string
   ) => {
-    const opts = typeof usernameOrOpts === 'object' && usernameOrOpts !== null
-      ? usernameOrOpts
-      : { username: usernameOrOpts, school_id: schoolId };
+    const opts: { username?: string; school_id?: string; schoolId?: string } =
+      typeof usernameOrOpts === 'object' && usernameOrOpts !== null
+        ? usernameOrOpts
+        : { username: typeof usernameOrOpts === 'string' ? usernameOrOpts : undefined, school_id: schoolId };
     const targetSchoolId = opts.school_id || opts.schoolId || schoolId || (await getCurrentSchoolId());
     const qParams = new URLSearchParams();
     if (targetSchoolId) qParams.set('school_id', targetSchoolId);
-    if (opts.username) qParams.set('username', opts.username);
+    if (opts.username) qParams.set('username', String(opts.username));
 
     const res = await fetch(`/api/users/${encodeURIComponent(String(id))}?${qParams.toString()}`, {
       method: 'DELETE',

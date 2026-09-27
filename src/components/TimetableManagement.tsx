@@ -417,9 +417,9 @@ export default function TimetableManagement() {
           });
 
           fetchedSlots = entriesRes.data.map((entry: any) => {
-            const p = periodsMap.get(Number(entry.period_id));
-            const s = subjectsMap.get(Number(entry.subject_id));
-            const t = teachersMap.get(Number(entry.teacher_id));
+            const p: any = periodsMap.get(Number(entry.period_id));
+            const s: any = subjectsMap.get(Number(entry.subject_id));
+            const t: any = teachersMap.get(Number(entry.teacher_id));
             return normalizeSlotFromRow({
               id: String(entry.id),
               class_name: entry.class_name,
