@@ -1452,11 +1452,53 @@ export const attendanceApi = {
 };
 
 // ==========================================
-// 5. RESULTS & EXAM ANALYSIS API
+// 5. RESULTS & CONTINUOUS ASSESSMENT (EXERCISES, HOMEWORK, TESTS) API
 // ==========================================
 export const resultsApi = {
   getByClassAndTerm: async (className: string, term: string, subject?: string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
+
+    // 1. Primary authoritative route: Backend Supabase endpoint (/api/results)
+    try {
+      const q = new URLSearchParams();
+      if (targetSchoolId) q.set('school_id', targetSchoolId);
+      if (className) q.set('class', className);
+      if (term) q.set('term', term);
+      if (subject) q.set('subject', subject);
+
+      const res = await fetch(`/api/results?${q.toString()}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.results)) {
+          await reconcileResultsInDexie(json.results);
+          if (className && subject && term) {
+            const colKey = `ca_columns_${className}_${subject}_${term}`;
+            const scoreKey = `ca_scores_${className}_${subject}_${term}`;
+            if (Array.isArray(json.caColumns) && json.caColumns.length > 0) {
+              const exCol = await db.settings.where('key').equals(colKey).first();
+              if (exCol?.id) await db.settings.update(exCol.id, { key: colKey, value: json.caColumns });
+              else await db.settings.add({ key: colKey, value: json.caColumns });
+            }
+            if (json.caScores && typeof json.caScores === 'object' && Object.keys(json.caScores).length > 0) {
+              const exSc = await db.settings.where('key').equals(scoreKey).first();
+              if (exSc?.id) await db.settings.update(exSc.id, { key: scoreKey, value: json.caScores });
+              else await db.settings.add({ key: scoreKey, value: json.caScores });
+            }
+          }
+          return {
+            results: json.results,
+            caColumns: Array.isArray(json.caColumns) ? json.caColumns : undefined,
+            caScores: json.caScores && typeof json.caScores === 'object' ? json.caScores : undefined
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Notice querying /api/results from Supabase backend:', e);
+    }
+
+    // 2. Direct Supabase query fallback
     try {
       let query = supabase
         .from('results')
@@ -1470,46 +1512,278 @@ export const resultsApi = {
       }
 
       const { data, error } = await query;
-      if (!error && data && data.length > 0) return data;
+      if (!error && Array.isArray(data) && data.length > 0) {
+        await reconcileResultsInDexie(data);
+        return { results: data };
+      }
     } catch (e) {}
 
-    let localResults = await db.results.where({ class: className, term: term }).toArray();
+    let localResults = await db.results.where({ class: className, term }).toArray();
     if (subject) {
       localResults = localResults.filter(r => r.subject === subject);
     }
-    return localResults;
+    return { results: localResults };
   },
 
-  recordScores: async (scores: any[], schoolId?: string) => {
+  getByStudentAndTerm: async (studentId: string, term: string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const recordsWithTenant = scores.map(s => ({ ...s, school_id: targetSchoolId }));
-    
-    await db.results.bulkPut(recordsWithTenant);
 
     try {
-      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+      const q = new URLSearchParams();
+      if (targetSchoolId) q.set('school_id', targetSchoolId);
+      if (studentId) q.set('student_id', studentId);
+      if (term) q.set('term', term);
+
+      const res = await fetch(`/api/results?${q.toString()}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.results)) {
+          await reconcileResultsInDexie(json.results);
+          return json.results;
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const { data, error } = await supabase
+        .from('results')
+        .select('*')
+        .eq('school_id', targetSchoolId)
+        .eq('student_id', studentId)
+        .eq('term', term);
+      if (!error && Array.isArray(data) && data.length > 0) {
+        await reconcileResultsInDexie(data);
+      }
+    } catch (e) {}
+
+    return await db.results.where({ studentId, term }).toArray();
+  },
+
+  saveContinuousAssessment: async (
+    payload: {
+      class: string;
+      subject: string;
+      term: string;
+      academicYear?: string;
+      columns: any[];
+      exerciseScores: Record<string, Record<string, number>>;
+      scores?: Record<string, { class: number; exam: number }>;
+    },
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+
+    // 1. Save locally in Dexie settings for instant UI reactivity
+    try {
+      const colKey = `ca_columns_${payload.class}_${payload.subject}_${payload.term}`;
+      const scoreKey = `ca_scores_${payload.class}_${payload.subject}_${payload.term}`;
+      const existingCol = await db.settings.where('key').equals(colKey).first();
+      if (existingCol?.id) {
+        await db.settings.update(existingCol.id, { key: colKey, value: payload.columns });
+      } else {
+        await db.settings.add({ key: colKey, value: payload.columns });
+      }
+      const existingSc = await db.settings.where('key').equals(scoreKey).first();
+      if (existingSc?.id) {
+        await db.settings.update(existingSc.id, { key: scoreKey, value: payload.exerciseScores });
+      } else {
+        await db.settings.add({ key: scoreKey, value: payload.exerciseScores });
+      }
+    } catch (e) {}
+
+    // 2. Sync to Supabase via dedicated /api/results/ca endpoint
+    let serverSynced = false;
+    try {
+      const res = await fetch('/api/results/ca', {
         method: 'POST',
         headers: getApiHeaders(targetSchoolId || undefined),
-        body: JSON.stringify({ results: recordsWithTenant })
+        body: JSON.stringify({
+          ...payload,
+          school_id: targetSchoolId,
+          schoolId: targetSchoolId
+        })
       });
-    } catch (e) {}
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          serverSynced = true;
+          if (Array.isArray(json.results) && json.results.length > 0) {
+            await reconcileResultsInDexie(json.results);
+          }
+          broadcastLocalMutation('results', 'update', json);
+          return json;
+        }
+      }
+    } catch (e) {
+      console.warn('Notice syncing continuous assessment to /api/results/ca:', e);
+    }
 
+    // 3. Direct Supabase fallback if server route was unreachable
+    if (!serverSynced && targetSchoolId) {
+      try {
+        const { data: existingSettings } = await supabase
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', targetSchoolId)
+          .limit(1)
+          .maybeSingle();
+        const prevStreams = (existingSettings?.streams && typeof existingSettings.streams === 'object' && !Array.isArray(existingSettings.streams))
+          ? existingSettings.streams
+          : {};
+        const prevCa = (prevStreams as any).continuous_assessment || {};
+        const caKey = `${payload.class}::${payload.subject}::${payload.term}`;
+        const rawMax = (payload.columns || []).reduce((acc: number, c: any) => acc + (Number(c?.maxScore) || 0), 0);
+        const studentScores: Record<string, any> = {};
+        for (const [stuId, map] of Object.entries(payload.exerciseScores || {})) {
+          let rawObtained = 0;
+          for (const v of Object.values(map || {})) {
+            if (v !== undefined && v !== null && !isNaN(Number(v))) rawObtained += Number(v);
+          }
+          studentScores[stuId] = {
+            scores: map,
+            rawCaScore: rawObtained,
+            rawCaMax: rawMax,
+            scaledClassScore: rawMax > 0 ? Math.min(30, Math.max(0, Math.round((rawObtained / rawMax) * 30))) : 0
+          };
+        }
+        await supabase.from('school_settings').upsert([{
+          school_id: targetSchoolId,
+          grade_boundaries: existingSettings?.grade_boundaries || [],
+          terms: existingSettings?.terms || [],
+          streams: {
+            ...prevStreams,
+            continuous_assessment: {
+              ...prevCa,
+              [caKey]: {
+                className: payload.class,
+                subject: payload.subject,
+                term: payload.term,
+                columns: payload.columns,
+                studentScores,
+                updatedAt: Date.now()
+              }
+            }
+          },
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
+      } catch (e) {}
+    }
+
+    return { success: true, syncedAt: Date.now() };
+  },
+
+  recordScores: async (
+    scores: any[],
+    schoolId?: string,
+    caMeta?: {
+      className: string;
+      subject: string;
+      term: string;
+      columns: any[];
+      exerciseScores: Record<string, Record<string, number>>;
+    }
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const recordsWithTenant = scores.map(s => ({
+      ...s,
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
+    }));
+
+    await reconcileResultsInDexie(recordsWithTenant);
+
+    // 1. Primary authoritative route: POST /api/results (persists both public.results and public.school_settings in Supabase)
+    let serverSaved = false;
     try {
-      const snakeScores = scores.map(s => ({
-        school_id: targetSchoolId,
-        student_id: s.studentId || s.student_id,
-        subject: s.subject,
-        term: s.term,
-        class: s.class,
-        class_score: Number(s.classScore ?? s.class_score ?? 0),
-        exam_score: Number(s.examScore ?? s.exam_score ?? 0),
-        total_score: Number(s.totalScore ?? s.total_score ?? 0),
-        grade: s.grade || '',
-        remarks: s.remarks || ''
-      }));
-      await supabase.from('results').upsert(snakeScores, { onConflict: 'school_id,student_id,subject,term' });
-    } catch (e) {}
+      const sample = scores[0] || {};
+      const res = await fetch('/api/results', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({
+          school_id: targetSchoolId,
+          schoolId: targetSchoolId,
+          class: caMeta?.className || sample.class,
+          subject: caMeta?.subject || sample.subject,
+          term: caMeta?.term || sample.term,
+          results: recordsWithTenant,
+          caMeta
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          serverSaved = true;
+          if (Array.isArray(json.results) && json.results.length > 0) {
+            await reconcileResultsInDexie(json.results);
+          }
+          broadcastLocalMutation('results', 'bulk-save', json);
+        }
+      }
+    } catch (e) {
+      console.warn('Notice calling POST /api/results:', e);
+    }
+
+    // 2. Fallback direct Supabase upsert if needed
+    if (!serverSaved && targetSchoolId) {
+      try {
+        const snakeScores = scores.map(s => ({
+          school_id: targetSchoolId,
+          student_id: s.studentId || s.student_id,
+          subject: s.subject,
+          term: s.term,
+          academic_year: s.academicYear || s.academic_year || '2026/2027',
+          class: s.class,
+          class_score: Number(s.classScore ?? s.class_score ?? 0),
+          exam_score: Number(s.examScore ?? s.exam_score ?? 0),
+          total_score: Number(s.totalScore ?? s.total_score ?? 0),
+          grade: s.grade || 'F9',
+          remarks: s.remarks || ''
+        }));
+        await supabase.from('results').upsert(snakeScores, { onConflict: 'school_id,student_id,subject,term,academic_year' });
+      } catch (e) {}
+    }
+
     return true;
+  },
+
+  syncLocalResults: async (
+    payload: {
+      class?: string;
+      subject?: string;
+      term?: string;
+      results?: any[];
+      caMeta?: {
+        className: string;
+        subject: string;
+        term: string;
+        columns: any[];
+        exerciseScores: Record<string, Record<string, number>>;
+      };
+    },
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    try {
+      const res = await fetch('/api/results/sync', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({
+          ...payload,
+          school_id: targetSchoolId,
+          schoolId: targetSchoolId
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.results)) {
+          await reconcileResultsInDexie(json.results);
+          return json;
+        }
+      }
+    } catch (e) {}
+    return null;
   }
 };
 

@@ -385,12 +385,25 @@ export async function reconcileResultsInDexie(remoteResults: any[]) {
     const studentId = remote.studentId || remote.student_id;
     const k = `${studentId}_${(remote.subject || '').toLowerCase()}_${(remote.term || '').toLowerCase()}`;
     const existing = map.get(k);
+    const remoteExerciseScores = remote.exerciseScores ?? remote.exercise_scores;
+    const remoteExerciseColumns = remote.exerciseColumns ?? remote.exercise_columns;
+    const remoteRawCaScore = remote.rawCaScore ?? remote.raw_ca_score;
+    const remoteRawCaMax = remote.rawCaMax ?? remote.raw_ca_max;
+
     const payload = {
       ...remote,
       studentId,
       classScore: Number(remote.classScore ?? remote.class_score ?? 0),
       examScore: Number(remote.examScore ?? remote.exam_score ?? 0),
-      totalScore: Number(remote.totalScore ?? remote.total_score ?? 0)
+      totalScore: Number(remote.totalScore ?? remote.total_score ?? 0),
+      exerciseScores: typeof remoteExerciseScores === 'string'
+        ? JSON.parse(remoteExerciseScores || '{}')
+        : (remoteExerciseScores ?? existing?.exerciseScores),
+      exerciseColumns: typeof remoteExerciseColumns === 'string'
+        ? JSON.parse(remoteExerciseColumns || '[]')
+        : (remoteExerciseColumns ?? existing?.exerciseColumns),
+      rawCaScore: remoteRawCaScore !== undefined ? Number(remoteRawCaScore) : existing?.rawCaScore,
+      rawCaMax: remoteRawCaMax !== undefined ? Number(remoteRawCaMax) : existing?.rawCaMax
     };
     if (existing) {
       await db.results.update(existing.id, { ...payload, id: existing.id });

@@ -21,8 +21,19 @@ export const ReportCard: React.FC<ReportCardProps> = ({
   schoolProfile,
   academicConfig
 }) => {
-  const totalScore = results.reduce((acc, r) => acc + r.totalScore, 0);
-  const averageScore = results.length > 0 ? (totalScore / results.length).toFixed(1) : '0.0';
+  const normalizedResults = results.map(r => {
+    const cScore = Number(r.classScore) || 0;
+    const eScore = Number(r.examScore) || 0;
+    const tScore = r.totalScore !== undefined && r.totalScore !== null ? Number(r.totalScore) : (cScore + eScore);
+    return {
+      ...r,
+      classScore: cScore,
+      examScore: eScore,
+      totalScore: tScore
+    };
+  });
+  const totalScore = normalizedResults.reduce((acc, r) => acc + r.totalScore, 0);
+  const averageScore = normalizedResults.length > 0 ? (totalScore / normalizedResults.length).toFixed(1) : '0.0';
   
   const profile = schoolProfile || {
     schoolName: 'ESEPA INTERNATIONAL SCHOOL',
@@ -92,20 +103,20 @@ export const ReportCard: React.FC<ReportCardProps> = ({
           <thead className="bg-indigo-900 text-white">
             <tr>
               <th className="px-2 py-1.5 border border-white text-left uppercase tracking-widest font-black">Subject</th>
-              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Class</th>
-              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Exam</th>
-              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Total</th>
+              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Class (30%)</th>
+              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Exam (70%)</th>
+              <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-20">Total (100%)</th>
               <th className="px-2 py-1.5 border border-white text-center uppercase tracking-widest font-black w-12">Grade</th>
               <th className="px-2 py-1.5 border border-white text-left uppercase tracking-widest font-black">Remarks</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-indigo-900">
-            {results.map((r, i) => (
+            {normalizedResults.map((r, i) => (
               <tr key={i} className="hover:bg-indigo-50/30 transition-colors">
                 <td className="px-2 py-1 border-r border-indigo-900 font-bold uppercase">{r.subject}</td>
-                <td className="px-2 py-1 border-r border-indigo-900 text-center font-bold">{r.classScore}</td>
-                <td className="px-2 py-1 border-r border-indigo-900 text-center font-bold">{r.examScore}</td>
-                <td className="px-2 py-1 border-r border-indigo-900 text-center font-black text-indigo-900">{r.totalScore}</td>
+                <td className="px-2 py-1 border-r border-indigo-900 text-center font-bold font-mono tabular-nums">{r.classScore}</td>
+                <td className="px-2 py-1 border-r border-indigo-900 text-center font-bold font-mono tabular-nums">{r.examScore}</td>
+                <td className="px-2 py-1 border-r border-indigo-900 text-center font-black text-indigo-900 font-mono tabular-nums">{r.totalScore}</td>
                 <td className="px-2 py-1 border-r border-indigo-900 text-center font-black">{r.grade}</td>
                 <td className="px-2 py-1 italic text-slate-600 text-[9px] leading-tight">{r.remarks}</td>
               </tr>
@@ -114,8 +125,8 @@ export const ReportCard: React.FC<ReportCardProps> = ({
           <tfoot className="bg-indigo-50/50">
             <tr className="border-t-2 border-indigo-900">
               <td colSpan={3} className="px-2 py-1 font-black text-slate-500 uppercase text-right tracking-widest">Aggregate / Average</td>
-              <td className="px-2 py-1 text-center bg-indigo-900 text-white font-black">{totalScore}</td>
-              <td className="px-2 py-1 text-center font-black">{averageScore}</td>
+              <td className="px-2 py-1 text-center bg-indigo-900 text-white font-black font-mono tabular-nums">{totalScore}</td>
+              <td className="px-2 py-1 text-center font-black font-mono tabular-nums">{averageScore}</td>
               <td className="px-2 py-1 font-bold text-indigo-900 uppercase tracking-tighter text-[9px]">
                 GPA: {((Number(averageScore) / 100) * 4).toFixed(2)}
               </td>

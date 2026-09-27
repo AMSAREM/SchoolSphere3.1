@@ -173,7 +173,31 @@ export default function UserManagement() {
       const fetched = await usersApi.getAll(school?.id);
       if (Array.isArray(fetched)) {
         const validFetched = fetched.filter(isTenantUser);
-        setUsers(validFetched);
+        const seenIds = new Set<string>();
+        const seenAuthIds = new Set<string>();
+        const seenUsernames = new Set<string>();
+        const seenAdminEmails = new Set<string>();
+        const deduped: any[] = [];
+
+        for (const u of validFetched) {
+          const idKey = u.id !== undefined && u.id !== null ? String(u.id) : '';
+          const authKey = u.auth_user_id ? String(u.auth_user_id).toLowerCase() : '';
+          const unameKey = String(u.username || '').trim().toLowerCase().replace(/^@+/, '');
+          const emailKey = String(u.email || '').trim().toLowerCase();
+          const roleKey = String(u.role || '').trim().toLowerCase();
+
+          if (idKey && seenIds.has(idKey)) continue;
+          if (authKey && seenAuthIds.has(authKey)) continue;
+          if (unameKey && seenUsernames.has(unameKey)) continue;
+          if (roleKey === 'admin' && emailKey && seenAdminEmails.has(emailKey)) continue;
+
+          if (idKey) seenIds.add(idKey);
+          if (authKey) seenAuthIds.add(authKey);
+          if (unameKey) seenUsernames.add(unameKey);
+          if (roleKey === 'admin' && emailKey) seenAdminEmails.add(emailKey);
+          deduped.push(u);
+        }
+        setUsers(deduped);
       }
     } catch (e) {
       // Preserve existing users in state if a transient network error occurs

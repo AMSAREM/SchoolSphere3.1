@@ -552,7 +552,22 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
       }
     }
 
-    // 2. Ensure JOYCE school and its Admin account are authenticated and linked in Supabase Auth + public.users
+    // 2. Clean up orphan trigger-created duplicate rows (where school_id is null, role is null, password_hash is null)
+    let activeUsers = Array.isArray(users) ? [...users] : [];
+    const orphanRows = activeUsers.filter(
+      (u: any) =>
+        !u.school_id &&
+        (!u.role || String(u.role).toLowerCase() !== 'creator') &&
+        !u.password_hash
+    );
+    for (const orp of orphanRows) {
+      try {
+        await adminClient.from('users').delete().eq('id', orp.id);
+        activeUsers = activeUsers.filter((u: any) => u.id !== orp.id);
+      } catch {}
+    }
+
+    // 3. Ensure JOYCE school and its single canonical Admin account are authenticated and linked in Supabase Auth + public.users
     const joyceSchool = (schools || []).find(
       (s: any) => String(s.slug || '').toLowerCase() === 'joyce' || String(s.name || '').toUpperCase() === 'JOYCE'
     );
@@ -565,65 +580,126 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
         status: 'active'
       });
 
-      const joyceAdmins = (users || []).filter(
-        (u: any) => String(u.school_id || '') === String(joyceSchool.id) && String(u.role || '').toLowerCase() === 'admin'
-      );
+      const joyceAdmins = activeUsers
+        .filter(
+          (u: any) =>
+            (String(u.school_id || '') === String(joyceSchool.id) && String(u.role || '').toLowerCase() === 'admin') ||
+            String(u.email || '').toLowerCase() === 'admin@joyce.com' ||
+            String(u.email || '').toLowerCase() === 'admin@joyce.edu.gh'
+        )
+        .sort((a: any, b: any) => {
+          const aScore = (a.school_id === joyceSchool.id ? 4 : 0) + (a.password_hash ? 2 : 0) + (a.role === 'admin' ? 2 : 0);
+          const bScore = (b.school_id === joyceSchool.id ? 4 : 0) + (b.password_hash ? 2 : 0) + (b.role === 'admin' ? 2 : 0);
+          if (bScore !== aScore) return bScore - aScore;
+          return Number(a.id || 0) - Number(b.id || 0);
+        });
+
       const primaryJoyceAdmin = joyceAdmins[0];
       if (primaryJoyceAdmin) {
+        // Delete any duplicate Joyce admin rows in public.users
+        for (const dupAdmin of joyceAdmins.slice(1)) {
+          try {
+            await adminClient.from('users').delete().eq('id', dupAdmin.id);
+            activeUsers = activeUsers.filter((u: any) => u.id !== dupAdmin.id);
+          } catch {}
+        }
+
+        // Ensure canonical username is 'admin' and school_id is joyceSchool.id
+        if (
+          primaryJoyceAdmin.username !== 'admin' ||
+          primaryJoyceAdmin.school_id !== joyceSchool.id ||
+          primaryJoyceAdmin.role !== 'admin'
+        ) {
+          try {
+            await adminClient
+              .from('users')
+              .update({
+                username: 'admin',
+                school_id: joyceSchool.id,
+                role: 'admin',
+                status: 'active',
+                full_name: primaryJoyceAdmin.full_name || 'Head Administrator'
+              })
+              .eq('id', primaryJoyceAdmin.id);
+            primaryJoyceAdmin.username = 'admin';
+            primaryJoyceAdmin.school_id = joyceSchool.id;
+            primaryJoyceAdmin.role = 'admin';
+          } catch {}
+        }
+
         await ensureUserSupabaseAuthIdentity({
           userId: primaryJoyceAdmin.id,
           existingAuthUserId: primaryJoyceAdmin.auth_user_id,
-          username: primaryJoyceAdmin.username || 'admin',
-          email: primaryJoyceAdmin.email || 'admin@joyce.edu.gh',
-          fullName: primaryJoyceAdmin.full_name || 'Joyce Head Administrator',
+          username: 'admin',
+          email: primaryJoyceAdmin.email || 'admin@joyce.com',
+          fullName: primaryJoyceAdmin.full_name || 'Head Administrator',
           role: 'admin',
           schoolId: joyceSchool.id,
           schoolSlug: 'joyce',
           rawPassword: joyceLicenseKey,
           issueSession: false
         });
-        // Also ensure both admin@joyce.edu.gh and admin@joyce.com in auth.users carry Joyce's school_id and admin role metadata
-        for (const aliasEmail of ['admin@joyce.edu.gh', 'admin@joyce.com']) {
-          try {
-            const { data: aliasLink } = await adminClient.auth.admin.generateLink({
-              type: 'magiclink',
-              email: aliasEmail
-            });
-            if (aliasLink?.user?.id) {
-              await adminClient.auth.admin.updateUserById(aliasLink.user.id, {
-                email_confirm: true,
-                user_metadata: {
-                  full_name: primaryJoyceAdmin.full_name || 'Joyce Head Administrator',
-                  username: 'admin',
-                  scoped_username: 'admin@joyce',
-                  role: 'admin',
-                  school_id: joyceSchool.id,
-                  organization_id: joyceSchool.id,
-                  user_id: primaryJoyceAdmin.id
-                }
-              });
-            }
-          } catch {}
-        }
       }
+
+      // Also clean up any duplicate Joyce admin entries in local registered_users store
+      try {
+        const regUsers = getRegisteredUsers();
+        if (Array.isArray(regUsers) && regUsers.length > 0) {
+          let seenJoyceAdmin = false;
+          const cleanedReg = regUsers
+            .map((ru: any) => {
+              const isJoyce =
+                String(ru.school_id || ru.schoolId || '') === String(joyceSchool.id) ||
+                String(ru.schoolName || '').toUpperCase() === 'JOYCE' ||
+                String(ru.email || '').toLowerCase() === 'admin@joyce.com';
+              if (isJoyce && String(ru.role || 'admin').toLowerCase() === 'admin') {
+                return {
+                  ...ru,
+                  id: primaryJoyceAdmin?.id || ru.id,
+                  auth_user_id: primaryJoyceAdmin?.auth_user_id || ru.auth_user_id,
+                  username: 'admin',
+                  baseUsername: 'admin',
+                  scopedUsername: 'admin@joyce',
+                  fullName: primaryJoyceAdmin?.full_name || ru.fullName || 'Head Administrator',
+                  full_name: primaryJoyceAdmin?.full_name || ru.full_name || 'Head Administrator',
+                  email: primaryJoyceAdmin?.email || 'admin@joyce.com',
+                  schoolId: joyceSchool.id,
+                  school_id: joyceSchool.id,
+                  schoolName: 'JOYCE'
+                };
+              }
+              return ru;
+            })
+            .filter((ru: any) => {
+              const isJoyceAdmin =
+                (String(ru.school_id || ru.schoolId || '') === String(joyceSchool.id) ||
+                  String(ru.schoolName || '').toUpperCase() === 'JOYCE') &&
+                String(ru.role || 'admin').toLowerCase() === 'admin';
+              if (isJoyceAdmin) {
+                if (seenJoyceAdmin) return false;
+                seenJoyceAdmin = true;
+              }
+              return true;
+            });
+          saveRegisteredUsers(cleanedReg);
+        }
+      } catch {}
     }
 
-    // 3. Ensure every user in public.users has a valid linked Supabase Auth identity (auth_user_id)
-    if (Array.isArray(users)) {
-      for (const u of users) {
-        const sch = u.school_id ? schoolMap.get(String(u.school_id)) : null;
-        await ensureUserSupabaseAuthIdentity({
-          userId: u.id,
-          existingAuthUserId: u.auth_user_id,
-          username: u.username || 'user',
-          email: u.email,
-          fullName: u.full_name,
-          role: u.role || 'teacher',
-          schoolId: u.school_id,
-          schoolSlug: sch?.slug || null,
-          issueSession: false
-        });
-      }
+    // 4. Ensure every remaining user in public.users has a valid linked Supabase Auth identity (auth_user_id)
+    for (const u of activeUsers) {
+      const sch = u.school_id ? schoolMap.get(String(u.school_id)) : null;
+      await ensureUserSupabaseAuthIdentity({
+        userId: u.id,
+        existingAuthUserId: u.auth_user_id,
+        username: u.username || 'user',
+        email: u.email,
+        fullName: u.full_name,
+        role: u.role || 'teacher',
+        schoolId: u.school_id,
+        schoolSlug: sch?.slug || null,
+        issueSession: false
+      });
     }
   } catch (err: any) {
     console.warn('[reconcileSupabaseAuthAndJoyceAdmin] notice:', err?.message);
@@ -1031,6 +1107,34 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
             item = normalizeServerClassRecord(item);
           } else if (table === 'subjects') {
             item = normalizeServerSubjectRecord(item);
+          } else if (table === 'results') {
+            const rawExScores = item.exerciseScores ?? item.exercise_scores;
+            const rawExCols = item.exerciseColumns ?? item.exercise_columns;
+            item = {
+              ...item,
+              studentId: item.studentId || item.student_id || '',
+              student_id: item.student_id || item.studentId || '',
+              classScore: Number(item.classScore ?? item.class_score ?? 0),
+              class_score: Number(item.class_score ?? item.classScore ?? 0),
+              examScore: Number(item.examScore ?? item.exam_score ?? 0),
+              exam_score: Number(item.exam_score ?? item.examScore ?? 0),
+              totalScore: Number(item.totalScore ?? item.total_score ?? 0),
+              total_score: Number(item.total_score ?? item.totalScore ?? 0),
+              exerciseScores: typeof rawExScores === 'string'
+                ? (() => { try { return JSON.parse(rawExScores); } catch { return {}; } })()
+                : (rawExScores && typeof rawExScores === 'object' ? rawExScores : undefined),
+              exerciseColumns: typeof rawExCols === 'string'
+                ? (() => { try { return JSON.parse(rawExCols); } catch { return []; } })()
+                : (Array.isArray(rawExCols) ? rawExCols : undefined),
+              rawCaScore: item.rawCaScore !== undefined || item.raw_ca_score !== undefined
+                ? Number(item.rawCaScore ?? item.raw_ca_score)
+                : undefined,
+              rawCaMax: item.rawCaMax !== undefined || item.raw_ca_max !== undefined
+                ? Number(item.rawCaMax ?? item.raw_ca_max)
+                : undefined,
+              schoolId: item.schoolId || item.school_id || targetSchoolId || null,
+              school_id: item.school_id || item.schoolId || targetSchoolId || null
+            };
           } else if (table === 'users') {
             const rawU = String(item.username || '');
             const displayU = item.baseUsername || (rawU.includes('@') && !/\.(com|org|net|edu|gh|xyz|io|app|ac|co|gov)$/i.test(rawU.split('@')[1] || '') ? rawU.split('@')[0] : rawU);
@@ -1067,6 +1171,43 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           return item;
         });
       }
+
+      // Enrich pulled results and settings with continuous_assessment ledger from public.school_settings
+      if (targetSchoolId) {
+        try {
+          const { data: schSet } = await adminClient
+            .from('school_settings')
+            .select('streams')
+            .eq('school_id', targetSchoolId)
+            .limit(1)
+            .maybeSingle();
+          const caLedger = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
+            ? (schSet.streams as any).continuous_assessment
+            : null;
+          if (caLedger && typeof caLedger === 'object') {
+            if (Array.isArray(data.results)) {
+              data.results = data.results.map((r: any) => {
+                const key = `${String(r.class || '').trim()}::${String(r.subject || '').trim()}::${String(r.term || '').trim()}`;
+                const entry = caLedger[key];
+                const stuId = String(r.studentId || r.student_id || '').trim();
+                const stuBreak = entry?.studentScores?.[stuId];
+                return {
+                  ...r,
+                  exerciseColumns: (Array.isArray(r.exerciseColumns) && r.exerciseColumns.length > 0)
+                    ? r.exerciseColumns
+                    : (Array.isArray(entry?.columns) ? entry.columns : r.exerciseColumns),
+                  exerciseScores: (r.exerciseScores && Object.keys(r.exerciseScores).length > 0)
+                    ? r.exerciseScores
+                    : (stuBreak?.scores || r.exerciseScores),
+                  rawCaScore: r.rawCaScore ?? stuBreak?.rawCaScore,
+                  rawCaMax: r.rawCaMax ?? stuBreak?.rawCaMax
+                };
+              });
+            }
+          }
+        } catch {}
+      }
+
       resultData = data;
     } catch (err: any) {
       console.error("[Supabase pullData Error]:", err.message || err);
@@ -1210,20 +1351,29 @@ async function pushData(data: any, targetSchoolId?: string | null) {
             await adminClient.from('attendance').upsert(formattedAttendance, { onConflict: 'school_id,student_id,date' });
           } catch (e) {}
         } else if (table === 'results') {
-          const formattedResults = records.map((r: any) => ({
+          const coreResults = records.map((r: any) => ({
             school_id: resolvedSchoolId,
-            student_id: r.studentId || r.student_id,
-            subject: r.subject,
-            term: r.term,
-            class: r.class,
+            student_id: String(r.studentId || r.student_id || '').trim(),
+            subject: String(r.subject || '').trim(),
+            term: String(r.term || 'Term 1').trim(),
+            academic_year: String(r.academicYear || r.academic_year || '2026/2027').trim(),
+            class: String(r.class || 'P1').trim(),
             class_score: Number(r.classScore ?? r.class_score) || 0,
             exam_score: Number(r.examScore ?? r.exam_score) || 0,
             total_score: Number(r.totalScore ?? r.total_score) || 0,
-            grade: r.grade || '',
-            remarks: r.remarks || ''
-          }));
+            grade: String(r.grade || 'F').trim(),
+            remarks: String(r.remarks || '').trim()
+          })).filter((r: any) => r.student_id && r.subject);
+
           try {
-            await adminClient.from('results').upsert(formattedResults, { onConflict: 'school_id,student_id,subject,term' });
+            const { error: resUpsertErr } = await adminClient
+              .from('results')
+              .upsert(coreResults, { onConflict: 'school_id,student_id,subject,term,academic_year' });
+            if (resUpsertErr) {
+              await adminClient
+                .from('results')
+                .upsert(coreResults, { onConflict: 'school_id,student_id,subject,term' });
+            }
           } catch (e) {}
         } else {
           // Generic batch upsert
@@ -1387,18 +1537,22 @@ async function doStartServer() {
     ) || 'school';
 
     const rawClientEmail = (params.clientEmail || '').trim().toLowerCase();
-    const rawAdminUser = (params.adminUsername || '').trim().toLowerCase();
+    const rawAdminUser = (params.adminUsername || '').trim().toLowerCase().replace(/^@+/, '');
     const targetEmail = (rawClientEmail && rawClientEmail.includes('@'))
       ? rawClientEmail
       : (rawAdminUser && rawAdminUser.includes('@') && rawAdminUser.includes('.')
           ? rawAdminUser
           : `admin@${cleanSlug}.edu.gh`);
 
-    const baseUsername = rawAdminUser
-      ? (rawAdminUser.includes('@') && rawAdminUser.includes('.') ? rawAdminUser.split('@')[0] : rawAdminUser)
+    let baseUsername = rawAdminUser
+      ? (rawAdminUser.includes('@') ? rawAdminUser.split('@')[0] : rawAdminUser)
       : (rawClientEmail && rawClientEmail.includes('@') ? rawClientEmail.split('@')[0] : 'admin');
-    const cleanBaseUser = baseUsername.replace(/[^a-z0-9_.@-]/g, '') || 'admin';
-    const scopedUsername = cleanBaseUser.includes('@') ? cleanBaseUser : `${cleanBaseUser}@${cleanSlug}`;
+    // If the user typed the school slug itself (e.g. 'joyce' or '@joyce'), canonicalize admin username to 'admin'
+    if (!baseUsername || baseUsername === cleanSlug || baseUsername === schoolName.toLowerCase()) {
+      baseUsername = 'admin';
+    }
+    let cleanBaseUser = baseUsername.replace(/[^a-z0-9_.@-]/g, '') || 'admin';
+    let scopedUsername = cleanBaseUser.includes('@') ? cleanBaseUser : `${cleanBaseUser}@${cleanSlug}`;
     const fullName = (params.contactPerson || 'Head Administrator').trim();
 
     const rawPassword = params.adminPassword || params.licenseKey || 'admin123';
@@ -1439,6 +1593,8 @@ async function doStartServer() {
       if (existingForSchool) {
         savedUserId = existingForSchool.id;
         finalUsername = existingForSchool.username || cleanBaseUser;
+        cleanBaseUser = finalUsername.includes('@') ? finalUsername.split('@')[0] : finalUsername;
+        scopedUsername = `${cleanBaseUser}@${cleanSlug}`;
         authUserId = existingForSchool.auth_user_id || null;
         if (params.preserveExistingPassword && existingForSchool.password_hash) {
           finalPasswordHash = existingForSchool.password_hash;
@@ -1569,11 +1725,11 @@ async function doStartServer() {
       provisionedSession = authIdentity.session;
     } catch (e) {}
 
-    // 3. Persist in local fallback registered users store scoped by schoolId (never overwrite another school's admin!)
+    // 3. Persist in local fallback registered users store scoped by schoolId (strictly one admin per school_id, never duplicate!)
     try {
       const regUsers = getRegisteredUsers();
       const existingIdx = regUsers.findIndex((u: any) =>
-        (u.school_id === schoolId || u.schoolId === schoolId) &&
+        (u.school_id === schoolId || u.schoolId === schoolId || u.id === savedUserId) &&
         (u.username?.toLowerCase() === cleanBaseUser ||
          u.username?.toLowerCase() === scopedUsername ||
          u.email?.toLowerCase() === targetEmail ||
@@ -1605,12 +1761,25 @@ async function doStartServer() {
         updatedAt: Date.now()
       };
 
-      if (existingIdx >= 0) {
-        regUsers[existingIdx] = { ...regUsers[existingIdx], ...localRecord };
+      // Remove any other duplicate admin entries for this same schoolId
+      const deduplicatedReg = regUsers.filter((u: any, idx: number) => {
+        if (idx === existingIdx) return true;
+        const sameSchool = (u.school_id === schoolId || u.schoolId === schoolId || u.id === savedUserId);
+        if (sameSchool && String(u.role || 'admin').toLowerCase() === 'admin') return false;
+        return true;
+      });
+
+      const targetIdx = deduplicatedReg.findIndex((u: any) =>
+        (u.school_id === schoolId || u.schoolId === schoolId || u.id === savedUserId) &&
+        String(u.role || 'admin').toLowerCase() === 'admin'
+      );
+
+      if (targetIdx >= 0) {
+        deduplicatedReg[targetIdx] = { ...deduplicatedReg[targetIdx], ...localRecord };
       } else {
-        regUsers.push(localRecord);
+        deduplicatedReg.push(localRecord);
       }
-      saveRegisteredUsers(regUsers);
+      saveRegisteredUsers(deduplicatedReg);
 
       const memEntry = {
         passwordHash: finalPasswordHash,
@@ -2761,33 +2930,42 @@ async function doStartServer() {
         rawPasswordStr === "123456";
 
       const rawUsernameInput = String(username).trim().toLowerCase();
-      let userClean = rawUsernameInput;
-      let targetSchoolHint = (schoolId || schoolSlug || schoolCode || '').toString().trim().toLowerCase() || null;
+      const strippedUsernameInput = rawUsernameInput.replace(/^@+/, '').trim();
+      let userClean = strippedUsernameInput || rawUsernameInput;
+      const rawHintFromBody = (schoolId || schoolSlug || schoolCode || '').toString().trim().toLowerCase();
+      let targetSchoolHint =
+        rawHintFromBody &&
+        rawHintFromBody !== '00000000-0000-0000-0000-000000000001' &&
+        rawHintFromBody !== 'school-sphere-academy'
+          ? rawHintFromBody
+          : null;
       let emailDomainSlug: string | null = null;
 
-      // Parse scoped handles ("admin@staugustine") and institutional emails ("admin@staugustine.edu.gh")
-      if (rawUsernameInput.includes('@')) {
-        const parts = rawUsernameInput.split('@');
+      // Parse scoped handles ("admin@joyce", "@admin@joyce", "@joyce") and institutional emails ("admin@joyce.com", "admin@joyce.edu.gh")
+      if (strippedUsernameInput.includes('@')) {
+        const parts = strippedUsernameInput.split('@');
         const localHandle = parts[0];
         const domainPart = parts[1] || '';
         const isFullDomain = /\.(com|org|net|edu|gh|xyz|io|app|ac|co|gov|uk|us|ca|ng|ke|za)$/i.test(domainPart);
         emailDomainSlug = domainPart.replace(/\.(com|org|net|edu|gh|xyz|io|app|ac|co|gov|uk|us|ca|ng|ke|za).*$/i, '').trim() || null;
 
         if (!isFullDomain) {
-          userClean = localHandle;
-          if (!targetSchoolHint && domainPart) {
+          userClean = localHandle || 'admin';
+          if (domainPart) {
+            // Explicit @school-slug in username always takes precedence over any cached schoolId in localStorage
             targetSchoolHint = domainPart;
           }
         } else {
-          // Even for full emails, keep localHandle available for prefix matching and domain slug if not generic mail provider
           const isGenericMail = /^(gmail|yahoo|hotmail|outlook|icloud|live|msn|aol|protonmail|zoho|mail|schoolsphere)$/i.test(emailDomainSlug || '');
-          if (!targetSchoolHint && emailDomainSlug && !isGenericMail) {
+          if (emailDomainSlug && !isGenericMail) {
             targetSchoolHint = emailDomainSlug;
           }
         }
       }
 
-      const emailPrefix = rawUsernameInput.includes('@') ? rawUsernameInput.split('@')[0] : rawUsernameInput;
+      const emailPrefix = strippedUsernameInput.includes('@')
+        ? strippedUsernameInput.split('@')[0]
+        : strippedUsernameInput;
       const adminClient = getSupabaseAdmin();
 
       // Helper to fetch full school object by school_id, slug, name, email, or license key
@@ -3131,20 +3309,47 @@ async function doStartServer() {
         });
       }
 
-      // Resolve targetSchoolHint if provided so we can prioritize or query users in that school
-      const resolvedHintSchool = targetSchoolHint ? await resolveSchoolRecord(targetSchoolHint) : null;
+      // Resolve targetSchoolHint if provided (or if userClean itself is a school slug/name like "@joyce" or "joyce")
+      let resolvedHintSchool = targetSchoolHint ? await resolveSchoolRecord(targetSchoolHint) : null;
+      let isSchoolSlugLogin = false;
+      if (
+        ! strippedUsernameInput.includes('@') &&
+        userClean &&
+        userClean !== 'admin' &&
+        userClean !== 'school_admin' &&
+        userClean !== 'headmaster' &&
+        userClean !== 'principal'
+      ) {
+        const directSchoolByHandle = await resolveSchoolRecord(userClean);
+        if (
+          directSchoolByHandle &&
+          (String(directSchoolByHandle.slug || '').toLowerCase() === userClean ||
+            String(directSchoolByHandle.name || '').toLowerCase() === userClean)
+        ) {
+          resolvedHintSchool = directSchoolByHandle;
+          targetSchoolHint = String(directSchoolByHandle.slug || userClean).toLowerCase();
+          isSchoolSlugLogin = true;
+        }
+      }
       const hintSchoolId = resolvedHintSchool?.id || targetSchoolHint || null;
+      const hintSchoolSlug = String(resolvedHintSchool?.slug || targetSchoolHint || '').toLowerCase();
 
       // 2. Gather and evaluate candidate user records from Supabase public.users, SECURITY DEFINER RPC, and server user registries
       let existingUserFoundInStep2 = false;
       try {
         const orFilters = [
           `username.ilike.${rawUsernameInput}`,
+          `username.ilike.${strippedUsernameInput}`,
           `username.ilike.${userClean}`,
           `username.ilike.${userClean}@%`,
           `email.ilike.${rawUsernameInput}`,
+          `email.ilike.${strippedUsernameInput}`,
           `email.ilike.${userClean}@%`
         ];
+        if (isSchoolSlugLogin) {
+          orFilters.push(`username.ilike.admin`);
+          orFilters.push(`username.ilike.admin@%`);
+        }
         if (emailPrefix && emailPrefix !== userClean) {
           orFilters.push(`username.ilike.${emailPrefix}`);
           orFilters.push(`username.ilike.${emailPrefix}@%`);
@@ -3156,7 +3361,7 @@ async function doStartServer() {
         const { data: dbUsers } = await adminClient
           .from('users')
           .select('*, schools(*)')
-          .or(Array.from(new Set(orFilters)).join(','));
+          .or(Array.from(new Set(orFilters.filter(Boolean))).join(','));
 
         let rpcTenantUsers: any[] = [];
         try {
@@ -3177,28 +3382,41 @@ async function doStartServer() {
         } catch {}
 
         const matchesUserHandle = (u: any) => {
-          const uName = String(u.username || '').trim().toLowerCase();
+          // Skip orphan rows with no school_id and no password_hash
+          if (!u.school_id && !u.schoolId && !u.password_hash && !u.passwordHash && u.role !== 'creator') {
+            return false;
+          }
+          const uName = String(u.username || '').trim().toLowerCase().replace(/^@+/, '');
           const uBase = String(u.baseUsername || (uName.includes('@') ? uName.split('@')[0] : uName)).trim().toLowerCase();
-          const uScoped = String(u.scopedUsername || '').trim().toLowerCase();
+          const uScoped = String(u.scopedUsername || '').trim().toLowerCase().replace(/^@+/, '');
           const uEmail = String(u.email || '').trim().toLowerCase();
           const uEmailPre = uEmail.includes('@') ? uEmail.split('@')[0] : '';
+          const uSchoolId = String(u.school_id || u.schoolId || u.schools?.id || '').trim();
+          const uSchoolSlug = String(u.schools?.slug || '').trim().toLowerCase();
 
           if (
             uName === rawUsernameInput ||
+            uName === strippedUsernameInput ||
             uName === userClean ||
             uBase === userClean ||
             uBase === emailPrefix ||
-            (uScoped && (uScoped === rawUsernameInput || uScoped === userClean)) ||
-            (uEmail && (uEmail === rawUsernameInput || uEmail === userClean)) ||
+            (uScoped && (uScoped === rawUsernameInput || uScoped === strippedUsernameInput || uScoped === userClean)) ||
+            (uEmail && (uEmail === rawUsernameInput || uEmail === strippedUsernameInput || uEmail === userClean)) ||
             (uEmailPre && (uEmailPre === userClean || uEmailPre === emailPrefix))
           ) {
             return true;
           }
-          if (
-            (userClean === 'admin' || userClean === 'school_admin' || userClean === 'headmaster' || userClean === 'principal') &&
-            (u.role === 'admin' || u.role === 'headteacher')
-          ) {
-            if (!hintSchoolId || u.school_id === hintSchoolId || u.schoolId === hintSchoolId) {
+          const isGenericOrSlugAdmin =
+            userClean === 'admin' ||
+            userClean === 'school_admin' ||
+            userClean === 'headmaster' ||
+            userClean === 'principal' ||
+            isSchoolSlugLogin ||
+            (hintSchoolSlug && userClean === hintSchoolSlug) ||
+            (uSchoolSlug && userClean === uSchoolSlug);
+
+          if (isGenericOrSlugAdmin && (u.role === 'admin' || u.role === 'headteacher')) {
+            if (!hintSchoolId || uSchoolId === String(hintSchoolId) || uSchoolSlug === hintSchoolSlug) {
               return true;
             }
           }
@@ -3801,7 +4019,8 @@ async function doStartServer() {
   // School Resolution API - Auto-detects school from user handle, client license email, or domain for preview
   app.get("/api/auth/resolve-school", async (req: Request, res: Response) => {
     try {
-      const input = ((req.query.input as string) || '').trim().toLowerCase();
+      const rawQueryInput = ((req.query.input as string) || '').trim().toLowerCase();
+      const input = rawQueryInput.replace(/^@+/, '').trim();
       if (!input || input.length < 2) {
         return res.json({ success: false, school: null });
       }
@@ -5309,6 +5528,9 @@ async function doStartServer() {
       } catch {}
 
       const seenTenantUsers = new Set<string>();
+      const seenUserIds = new Set<string>();
+      const seenAuthUserIds = new Set<string>();
+      const seenAdminEmails = new Set<string>();
       const deduplicatedRows: any[] = [];
       for (const u of dbRows) {
         if (!u) continue;
@@ -5318,17 +5540,33 @@ async function doStartServer() {
         if (!matchesTenantSchool(uSchoolId)) continue;
 
         const schInfo = (uSchoolId && schoolNameMap.get(String(uSchoolId))) || null;
-        const plainUsername = extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
-        const dedupKey = `${String(resolvedSchoolId || uSchoolId || '').toLowerCase()}::${plainUsername.toLowerCase()}`;
+        const effectiveSlug = (schInfo?.slug || resolvedSchoolSlug || '').toLowerCase();
+        let plainUsername = extractPlainTenantUsername(u.username, effectiveSlug, u.baseUsername);
+        if (r === 'admin' && effectiveSlug && plainUsername.toLowerCase() === effectiveSlug) {
+          plainUsername = 'admin';
+        }
+        const schoolKey = String(resolvedSchoolId || uSchoolId || '').toLowerCase();
+        const dedupKey = `${schoolKey}::${plainUsername.toLowerCase()}`;
+        const idKey = u.id !== undefined && u.id !== null ? String(u.id) : '';
+        const authIdKey = u.auth_user_id ? String(u.auth_user_id).toLowerCase() : '';
+        const emailKey = u.email ? `${schoolKey}::${String(u.email).trim().toLowerCase()}` : '';
+
         if (seenTenantUsers.has(dedupKey)) continue;
+        if (idKey && seenUserIds.has(idKey)) continue;
+        if (authIdKey && seenAuthUserIds.has(authIdKey)) continue;
+        if (r === 'admin' && emailKey && seenAdminEmails.has(emailKey)) continue;
+
         seenTenantUsers.add(dedupKey);
-        deduplicatedRows.push(u);
+        if (idKey) seenUserIds.add(idKey);
+        if (authIdKey) seenAuthUserIds.add(authIdKey);
+        if (r === 'admin' && emailKey) seenAdminEmails.add(emailKey);
+        deduplicatedRows.push({ ...u, _canonicalPlainUsername: plainUsername });
       }
 
       const formatted = deduplicatedRows.map(u => {
         const uSchoolId = (!isSyntheticPlaceholder(u.school_id || u.schoolId) ? (u.school_id || u.schoolId) : null) || resolvedSchoolId;
         const schInfo = (uSchoolId && schoolNameMap.get(String(uSchoolId))) || null;
-        const plainUsername = extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
+        const plainUsername = u._canonicalPlainUsername || extractPlainTenantUsername(u.username, schInfo?.slug || resolvedSchoolSlug, u.baseUsername);
         const scopedUsername = u.scopedUsername || (u.username?.includes('@') ? u.username : (schInfo?.slug ? `${plainUsername}@${schInfo.slug}` : plainUsername));
         const userEmail = u.email || `${plainUsername}@${schInfo?.slug || resolvedSchoolSlug || 'schoolsphere'}.edu.gh`;
         const userFullName = u.full_name || u.fullName || plainUsername;
@@ -13651,6 +13889,7 @@ async function doStartServer() {
       let streamItems: any[] = [];
       let prevNotes: Record<string, string> = {};
       let prevSuggestions: any[] = [];
+      let prevCa: Record<string, any> = {};
 
       if (Array.isArray(existingStreams)) {
         streamItems = existingStreams;
@@ -13658,12 +13897,17 @@ async function doStartServer() {
         streamItems = Array.isArray((existingStreams as any).items) ? (existingStreams as any).items : [];
         prevNotes = (existingStreams as any).timetable_notes || {};
         prevSuggestions = Array.isArray((existingStreams as any).timetable_suggestions) ? (existingStreams as any).timetable_suggestions : [];
+        prevCa = (existingStreams as any).continuous_assessment && typeof (existingStreams as any).continuous_assessment === 'object'
+          ? (existingStreams as any).continuous_assessment
+          : {};
       }
 
       const nextStreamsObj = {
+        ...(existingStreams && typeof existingStreams === 'object' && !Array.isArray(existingStreams) ? existingStreams : {}),
         items: streamItems,
         timetable_notes: updates.notesByEntryId !== undefined ? updates.notesByEntryId : prevNotes,
-        timetable_suggestions: updates.suggestions !== undefined ? updates.suggestions : prevSuggestions
+        timetable_suggestions: updates.suggestions !== undefined ? updates.suggestions : prevSuggestions,
+        continuous_assessment: prevCa
       };
 
       const payload = {
@@ -15278,6 +15522,883 @@ async function doStartServer() {
         dateAttendance,
         classes,
         students
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // ACADEMIC RESULTS & CONTINUOUS ASSESSMENT (EXERCISES, HOMEWORK, TESTS) SUPABASE ENDPOINTS
+  // =========================================================================
+
+  const DEFAULT_SERVER_CA_COLUMNS = [
+    { id: 'ex1', title: 'Ex 1', category: 'Exercise', maxScore: 10 },
+    { id: 'ex2', title: 'Ex 2', category: 'Exercise', maxScore: 10 },
+    { id: 'hw1', title: 'HW 1', category: 'Homework', maxScore: 10 },
+    { id: 'test1', title: 'Test 1', category: 'Test', maxScore: 20 }
+  ];
+
+  const makeCaSubjectKey = (classNameRaw: any, subjectRaw: any, termRaw: any): string => {
+    const cls = String(classNameRaw || 'P1').trim();
+    const subj = String(subjectRaw || 'Mathematics').trim();
+    const trm = String(termRaw || 'Term 1').trim();
+    return `${cls}::${subj}::${trm}`;
+  };
+
+  const calculateServerGrade = (total: number): { grade: string; remarks: string } => {
+    if (total >= 80) return { grade: 'A1', remarks: 'Excellent' };
+    if (total >= 70) return { grade: 'B2', remarks: 'Very Good' };
+    if (total >= 65) return { grade: 'B3', remarks: 'Good' };
+    if (total >= 60) return { grade: 'C4', remarks: 'Credit' };
+    if (total >= 55) return { grade: 'C5', remarks: 'Credit' };
+    if (total >= 50) return { grade: 'C6', remarks: 'Credit' };
+    if (total >= 45) return { grade: 'D7', remarks: 'Pass' };
+    if (total >= 40) return { grade: 'E8', remarks: 'Weak Pass' };
+    return { grade: 'F9', remarks: 'Fail' };
+  };
+
+  async function resolveResultsSchoolId(req: any): Promise<string> {
+    const baseResolved = await resolveTimetableSchoolId(req);
+    if (baseResolved) return baseResolved;
+
+    const adminClient = getSupabaseAdmin();
+    const hintStudentId = String(
+      req.query?.student_id ||
+      req.query?.studentId ||
+      req.body?.studentId ||
+      req.body?.student_id ||
+      req.body?.results?.[0]?.studentId ||
+      req.body?.results?.[0]?.student_id ||
+      req.body?.records?.[0]?.studentId ||
+      req.body?.records?.[0]?.student_id ||
+      ''
+    ).trim();
+
+    if (hintStudentId) {
+      try {
+        const { data: stuMatch } = await adminClient
+          .from('students')
+          .select('school_id')
+          .eq('student_id', hintStudentId)
+          .limit(1)
+          .maybeSingle();
+        if (stuMatch?.school_id) {
+          return String(stuMatch.school_id);
+        }
+      } catch {}
+    }
+
+    const hintClass = String(
+      req.query?.class ||
+      req.body?.class ||
+      req.body?.className ||
+      req.body?.results?.[0]?.class ||
+      ''
+    ).trim();
+
+    if (hintClass) {
+      try {
+        const { data: clsMatch } = await adminClient
+          .from('students')
+          .select('school_id')
+          .ilike('class', hintClass)
+          .limit(1)
+          .maybeSingle();
+        if (clsMatch?.school_id) {
+          return String(clsMatch.school_id);
+        }
+      } catch {}
+    }
+
+    return baseResolved;
+  }
+
+  async function readContinuousAssessmentFromSchoolSettings(schoolId: string): Promise<Record<string, {
+    className: string;
+    subject: string;
+    term: string;
+    columns: any[];
+    studentScores: Record<string, {
+      scores: Record<string, number>;
+      rawCaScore: number;
+      rawCaMax: number;
+      scaledClassScore: number;
+    }>;
+    updatedAt: number;
+  }>> {
+    if (!schoolId) return {};
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data, error } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data && data.streams && typeof data.streams === 'object' && !Array.isArray(data.streams)) {
+        const ca = (data.streams as any).continuous_assessment;
+        if (ca && typeof ca === 'object') {
+          return ca;
+        }
+      }
+    } catch {}
+    return {};
+  }
+
+  async function writeContinuousAssessmentToSchoolSettings(
+    schoolId: string,
+    entriesToMerge: Record<string, {
+      className: string;
+      subject: string;
+      term: string;
+      columns: any[];
+      studentScores: Record<string, {
+        scores: Record<string, number>;
+        rawCaScore: number;
+        rawCaMax: number;
+        scaledClassScore: number;
+      }>;
+      updatedAt: number;
+    }>
+  ): Promise<void> {
+    if (!schoolId || !entriesToMerge || Object.keys(entriesToMerge).length === 0) return;
+    const adminClient = getSupabaseAdmin();
+
+    try {
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams = existing?.streams;
+      let streamItems: any[] = [];
+      let prevNotes: Record<string, string> = {};
+      let prevSuggestions: any[] = [];
+      let prevCa: Record<string, any> = {};
+
+      if (Array.isArray(existingStreams)) {
+        streamItems = existingStreams;
+      } else if (existingStreams && typeof existingStreams === 'object') {
+        streamItems = Array.isArray((existingStreams as any).items) ? (existingStreams as any).items : [];
+        prevNotes = (existingStreams as any).timetable_notes || {};
+        prevSuggestions = Array.isArray((existingStreams as any).timetable_suggestions) ? (existingStreams as any).timetable_suggestions : [];
+        prevCa = (existingStreams as any).continuous_assessment && typeof (existingStreams as any).continuous_assessment === 'object'
+          ? (existingStreams as any).continuous_assessment
+          : {};
+      }
+
+      const mergedCa: Record<string, any> = { ...prevCa };
+      for (const [key, incoming] of Object.entries(entriesToMerge)) {
+        const prevEntry = mergedCa[key] || {};
+        const prevStudentScores = prevEntry.studentScores && typeof prevEntry.studentScores === 'object'
+          ? prevEntry.studentScores
+          : {};
+        mergedCa[key] = {
+          className: incoming.className || prevEntry.className || 'P1',
+          subject: incoming.subject || prevEntry.subject || 'Mathematics',
+          term: incoming.term || prevEntry.term || 'Term 1',
+          columns: Array.isArray(incoming.columns) && incoming.columns.length > 0
+            ? incoming.columns
+            : (Array.isArray(prevEntry.columns) && prevEntry.columns.length > 0 ? prevEntry.columns : DEFAULT_SERVER_CA_COLUMNS),
+          studentScores: {
+            ...prevStudentScores,
+            ...(incoming.studentScores || {})
+          },
+          updatedAt: incoming.updatedAt || Date.now()
+        };
+      }
+
+      const nextStreamsObj = {
+        ...(existingStreams && typeof existingStreams === 'object' && !Array.isArray(existingStreams) ? existingStreams : {}),
+        items: streamItems,
+        timetable_notes: prevNotes,
+        timetable_suggestions: prevSuggestions,
+        continuous_assessment: mergedCa
+      };
+
+      const payload = {
+        school_id: schoolId,
+        grade_boundaries: existing?.grade_boundaries || [],
+        terms: existing?.terms || [],
+        streams: nextStreamsObj,
+        updated_at: Date.now()
+      };
+
+      await adminClient
+        .from('school_settings')
+        .upsert([payload], { onConflict: 'school_id' });
+    } catch (err) {
+      console.warn('Notice saving continuous assessment to school_settings in Supabase:', err);
+    }
+  }
+
+  const normalizeResultRecord = (
+    raw: any,
+    defaultSchoolId?: string | null,
+    caLedger?: Record<string, any>
+  ) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const studentId = String(raw.student_id || raw.studentId || '').trim();
+    const subject = String(raw.subject || '').trim();
+    if (!studentId || !subject) return null;
+
+    const term = String(raw.term || 'Term 1').trim();
+    const academicYear = String(raw.academic_year || raw.academicYear || '2026/2027').trim();
+    const className = String(raw.class || raw.className || 'P1').trim();
+    const schoolId = String(raw.school_id || raw.schoolId || defaultSchoolId || '').trim();
+
+    const caKey = makeCaSubjectKey(className, subject, term);
+    const caEntry = caLedger?.[caKey];
+    const caStu = caEntry?.studentScores?.[studentId];
+
+    let exerciseColumns = raw.exercise_columns ?? raw.exerciseColumns;
+    if (typeof exerciseColumns === 'string') {
+      try { exerciseColumns = JSON.parse(exerciseColumns); } catch { exerciseColumns = undefined; }
+    }
+    if (!Array.isArray(exerciseColumns) || exerciseColumns.length === 0) {
+      if (Array.isArray(caEntry?.columns) && caEntry.columns.length > 0) {
+        exerciseColumns = caEntry.columns;
+      } else {
+        exerciseColumns = undefined;
+      }
+    }
+
+    let exerciseScores = raw.exercise_scores ?? raw.exerciseScores;
+    if (typeof exerciseScores === 'string') {
+      try { exerciseScores = JSON.parse(exerciseScores); } catch { exerciseScores = undefined; }
+    }
+    if (!exerciseScores || typeof exerciseScores !== 'object' || Object.keys(exerciseScores).length === 0) {
+      if (caStu?.scores && typeof caStu.scores === 'object' && Object.keys(caStu.scores).length > 0) {
+        exerciseScores = caStu.scores;
+      } else {
+        exerciseScores = undefined;
+      }
+    }
+
+    const activeCols = Array.isArray(exerciseColumns) && exerciseColumns.length > 0
+      ? exerciseColumns
+      : DEFAULT_SERVER_CA_COLUMNS;
+
+    let computedRawObtained = 0;
+    let computedRawMax = activeCols.reduce((acc: number, c: any) => acc + (Number(c?.maxScore) || 0), 0);
+    let hasExerciseEntry = false;
+
+    if (exerciseScores && typeof exerciseScores === 'object') {
+      for (const col of activeCols) {
+        const val = (exerciseScores as any)[col.id];
+        if (val !== undefined && val !== null && !isNaN(Number(val))) {
+          hasExerciseEntry = true;
+          const clamped = Math.min(Number(col.maxScore) || 100, Math.max(0, Number(val)));
+          computedRawObtained += clamped;
+        }
+      }
+    }
+
+    const rawCaScore = raw.raw_ca_score !== undefined || raw.rawCaScore !== undefined
+      ? Number(raw.raw_ca_score ?? raw.rawCaScore)
+      : (caStu?.rawCaScore !== undefined ? Number(caStu.rawCaScore) : (hasExerciseEntry ? computedRawObtained : undefined));
+
+    const rawCaMax = raw.raw_ca_max !== undefined || raw.rawCaMax !== undefined
+      ? Number(raw.raw_ca_max ?? raw.rawCaMax)
+      : (caStu?.rawCaMax !== undefined ? Number(caStu.rawCaMax) : (hasExerciseEntry ? computedRawMax : undefined));
+
+    const autoScaledClassScore = (hasExerciseEntry && computedRawMax > 0)
+      ? Math.min(30, Math.max(0, Math.round((computedRawObtained / computedRawMax) * 30)))
+      : undefined;
+
+    const classScore = Math.min(
+      100,
+      Math.max(
+        0,
+        Number(raw.class_score ?? raw.classScore ?? autoScaledClassScore ?? caStu?.scaledClassScore ?? 0) || 0
+      )
+    );
+    const examScore = Math.min(
+      100,
+      Math.max(0, Number(raw.exam_score ?? raw.examScore ?? 0) || 0)
+    );
+    const totalScore = Math.min(
+      100,
+      Math.max(0, Number(raw.total_score ?? raw.totalScore ?? (classScore + examScore)) || 0)
+    );
+    const fallbackGrade = calculateServerGrade(totalScore);
+    const grade = String(raw.grade || fallbackGrade.grade).trim();
+    const remarks = String(raw.remarks || fallbackGrade.remarks).trim();
+    const createdAt = Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now();
+
+    return {
+      id: typeof raw.id === 'number' ? raw.id : undefined,
+      schoolId,
+      school_id: schoolId,
+      studentId,
+      student_id: studentId,
+      subject,
+      term,
+      academicYear,
+      academic_year: academicYear,
+      class: className,
+      classScore,
+      class_score: classScore,
+      examScore,
+      exam_score: examScore,
+      totalScore,
+      total_score: totalScore,
+      grade,
+      remarks,
+      exerciseScores,
+      exercise_scores: exerciseScores,
+      exerciseColumns,
+      exercise_columns: exerciseColumns,
+      rawCaScore,
+      raw_ca_score: rawCaScore,
+      rawCaMax,
+      raw_ca_max: rawCaMax,
+      createdAt,
+      created_at: createdAt
+    };
+  };
+
+  async function upsertResultsAndCaInSupabase(
+    schoolId: string,
+    rawRecords: any[],
+    explicitCaMeta?: {
+      className?: string;
+      subject?: string;
+      term?: string;
+      columns?: any[];
+      exerciseScores?: Record<string, Record<string, number>>;
+    }
+  ): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+
+    // 1. Build CA ledger updates per (className, subject, term)
+    const caUpdates: Record<string, {
+      className: string;
+      subject: string;
+      term: string;
+      columns: any[];
+      studentScores: Record<string, {
+        scores: Record<string, number>;
+        rawCaScore: number;
+        rawCaMax: number;
+        scaledClassScore: number;
+      }>;
+      updatedAt: number;
+    }> = {};
+
+    const ensureCaBucket = (cls: string, subj: string, trm: string, cols?: any[]) => {
+      const key = makeCaSubjectKey(cls, subj, trm);
+      if (!caUpdates[key]) {
+        caUpdates[key] = {
+          className: cls,
+          subject: subj,
+          term: trm,
+          columns: Array.isArray(cols) && cols.length > 0 ? cols : DEFAULT_SERVER_CA_COLUMNS,
+          studentScores: {},
+          updatedAt: Date.now()
+        };
+      } else if (Array.isArray(cols) && cols.length > 0) {
+        caUpdates[key].columns = cols;
+      }
+      return caUpdates[key];
+    };
+
+    if (explicitCaMeta?.className && explicitCaMeta?.subject && explicitCaMeta?.term) {
+      const bucket = ensureCaBucket(
+        explicitCaMeta.className,
+        explicitCaMeta.subject,
+        explicitCaMeta.term,
+        explicitCaMeta.columns
+      );
+      const rawMax = bucket.columns.reduce((acc: number, c: any) => acc + (Number(c?.maxScore) || 0), 0);
+      if (explicitCaMeta.exerciseScores && typeof explicitCaMeta.exerciseScores === 'object') {
+        for (const [stuId, scoreMap] of Object.entries(explicitCaMeta.exerciseScores)) {
+          if (!stuId || !scoreMap || typeof scoreMap !== 'object') continue;
+          const cleanScores: Record<string, number> = {};
+          let rawObtained = 0;
+          let hasAny = false;
+          for (const col of bucket.columns) {
+            const v = (scoreMap as any)[col.id];
+            if (v !== undefined && v !== null && !isNaN(Number(v))) {
+              const clamped = Math.min(Number(col.maxScore) || 100, Math.max(0, Number(v)));
+              cleanScores[col.id] = clamped;
+              rawObtained += clamped;
+              hasAny = true;
+            }
+          }
+          const scaledClassScore = (hasAny && rawMax > 0)
+            ? Math.min(30, Math.max(0, Math.round((rawObtained / rawMax) * 30)))
+            : 0;
+          bucket.studentScores[stuId] = {
+            scores: cleanScores,
+            rawCaScore: rawObtained,
+            rawCaMax: rawMax,
+            scaledClassScore
+          };
+        }
+      }
+    }
+
+    // 2. Normalize and deduplicate incoming result records
+    const dedupedMap = new Map<string, NonNullable<ReturnType<typeof normalizeResultRecord>>>();
+    for (const item of (Array.isArray(rawRecords) ? rawRecords : [])) {
+      const norm = normalizeResultRecord({ ...item, school_id: schoolId }, schoolId);
+      if (!norm) continue;
+      const dedupeKey = `${norm.studentId}|${norm.subject.toLowerCase()}|${norm.term.toLowerCase()}|${norm.academicYear}`;
+      dedupedMap.set(dedupeKey, norm);
+
+      if (norm.exerciseColumns || norm.exerciseScores) {
+        const bucket = ensureCaBucket(norm.class, norm.subject, norm.term, norm.exerciseColumns);
+        const rawMax = bucket.columns.reduce((acc: number, c: any) => acc + (Number(c?.maxScore) || 0), 0);
+        if (norm.exerciseScores && typeof norm.exerciseScores === 'object') {
+          const cleanScores: Record<string, number> = {};
+          let rawObtained = 0;
+          for (const [k, v] of Object.entries(norm.exerciseScores)) {
+            if (v !== undefined && v !== null && !isNaN(Number(v))) {
+              cleanScores[k] = Number(v);
+              rawObtained += Number(v);
+            }
+          }
+          bucket.studentScores[norm.studentId] = {
+            scores: cleanScores,
+            rawCaScore: norm.rawCaScore ?? rawObtained,
+            rawCaMax: norm.rawCaMax ?? rawMax,
+            scaledClassScore: norm.classScore
+          };
+        }
+      }
+    }
+
+    // Persist CA breakdown to public.school_settings in Supabase
+    if (Object.keys(caUpdates).length > 0) {
+      await writeContinuousAssessmentToSchoolSettings(schoolId, caUpdates);
+    }
+
+    const normalizedList = Array.from(dedupedMap.values());
+    if (normalizedList.length === 0) return [];
+
+    // Prepare extended payload (with exercise_scores & exercise_columns) and core payload (standard schema_master columns)
+    const extendedDbPayload = normalizedList.map(r => ({
+      school_id: schoolId,
+      student_id: r.studentId,
+      subject: r.subject,
+      term: r.term,
+      academic_year: r.academicYear,
+      class: r.class,
+      class_score: r.classScore,
+      exam_score: r.examScore,
+      total_score: r.totalScore,
+      grade: r.grade,
+      remarks: r.remarks,
+      exercise_scores: r.exerciseScores || {},
+      exercise_columns: r.exerciseColumns || [],
+      raw_ca_score: r.rawCaScore ?? null,
+      raw_ca_max: r.rawCaMax ?? null,
+      created_at: r.createdAt || Date.now()
+    }));
+
+    const coreDbPayload = normalizedList.map(r => ({
+      school_id: schoolId,
+      student_id: r.studentId,
+      subject: r.subject,
+      term: r.term,
+      academic_year: r.academicYear,
+      class: r.class,
+      class_score: r.classScore,
+      exam_score: r.examScore,
+      total_score: r.totalScore,
+      grade: r.grade,
+      remarks: r.remarks,
+      created_at: r.createdAt || Date.now()
+    }));
+
+    // Try extended upsert first (if exercise_scores column exists on public.results)
+    try {
+      const { data: extRows, error: extErr } = await adminClient
+        .from('results')
+        .upsert(extendedDbPayload, { onConflict: 'school_id,student_id,subject,term,academic_year' })
+        .select();
+
+      if (!extErr && Array.isArray(extRows)) {
+        const caLedger = await readContinuousAssessmentFromSchoolSettings(schoolId);
+        return extRows.map(row => normalizeResultRecord(row, schoolId, caLedger)).filter(Boolean);
+      }
+    } catch {}
+
+    // Fallback to core columns upsert on (school_id,student_id,subject,term,academic_year)
+    const { data: coreRows, error: coreErr } = await adminClient
+      .from('results')
+      .upsert(coreDbPayload, { onConflict: 'school_id,student_id,subject,term,academic_year' })
+      .select();
+
+    if (!coreErr && Array.isArray(coreRows)) {
+      const caLedger = await readContinuousAssessmentFromSchoolSettings(schoolId);
+      return coreRows.map(row => normalizeResultRecord(row, schoolId, caLedger)).filter(Boolean);
+    }
+
+    // Individual row select + update/insert fallback if composite constraint differs
+    const savedRows: any[] = [];
+    for (const row of coreDbPayload) {
+      try {
+        const { data: existing } = await adminClient
+          .from('results')
+          .select('id')
+          .eq('school_id', schoolId)
+          .eq('student_id', row.student_id)
+          .eq('subject', row.subject)
+          .eq('term', row.term)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing?.id != null) {
+          const { data: updated, error: updErr } = await adminClient
+            .from('results')
+            .update({
+              class: row.class,
+              academic_year: row.academic_year,
+              class_score: row.class_score,
+              exam_score: row.exam_score,
+              total_score: row.total_score,
+              grade: row.grade,
+              remarks: row.remarks
+            })
+            .eq('id', existing.id)
+            .eq('school_id', schoolId)
+            .select()
+            .maybeSingle();
+          if (!updErr && updated) savedRows.push(updated);
+        } else {
+          const { data: inserted, error: insErr } = await adminClient
+            .from('results')
+            .insert([row])
+            .select()
+            .maybeSingle();
+          if (!insErr && inserted) savedRows.push(inserted);
+        }
+      } catch {}
+    }
+
+    const caLedger = await readContinuousAssessmentFromSchoolSettings(schoolId);
+    return savedRows.map(row => normalizeResultRecord(row, schoolId, caLedger)).filter(Boolean);
+  }
+
+  async function fetchSchoolResultsFromSupabase(
+    schoolId: string,
+    filters?: { className?: string; term?: string; subject?: string; studentId?: string }
+  ): Promise<{
+    results: any[];
+    caColumns: any[];
+    caScores: Record<string, Record<string, number>>;
+    allCaMap: Record<string, any>;
+  }> {
+    const adminClient = getSupabaseAdmin();
+    if (!schoolId) {
+      return { results: [], caColumns: DEFAULT_SERVER_CA_COLUMNS, caScores: {}, allCaMap: {} };
+    }
+
+    const [resQuery, caLedger] = await Promise.all([
+      adminClient
+        .from('results')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('id', { ascending: true }),
+      readContinuousAssessmentFromSchoolSettings(schoolId)
+    ]);
+
+    const allResults = Array.isArray(resQuery.data)
+      ? resQuery.data.map(r => normalizeResultRecord(r, schoolId, caLedger)).filter(Boolean)
+      : [];
+
+    const targetClass = filters?.className && filters.className !== 'All'
+      ? String(filters.className).trim().toLowerCase()
+      : '';
+    const targetTerm = filters?.term
+      ? String(filters.term).trim().toLowerCase()
+      : '';
+    const targetSubject = filters?.subject
+      ? String(filters.subject).trim().toLowerCase()
+      : '';
+    const targetStudentId = filters?.studentId
+      ? String(filters.studentId).trim().toLowerCase()
+      : '';
+
+    const filteredResults = allResults.filter((r: any) => {
+      if (targetClass && String(r.class || '').trim().toLowerCase() !== targetClass) return false;
+      if (targetTerm && String(r.term || '').trim().toLowerCase() !== targetTerm) return false;
+      if (targetSubject && String(r.subject || '').trim().toLowerCase() !== targetSubject) return false;
+      if (targetStudentId && String(r.studentId || '').trim().toLowerCase() !== targetStudentId) return false;
+      return true;
+    });
+
+    let caColumns = DEFAULT_SERVER_CA_COLUMNS;
+    const caScores: Record<string, Record<string, number>> = {};
+
+    if (filters?.className && filters?.subject && filters?.term) {
+      const exactKey = makeCaSubjectKey(filters.className, filters.subject, filters.term);
+      const matchedKey = Object.keys(caLedger).find(k => k.toLowerCase() === exactKey.toLowerCase());
+      const entry = matchedKey ? caLedger[matchedKey] : null;
+
+      if (entry) {
+        if (Array.isArray(entry.columns) && entry.columns.length > 0) {
+          caColumns = entry.columns;
+        }
+        if (entry.studentScores && typeof entry.studentScores === 'object') {
+          for (const [stuId, stuBreak] of Object.entries(entry.studentScores)) {
+            if (stuBreak?.scores && typeof stuBreak.scores === 'object') {
+              caScores[stuId] = stuBreak.scores;
+            }
+          }
+        }
+      } else {
+        const resultWithCols = filteredResults.find((r: any) => Array.isArray(r.exerciseColumns) && r.exerciseColumns.length > 0);
+        if (resultWithCols?.exerciseColumns) {
+          caColumns = resultWithCols.exerciseColumns;
+        }
+      }
+
+      for (const r of filteredResults) {
+        if (r.exerciseScores && typeof r.exerciseScores === 'object' && Object.keys(r.exerciseScores).length > 0) {
+          caScores[r.studentId] = {
+            ...(caScores[r.studentId] || {}),
+            ...r.exerciseScores
+          };
+        }
+      }
+    }
+
+    return {
+      results: filteredResults,
+      caColumns,
+      caScores,
+      allCaMap: caLedger
+    };
+  }
+
+  // GET /api/results - Fetch academic results and Continuous Assessment (Exercises, Homework, Tests) from Supabase
+  app.get("/api/results", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveResultsSchoolId(req);
+      const className = req.query.class ? String(req.query.class).trim() : undefined;
+      const term = req.query.term ? String(req.query.term).trim() : undefined;
+      const subject = req.query.subject ? String(req.query.subject).trim() : undefined;
+      const studentId = (req.query.student_id || req.query.studentId)
+        ? String(req.query.student_id || req.query.studentId).trim()
+        : undefined;
+
+      const { results, caColumns, caScores, allCaMap } = await fetchSchoolResultsFromSupabase(schoolId, {
+        className,
+        term,
+        subject,
+        studentId
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        results,
+        caColumns,
+        caScores,
+        allCaMap
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/results/ca - Real-time auto-save of Class Exercises, Homework, and Class Test columns & marks to Supabase
+  app.post("/api/results/ca", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'parent' || userRole === 'student') {
+        return res.status(403).json({
+          success: false,
+          error: "Parents and students are not permitted to modify continuous assessment marks."
+        });
+      }
+
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for continuous assessment." });
+      }
+
+      const body = req.body || {};
+      const className = String(body.class || body.className || 'P1').trim();
+      const subject = String(body.subject || 'Mathematics').trim();
+      const term = String(body.term || 'Term 1').trim();
+      const academicYear = String(body.academicYear || body.academic_year || '2026/2027').trim();
+      const columns = Array.isArray(body.columns) && body.columns.length > 0
+        ? body.columns
+        : DEFAULT_SERVER_CA_COLUMNS;
+      const exerciseScores: Record<string, Record<string, number>> =
+        body.exerciseScores && typeof body.exerciseScores === 'object' ? body.exerciseScores : {};
+      const scoresMap: Record<string, { class: number; exam: number }> =
+        body.scores && typeof body.scores === 'object' ? body.scores : {};
+
+      // Also build result rows for any students with exercise scores or terminal scores so public.results stays in sync
+      const rawMax = columns.reduce((acc: number, c: any) => acc + (Number(c?.maxScore) || 0), 0);
+      const studentIds = Array.from(new Set([...Object.keys(exerciseScores), ...Object.keys(scoresMap)])).filter(Boolean);
+      const recordsToUpsert: any[] = [];
+
+      for (const stuId of studentIds) {
+        const stuEx = exerciseScores[stuId] || {};
+        let rawObtained = 0;
+        let hasAnyEx = false;
+        const cleanStuEx: Record<string, number> = {};
+        for (const col of columns) {
+          const v = stuEx[col.id];
+          if (v !== undefined && v !== null && !isNaN(Number(v))) {
+            const clamped = Math.min(Number(col.maxScore) || 100, Math.max(0, Number(v)));
+            cleanStuEx[col.id] = clamped;
+            rawObtained += clamped;
+            hasAnyEx = true;
+          }
+        }
+        const scaledClassScore = (hasAnyEx && rawMax > 0)
+          ? Math.min(30, Math.max(0, Math.round((rawObtained / rawMax) * 30)))
+          : 0;
+        const directScore = scoresMap[stuId] || { class: 0, exam: 0 };
+        const classScore = hasAnyEx ? scaledClassScore : (Number(directScore.class) || 0);
+        const examScore = Number(directScore.exam) || 0;
+        const totalScore = classScore + examScore;
+        const { grade, remarks } = calculateServerGrade(totalScore);
+
+        if (hasAnyEx || classScore > 0 || examScore > 0) {
+          recordsToUpsert.push({
+            school_id: schoolId,
+            student_id: stuId,
+            subject,
+            term,
+            academic_year: academicYear,
+            class: className,
+            class_score: classScore,
+            exam_score: examScore,
+            total_score: totalScore,
+            grade,
+            remarks,
+            exercise_scores: cleanStuEx,
+            exercise_columns: columns,
+            raw_ca_score: hasAnyEx ? rawObtained : undefined,
+            raw_ca_max: hasAnyEx ? rawMax : undefined
+          });
+        }
+      }
+
+      const saved = await upsertResultsAndCaInSupabase(schoolId, recordsToUpsert, {
+        className,
+        subject,
+        term,
+        columns,
+        exerciseScores
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        className,
+        subject,
+        term,
+        columns,
+        savedCount: saved.length,
+        results: saved,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/results - Authoritative bulk save of Class Exercises, 30% Class Scores, 70% Exam Scores, and Report Card totals to Supabase
+  app.post("/api/results", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'parent' || userRole === 'student') {
+        return res.status(403).json({
+          success: false,
+          error: "Parents and students are not permitted to modify academic results."
+        });
+      }
+
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for results." });
+      }
+
+      const body = req.body || {};
+      const incomingRecords = Array.isArray(body.results)
+        ? body.results
+        : (Array.isArray(body.records) ? body.records : (Array.isArray(body) ? body : [body]));
+
+      const validRecords = incomingRecords.filter(
+        (r: any) => r && (r.studentId || r.student_id) && r.subject
+      );
+
+      const caMeta = body.caMeta && typeof body.caMeta === 'object' ? body.caMeta : undefined;
+      const saved = await upsertResultsAndCaInSupabase(schoolId, validRecords, caMeta);
+
+      const sample = validRecords[0] || {};
+      const { results, caColumns, caScores } = await fetchSchoolResultsFromSupabase(schoolId, {
+        className: body.class || sample.class,
+        term: body.term || sample.term,
+        subject: body.subject || sample.subject
+      });
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        savedCount: saved.length,
+        saved,
+        results,
+        caColumns,
+        caScores,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/results/sync - Auto-migrate local results & CA breakdowns to Supabase on load
+  app.post("/api/results/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve school_id for results sync." });
+      }
+
+      const body = req.body || {};
+      const incomingResults = Array.isArray(body.results)
+        ? body.results
+        : (Array.isArray(body.records) ? body.records : []);
+      const userRole = String(req.user?.role || '').toLowerCase();
+
+      let saved: any[] = [];
+      if (incomingResults.length > 0 && userRole !== 'parent' && userRole !== 'student') {
+        saved = await upsertResultsAndCaInSupabase(schoolId, incomingResults, body.caMeta);
+      }
+
+      const { results, caColumns, caScores, allCaMap } = await fetchSchoolResultsFromSupabase(schoolId, {
+        className: body.class ? String(body.class).trim() : undefined,
+        term: body.term ? String(body.term).trim() : undefined,
+        subject: body.subject ? String(body.subject).trim() : undefined
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        migratedCount: saved.length,
+        results,
+        caColumns,
+        caScores,
+        allCaMap,
+        syncedAt: Date.now()
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });

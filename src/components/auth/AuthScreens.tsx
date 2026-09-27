@@ -64,11 +64,18 @@ export function AuthScreens({
       const raw = localStorage.getItem('esepa_active_school');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && (parsed.id || parsed.name)) {
+        const parsedId = String(parsed?.id || '').trim();
+        const parsedSlug = String(parsed?.slug || '').trim().toLowerCase();
+        if (
+          parsed &&
+          (parsedId || parsed.name) &&
+          parsedId !== '00000000-0000-0000-0000-000000000001' &&
+          parsedSlug !== 'school-sphere-academy'
+        ) {
           return {
-            id: String(parsed.id || ''),
+            id: parsedId,
             name: String(parsed.name || parsed.schoolName || 'Verified Institution'),
-            slug: parsed.slug || String(parsed.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            slug: parsedSlug || String(parsed.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-'),
             logo_url: parsed.logo_url || parsed.logo || undefined,
             theme: parsed.theme || 'indigo'
           };
@@ -130,7 +137,7 @@ export function AuthScreens({
 
   // Live Auto-Detection: Debounce lookup of school via /api/auth/resolve-school
   useEffect(() => {
-    const clean = identifier.trim().toLowerCase();
+    const clean = identifier.trim().toLowerCase().replace(/^@+/, '');
     const storedSchool = getStoredActiveSchool();
     if (!clean || clean.length < 2 || clean === 'admin' || clean === 'school_admin' || clean === 'headmaster') {
       setDetectedSchool(storedSchool);
@@ -151,7 +158,7 @@ export function AuthScreens({
       } catch (e) {
         setDetectedSchool(storedSchool);
       }
-    }, 300);
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [identifier]);

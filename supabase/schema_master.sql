@@ -296,9 +296,18 @@ CREATE TABLE IF NOT EXISTS public.results (
   total_score NUMERIC(5, 2) NOT NULL DEFAULT 0.00 CHECK (total_score >= 0 AND total_score <= 100),
   grade VARCHAR(5) NOT NULL,
   remarks VARCHAR(100) NULL,
+  exercise_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+  exercise_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+  raw_ca_score NUMERIC(6, 2) NULL,
+  raw_ca_max NUMERIC(6, 2) NULL,
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   CONSTRAINT uq_school_result_term UNIQUE (school_id, student_id, subject, term, academic_year)
 );
+
+ALTER TABLE public.results ADD COLUMN IF NOT EXISTS exercise_scores JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.results ADD COLUMN IF NOT EXISTS exercise_columns JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.results ADD COLUMN IF NOT EXISTS raw_ca_score NUMERIC(6, 2) NULL;
+ALTER TABLE public.results ADD COLUMN IF NOT EXISTS raw_ca_max NUMERIC(6, 2) NULL;
 
 CREATE INDEX IF NOT EXISTS idx_results_school_lookup ON public.results (school_id, term, academic_year, class);
 CREATE INDEX IF NOT EXISTS idx_results_student ON public.results (school_id, student_id);

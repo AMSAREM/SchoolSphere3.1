@@ -104,17 +104,28 @@ export interface Attendance {
   status: 'Present' | 'Absent' | 'Late';
 }
 
+export interface ClassAssessmentItem {
+  id: string;
+  title: string;
+  category: 'Exercise' | 'Homework' | 'Test';
+  maxScore: number;
+}
+
 export interface Result {
   id?: number;
   studentId: string;
   subject: string;
   term: string;
   class: string;
-  classScore: number; // 30%
+  classScore: number; // 30% (summed & scaled from class exercises/work)
   examScore: number;  // 70%
   totalScore: number;
   grade: string;
   remarks: string;
+  exerciseScores?: Record<string, number>;
+  exerciseColumns?: ClassAssessmentItem[];
+  rawCaScore?: number;
+  rawCaMax?: number;
 }
 
 export interface Subject {
