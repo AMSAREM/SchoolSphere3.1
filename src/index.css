@@ -446,12 +446,22 @@ body {
   }
 }
 
-/* Safe area padding utilities for notched mobile screens */
+/* Safe area padding & mobile bottom navigation stacking utilities (iOS Home Indicator / Dynamic Island & Android Gesture Bar) */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --mobile-nav-height: 3.875rem; /* 62px custom bottom nav bar */
+  --mobile-nav-bottom-offset: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  --mobile-nav-total-height: calc(var(--mobile-nav-height) + var(--mobile-nav-bottom-offset));
+}
+
 .safe-top {
   padding-top: env(safe-area-inset-top, 0px);
 }
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 .safe-left {
   padding-left: env(safe-area-inset-left, 0px);
@@ -460,8 +470,29 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Wrapper for the fixed bottom dock that automatically clears the OS hardware home bar */
+.mobile-safe-dock {
+  bottom: 0;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+/* Utility to position any sticky/fixed primary action bar directly above the custom bottom nav */
+.above-mobile-nav {
+  bottom: calc(var(--mobile-nav-height) + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.625rem);
+}
+
+/* Scrollable main viewport bottom padding so content & inline submit buttons never hide behind the bottom nav */
+@media (max-width: 1023px) {
+  .pb-mobile-safe-content {
+    padding-bottom: calc(var(--mobile-nav-height) + max(1rem, env(safe-area-inset-bottom, 0px)) + 5.25rem) !important;
+  }
+}
+
 @utility sharpen-image {
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
 }
+
 

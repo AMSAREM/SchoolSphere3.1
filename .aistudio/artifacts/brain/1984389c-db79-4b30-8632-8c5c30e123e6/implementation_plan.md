@@ -1,66 +1,71 @@
-# True Vector A4 PDF Generation for Report Cards & Broadsheets
+# Mobile Safe-Area Wrapper, Bottom Navigation & Stacked Primary Action Layout
 
-Replace the blurry `html2canvas` screenshot-based PDF export with a **True Vector A4 PDF Engine** powered directly by `jsPDF` vector drawing primitives so exported report cards, batch class reports, and broadsheets contain razor-sharp, selectable vector text and crisp geometric borders at any zoom level.
+Resolve clipping and overlap at the bottom of mobile screens by introducing a hardware safe-area layout architecture (`env(safe-area-inset-bottom)`), updating the selected custom bottom navigation bar (`div#root > div > main > div:nth-of-type(2) > div:nth-of-type(1)`), fixing scroll-container bottom clearance, and providing a reusable sticky primary action bar (`MobileStickyActionBar` / `MobileSafeActionStack`) that stacks directly above the custom bottom navigation bar.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Why the Previous PDF Looked Like a Blurry Screenshot**: Previously, clicking **PDF** or **Batch PDF** used `html2canvas` to take a bitmap screenshot of the webpage and stretch that image across an A4 page. In addition, Tailwind v4 `oklch()` colors were stripped during cloning, degrading contrast and borders.
-> - **True Vector PDF Architecture**: Report cards (both Individual and Batch) and Examination Broadsheets will now be drawn directly onto the A4 PDF canvas (`210mm × 297mm`) using native `jsPDF` vector text, vector lines, and vector rectangles. Text will be 100% selectable, searchable, and infinitely sharp at 400%+ zoom.
+> - **Why Primary Action Buttons Were Clipped**:
+>   1. The custom mobile bottom navigation bar used a fixed `bottom-3` (`12px`) offset without `env(safe-area-inset-bottom, 0px)`, causing it to collide with the iPhone Home Indicator (`34px`) and Android gesture bar.
+>   2. The inner animated view wrapper used `h-full` inside an `overflow-y-auto` scroll container, which prevented bottom padding (`pb-24`) from taking effect below overflowing page content—leaving bottom action buttons trapped behind the floating navigation bar.
+> - **Unified Safe-Area & Stacking Math**: All bottom layers reference shared CSS variables (`--safe-bottom: env(safe-area-inset-bottom, 0px)` and `--mobile-nav-height: 3.875rem`) so the hardware gesture bar, custom bottom navigation bar, sticky primary CTA bar, and scrollable content stack in deterministic vertical layers without ever overlapping.
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Generates authentic, print-shop-grade vector A4 PDF documents for Individual Student Report Cards, Batch Class Report Cards, Examination Broadsheets, and Fee Arrears Statements—eliminating raster screenshots completely for academic reports.
-- **Target Audience / Persona**: School Administrators, Headmasters, Class Teachers, Accountants, and Parents downloading, printing, or sharing official PDF transcripts on mobile or desktop.
-- **Key Value**: Produces lightweight, instant, crystal-clear PDFs with selectable text, exact `210mm × 297mm` A4 margins, and zero pixelation or aspect-ratio stretching.
+- **What It Does**: Establishes a three-tier bottom viewport hierarchy for mobile and tablet screens (`< 1024px`) while preserving standard desktop layouts (`≥ 1024px`):
+  1. **Tier 1 (Bottom-most)**: Native OS Hardware Safe Area (`env(safe-area-inset-bottom, 0px)` for iPhone Home Indicator / Android gesture bar).
+  2. **Tier 2 (Middle)**: Custom Floating/Docked Bottom Navigation Bar positioned at `bottom: max(0.75rem, env(safe-area-inset-bottom, 0px))`.
+  3. **Tier 3 (Top of Bottom Stack)**: Sticky Primary Action Bar (for "Submit", "Save All Marks", "Checkout", etc.) positioned at `bottom: calc(var(--mobile-nav-height) + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.625rem)` directly above the custom bottom nav, plus generous scroll padding on the main content container.
+- **Target Audience / Persona**: Mobile users on iOS (iPhone X through iPhone 16 Pro Dynamic Island / Home Indicator) and Android (gesture navigation and 3-button system bars).
+- **Key Value**: Guarantees every primary action button and bottom form control is 100% visible, tappable (`≥ 44px` hitbox), and never obscured by either the app's bottom navigation bar or the phone's hardware home bar.
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Individual Report Card Vector PDF**: Clicking **PDF** in the Individual Report view generates a single-page A4 vector PDF (`210mm × 297mm`) matching the official `ReportCard` design (double-border indigo frame, school crest & header, student portrait & 2-column bio grid, bordered 6-column subject table with aggregate/GPA footer, 2-column attendance/next-term & remarks boxes, and signature blocks).
-  2. **Batch Class Reports Vector PDF**: Clicking **Batch PDF** in Batch Reports generates a multi-page A4 vector PDF where each student in the class occupies one crisp vector A4 page—completing almost instantaneously without browser lag.
-  3. **Broadsheet & Arrears Statement Vector PDF**: Clicking **PDF** on the Examination Broadsheet or Fee Arrears Reminder generates a clean vector table document.
+  1. **Scrolling to the Bottom of Any View**: Users can scroll to the very bottom of any module (Dashboard, Results, Fees, Attendance, Reports, Lesson Notes) and see all bottom action buttons clearly resting above the custom bottom navigation bar with breathing room.
+  2. **Sticky Primary Action Button ("Submit" / "Save" / "Checkout")**: Views with a primary bottom CTA dock the action bar directly above the custom bottom navigation bar on mobile, and inline on desktop.
+  3. **Hardware Gesture & Home Indicator Clearance**: Swiping up on the iPhone Home Indicator or tapping Android navigation buttons never accidentally triggers or clips the app's bottom navigation tabs or central FAB.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Official institutional transcript rendered with sharp vector rules (`0.25mm–0.6mm` strokes), deep indigo headers (`#1E1B4B`), slate typography (`#0F172A` / `#475569`), and high-contrast tabular numerals.
-  - *Typography & Hierarchy*: Native PDF vector fonts (`Helvetica` / `Courier` bold & regular for tabular scores and admission numbers) scaled to exact millimeter coordinates so every label, score, grade, and remark is crisp on both screen PDF viewers and physical printers.
+  - *Surface Elevation*: Translucent glassmorphic surface (`bg-white/95 backdrop-blur-md`) with crisp border (`border-[#bac4c6]`) and elevated ambient shadow (`shadow-[0_8px_28px_rgba(28,74,89,0.18)]`) for the selected bottom navigation capsule.
+  - *Touch Ergonomics*: Minimum `44px × 44px` hit targets for all navigation tabs and `48px` height for primary action buttons.
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Native Vector `jsPDF` Drawing Instead of `html2canvas` Rasterization for Reports**
-  - *Chosen Approach*: Build dedicated vector PDF builders (`exportReportCardVectorPDF`, `exportBatchReportCardsVectorPDF`, `exportBroadsheetVectorPDF`, and `exportFeeBillVectorPDF`) that plot text, tables, and borders directly in millimeter coordinates on A4 pages.
-  - *Why*: Vector PDFs never blur when zoomed or printed, support text selection/copying, never stretch on mobile viewports, and generate 10–20× faster for whole-class batches.
-  - *Alternatives Considered*: Increasing `html2canvas` scale factor, which still produces huge bitmap files (15–40 MB for a class) that look like raster images and suffer from browser CSS cloning glitches.
-- **Decision 2: Exact `oklch` Color Normalization & 384-DPI Fallback for Generic DOM Captures**
-  - *Chosen Approach*: For any remaining DOM-capture PDF buttons outside Report Terminal (such as custom modal receipts), convert modern `oklch`/`oklab` CSS colors to standard `#RRGGBB` hex via a 1×1 canvas color resolver instead of resetting them to `inherit`, and capture at `scale: 4` without aspect-ratio distortion.
-  - *Why*: Ensures every PDF export across the entire platform is sharp and preserves all colors and borders.
+- **Decision 1: Shared CSS Custom Properties for Safe Area & Nav Offset**
+  - *Chosen Approach*: Define `--safe-top`, `--safe-bottom`, `--mobile-nav-height`, and `--mobile-nav-bottom-offset` in root CSS using `env(safe-area-inset-*)` and `100dvh` dynamic viewport units.
+  - *Why*: Eliminates magic numbers and ensures that when a device reports a `34px` iOS bottom inset or `0px` desktop inset, both the custom bottom nav and any stacked primary CTA automatically shift upward by the exact hardware inset.
+- **Decision 2: Fix Scroll Container Overflow (`min-h-full` instead of `h-full`)**
+  - *Chosen Approach*: Replace `h-full` with `min-h-full` on the inner view wrapper inside `<main>` and apply `.pb-mobile-safe-content` so the scroll container always honors bottom clearance below the last button on every screen.
+  - *Why*: In CSS flexbox/scroll layouts, a child with `height: 100%` (`h-full`) causes overflowing descendants to ignore the parent scroll container's `padding-bottom`.
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Architecture & Component Diagram**:
+- **Architecture & Viewport Stacking Diagram**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         Report Terminal Actions                         │
-│  • Individual Report ("PDF")      • Batch Reports ("Batch PDF")         │
-│  • Broadsheet ("PDF")             • Fee Arrears Notice ("Save PDF")     │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                   True Vector A4 PDF Engine (jsPDF)                     │
+│                     Mobile Viewport (100dvh, <1024px)                   │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ A4 Page Vector Composer (210mm × 297mm, Portrait)                 │  │
-│  │  1. Outer & Inner Double Frame (10mm margin, #1E1B4B stroke)      │  │
-│  │  2. Vector Institutional Header + Embedded Crest Image            │  │
-│  │  3. Student Passport Image / Vector Box + 2-Col Bio Metadata      │  │
-│  │  4. Vector Academic Table (6 cols, dynamic row height, #1E1B4B    │  │
-│  │     header fill, tabular score alignment, Aggregate/GPA footer)   │  │
-│  │  5. 2-Col Attendance/Next Term & Teacher/Headmaster Remarks       │  │
-│  │  6. Dual Signature & Stamp Blocks + Verified AIMS Footer          │  │
+│  │ Top App Header (padding-top: env(safe-area-inset-top, 0px))       │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ Scrollable Main Content Container (overflow-y-auto)               │  │
+│  │  • Inner View Wrapper (min-h-full, max-w-7xl)                     │  │
+│  │  • Bottom Scroll Clearance: .pb-mobile-safe-content               │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ Tier 3: Sticky Primary Action Bar (MobileSafeActionStack)         │  │
+│  │  • Position: .above-mobile-nav (stacked above bottom nav)         │  │
+│  │  • Holds primary CTA ("Submit" / "Save All Marks" / "Checkout")   │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ Tier 2: Selected Custom Bottom Navigation Bar                     │  │
+│  │  • Selector: main > div:nth-of-type(2) > div:nth-of-type(1)       │  │
+│  │  • Position: pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]    │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ Tier 1: Native OS Hardware Bar / Home Indicator                   │  │
+│  │  • Height: env(safe-area-inset-bottom, 0px) (e.g. 34px on iOS)    │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Interactive Component & State Mapping**:
-  - **Single Report Card Export**: Passes `selectedStudent`, filtered `results`, `termReport`, `schoolProfile`, and `academicConfig` into `exportReportCardVectorPDF` to download a vector A4 PDF.
-  - **Batch Class Export**: Passes `classStudents`, `classResults`, `termReports`, `studentRankings`, `schoolProfile`, and `academicConfig` into `exportBatchReportCardsVectorPDF` to render one vector A4 page per student in a single PDF file.
-  - **Broadsheet & Arrears Export**: Passes structured class summary / debtor data into vector PDF generators for crisp tabular output.
+  - **Selected Bottom Navigation Capsule (`main > div:nth-of-type(2) > div:nth-of-type(1)`)**: Updated with safe-area bottom offset (`pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]`), frosted backdrop blur (`bg-white/95 backdrop-blur-md`), and responsive spacing across narrow (`320px–375px`) and standard (`390px–430px`) screens.
+  - **Reusable `<MobileSafeActionStack>` & `<MobileStickyActionBar>` Component**: Provides a drop-in wrapper and sticky primary CTA stacking directly above the custom bottom navigation bar so any form or checkout/submission action stays unobstructed.

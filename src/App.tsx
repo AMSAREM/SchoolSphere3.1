@@ -76,6 +76,7 @@ import { NotificationProvider, useNotifications } from './contexts/NotificationC
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { DoodleBackground } from './components/DoodleBackground';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
@@ -868,7 +869,7 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen bg-[#f6f8f7] overflow-hidden font-sans print:h-auto print:overflow-visible relative">
+    <div className="flex h-dvh min-h-dvh bg-[#f6f8f7] overflow-hidden font-sans print:h-auto print:overflow-visible relative safe-top">
       <DoodleBackground opacity={0.04} />
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
@@ -1259,7 +1260,7 @@ function AppContent() {
         {/* View Container */}
         <div className={cn(
           "flex-1 relative print:p-0 print:overflow-visible print:h-auto print:block",
-          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8"
+          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-mobile-safe-content lg:pb-8"
         )}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -1270,7 +1271,7 @@ function AppContent() {
               transition={{ duration: 0.2 }}
               className={cn(
                 "print:h-auto print:block",
-                activeView === 'creator' ? "h-full w-full" : "h-full max-w-7xl mx-auto w-full"
+                activeView === 'creator' ? "h-full w-full" : "min-h-full max-w-7xl mx-auto w-full pb-4 lg:pb-0"
               )}
             >
               <ErrorBoundary key={activeView}>
@@ -1354,91 +1355,15 @@ function AppContent() {
           </AnimatePresence>
         </div>
 
-        {/* Floating Mobile Bottom Navigation Bar (< 1024px) */}
+        {/* Floating Mobile Bottom Navigation Bar (< 1024px) with Hardware Safe-Area Dock */}
         {activeView !== 'creator' && navItems.length > 1 && (
-          <div className="lg:hidden fixed bottom-3 left-3 right-3 z-30 print:hidden pointer-events-none">
-            <div className="max-w-md mx-auto bg-white border border-[#bac4c6]/90 rounded-full px-3 py-2 shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex items-center justify-around pointer-events-auto">
-              {navItems.slice(0, 2).map((item) => {
-                const isActive = activeView === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleNavClick(item.id as View)}
-                    className={cn(
-                      "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
-                      isActive ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
-                    )}
-                  >
-                    <item.icon className={cn("w-5 h-5", isActive && "text-[#1c4a59] stroke-[2.5]")} />
-                    <span className={cn(
-                      "text-[9px] mt-0.5 tracking-tight truncate max-w-[56px]",
-                      isActive ? "font-extrabold text-[#1c4a59]" : "font-semibold text-[#6a7f84]"
-                    )}>
-                      {item.label.split(' ')[0]}
-                    </span>
-                  </button>
-                );
-              })}
-
-              {/* Central Raised Warm Amber FAB */}
-              {(() => {
-                const fabTarget: View =
-                  user.role === 'teacher' ? 'attendance' :
-                  user.role === 'accountant' ? 'fees' :
-                  user.role === 'parent' ? 'fees' :
-                  user.role === 'student' ? 'timetable' :
-                  'students';
-                const effectiveTarget = navItems.some(i => i.id === fabTarget) ? fabTarget : (navItems[0]?.id as View || 'dashboard');
-                const FabIcon = navItems.find(i => i.id === effectiveTarget)?.icon || LayoutDashboard;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => handleNavClick(effectiveTarget)}
-                    className="w-12 h-12 -mt-5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] shadow-[0_6px_18px_rgba(250,174,87,0.45)] border-2 border-white flex items-center justify-center transition-transform active:scale-95 cursor-pointer shrink-0"
-                    title="Quick Action"
-                  >
-                    <FabIcon className="w-5 h-5 stroke-[2.5]" />
-                  </button>
-                );
-              })()}
-
-              {navItems.slice(2, 3).map((item) => {
-                const isActive = activeView === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleNavClick(item.id as View)}
-                    className={cn(
-                      "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
-                      isActive ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
-                    )}
-                  >
-                    <item.icon className={cn("w-5 h-5", isActive && "text-[#1c4a59] stroke-[2.5]")} />
-                    <span className={cn(
-                      "text-[9px] mt-0.5 tracking-tight truncate max-w-[56px]",
-                      isActive ? "font-extrabold text-[#1c4a59]" : "font-semibold text-[#6a7f84]"
-                    )}>
-                      {item.label.split(' ')[0]}
-                    </span>
-                  </button>
-                );
-              })}
-
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(true)}
-                className={cn(
-                  "flex flex-col items-center justify-center min-w-[52px] min-h-[44px] rounded-full transition-all cursor-pointer px-2",
-                  mobileMenuOpen ? "text-[#1c4a59]" : "text-[#6a7f84] hover:text-[#1c4a59]"
-                )}
-              >
-                <Menu className="w-5 h-5" />
-                <span className="text-[9px] mt-0.5 font-semibold tracking-tight">More</span>
-              </button>
-            </div>
-          </div>
+          <MobileBottomNav
+            activeView={activeView}
+            onNavigate={(view) => handleNavClick(view as View)}
+            navItems={navItems}
+            mobileMenuOpen={mobileMenuOpen}
+            onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          />
         )}
       </main>
 

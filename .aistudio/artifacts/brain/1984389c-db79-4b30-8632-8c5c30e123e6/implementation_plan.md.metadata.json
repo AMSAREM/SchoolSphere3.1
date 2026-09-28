@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to replace blurry html2canvas screenshot PDFs with true vector A4 PDF generation using jsPDF vector text, tables, and geometric paths.",
-  "updatedAt":  "2026-09-28T19:32:44.728793129Z",
+  "summary":  "Implementation plan for a mobile safe-area wrapper structure, stacked primary action bar above the custom bottom navigation bar, and responsive iOS Dynamic Island / Home Indicator & Android gesture bar clearance.",
+  "updatedAt":  "2026-09-28T20:18:22.088527345Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

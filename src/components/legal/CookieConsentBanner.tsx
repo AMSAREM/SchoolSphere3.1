@@ -91,7 +91,7 @@ export function CookieConsentBanner() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.98 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="fixed bottom-20 lg:bottom-5 left-3 sm:left-6 right-3 sm:right-auto sm:max-w-xl z-50 pointer-events-auto"
+            className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 left-3 sm:left-6 right-3 sm:right-auto sm:max-w-xl z-50 pointer-events-auto"
           >
             <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xl shadow-slate-900/15 flex flex-col gap-3.5 text-left">
               <div className="flex items-start gap-3">
