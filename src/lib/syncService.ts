@@ -502,6 +502,61 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
           else await reconcileTermReportsInDexie(dataset.termReports);
         }
         if (Array.isArray(dataset.settings)) await reconcileSettingsInDexie(dataset.settings);
+        if (Array.isArray(dataset.lessonNotes) && dataset.lessonNotes.length > 0) {
+          const localNotes = await db.lessonNotes.toArray();
+          const byNoteId = new Map<string, any>();
+          for (const item of localNotes) {
+            if (item.noteId) byNoteId.set(String(item.noteId), item);
+          }
+          for (const remote of dataset.lessonNotes) {
+            if (!remote) continue;
+            const noteId = String(remote.noteId || remote.note_id || '').trim();
+            if (!noteId) continue;
+            const existing = byNoteId.get(noteId);
+            const normalized = {
+              noteId,
+              schoolId: remote.schoolId || remote.school_id || '',
+              teacherId: String(remote.teacherId || remote.teacher_id || remote.teacherName || remote.teacher_name || ''),
+              teacherName: String(remote.teacherName || remote.teacher_name || 'Subject Teacher'),
+              term: (remote.term || 'Term 1') as 'Term 1' | 'Term 2' | 'Term 3',
+              academicYear: String(remote.academicYear || remote.academic_year || '2026/2027'),
+              weekNumber: Number(remote.weekNumber ?? remote.week_number ?? 1) || 1,
+              class: String(remote.class || 'JHS 1'),
+              subject: String(remote.subject || 'Mathematics'),
+              lessonDate: String(remote.lessonDate || remote.lesson_date || ''),
+              duration: String(remote.duration || '60 mins'),
+              classSize: remote.classSize ?? remote.class_size ?? undefined,
+              strand: String(remote.strand || ''),
+              subStrand: String(remote.subStrand ?? remote.sub_strand ?? ''),
+              contentStandard: String(remote.contentStandard ?? remote.content_standard ?? ''),
+              objectives: String(remote.objectives ?? ''),
+              tlms: String(remote.tlms ?? ''),
+              coreCompetencies: String(remote.coreCompetencies ?? remote.core_competencies ?? ''),
+              starterActivity: String(remote.starterActivity ?? remote.starter_activity ?? ''),
+              mainActivity: String(remote.mainActivity ?? remote.main_activity ?? ''),
+              plenaryActivity: String(remote.plenaryActivity ?? remote.plenary_activity ?? ''),
+              evaluation: String(remote.evaluation ?? ''),
+              teacherRemarks: String(remote.teacherRemarks ?? remote.teacher_remarks ?? ''),
+              pdfFileName: remote.pdfFileName || remote.pdf_file_name || undefined,
+              pdfFileSize: remote.pdfFileSize ?? remote.pdf_file_size ?? undefined,
+              pdfData: remote.pdfData || remote.pdf_data || undefined,
+              pdfUploadedAt: remote.pdfUploadedAt ?? remote.pdf_uploaded_at ?? undefined,
+              status: (remote.status || 'Draft') as 'Draft' | 'Pending Review' | 'Approved' | 'Needs Revision' | 'Rejected',
+              submittedAt: remote.submittedAt ?? remote.submitted_at ?? undefined,
+              reviewedBy: remote.reviewedBy || remote.reviewed_by || undefined,
+              reviewerRole: remote.reviewerRole || remote.reviewer_role || undefined,
+              reviewerFeedback: remote.reviewerFeedback ?? remote.reviewer_feedback ?? undefined,
+              reviewedAt: remote.reviewedAt ?? remote.reviewed_at ?? undefined,
+              createdAt: Number(remote.createdAt ?? remote.created_at ?? Date.now()) || Date.now(),
+              updatedAt: Number(remote.updatedAt ?? remote.updated_at ?? Date.now()) || Date.now()
+            };
+            if (existing?.id !== undefined) {
+              await db.lessonNotes.update(existing.id, { ...normalized, pdfData: normalized.pdfData || existing.pdfData, id: existing.id });
+            } else {
+              await db.lessonNotes.add(normalized);
+            }
+          }
+        }
         
         // Notify other components of database reconciliation
         window.dispatchEvent(new CustomEvent('database-reconciled', { detail: { timestamp: Date.now() } }));

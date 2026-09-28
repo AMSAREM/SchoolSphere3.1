@@ -225,7 +225,8 @@ let localFallbackDb: Record<string, any[]> = {
   votes: [],
   promotionHistory: [],
   timetableSlots: [],
-  timetableSuggestions: []
+  timetableSuggestions: [],
+  lessonNotes: []
 };
 
 function saveToFallback(table: string, record: any) {
@@ -1026,21 +1027,23 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
-        "promotionHistory", "inventory", "expenses", "licenses", "schools"
+        "promotionHistory", "inventory", "expenses", "licenses", "schools",
+        "lessonNotes"
       ];
       
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings",
         "examAnalysis", "promotionHistory", "inventory", "expenses",
-        "users", "polls", "candidates", "votes"
+        "users", "polls", "candidates", "votes", "lessonNotes"
       ]);
 
       const tableMap: Record<string, string> = {
         termReports: 'term_reports',
         examAnalysis: 'exam_analysis',
         smsLogs: 'sms_logs',
-        promotionHistory: 'promotion_history'
+        promotionHistory: 'promotion_history',
+        lessonNotes: 'lesson_notes'
       };
 
       const data: any = {};
@@ -1205,6 +1208,28 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
               });
             }
           }
+
+          // Reconcile lesson_notes from school_settings.streams.lesson_notes alongside public.lesson_notes
+          const streamLessonNotes = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
+            ? (schSet.streams as any).lesson_notes
+            : null;
+          if (Array.isArray(streamLessonNotes) && streamLessonNotes.length > 0) {
+            const existingNotes = Array.isArray(data.lessonNotes) ? [...data.lessonNotes] : [];
+            const noteMap = new Map<string, any>();
+            for (const n of existingNotes) {
+              const nid = String(n.noteId || n.note_id || n.id || '').trim();
+              if (nid) noteMap.set(nid, n);
+            }
+            for (const sn of streamLessonNotes) {
+              const nid = String(sn.noteId || sn.note_id || sn.id || '').trim();
+              if (!nid) continue;
+              const prev = noteMap.get(nid);
+              if (!prev || (Number(sn.updatedAt || sn.updated_at || 0) >= Number(prev.updatedAt || prev.updated_at || 0))) {
+                noteMap.set(nid, { ...(prev || {}), ...sn });
+              }
+            }
+            data.lessonNotes = Array.from(noteMap.values());
+          }
         } catch {}
       }
 
@@ -1239,20 +1264,23 @@ async function pushData(data: any, targetSchoolId?: string | null) {
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
-        "promotionHistory", "inventory", "expenses", "licenses", "schools"
+        "promotionHistory", "inventory", "expenses", "licenses", "schools",
+        "lessonNotes"
       ];
 
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings",
-        "examAnalysis", "promotionHistory", "inventory", "expenses"
+        "examAnalysis", "promotionHistory", "inventory", "expenses",
+        "lessonNotes"
       ]);
 
       const tableMap: Record<string, string> = {
         termReports: 'term_reports',
         examAnalysis: 'exam_analysis',
         smsLogs: 'sms_logs',
-        promotionHistory: 'promotion_history'
+        promotionHistory: 'promotion_history',
+        lessonNotes: 'lesson_notes'
       };
 
       for (const table of tableKeys) {
@@ -16398,6 +16426,1018 @@ async function doStartServer() {
         caColumns,
         caScores,
         allCaMap,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // ============================================================================
+  // TEACHER LESSON NOTES & HOD / HEADMASTER REVIEW PORTAL (SUPABASE + STORAGE)
+  // ============================================================================
+  const LESSON_NOTES_STORAGE_BUCKET = 'lesson-notes';
+
+  const LESSON_NOTES_DDL_SQL = `-- ==============================================================================
+-- SCHOOLSPHERE: public.lesson_notes Table & Supabase Storage Bucket Setup
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.lesson_notes (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  note_id VARCHAR(100) NOT NULL,
+  teacher_id VARCHAR(100) NULL,
+  teacher_name VARCHAR(255) NOT NULL,
+  term VARCHAR(50) NOT NULL DEFAULT 'Term 1',
+  academic_year VARCHAR(50) NOT NULL DEFAULT '2026/2027',
+  week_number INT NOT NULL DEFAULT 1 CHECK (week_number >= 1 AND week_number <= 20),
+  class VARCHAR(100) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  lesson_date VARCHAR(50) NULL,
+  duration VARCHAR(50) NOT NULL DEFAULT '60 mins',
+  class_size INT NULL,
+  strand TEXT NOT NULL,
+  sub_strand TEXT NULL,
+  content_standard TEXT NULL,
+  objectives TEXT NULL,
+  tlms TEXT NULL,
+  core_competencies TEXT NULL,
+  starter_activity TEXT NULL,
+  main_activity TEXT NULL,
+  plenary_activity TEXT NULL,
+  evaluation TEXT NULL,
+  teacher_remarks TEXT NULL,
+  pdf_file_name VARCHAR(255) NULL,
+  pdf_file_size BIGINT NULL,
+  pdf_file_url TEXT NULL,
+  pdf_storage_path TEXT NULL,
+  pdf_data TEXT NULL,
+  pdf_uploaded_at BIGINT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'Pending Review', 'Approved', 'Needs Revision', 'Rejected')),
+  submitted_at BIGINT NULL,
+  reviewed_by VARCHAR(255) NULL,
+  reviewer_role VARCHAR(100) NULL,
+  reviewer_feedback TEXT NULL,
+  reviewed_at BIGINT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_lesson_note UNIQUE (school_id, note_id)
+);
+
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_file_url TEXT NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_storage_path TEXT NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_file_name VARCHAR(255) NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_file_size BIGINT NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_data TEXT NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_uploaded_at BIGINT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_school_lookup
+  ON public.lesson_notes (school_id, term, week_number, class, subject);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_status
+  ON public.lesson_notes (school_id, status);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_teacher
+  ON public.lesson_notes (school_id, teacher_name);
+
+ALTER TABLE public.lesson_notes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant isolation for lesson_notes" ON public.lesson_notes;
+CREATE POLICY "Tenant isolation for lesson_notes" ON public.lesson_notes
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+DROP TRIGGER IF EXISTS trg_lesson_notes_updated_at ON public.lesson_notes;
+CREATE TRIGGER trg_lesson_notes_updated_at
+  BEFORE UPDATE ON public.lesson_notes
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('lesson-notes', 'lesson-notes', true, 15728640, ARRAY['application/pdf'])
+ON CONFLICT (id) DO UPDATE SET
+  public = true,
+  file_size_limit = 15728640,
+  allowed_mime_types = ARRAY['application/pdf'];
+
+NOTIFY pgrst, 'reload schema';`;
+
+  let storageBucketVerified = false;
+  async function ensureLessonNotesStorageBucket(): Promise<{ ready: boolean; bucketName: string; error?: string }> {
+    const adminClient = getSupabaseAdmin();
+    if (storageBucketVerified) {
+      return { ready: true, bucketName: LESSON_NOTES_STORAGE_BUCKET };
+    }
+    try {
+      const { data: buckets, error: listErr } = await adminClient.storage.listBuckets();
+      if (!listErr && Array.isArray(buckets)) {
+        const exists = buckets.some((b: any) => b.name === LESSON_NOTES_STORAGE_BUCKET || b.id === LESSON_NOTES_STORAGE_BUCKET);
+        if (exists) {
+          storageBucketVerified = true;
+          return { ready: true, bucketName: LESSON_NOTES_STORAGE_BUCKET };
+        }
+      }
+      const { error: createErr } = await adminClient.storage.createBucket(LESSON_NOTES_STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: 15 * 1024 * 1024,
+        allowedMimeTypes: ['application/pdf']
+      });
+      if (!createErr || String(createErr.message || '').toLowerCase().includes('already exists')) {
+        storageBucketVerified = true;
+        return { ready: true, bucketName: LESSON_NOTES_STORAGE_BUCKET };
+      }
+      return { ready: false, bucketName: LESSON_NOTES_STORAGE_BUCKET, error: createErr.message };
+    } catch (err: any) {
+      return { ready: false, bucketName: LESSON_NOTES_STORAGE_BUCKET, error: err?.message || 'Storage check failed' };
+    }
+  }
+
+  async function uploadLessonNotePdfToStorage(params: {
+    schoolId: string;
+    term?: string;
+    weekNumber?: number;
+    noteId?: string;
+    fileName?: string;
+    pdfData?: string;
+  }): Promise<{
+    pdfFileUrl?: string;
+    pdfStoragePath?: string;
+    pdfFileName?: string;
+    pdfFileSize?: number;
+  } | null> {
+    const rawData = String(params.pdfData || '').trim();
+    if (!rawData) return null;
+
+    // If pdfData is already an http(s) Supabase Storage URL, return it directly
+    if (/^https?:\/\//i.test(rawData)) {
+      return {
+        pdfFileUrl: rawData,
+        pdfFileName: params.fileName || 'LessonNote.pdf'
+      };
+    }
+
+    await ensureLessonNotesStorageBucket();
+    const adminClient = getSupabaseAdmin();
+
+    let base64Body = rawData;
+    const base64Idx = rawData.indexOf(';base64,');
+    if (base64Idx !== -1) {
+      base64Body = rawData.slice(base64Idx + 8);
+    } else if (rawData.startsWith('data:')) {
+      const commaIdx = rawData.indexOf(',');
+      if (commaIdx !== -1) base64Body = rawData.slice(commaIdx + 1);
+    }
+
+    let fileBuffer: Buffer;
+    try {
+      fileBuffer = Buffer.from(base64Body, 'base64');
+    } catch {
+      return null;
+    }
+    if (!fileBuffer || fileBuffer.length === 0) return null;
+
+    const cleanSchool = String(params.schoolId || 'school').replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanTerm = String(params.term || 'Term-1').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const cleanWeek = `week-${Math.min(20, Math.max(1, Number(params.weekNumber) || 1))}`;
+    const safeOriginalName = String(params.fileName || 'Lesson-Note.pdf')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/_{2,}/g, '_');
+    const finalName = safeOriginalName.toLowerCase().endsWith('.pdf') ? safeOriginalName : `${safeOriginalName}.pdf`;
+    const uniquePrefix = String(params.noteId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
+    const objectPath = `${cleanSchool}/${cleanTerm}/${cleanWeek}/${uniquePrefix}-${finalName}`;
+
+    try {
+      const { error: upErr } = await adminClient.storage
+        .from(LESSON_NOTES_STORAGE_BUCKET)
+        .upload(objectPath, fileBuffer, {
+          contentType: 'application/pdf',
+          upsert: true,
+          cacheControl: '3600'
+        });
+
+      if (upErr) {
+        console.warn('[LessonNotes Storage] Upload warning:', upErr.message);
+        return null;
+      }
+
+      const { data: pubData } = adminClient.storage
+        .from(LESSON_NOTES_STORAGE_BUCKET)
+        .getPublicUrl(objectPath);
+
+      return {
+        pdfFileUrl: pubData?.publicUrl || undefined,
+        pdfStoragePath: objectPath,
+        pdfFileName: params.fileName || finalName,
+        pdfFileSize: fileBuffer.length
+      };
+    } catch (err: any) {
+      console.warn('[LessonNotes Storage] Upload error:', err?.message);
+      return null;
+    }
+  }
+
+  async function checkPublicLessonNotesTableStatus(): Promise<{
+    tableExists: boolean;
+    rowCount: number;
+    error?: string;
+  }> {
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { count, error } = await adminClient
+        .from('lesson_notes')
+        .select('id', { count: 'exact', head: true });
+
+      if (!error) {
+        return { tableExists: true, rowCount: Number(count || 0) };
+      }
+      return {
+        tableExists: false,
+        rowCount: 0,
+        error: error.message
+      };
+    } catch (err: any) {
+      return {
+        tableExists: false,
+        rowCount: 0,
+        error: err?.message || 'Unable to query public.lesson_notes'
+      };
+    }
+  }
+
+  const normalizeLessonNoteRecord = (raw: any, defaultSchoolId?: string | null) => {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const schoolId = String(raw.school_id || raw.schoolId || defaultSchoolId || '').trim();
+    const className = String(raw.class || raw.className || 'JHS 1').trim();
+    const subject = String(raw.subject || 'Mathematics').trim();
+    const term = String(raw.term || 'Term 1').trim();
+    const academicYear = String(raw.academic_year || raw.academicYear || '2026/2027').trim();
+    const weekNumber = Math.min(14, Math.max(1, Number(raw.week_number ?? raw.weekNumber ?? 1) || 1));
+    const teacherName = String(raw.teacher_name || raw.teacherName || 'Subject Teacher').trim();
+    const teacherId = String(raw.teacher_id || raw.teacherId || teacherName).trim();
+
+    const rawNoteId = String(raw.note_id || raw.noteId || '').trim();
+    const noteId = rawNoteId || `LN-${academicYear.replace(/[^0-9]/g, '').slice(0, 4)}-T${term.replace(/[^0-9]/g, '') || '1'}-W${String(weekNumber).padStart(2, '0')}-${className.replace(/[^a-zA-Z0-9]/g, '')}-${subject.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase()}-${String(raw.id || Date.now()).slice(-5)}`;
+
+    const lessonDate = String(raw.lesson_date || raw.lessonDate || new Date().toISOString().split('T')[0]).trim();
+    const duration = String(raw.duration || '60 mins').trim();
+    const classSize = raw.class_size !== undefined || raw.classSize !== undefined
+      ? Number(raw.class_size ?? raw.classSize) || 0
+      : undefined;
+
+    const strand = String(raw.strand || '').trim();
+    const subStrand = String(raw.sub_strand ?? raw.subStrand ?? '').trim();
+    const contentStandard = String(raw.content_standard ?? raw.contentStandard ?? '').trim();
+    const objectives = String(raw.objectives ?? '').trim();
+    const tlms = String(raw.tlms ?? '').trim();
+    const coreCompetencies = String(raw.core_competencies ?? raw.coreCompetencies ?? '').trim();
+    const starterActivity = String(raw.starter_activity ?? raw.starterActivity ?? '').trim();
+    const mainActivity = String(raw.main_activity ?? raw.mainActivity ?? '').trim();
+    const plenaryActivity = String(raw.plenary_activity ?? raw.plenaryActivity ?? '').trim();
+    const evaluation = String(raw.evaluation ?? '').trim();
+    const teacherRemarks = String(raw.teacher_remarks ?? raw.teacherRemarks ?? '').trim();
+
+    const pdfFileName = raw.pdf_file_name || raw.pdfFileName
+      ? String(raw.pdf_file_name || raw.pdfFileName).trim()
+      : undefined;
+    const pdfFileSize = raw.pdf_file_size !== undefined || raw.pdfFileSize !== undefined
+      ? Number(raw.pdf_file_size ?? raw.pdfFileSize) || undefined
+      : undefined;
+    const pdfFileUrl = raw.pdf_file_url || raw.pdfFileUrl
+      ? String(raw.pdf_file_url || raw.pdfFileUrl).trim()
+      : undefined;
+    const pdfStoragePath = raw.pdf_storage_path || raw.pdfStoragePath
+      ? String(raw.pdf_storage_path || raw.pdfStoragePath).trim()
+      : undefined;
+    const rawPdfData = raw.pdf_data || raw.pdfData
+      ? String(raw.pdf_data || raw.pdfData)
+      : undefined;
+    const pdfData = pdfFileUrl || rawPdfData;
+    const pdfUploadedAt = raw.pdf_uploaded_at !== undefined || raw.pdfUploadedAt !== undefined
+      ? Number(raw.pdf_uploaded_at ?? raw.pdfUploadedAt) || undefined
+      : undefined;
+
+    const validStatuses = ['Draft', 'Pending Review', 'Approved', 'Needs Revision', 'Rejected'];
+    const rawStatus = String(raw.status || 'Draft').trim();
+    const status = (validStatuses.includes(rawStatus) ? rawStatus : 'Draft') as
+      | 'Draft'
+      | 'Pending Review'
+      | 'Approved'
+      | 'Needs Revision'
+      | 'Rejected';
+
+    const submittedAt = raw.submitted_at !== undefined || raw.submittedAt !== undefined
+      ? Number(raw.submitted_at ?? raw.submittedAt) || undefined
+      : undefined;
+    const reviewedBy = raw.reviewed_by || raw.reviewedBy
+      ? String(raw.reviewed_by || raw.reviewedBy).trim()
+      : undefined;
+    const reviewerRole = raw.reviewer_role || raw.reviewerRole
+      ? String(raw.reviewer_role || raw.reviewerRole).trim()
+      : undefined;
+    const reviewerFeedback = raw.reviewer_feedback !== undefined || raw.reviewerFeedback !== undefined
+      ? String(raw.reviewer_feedback ?? raw.reviewerFeedback ?? '').trim()
+      : undefined;
+    const reviewedAt = raw.reviewed_at !== undefined || raw.reviewedAt !== undefined
+      ? Number(raw.reviewed_at ?? raw.reviewedAt) || undefined
+      : undefined;
+
+    const now = Date.now();
+    const createdAt = Number(raw.created_at ?? raw.createdAt ?? now) || now;
+    const updatedAt = Number(raw.updated_at ?? raw.updatedAt ?? now) || now;
+
+    return {
+      id: typeof raw.id === 'number' ? raw.id : undefined,
+      noteId,
+      note_id: noteId,
+      schoolId,
+      school_id: schoolId,
+      teacherId,
+      teacher_id: teacherId,
+      teacherName,
+      teacher_name: teacherName,
+      term,
+      academicYear,
+      academic_year: academicYear,
+      weekNumber,
+      week_number: weekNumber,
+      class: className,
+      subject,
+      lessonDate,
+      lesson_date: lessonDate,
+      duration,
+      classSize,
+      class_size: classSize ?? null,
+      strand,
+      subStrand,
+      sub_strand: subStrand,
+      contentStandard,
+      content_standard: contentStandard,
+      objectives,
+      tlms,
+      coreCompetencies,
+      core_competencies: coreCompetencies,
+      starterActivity,
+      starter_activity: starterActivity,
+      mainActivity,
+      main_activity: mainActivity,
+      plenaryActivity,
+      plenary_activity: plenaryActivity,
+      evaluation,
+      teacherRemarks,
+      teacher_remarks: teacherRemarks,
+      pdfFileName,
+      pdf_file_name: pdfFileName || null,
+      pdfFileSize,
+      pdf_file_size: pdfFileSize ?? null,
+      pdfFileUrl: pdfFileUrl || (rawPdfData && /^https?:\/\//i.test(rawPdfData) ? rawPdfData : undefined),
+      pdf_file_url: pdfFileUrl || (rawPdfData && /^https?:\/\//i.test(rawPdfData) ? rawPdfData : null),
+      pdfStoragePath,
+      pdf_storage_path: pdfStoragePath || null,
+      pdfData,
+      pdf_data: pdfData || null,
+      pdfUploadedAt,
+      pdf_uploaded_at: pdfUploadedAt ?? null,
+      status,
+      submittedAt,
+      submitted_at: submittedAt ?? null,
+      reviewedBy,
+      reviewed_by: reviewedBy || null,
+      reviewerRole,
+      reviewer_role: reviewerRole || null,
+      reviewerFeedback,
+      reviewer_feedback: reviewerFeedback || null,
+      reviewedAt,
+      reviewed_at: reviewedAt ?? null,
+      createdAt,
+      created_at: createdAt,
+      updatedAt,
+      updated_at: updatedAt
+    };
+  };
+
+  async function readLessonNotesFromSchoolSettings(schoolId: string): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data, error } = await adminClient
+        .from('school_settings')
+        .select('streams')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data?.streams && typeof data.streams === 'object' && !Array.isArray(data.streams)) {
+        const list = (data.streams as any).lesson_notes;
+        if (Array.isArray(list)) {
+          return list
+            .map((item: any) => normalizeLessonNoteRecord(item, schoolId))
+            .filter(Boolean);
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  async function writeLessonNotesToSchoolSettings(
+    schoolId: string,
+    notesToMerge: any[],
+    noteIdsToRemove?: string[]
+  ): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+
+    try {
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams = existing?.streams;
+      let streamItems: any[] = [];
+      let prevLessonNotes: any[] = [];
+
+      if (Array.isArray(existingStreams)) {
+        streamItems = existingStreams;
+      } else if (existingStreams && typeof existingStreams === 'object') {
+        streamItems = Array.isArray((existingStreams as any).items) ? (existingStreams as any).items : [];
+        prevLessonNotes = Array.isArray((existingStreams as any).lesson_notes) ? (existingStreams as any).lesson_notes : [];
+      }
+
+      const removeSet = new Set((noteIdsToRemove || []).map(v => String(v).trim()));
+      const noteMap = new Map<string, any>();
+
+      for (const prev of prevLessonNotes) {
+        const norm = normalizeLessonNoteRecord(prev, schoolId);
+        if (!norm) continue;
+        if (removeSet.has(norm.noteId) || (norm.id !== undefined && removeSet.has(String(norm.id)))) continue;
+        noteMap.set(norm.noteId, norm);
+      }
+
+      for (const incoming of (Array.isArray(notesToMerge) ? notesToMerge : [])) {
+        const norm = normalizeLessonNoteRecord(incoming, schoolId);
+        if (!norm) continue;
+        if (removeSet.has(norm.noteId) || (norm.id !== undefined && removeSet.has(String(norm.id)))) continue;
+        const prev = noteMap.get(norm.noteId);
+        // When PDF is stored in Supabase Storage, keep settings payload lightweight by storing the Storage URL
+        const resolvedUrl = norm.pdfFileUrl || prev?.pdfFileUrl;
+        noteMap.set(norm.noteId, {
+          ...(prev || {}),
+          ...norm,
+          pdfFileUrl: resolvedUrl,
+          pdf_file_url: resolvedUrl || null,
+          pdfStoragePath: norm.pdfStoragePath || prev?.pdfStoragePath,
+          pdf_storage_path: norm.pdfStoragePath || prev?.pdfStoragePath || null,
+          pdfData: resolvedUrl || norm.pdfData || prev?.pdfData,
+          pdf_data: resolvedUrl || norm.pdfData || prev?.pdfData || null,
+          id: norm.id ?? prev?.id
+        });
+      }
+
+      const mergedList = Array.from(noteMap.values()).sort(
+        (a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0)
+      );
+
+      const nextStreamsObj = {
+        ...(existingStreams && typeof existingStreams === 'object' && !Array.isArray(existingStreams) ? existingStreams : {}),
+        items: streamItems,
+        lesson_notes: mergedList
+      };
+
+      const payload = {
+        school_id: schoolId,
+        grade_boundaries: existing?.grade_boundaries || [],
+        terms: existing?.terms || [],
+        streams: nextStreamsObj,
+        updated_at: Date.now()
+      };
+
+      await adminClient
+        .from('school_settings')
+        .upsert([payload], { onConflict: 'school_id' });
+
+      return mergedList;
+    } catch (err) {
+      console.warn('Notice saving lesson notes to school_settings in Supabase:', err);
+      return [];
+    }
+  }
+
+  async function upsertLessonNotesInSupabase(schoolId: string, rawNotes: any[]): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+    const normalizedInput = (Array.isArray(rawNotes) ? rawNotes : [rawNotes])
+      .map(n => normalizeLessonNoteRecord({ ...n, school_id: schoolId }, schoolId))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizeLessonNoteRecord>>[];
+
+    if (normalizedInput.length === 0) return [];
+
+    // 0. Automatically offload any base64 PDF attachments into the 'lesson-notes' Supabase Storage bucket
+    for (const n of normalizedInput) {
+      if (n.pdfData && n.pdfData.startsWith('data:') && !n.pdfFileUrl) {
+        const uploaded = await uploadLessonNotePdfToStorage({
+          schoolId,
+          term: n.term,
+          weekNumber: n.weekNumber,
+          noteId: n.noteId,
+          fileName: n.pdfFileName,
+          pdfData: n.pdfData
+        });
+        if (uploaded?.pdfFileUrl) {
+          n.pdfFileUrl = uploaded.pdfFileUrl;
+          n.pdf_file_url = uploaded.pdfFileUrl;
+          n.pdfStoragePath = uploaded.pdfStoragePath;
+          n.pdf_storage_path = uploaded.pdfStoragePath || null;
+          n.pdfFileName = uploaded.pdfFileName || n.pdfFileName;
+          n.pdf_file_name = n.pdfFileName || null;
+          n.pdfFileSize = uploaded.pdfFileSize ?? n.pdfFileSize;
+          n.pdf_file_size = n.pdfFileSize ?? null;
+          n.pdfData = uploaded.pdfFileUrl;
+          n.pdf_data = uploaded.pdfFileUrl;
+        }
+      }
+    }
+
+    // 1. Always persist to public.school_settings.streams.lesson_notes in Supabase for guaranteed cross-device persistence
+    const settingsSaved = await writeLessonNotesToSchoolSettings(schoolId, normalizedInput);
+
+    // 2. Also persist to public.lesson_notes table in Supabase if present
+    const fullDbPayload = normalizedInput.map(n => ({
+      school_id: schoolId,
+      note_id: n.noteId,
+      teacher_id: n.teacherId || null,
+      teacher_name: n.teacherName,
+      term: n.term,
+      academic_year: n.academicYear,
+      week_number: n.weekNumber,
+      class: n.class,
+      subject: n.subject,
+      lesson_date: n.lessonDate || null,
+      duration: n.duration || '60 mins',
+      class_size: n.classSize ?? null,
+      strand: n.strand,
+      sub_strand: n.subStrand || null,
+      content_standard: n.contentStandard || null,
+      objectives: n.objectives || null,
+      tlms: n.tlms || null,
+      core_competencies: n.coreCompetencies || null,
+      starter_activity: n.starterActivity || null,
+      main_activity: n.mainActivity || null,
+      plenary_activity: n.plenaryActivity || null,
+      evaluation: n.evaluation || null,
+      teacher_remarks: n.teacherRemarks || null,
+      pdf_file_name: n.pdfFileName || null,
+      pdf_file_size: n.pdfFileSize ?? null,
+      pdf_file_url: n.pdfFileUrl || null,
+      pdf_storage_path: n.pdfStoragePath || null,
+      pdf_data: n.pdfFileUrl || n.pdfData || null,
+      pdf_uploaded_at: n.pdfUploadedAt ?? null,
+      status: n.status,
+      submitted_at: n.submittedAt ?? null,
+      reviewed_by: n.reviewedBy || null,
+      reviewer_role: n.reviewerRole || null,
+      reviewer_feedback: n.reviewerFeedback || null,
+      reviewed_at: n.reviewedAt ?? null,
+      created_at: n.createdAt,
+      updated_at: n.updatedAt
+    }));
+
+    try {
+      let { data: tableRows, error: tableErr } = await adminClient
+        .from('lesson_notes')
+        .upsert(fullDbPayload, { onConflict: 'school_id,note_id' })
+        .select();
+
+      // Fallback if table exists without pdf_file_url / pdf_storage_path columns yet
+      if (tableErr && String(tableErr.message || '').includes('pdf_')) {
+        const legacyPayload = fullDbPayload.map(({ pdf_file_url, pdf_storage_path, ...rest }) => rest);
+        const retryRes = await adminClient
+          .from('lesson_notes')
+          .upsert(legacyPayload, { onConflict: 'school_id,note_id' })
+          .select();
+        tableRows = retryRes.data;
+        tableErr = retryRes.error;
+      }
+
+      if (!tableErr && Array.isArray(tableRows) && tableRows.length > 0) {
+        const normalizedTableRows = tableRows
+          .map(r => normalizeLessonNoteRecord(r, schoolId))
+          .filter(Boolean);
+        await writeLessonNotesToSchoolSettings(schoolId, normalizedTableRows);
+        for (const r of normalizedTableRows) {
+          saveToFallback('lessonNotes', r);
+        }
+        return normalizedTableRows;
+      }
+    } catch {}
+
+    for (const r of normalizedInput) {
+      saveToFallback('lessonNotes', r);
+    }
+
+    const savedSet = new Set(normalizedInput.map(n => n.noteId));
+    return settingsSaved.filter(n => savedSet.has(n.noteId));
+  }
+
+  async function backfillAllSchoolsLessonNotesToTable(): Promise<number> {
+    const adminClient = getSupabaseAdmin();
+    let migratedCount = 0;
+    try {
+      const { data: settingsRows } = await adminClient
+        .from('school_settings')
+        .select('school_id, streams');
+
+      if (Array.isArray(settingsRows)) {
+        for (const row of settingsRows) {
+          const sId = row?.school_id ? String(row.school_id) : '';
+          const list = row?.streams && typeof row.streams === 'object' && !Array.isArray(row.streams)
+            ? (row.streams as any).lesson_notes
+            : null;
+          if (sId && Array.isArray(list) && list.length > 0) {
+            const res = await upsertLessonNotesInSupabase(sId, list);
+            migratedCount += res.length;
+          }
+        }
+      }
+    } catch {}
+    return migratedCount;
+  }
+
+  async function fetchSchoolLessonNotesFromSupabase(
+    schoolId: string,
+    filters?: {
+      term?: string;
+      weekNumber?: number;
+      className?: string;
+      subject?: string;
+      teacherId?: string;
+      status?: string;
+    }
+  ): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+
+    const [tableQuery, settingsNotes] = await Promise.all([
+      (async () => {
+        try {
+          const { data, error } = await adminClient
+            .from('lesson_notes')
+            .select('*')
+            .eq('school_id', schoolId)
+            .order('updated_at', { ascending: false });
+          if (!error && Array.isArray(data)) {
+            return data.map(r => normalizeLessonNoteRecord(r, schoolId)).filter(Boolean);
+          }
+        } catch {}
+        return [];
+      })(),
+      readLessonNotesFromSchoolSettings(schoolId)
+    ]);
+
+    const noteMap = new Map<string, any>();
+    for (const sn of settingsNotes) {
+      if (sn?.noteId) noteMap.set(sn.noteId, sn);
+    }
+    for (const tn of tableQuery) {
+      if (!tn?.noteId) continue;
+      const prev = noteMap.get(tn.noteId);
+      if (!prev || Number(tn.updatedAt || 0) >= Number(prev.updatedAt || 0)) {
+        const mergedPdfUrl = tn.pdfFileUrl || prev?.pdfFileUrl;
+        noteMap.set(tn.noteId, {
+          ...(prev || {}),
+          ...tn,
+          pdfFileUrl: mergedPdfUrl,
+          pdf_file_url: mergedPdfUrl || null,
+          pdfStoragePath: tn.pdfStoragePath || prev?.pdfStoragePath,
+          pdf_storage_path: tn.pdfStoragePath || prev?.pdfStoragePath || null,
+          pdfData: mergedPdfUrl || tn.pdfData || prev?.pdfData,
+          pdfFileName: tn.pdfFileName || prev?.pdfFileName,
+          pdfFileSize: tn.pdfFileSize ?? prev?.pdfFileSize
+        });
+      }
+    }
+
+    let combined = Array.from(noteMap.values()).sort(
+      (a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0)
+    );
+
+    if (filters?.term && filters.term !== 'All') {
+      const targetTerm = filters.term.trim().toLowerCase();
+      combined = combined.filter(n => String(n.term || '').trim().toLowerCase() === targetTerm);
+    }
+    if (filters?.weekNumber !== undefined && filters.weekNumber !== null && Number(filters.weekNumber) > 0) {
+      combined = combined.filter(n => Number(n.weekNumber) === Number(filters.weekNumber));
+    }
+    if (filters?.className && filters.className !== 'All') {
+      const targetClass = filters.className.trim().toLowerCase();
+      combined = combined.filter(n => String(n.class || '').trim().toLowerCase() === targetClass);
+    }
+    if (filters?.subject && filters.subject !== 'All') {
+      const targetSubject = filters.subject.trim().toLowerCase();
+      combined = combined.filter(n => String(n.subject || '').trim().toLowerCase() === targetSubject);
+    }
+    if (filters?.teacherId && filters.teacherId !== 'All') {
+      const targetTeacher = filters.teacherId.trim().toLowerCase();
+      combined = combined.filter(
+        n =>
+          String(n.teacherId || '').trim().toLowerCase() === targetTeacher ||
+          String(n.teacherName || '').trim().toLowerCase() === targetTeacher
+      );
+    }
+    if (filters?.status && filters.status !== 'All') {
+      const targetStatus = filters.status.trim().toLowerCase();
+      combined = combined.filter(n => String(n.status || '').trim().toLowerCase() === targetStatus);
+    }
+
+    // If public.lesson_notes exists and has fewer rows than settingsNotes, automatically backfill missing notes into public.lesson_notes
+    if (settingsNotes.length > 0 && tableQuery.length < settingsNotes.length) {
+      const tableIds = new Set(tableQuery.map(t => t?.noteId).filter(Boolean));
+      const missingInTable = settingsNotes.filter(s => s?.noteId && !tableIds.has(s.noteId));
+      if (missingInTable.length > 0) {
+        void upsertLessonNotesInSupabase(schoolId, missingInTable).catch(() => {});
+      }
+    }
+
+    return combined;
+  }
+
+  // POST /api/lesson-notes/upload-pdf - Upload teacher lesson note PDF directly to Supabase Storage bucket
+  app.post("/api/lesson-notes/upload-pdf", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'parent' || userRole === 'student') {
+        return res.status(403).json({
+          success: false,
+          error: "Students and parents are not permitted to upload lesson note PDFs."
+        });
+      }
+
+      const schoolId = (await resolveResultsSchoolId(req)) || 'default-school';
+      const body = req.body || {};
+      const fileName = String(body.fileName || body.pdfFileName || 'Lesson-Note.pdf').trim();
+      const pdfData = String(body.pdfBase64 || body.pdfData || body.dataUrl || '').trim();
+      const term = String(body.term || 'Term 1').trim();
+      const weekNumber = Number(body.weekNumber || body.week_number || 1) || 1;
+      const noteId = String(body.noteId || body.note_id || `LN-${Date.now()}`).trim();
+
+      if (!pdfData) {
+        return res.status(400).json({ success: false, error: "Missing PDF file payload." });
+      }
+
+      const uploaded = await uploadLessonNotePdfToStorage({
+        schoolId,
+        term,
+        weekNumber,
+        noteId,
+        fileName,
+        pdfData
+      });
+
+      if (!uploaded?.pdfFileUrl) {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to upload PDF to Supabase Storage bucket."
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        bucket: LESSON_NOTES_STORAGE_BUCKET,
+        pdfFileName: uploaded.pdfFileName,
+        pdfFileSize: uploaded.pdfFileSize,
+        pdfFileUrl: uploaded.pdfFileUrl,
+        pdfStoragePath: uploaded.pdfStoragePath,
+        pdfUploadedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/lesson-notes - Fetch lesson notes and PDF attachments from Supabase
+  app.get("/api/lesson-notes", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveResultsSchoolId(req);
+      const term = req.query.term ? String(req.query.term).trim() : undefined;
+      const weekNumber = req.query.week_number || req.query.weekNumber
+        ? Number(req.query.week_number || req.query.weekNumber)
+        : undefined;
+      const className = req.query.class ? String(req.query.class).trim() : undefined;
+      const subject = req.query.subject ? String(req.query.subject).trim() : undefined;
+      const teacherId = (req.query.teacher_id || req.query.teacherId)
+        ? String(req.query.teacher_id || req.query.teacherId).trim()
+        : undefined;
+      const status = req.query.status ? String(req.query.status).trim() : undefined;
+
+      const [lessonNotes, tableStatus] = await Promise.all([
+        fetchSchoolLessonNotesFromSupabase(schoolId, {
+          term,
+          weekNumber,
+          className,
+          subject,
+          teacherId,
+          status
+        }),
+        checkPublicLessonNotesTableStatus()
+      ]);
+
+      return res.json({
+        success: true,
+        schoolId,
+        tableExists: tableStatus.tableExists,
+        lessonNotes,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/lesson-notes - Save or submit a teacher lesson note (Structured Template + PDF Upload) to Supabase
+  app.post("/api/lesson-notes", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'parent' || userRole === 'student') {
+        return res.status(403).json({
+          success: false,
+          error: "Students and parents are not permitted to create or modify lesson notes."
+        });
+      }
+
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for lesson note." });
+      }
+
+      const body = req.body || {};
+      const incomingList = Array.isArray(body.lessonNotes)
+        ? body.lessonNotes
+        : (Array.isArray(body) ? body : [body.lessonNote || body]);
+
+      const now = Date.now();
+      const prepared = incomingList.map((item: any) => {
+        const isSubmitting = item.status === 'Pending Review';
+        return {
+          ...item,
+          school_id: schoolId,
+          submitted_at: isSubmitting ? (item.submittedAt || item.submitted_at || now) : (item.submittedAt || item.submitted_at),
+          updated_at: now
+        };
+      });
+
+      const saved = await upsertLessonNotesInSupabase(schoolId, prepared);
+      const allNotes = await fetchSchoolLessonNotesFromSupabase(schoolId);
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        lessonNote: saved[0] || null,
+        saved,
+        lessonNotes: allNotes,
+        syncedAt: now
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PATCH /api/lesson-notes/:id/review - HOD, Headmaster, or Administrator review & approval stamp in Supabase
+  app.patch("/api/lesson-notes/:id/review", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'student' || userRole === 'parent') {
+        return res.status(403).json({
+          success: false,
+          error: "Only HODs, Headmasters, or School Administrators can review lesson notes."
+        });
+      }
+
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for lesson note review." });
+      }
+
+      const targetId = String(req.params.id || '').trim();
+      const body = req.body || {};
+      const newStatus = String(body.status || 'Approved').trim();
+      if (!['Approved', 'Needs Revision', 'Rejected', 'Pending Review'].includes(newStatus)) {
+        return res.status(400).json({ success: false, error: "Invalid review status." });
+      }
+
+      const existingNotes = await fetchSchoolLessonNotesFromSupabase(schoolId);
+      const targetNote = existingNotes.find(
+        n => String(n.noteId) === targetId || (n.id !== undefined && String(n.id) === targetId)
+      );
+
+      if (!targetNote && !body.noteId && !body.strand) {
+        return res.status(404).json({ success: false, error: "Lesson note not found in Supabase." });
+      }
+
+      const now = Date.now();
+      const updatedRecord = {
+        ...(targetNote || {}),
+        ...(body.lessonNote || {}),
+        noteId: targetNote?.noteId || body.noteId || targetId,
+        school_id: schoolId,
+        status: newStatus,
+        reviewedBy: String(body.reviewedBy || body.reviewed_by || req.user?.username || 'Head of Department').trim(),
+        reviewerRole: String(body.reviewerRole || body.reviewer_role || 'HOD').trim(),
+        reviewerFeedback: String(body.reviewerFeedback ?? body.reviewer_feedback ?? '').trim(),
+        reviewedAt: now,
+        updatedAt: now
+      };
+
+      const saved = await upsertLessonNotesInSupabase(schoolId, [updatedRecord]);
+      const allNotes = await fetchSchoolLessonNotesFromSupabase(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        lessonNote: saved[0] || updatedRecord,
+        lessonNotes: allNotes,
+        syncedAt: now
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/lesson-notes/:id - Delete a lesson note and its PDF object from Supabase Storage
+  app.delete("/api/lesson-notes/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve school_id." });
+      }
+
+      const targetId = String(req.params.id || '').trim();
+      const adminClient = getSupabaseAdmin();
+
+      // Locate note first to clean up any stored PDF in Supabase Storage
+      try {
+        const existing = await fetchSchoolLessonNotesFromSupabase(schoolId);
+        const match = existing.find(
+          n => String(n.noteId) === targetId || (n.id !== undefined && String(n.id) === targetId)
+        );
+        if (match?.pdfStoragePath) {
+          await adminClient.storage.from(LESSON_NOTES_STORAGE_BUCKET).remove([match.pdfStoragePath]);
+        }
+      } catch {}
+
+      try {
+        await adminClient
+          .from('lesson_notes')
+          .delete()
+          .eq('school_id', schoolId)
+          .or(`note_id.eq.${targetId}${/^\d+$/.test(targetId) ? `,id.eq.${targetId}` : ''}`);
+      } catch {}
+
+      await writeLessonNotesToSchoolSettings(schoolId, [], [targetId]);
+      removeFromFallback('lessonNotes', (item: any) =>
+        String(item.noteId || item.note_id || '') === targetId || String(item.id || '') === targetId
+      );
+
+      const remaining = await fetchSchoolLessonNotesFromSupabase(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: targetId,
+        lessonNotes: remaining
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/lesson-notes/sync - Reconcile local lesson notes with Supabase
+  app.post("/api/lesson-notes/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve school_id for lesson notes sync." });
+      }
+
+      const body = req.body || {};
+      const incomingNotes = Array.isArray(body.lessonNotes) ? body.lessonNotes : [];
+      const userRole = String(req.user?.role || '').toLowerCase();
+
+      if (incomingNotes.length > 0 && userRole !== 'parent' && userRole !== 'student') {
+        await upsertLessonNotesInSupabase(schoolId, incomingNotes);
+      }
+
+      const [lessonNotes, tableStatus] = await Promise.all([
+        fetchSchoolLessonNotesFromSupabase(schoolId),
+        checkPublicLessonNotesTableStatus()
+      ]);
+
+      return res.json({
+        success: true,
+        schoolId,
+        tableExists: tableStatus.tableExists,
+        lessonNotes,
         syncedAt: Date.now()
       });
     } catch (err: any) {

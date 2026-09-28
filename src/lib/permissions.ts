@@ -8,6 +8,7 @@ export type UserRole =
   | 'creator'
   | 'admin'
   | 'headteacher'
+  | 'hod'
   | 'teacher'
   | 'accountant'
   | 'student'
@@ -31,9 +32,12 @@ export type AppPermission =
   | 'academic:manage_subjects'
   | 'academic:manage_teachers'
 
-  // Timetable
+  // Timetable & Lesson Notes
   | 'timetable:view'
   | 'timetable:manage'
+  | 'lesson_notes:view'
+  | 'lesson_notes:create'
+  | 'lesson_notes:review'
 
   // Attendance
   | 'attendance:view'
@@ -124,7 +128,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'dashboard:view', 'analytics:view',
       'students:view', 'students:create', 'students:edit', 'students:delete', 'students:export',
       'academic:view', 'academic:manage_classes', 'academic:manage_subjects', 'academic:manage_teachers',
-      'timetable:view', 'timetable:manage',
+      'timetable:view', 'timetable:manage', 'lesson_notes:view', 'lesson_notes:create', 'lesson_notes:review',
       'attendance:view', 'attendance:mark', 'attendance:export',
       'results:view', 'results:record', 'results:edit', 'results:publish', 'exam_analysis:view', 'exam_analysis:manage',
       'reports:view', 'reports:generate', 'reports:sign',
@@ -137,7 +141,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'attendance', 'results',
+      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
       'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
       'users', 'settings', 'creator', 'school_management'
     ]
@@ -157,7 +161,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'dashboard:view', 'analytics:view',
       'students:view', 'students:create', 'students:edit', 'students:delete', 'students:export',
       'academic:view', 'academic:manage_classes', 'academic:manage_subjects', 'academic:manage_teachers',
-      'timetable:view', 'timetable:manage',
+      'timetable:view', 'timetable:manage', 'lesson_notes:view', 'lesson_notes:create', 'lesson_notes:review',
       'attendance:view', 'attendance:mark', 'attendance:export',
       'results:view', 'results:record', 'results:edit', 'results:publish', 'exam_analysis:view', 'exam_analysis:manage',
       'reports:view', 'reports:generate', 'reports:sign',
@@ -170,7 +174,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'attendance', 'results',
+      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
       'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
       'users', 'settings', 'creator', 'school_management'
     ]
@@ -179,7 +183,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     role: 'admin',
     name: 'School Administrator / Headmaster',
     category: 'School Administration',
-    description: 'Principal / Head Administrator of the active school institution with full authority over student records, academic structure, staff, finances, and settings.',
+    description: 'Principal / Head Administrator of the active school institution with full authority over student records, academic structure, lesson note vetting, staff, finances, and settings.',
     badgeColor: {
       bg: 'bg-blue-100 dark:bg-blue-950/50',
       text: 'text-blue-800 dark:text-blue-300',
@@ -190,7 +194,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'dashboard:view', 'analytics:view',
       'students:view', 'students:create', 'students:edit', 'students:delete', 'students:export',
       'academic:view', 'academic:manage_classes', 'academic:manage_subjects', 'academic:manage_teachers',
-      'timetable:view', 'timetable:manage',
+      'timetable:view', 'timetable:manage', 'lesson_notes:view', 'lesson_notes:create', 'lesson_notes:review',
       'attendance:view', 'attendance:mark', 'attendance:export',
       'results:view', 'results:record', 'results:edit', 'results:publish', 'exam_analysis:view', 'exam_analysis:manage',
       'reports:view', 'reports:generate', 'reports:sign',
@@ -202,7 +206,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:database_sync'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'attendance', 'results',
+      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
       'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
       'users', 'settings'
     ]
@@ -211,7 +215,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     role: 'headteacher',
     name: 'Head Teacher / Vice Principal',
     category: 'School Administration',
-    description: 'Supervises academic schedules, attendance verification, exam grading, report card approvals, and staff timetables.',
+    description: 'Supervises academic schedules, lesson note vetting and approvals, attendance verification, exam grading, report card approvals, and staff timetables.',
     badgeColor: {
       bg: 'bg-teal-100 dark:bg-teal-950/50',
       text: 'text-teal-800 dark:text-teal-300',
@@ -222,7 +226,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'dashboard:view', 'analytics:view',
       'students:view', 'students:create', 'students:edit', 'students:export',
       'academic:view', 'academic:manage_classes', 'academic:manage_subjects', 'academic:manage_teachers',
-      'timetable:view', 'timetable:manage',
+      'timetable:view', 'timetable:manage', 'lesson_notes:view', 'lesson_notes:create', 'lesson_notes:review',
       'attendance:view', 'attendance:mark', 'attendance:export',
       'results:view', 'results:record', 'results:edit', 'results:publish', 'exam_analysis:view', 'exam_analysis:manage',
       'reports:view', 'reports:generate', 'reports:sign',
@@ -233,16 +237,44 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'settings:view'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'attendance', 'results',
+      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
       'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
       'settings'
+    ]
+  },
+  hod: {
+    role: 'hod',
+    name: 'Head of Department (HOD)',
+    category: 'School Administration',
+    description: 'Reviews, vets, and approves weekly teacher lesson notes (structured and PDF), monitors departmental curriculum coverage, and manages subject assessments.',
+    badgeColor: {
+      bg: 'bg-purple-100 dark:bg-purple-950/50',
+      text: 'text-purple-800 dark:text-purple-300',
+      border: 'border-purple-300 dark:border-purple-800',
+      iconColor: 'text-purple-600 dark:text-purple-400'
+    },
+    permissions: [
+      'dashboard:view', 'analytics:view',
+      'students:view',
+      'academic:view',
+      'timetable:view', 'timetable:manage',
+      'lesson_notes:view', 'lesson_notes:create', 'lesson_notes:review',
+      'attendance:view', 'attendance:mark',
+      'results:view', 'results:record', 'results:edit', 'exam_analysis:view',
+      'reports:view', 'reports:generate',
+      'siren:view', 'siren:trigger',
+      'settings:view'
+    ],
+    allowedModules: [
+      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
+      'exam_analysis', 'reports', 'siren', 'settings'
     ]
   },
   teacher: {
     role: 'teacher',
     name: 'Teacher / Instructor',
     category: 'Instructional Staff',
-    description: 'Manages classroom student rosters, marks daily attendance, inputs assessment scores, enters remarks, and views timetables.',
+    description: 'Prepares and submits weekly lesson notes (structured or PDF), manages classroom student rosters, marks daily attendance, inputs assessment scores, and views timetables.',
     badgeColor: {
       bg: 'bg-emerald-100 dark:bg-emerald-950/50',
       text: 'text-emerald-800 dark:text-emerald-300',
@@ -254,6 +286,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'students:view',
       'academic:view',
       'timetable:view',
+      'lesson_notes:view', 'lesson_notes:create',
       'attendance:view', 'attendance:mark',
       'results:view', 'results:record', 'results:edit', 'exam_analysis:view',
       'reports:view', 'reports:generate',
@@ -261,7 +294,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'settings:view'
     ],
     allowedModules: [
-      'dashboard', 'students', 'timetable', 'attendance', 'results',
+      'dashboard', 'students', 'timetable', 'lesson_notes', 'attendance', 'results',
       'exam_analysis', 'reports', 'siren', 'settings'
     ]
   },
@@ -363,7 +396,7 @@ export function canAccessModule(
   if (!isRoleAllowed) return false;
 
   // 2. Core modules are always accessible if role allows
-  const CORE_MODULES = ['dashboard', 'settings', 'users', 'creator', 'school_management', 'test_runner'];
+  const CORE_MODULES = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management', 'test_runner'];
   if (CORE_MODULES.includes(moduleId)) return true;
 
   // 3. For academic / feature modules, check if active on the school's license

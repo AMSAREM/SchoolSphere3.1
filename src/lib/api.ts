@@ -2485,5 +2485,292 @@ export const licensesApi = {
   }
 };
 
+// ============================================================================
+// LESSON NOTES & HOD / HEADMASTER REVIEW API (SUPABASE)
+// ============================================================================
+export const lessonNotesApi = {
+  getAll: async (
+    filters?: {
+      term?: string;
+      weekNumber?: number;
+      class?: string;
+      subject?: string;
+      teacherId?: string;
+      status?: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const params = new URLSearchParams();
+    if (activeSchoolId) params.set('school_id', activeSchoolId);
+    if (filters?.term && filters.term !== 'All') params.set('term', filters.term);
+    if (filters?.weekNumber && Number(filters.weekNumber) > 0) params.set('week_number', String(filters.weekNumber));
+    if (filters?.class && filters.class !== 'All') params.set('class', filters.class);
+    if (filters?.subject && filters.subject !== 'All') params.set('subject', filters.subject);
+    if (filters?.teacherId && filters.teacherId !== 'All') params.set('teacher_id', filters.teacherId);
+    if (filters?.status && filters.status !== 'All') params.set('status', filters.status);
+
+    const res = await fetch(`/api/lesson-notes?${params.toString()}`, {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch lesson notes from Supabase');
+
+    const notes = Array.isArray(data.lessonNotes) ? data.lessonNotes : [];
+    if (notes.length > 0) {
+      try {
+        await reconcileLessonNotesInDexie(notes);
+      } catch {}
+    }
+    return {
+      lessonNotes: notes,
+      schoolId: data.schoolId || activeSchoolId,
+      storageSource: data.storageSource || 'public.lesson_notes',
+      tableReady: data.tableReady !== false
+    };
+  },
+
+  uploadPdf: async (
+    payload: {
+      noteId?: string;
+      fileName: string;
+      fileSize?: number;
+      pdfBase64: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/lesson-notes/upload-pdf', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        noteId: payload.noteId,
+        fileName: payload.fileName,
+        fileSize: payload.fileSize,
+        pdfBase64: payload.pdfBase64
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to upload lesson note PDF to Supabase Storage');
+    }
+    return data as {
+      success: boolean;
+      pdfFileName: string;
+      pdfFileSize: number;
+      pdfFileUrl: string;
+      pdfStoragePath: string;
+      pdfUploadedAt: number;
+      bucket: string;
+    };
+  },
+
+  save: async (notePayload: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || notePayload?.school_id || notePayload?.schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/lesson-notes', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        lessonNote: {
+          ...notePayload,
+          school_id: activeSchoolId
+        }
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to save lesson note to Supabase');
+    }
+
+    const allNotes = Array.isArray(data.lessonNotes)
+      ? data.lessonNotes
+      : (data.lessonNote ? [data.lessonNote] : []);
+    if (allNotes.length > 0) {
+      try {
+        await reconcileLessonNotesInDexie(allNotes);
+      } catch {}
+    }
+
+    return {
+      lessonNote: data.lessonNote || notePayload,
+      lessonNotes: allNotes,
+      tableReady: data.tableReady !== false,
+      syncedAt: data.syncedAt || Date.now()
+    };
+  },
+
+  review: async (
+    noteId: string,
+    reviewPayload: {
+      status: 'Approved' | 'Needs Revision' | 'Rejected' | 'Pending Review';
+      reviewerFeedback?: string;
+      reviewedBy?: string;
+      reviewerRole?: string;
+      lessonNote?: any;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/lesson-notes/${encodeURIComponent(noteId)}/review`, {
+      method: 'PATCH',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        noteId,
+        ...reviewPayload
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to submit lesson note review to Supabase');
+    }
+
+    const allNotes = Array.isArray(data.lessonNotes)
+      ? data.lessonNotes
+      : (data.lessonNote ? [data.lessonNote] : []);
+    if (allNotes.length > 0) {
+      try {
+        await reconcileLessonNotesInDexie(allNotes);
+      } catch {}
+    }
+
+    return {
+      lessonNote: data.lessonNote,
+      lessonNotes: allNotes,
+      tableReady: data.tableReady !== false,
+      syncedAt: data.syncedAt || Date.now()
+    };
+  },
+
+  delete: async (noteId: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/lesson-notes/${encodeURIComponent(noteId)}?school_id=${encodeURIComponent(activeSchoolId || '')}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete lesson note from Supabase');
+    }
+
+    try {
+      const local = await db.lessonNotes.toArray();
+      const target = local.find(n => String(n.noteId) === String(noteId) || String(n.id) === String(noteId));
+      if (target?.id !== undefined) {
+        await db.lessonNotes.delete(target.id);
+      }
+    } catch {}
+
+    return data;
+  },
+
+  syncLocalToSupabase: async (localNotes?: any[], schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const notesToSync = Array.isArray(localNotes)
+      ? localNotes
+      : await db.lessonNotes.toArray();
+
+    const res = await fetch('/api/lesson-notes/sync', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        lessonNotes: notesToSync
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to sync lesson notes with Supabase');
+
+    const remoteNotes = Array.isArray(data.lessonNotes) ? data.lessonNotes : [];
+    if (remoteNotes.length > 0) {
+      try {
+        await reconcileLessonNotesInDexie(remoteNotes);
+      } catch {}
+    }
+
+    return {
+      lessonNotes: remoteNotes,
+      tableReady: data.tableReady !== false,
+      syncedAt: data.syncedAt || Date.now()
+    };
+  }
+};
+
+async function reconcileLessonNotesInDexie(remoteNotes: any[]) {
+  if (!Array.isArray(remoteNotes)) return;
+  const local = await db.lessonNotes.toArray();
+  const byNoteId = new Map<string, any>();
+  for (const item of local) {
+    if (item.noteId) byNoteId.set(String(item.noteId), item);
+  }
+
+  for (const remote of remoteNotes) {
+    if (!remote) continue;
+    const noteId = String(remote.noteId || remote.note_id || '').trim();
+    if (!noteId) continue;
+
+    const normalized = {
+      noteId,
+      schoolId: remote.schoolId || remote.school_id || '',
+      teacherId: String(remote.teacherId || remote.teacher_id || remote.teacherName || remote.teacher_name || ''),
+      teacherName: String(remote.teacherName || remote.teacher_name || 'Subject Teacher'),
+      term: (remote.term || 'Term 1') as 'Term 1' | 'Term 2' | 'Term 3',
+      academicYear: String(remote.academicYear || remote.academic_year || '2026/2027'),
+      weekNumber: Number(remote.weekNumber ?? remote.week_number ?? 1) || 1,
+      class: String(remote.class || 'JHS 1'),
+      subject: String(remote.subject || 'Mathematics'),
+      lessonDate: String(remote.lessonDate || remote.lesson_date || ''),
+      duration: String(remote.duration || '60 mins'),
+      classSize: remote.classSize !== undefined || remote.class_size !== undefined
+        ? Number(remote.classSize ?? remote.class_size) || undefined
+        : undefined,
+      strand: String(remote.strand || ''),
+      subStrand: String(remote.subStrand ?? remote.sub_strand ?? ''),
+      contentStandard: String(remote.contentStandard ?? remote.content_standard ?? ''),
+      objectives: String(remote.objectives ?? ''),
+      tlms: String(remote.tlms ?? ''),
+      coreCompetencies: String(remote.coreCompetencies ?? remote.core_competencies ?? ''),
+      starterActivity: String(remote.starterActivity ?? remote.starter_activity ?? ''),
+      mainActivity: String(remote.mainActivity ?? remote.main_activity ?? ''),
+      plenaryActivity: String(remote.plenaryActivity ?? remote.plenary_activity ?? ''),
+      evaluation: String(remote.evaluation ?? ''),
+      teacherRemarks: String(remote.teacherRemarks ?? remote.teacher_remarks ?? ''),
+      pdfFileName: remote.pdfFileName || remote.pdf_file_name || undefined,
+      pdfFileSize: remote.pdfFileSize !== undefined || remote.pdf_file_size !== undefined
+        ? Number(remote.pdfFileSize ?? remote.pdf_file_size) || undefined
+        : undefined,
+      pdfFileUrl: remote.pdfFileUrl || remote.pdf_file_url || undefined,
+      pdfStoragePath: remote.pdfStoragePath || remote.pdf_storage_path || undefined,
+      pdfData: remote.pdfData || remote.pdf_data || undefined,
+      pdfUploadedAt: remote.pdfUploadedAt !== undefined || remote.pdf_uploaded_at !== undefined
+        ? Number(remote.pdfUploadedAt ?? remote.pdf_uploaded_at) || undefined
+        : undefined,
+      status: (remote.status || 'Draft') as 'Draft' | 'Pending Review' | 'Approved' | 'Needs Revision' | 'Rejected',
+      submittedAt: remote.submittedAt ?? remote.submitted_at ?? undefined,
+      reviewedBy: remote.reviewedBy || remote.reviewed_by || undefined,
+      reviewerRole: remote.reviewerRole || remote.reviewer_role || undefined,
+      reviewerFeedback: remote.reviewerFeedback ?? remote.reviewer_feedback ?? undefined,
+      reviewedAt: remote.reviewedAt ?? remote.reviewed_at ?? undefined,
+      createdAt: Number(remote.createdAt ?? remote.created_at ?? Date.now()) || Date.now(),
+      updatedAt: Number(remote.updatedAt ?? remote.updated_at ?? Date.now()) || Date.now()
+    };
+
+    const existing = byNoteId.get(noteId);
+    if (existing?.id !== undefined) {
+      await db.lessonNotes.update(existing.id, {
+        ...normalized,
+        pdfFileUrl: normalized.pdfFileUrl || existing.pdfFileUrl,
+        pdfStoragePath: normalized.pdfStoragePath || existing.pdfStoragePath,
+        pdfData: normalized.pdfData || existing.pdfData,
+        id: existing.id
+      });
+    } else {
+      await db.lessonNotes.add(normalized);
+    }
+  }
+}
+
 
 

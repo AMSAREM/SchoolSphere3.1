@@ -829,52 +829,52 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            className="space-y-6"
+            className="space-y-6 w-full"
           >
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-end gap-6 print:hidden">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-4 sm:gap-6 print:hidden">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Class</label>
+                <label className="text-xs font-black text-slate-600 uppercase tracking-wider">Select Class</label>
                 <select 
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="block w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="block w-full sm:w-44 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   {classes?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Term</label>
+                <label className="text-xs font-black text-slate-600 uppercase tracking-wider">Term</label>
                 <select 
                   value={selectedTerm}
                   onChange={(e) => setSelectedTerm(e.target.value)}
-                  className="block w-32 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="block w-full sm:w-40 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   {['Term 1', 'Term 2', 'Term 3'].map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
-              <div className="flex-1" />
-              <div className="flex items-center gap-3">
+              <div className="hidden sm:block sm:flex-1" />
+              <div className="col-span-2 sm:w-auto flex flex-wrap items-center gap-3">
                 <button 
                   onClick={triggerPrint}
-                  className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 active:scale-95 cursor-pointer"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 active:scale-95 cursor-pointer"
                 >
-                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span>Print All Reports</span>
                 </button>
                 <button 
                   onClick={handleBatchPDF}
                   disabled={isExportingPDF}
-                  className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-sm h-11 cursor-pointer"
                 >
-                  <Layers className="w-4 h-4" />
+                  <Layers className="w-4 h-4 shrink-0" />
                   <span>{isExportingPDF ? 'Generating...' : 'Batch PDF'}</span>
                 </button>
               </div>
             </div>
 
-            <div id="batch-reports-content" className="space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full">
+            <div id="batch-reports-content" className="w-full space-y-6 sm:space-y-10 lg:space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full">
               {classStudents.map(student => (
-                <div key={student.id} id={`report-${student.studentId}`}>
+                <div key={student.id} id={`report-${student.studentId}`} className="w-full max-w-4xl mx-auto">
                   <ReportCard
                     student={student} 
                     results={classResults?.filter(r => r.studentId === student.studentId) || []}
@@ -899,7 +899,7 @@ export default function ReportTerminal() {
                 </div>
               ))}
               {!classStudents.length && (
-                <div className="bg-white rounded-3xl border-2 border-dashed border-slate-200 p-20 text-center text-slate-400 font-bold uppercase tracking-widest w-full">
+                <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-10 sm:p-20 text-center text-slate-600 font-bold uppercase tracking-widest w-full">
                   No students found in {selectedClass}
                 </div>
               )}

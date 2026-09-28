@@ -172,7 +172,7 @@ export interface User {
   full_name?: string;
   email?: string;
   phone?: string;
-  role: 'super_admin' | 'creator' | 'admin' | 'headteacher' | 'teacher' | 'accountant' | 'student' | 'parent';
+  role: 'super_admin' | 'creator' | 'admin' | 'headteacher' | 'hod' | 'teacher' | 'accountant' | 'student' | 'parent';
   status?: 'active' | 'inactive' | 'suspended' | string;
   createdAt: number;
   created_at?: number;
@@ -284,6 +284,50 @@ export interface SchoolExpense {
   recordedBy: string;
 }
 
+export type LessonNoteStatus = 'Draft' | 'Pending Review' | 'Approved' | 'Needs Revision' | 'Rejected';
+
+export interface LessonNote {
+  id?: number;
+  noteId: string;
+  schoolId?: string;
+  school_id?: string;
+  teacherId?: string;
+  teacherName: string;
+  term: string;
+  academicYear: string;
+  weekNumber: number; // Week 1 - 14
+  class: string;
+  subject: string;
+  lessonDate?: string;
+  duration: string;
+  classSize?: number;
+  strand: string;
+  subStrand?: string;
+  contentStandard?: string;
+  objectives?: string;
+  tlms?: string;
+  coreCompetencies?: string;
+  starterActivity?: string;
+  mainActivity?: string;
+  plenaryActivity?: string;
+  evaluation?: string;
+  teacherRemarks?: string;
+  pdfFileName?: string;
+  pdfFileSize?: number;
+  pdfFileUrl?: string;
+  pdfStoragePath?: string;
+  pdfData?: string;
+  pdfUploadedAt?: number;
+  status: LessonNoteStatus;
+  submittedAt?: number;
+  reviewedBy?: string;
+  reviewerRole?: string;
+  reviewerFeedback?: string;
+  reviewedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export class SchoolDB extends Dexie {
   students!: Table<Student>;
   attendance!: Table<Attendance>;
@@ -302,6 +346,7 @@ export class SchoolDB extends Dexie {
   promotionHistory!: Table<PromotionRecord>;
   inventory!: Table<InventoryItem>;
   expenses!: Table<SchoolExpense>;
+  lessonNotes!: Table<LessonNote>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -429,6 +474,26 @@ export class SchoolDB extends Dexie {
       promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
       inventory: '++id, itemName, category, location',
       expenses: '++id, category, date, inventoryItemId'
+    });
+    this.version(15).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt'
     });
   }
 }
@@ -633,7 +698,8 @@ export async function clearTenantLocalDatabase(activeSchoolId?: string): Promise
       db.promotionHistory.clear(),
       db.polls.clear(),
       db.candidates.clear(),
-      db.votes.clear()
+      db.votes.clear(),
+      db.lessonNotes.clear()
     ]);
 
     await db.settings.where('key').anyOf(['timetable_slots', 'timetable_suggestions']).delete();

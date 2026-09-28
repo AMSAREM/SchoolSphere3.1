@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS public.school_licenses (
     CHECK (active_status IN ('active', 'pending_activation', 'unactivated', 'suspended', 'expired', 'revoked', 'deactivated')),
   tier VARCHAR(50) NOT NULL DEFAULT 'Standard' 
     CHECK (tier IN ('Standard', 'Pro', 'Professional', 'Enterprise', 'Ultimate', 'Lifetime', 'Developer', 'Trial', 'Basic', 'Diagnostic', 'Custom', 'Starter')),
-  active_modules JSONB NOT NULL DEFAULT '["students", "academic", "timetable", "attendance", "results", "reports", "fees", "siren", "evoting", "inventory"]'::jsonb,
+  active_modules JSONB NOT NULL DEFAULT '["students", "academic", "timetable", "lesson_notes", "attendance", "results", "reports", "fees", "siren", "evoting", "inventory"]'::jsonb,
   announcement TEXT NULL,
   notes TEXT NULL,
   school_id UUID NULL,
@@ -162,12 +162,20 @@ CREATE TABLE IF NOT EXISTS public.users (
   full_name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NULL,
   phone VARCHAR(50) NULL,
-  role VARCHAR(50) NOT NULL CHECK (role IN ('super_admin', 'admin', 'headteacher', 'teacher', 'accountant', 'student', 'parent')),
+  role VARCHAR(50) NOT NULL CHECK (role IN ('super_admin', 'admin', 'headteacher', 'hod', 'teacher', 'accountant', 'student', 'parent')),
   status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   CONSTRAINT uq_school_user UNIQUE (school_id, username)
 );
+
+DO $$
+BEGIN
+  ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;
+  ALTER TABLE public.users ADD CONSTRAINT users_role_check
+    CHECK (role IN ('super_admin', 'creator', 'admin', 'headteacher', 'hod', 'teacher', 'accountant', 'student', 'parent'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_school_id ON public.users (school_id);
 CREATE INDEX IF NOT EXISTS idx_users_auth_uid ON public.users (auth_user_id);
@@ -620,6 +628,60 @@ CREATE INDEX IF NOT EXISTS idx_timetable_suggestions_school_id ON public.timetab
 CREATE INDEX IF NOT EXISTS idx_timetable_suggestions_status ON public.timetable_suggestions (school_id, status);
 
 -- ==============================================================================
+-- 15D. TEACHER LESSON NOTES (STRUCTURED + PDF UPLOAD) & HOD/HEADMASTER REVIEW
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.lesson_notes (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  note_id VARCHAR(100) NOT NULL,
+  teacher_id VARCHAR(100) NULL,
+  teacher_name VARCHAR(255) NOT NULL,
+  term VARCHAR(50) NOT NULL DEFAULT 'Term 1',
+  academic_year VARCHAR(50) NOT NULL DEFAULT '2026/2027',
+  week_number INT NOT NULL DEFAULT 1 CHECK (week_number >= 1 AND week_number <= 20),
+  class VARCHAR(100) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  lesson_date VARCHAR(50) NULL,
+  duration VARCHAR(50) NOT NULL DEFAULT '60 mins',
+  class_size INT NULL,
+  strand TEXT NOT NULL,
+  sub_strand TEXT NULL,
+  content_standard TEXT NULL,
+  objectives TEXT NULL,
+  tlms TEXT NULL,
+  core_competencies TEXT NULL,
+  starter_activity TEXT NULL,
+  main_activity TEXT NULL,
+  plenary_activity TEXT NULL,
+  evaluation TEXT NULL,
+  teacher_remarks TEXT NULL,
+  pdf_file_name VARCHAR(255) NULL,
+  pdf_file_size BIGINT NULL,
+  pdf_file_url TEXT NULL,
+  pdf_storage_path TEXT NULL,
+  pdf_data TEXT NULL,
+  pdf_uploaded_at BIGINT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft', 'Pending Review', 'Approved', 'Needs Revision', 'Rejected')),
+  submitted_at BIGINT NULL,
+  reviewed_by VARCHAR(255) NULL,
+  reviewer_role VARCHAR(100) NULL,
+  reviewer_feedback TEXT NULL,
+  reviewed_at BIGINT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_lesson_note UNIQUE (school_id, note_id)
+);
+
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_file_url TEXT NULL;
+ALTER TABLE public.lesson_notes ADD COLUMN IF NOT EXISTS pdf_storage_path TEXT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_school_lookup ON public.lesson_notes (school_id, term, week_number, class, subject);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_status ON public.lesson_notes (school_id, status);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_teacher ON public.lesson_notes (school_id, teacher_name);
+
+-- ==============================================================================
 -- 16. ROW LEVEL SECURITY (RLS) POLICIES ENFORCEMENT
 -- ==============================================================================
 
@@ -648,6 +710,7 @@ ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscription_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.timetable_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.timetable_suggestions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lesson_notes ENABLE ROW LEVEL SECURITY;
 
 -- Policy helper: Super Admin & Service Role bypass
 DROP POLICY IF EXISTS "Super admin full access on licenses" ON public.school_licenses;
@@ -765,6 +828,10 @@ DROP POLICY IF EXISTS "Tenant isolation for timetable_suggestions" ON public.tim
 CREATE POLICY "Tenant isolation for timetable_suggestions" ON public.timetable_suggestions
   FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
+DROP POLICY IF EXISTS "Tenant isolation for lesson_notes" ON public.lesson_notes;
+CREATE POLICY "Tenant isolation for lesson_notes" ON public.lesson_notes
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
 -- ==============================================================================
 -- 17. AUTOMATED TRIGGERS FOR TIMESTAMPS & AUDITING
 -- ==============================================================================
@@ -797,6 +864,11 @@ CREATE TRIGGER trg_timetable_slots_updated_at
 DROP TRIGGER IF EXISTS trg_timetable_suggestions_updated_at ON public.timetable_suggestions;
 CREATE TRIGGER trg_timetable_suggestions_updated_at
   BEFORE UPDATE ON public.timetable_suggestions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
+
+DROP TRIGGER IF EXISTS trg_lesson_notes_updated_at ON public.lesson_notes;
+CREATE TRIGGER trg_lesson_notes_updated_at
+  BEFORE UPDATE ON public.lesson_notes
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at_timestamp();
 
 -- ==============================================================================

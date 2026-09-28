@@ -39,7 +39,8 @@ import {
   Server,
   Key,
   Sparkles,
-  Activity
+  Activity,
+  ClipboardCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -63,6 +64,7 @@ import CreatorHub from './components/CreatorHub';
 import SchoolManagement from './components/SchoolManagement';
 import TenantSwitcher from './components/TenantSwitcher';
 import FrontendTestRunner from './components/FrontendTestRunner';
+import LessonNotes from './components/LessonNotes';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -76,12 +78,13 @@ import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { DoodleBackground } from './components/DoodleBackground';
 import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
 
 const ALL_DEFAULT_MODULES = [
   'students',
   'academic',
   'timetable',
+  'lesson_notes',
   'attendance',
   'results',
   'exam_analysis',
@@ -679,6 +682,7 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
@@ -696,6 +700,7 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
@@ -713,6 +718,7 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
@@ -723,11 +729,26 @@ function AppContent() {
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
+    } else if ((user?.role as string) === 'hod') {
+      baseItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'students', label: 'Students', icon: Users },
+        { id: 'academic', label: 'Academic', icon: Briefcase },
+        { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'lesson_notes', label: 'Lesson Notes & Vetting', icon: ClipboardCheck },
+        { id: 'attendance', label: 'Attendance', icon: CheckCircle },
+        { id: 'results', label: 'Results Terminal', icon: BookOpen },
+        { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
+        { id: 'reports', label: 'Reports', icon: FileText },
+        { id: 'siren', label: 'Siren Console', icon: Siren },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
+      ];
     } else if (user?.role === 'teacher') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
@@ -774,7 +795,7 @@ function AppContent() {
     baseItems.push({ id: 'test_runner', label: 'Frontend Test Suite', icon: Activity });
 
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'settings', 'users', 'creator', 'school_management', 'test_runner'].includes(item.id);
+      const isCore = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management', 'test_runner'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1257,6 +1278,13 @@ function AppContent() {
                 {activeView === 'students' && <StudentManagement />}
                 {activeView === 'academic' && <AcademicManagement />}
                 {activeView === 'timetable' && <TimetableManagement />}
+                {activeView === 'lesson_notes' && (
+                  <LessonNotes
+                    showToast={showToast}
+                    currentUser={user}
+                    onNavigate={(target) => setActiveView(target as View)}
+                  />
+                )}
                 {activeView === 'attendance' && <AttendanceTerminal />}
                 {activeView === 'results' && <ResultsTerminal />}
                 {activeView === 'exam_analysis' && <ExamAnalysis />}
