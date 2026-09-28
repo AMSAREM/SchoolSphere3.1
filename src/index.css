@@ -223,12 +223,12 @@ body {
     margin: 0 !important;
   }
 
-  /* Force standard layout for print to avoid grid display issues */
-  .grid {
+  /* Force standard layout for print to avoid grid display issues on generic dashboards, excluding ReportCard */
+  .grid:not(.ReportCard *):not(.ReportCard) {
     display: block !important;
   }
 
-  .grid > * {
+  .grid:not(.ReportCard *) > *:not(.ReportCard):not(.ReportCard *) {
     margin-bottom: 1.5rem !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
@@ -253,11 +253,6 @@ body {
   [role="dialog"] button,
   .only-screen {
     display: none !important;
-  }
-
-  /* Also hide everything EXCEPT the target modal if printing from one */
-  body.printing-in-progress main > div:not(:has([id*="receipt"], [id*="report"], .ReportCard)) {
-     /* This might be too complex for CSS selectors, rely on generic hiding */
   }
 
   /* Hide specifically the backdrop of modals */
@@ -307,9 +302,9 @@ body {
     font-size: 9pt !important;
   }
 
-  /* Avoid cutting off cards or sections */
-  .bg-white:not(.ReportCard), 
-  .rounded-2xl:not(.ReportCard), 
+  /* Avoid cutting off cards or sections outside ReportCard */
+  .bg-white:not(.ReportCard):not(.ReportCard *), 
+  .rounded-2xl:not(.ReportCard):not(.ReportCard *), 
   section:not(.ReportCard-section) {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
@@ -321,29 +316,69 @@ body {
   .ReportCard {
     display: flex !important;
     flex-direction: column !important;
+    justify-content: space-between !important;
     page-break-after: always !important;
     break-after: page !important;
-    margin: 0 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin: 0 auto !important;
     border-radius: 0 !important;
     width: 210mm !important;
-    height: 297mm !important;
-    padding: 10mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    padding: 10mm 12mm !important;
     overflow: hidden !important;
     position: relative !important;
     box-sizing: border-box !important;
     background: white !important;
-    /* Restore the border */
-    border: 8pt double #312e81 !important; /* indigo-900 */
+    border: 6pt double #312e81 !important; /* indigo-900 */
+    box-shadow: none !important;
     left: 0 !important;
     top: 0 !important;
   }
 
+  .ReportCard * {
+    margin-bottom: 0;
+  }
+
+  .ReportCard-bio-grid {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+    align-items: center !important;
+  }
+
+  .ReportCard-bio-grid > :first-child {
+    grid-column: span 3 / span 3 !important;
+  }
+
+  .ReportCard-details-grid {
+    display: grid !important;
+    grid-column: span 9 / span 9 !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 18px !important;
+    row-gap: 4px !important;
+  }
+
+  .ReportCard-footer-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+  }
+
+  .ReportCard-sig-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 36px !important;
+  }
+
   /* Reset any container interference */
   body.printing-in-progress #batch-reports-content,
-  #batch-reports-content {
+  #batch-reports-content,
+  #terminal-report-print-wrapper {
     display: block !important;
     width: 210mm !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     text-align: left !important;
   }
@@ -354,6 +389,13 @@ body {
     margin: 0 !important;
     padding: 0 !important;
     width: 210mm !important;
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  #batch-reports-content > div:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
   }
 
   /* Specific Components */

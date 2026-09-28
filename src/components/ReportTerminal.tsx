@@ -73,6 +73,7 @@ export default function ReportTerminal() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [selectedBillStudent, setSelectedBillStudent] = useState<Student | null>(null);
+  const [reportViewMode, setReportViewMode] = useState<'responsive' | 'a4'>('responsive');
 
   const classesFromDB = useLiveQuery(() => db.classes.toArray()) || [];
   const students = useLiveQuery(() => db.students.toArray()) || [];
@@ -311,17 +312,19 @@ export default function ReportTerminal() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
-      {/* Print Only Header */}
-      <div className="only-print">
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolProfile.schoolName}</h1>
-        <div className="mt-2 text-sm font-bold text-slate-600 uppercase tracking-widest flex items-center justify-center gap-4">
-          <span>{isAccountant ? 'FINANCIAL PERFORMANCE & COLLECTION REPORT' : 'ACADEMIC PERFORMANCE REPORT'}</span>
-          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
-          <span>{isAccountant ? `Generated: ${new Date().toLocaleDateString()}` : `${selectedClass} — ${selectedTerm}`}</span>
-          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
-          <span>Academic Year: {academicYear}</span>
+      {/* Print Only Header (hidden for A4 Report Cards which include their own official transcript header) */}
+      {activeReport !== 'batch-reports' && activeReport !== 'terminal-report' && (
+        <div className="only-print">
+          <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolProfile.schoolName}</h1>
+          <div className="mt-2 text-sm font-bold text-slate-600 uppercase tracking-widest flex items-center justify-center gap-4">
+            <span>{isAccountant ? 'FINANCIAL PERFORMANCE & COLLECTION REPORT' : 'ACADEMIC PERFORMANCE REPORT'}</span>
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+            <span>{isAccountant ? `Generated: ${new Date().toLocaleDateString()}` : `${selectedClass} — ${selectedTerm}`}</span>
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+            <span>Academic Year: {academicYear}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Navigation Tabs Header */}
       <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto scrollbar-hide no-scrollbar print:hidden">
@@ -854,6 +857,32 @@ export default function ReportTerminal() {
               </div>
               <div className="hidden sm:block sm:flex-1" />
               <div className="col-span-2 sm:w-auto flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-11">
+                  <button
+                    type="button"
+                    onClick={() => setReportViewMode('responsive')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                      reportViewMode === 'responsive'
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    Fit Screen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReportViewMode('a4')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                      reportViewMode === 'a4'
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    A4 Sheet
+                  </button>
+                </div>
                 <button 
                   onClick={triggerPrint}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 active:scale-95 cursor-pointer"
@@ -872,9 +901,22 @@ export default function ReportTerminal() {
               </div>
             </div>
 
-            <div id="batch-reports-content" className="w-full space-y-6 sm:space-y-10 lg:space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full">
+            <div
+              id="batch-reports-content"
+              className={cn(
+                "w-full space-y-6 sm:space-y-10 lg:space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full",
+                reportViewMode === 'a4' && "overflow-x-auto pb-4 items-start md:items-center"
+              )}
+            >
               {classStudents.map(student => (
-                <div key={student.id} id={`report-${student.studentId}`} className="w-full max-w-4xl mx-auto">
+                <div
+                  key={student.id}
+                  id={`report-${student.studentId}`}
+                  className={cn(
+                    "mx-auto",
+                    reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm]"
+                  )}
+                >
                   <ReportCard
                     student={student} 
                     results={classResults?.filter(r => r.studentId === student.studentId) || []}
@@ -882,6 +924,7 @@ export default function ReportTerminal() {
                     academicYear={academicYear}
                     schoolProfile={schoolProfile}
                     academicConfig={academicConfig}
+                    viewMode={reportViewMode}
                     termReport={{
                       studentId: student.studentId,
                       term: selectedTerm,
@@ -968,19 +1011,45 @@ export default function ReportTerminal() {
             </div>
 
             {/* Report Viewer */}
-            <div className="lg:col-span-8 space-y-6">
+            <div className="lg:col-span-8 print:col-span-12 space-y-6 w-full">
               {selectedStudent ? (
                 <div className="space-y-6">
                   {/* Actions Bar */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between print:hidden">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 print:hidden">
                     <div className="flex items-center gap-2">
-                       <FileText className="w-5 h-5 text-indigo-600" />
+                       <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
                        <span className="font-bold text-slate-900 text-sm">Previewing Report Card</span>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-10">
+                        <button
+                          type="button"
+                          onClick={() => setReportViewMode('responsive')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                            reportViewMode === 'responsive'
+                              ? "bg-white text-slate-900 shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          )}
+                        >
+                          Fit Screen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReportViewMode('a4')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                            reportViewMode === 'a4'
+                              ? "bg-white text-slate-900 shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          )}
+                        >
+                          A4 Sheet
+                        </button>
+                      </div>
                       <button 
                         onClick={triggerPrint}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs h-10 cursor-pointer"
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs h-10 cursor-pointer"
                       >
                          <Printer className="w-4 h-4 text-indigo-600" />
                          <span>Print Card</span>
@@ -988,7 +1057,7 @@ export default function ReportTerminal() {
                       <button 
                         onClick={() => handleExportPDF(`report-${selectedStudent.studentId}`, `${selectedStudent.firstName}_Report`)}
                         disabled={isExportingPDF}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs h-10 cursor-pointer"
                       >
                          <FileText className="w-4 h-4" />
                          <span>{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
@@ -996,28 +1065,43 @@ export default function ReportTerminal() {
                     </div>
                   </div>
 
-                  <div id={`report-${selectedStudent.studentId}`}>
-                    <ReportCard
-                      student={selectedStudent} 
-                      results={classResults?.filter(r => r.studentId === selectedStudent.studentId) || []}
-                      term={selectedTerm}
-                      academicYear={academicYear}
-                      schoolProfile={schoolProfile}
-                      academicConfig={academicConfig}
-                      termReport={{
-                        studentId: selectedStudent.studentId,
-                        term: selectedTerm,
-                        academicYear: academicYear,
-                        ...(termReports?.find(tr => tr.studentId === selectedStudent.studentId) || {
-                           attendancePresent: 68,
-                           attendanceTotal: 70,
-                           teacherRemark: 'Student has shown great improvement in core subjects. Needs to maintain same level of discipline.',
-                           headmasterRemark: 'A commendable performance. Promotion granted.'
-                        }),
-                        position: studentRankings[selectedStudent.studentId]?.position,
-                        totalStudents: classStudents.length
-                      }}
-                    />
+                  <div
+                    id="terminal-report-print-wrapper"
+                    className={cn(
+                      "w-full",
+                      reportViewMode === 'a4' && "overflow-x-auto pb-4"
+                    )}
+                  >
+                    <div
+                      id={`report-${selectedStudent.studentId}`}
+                      className={cn(
+                        "mx-auto",
+                        reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm]"
+                      )}
+                    >
+                      <ReportCard
+                        student={selectedStudent} 
+                        results={classResults?.filter(r => r.studentId === selectedStudent.studentId) || []}
+                        term={selectedTerm}
+                        academicYear={academicYear}
+                        schoolProfile={schoolProfile}
+                        academicConfig={academicConfig}
+                        viewMode={reportViewMode}
+                        termReport={{
+                          studentId: selectedStudent.studentId,
+                          term: selectedTerm,
+                          academicYear: academicYear,
+                          ...(termReports?.find(tr => tr.studentId === selectedStudent.studentId) || {
+                             attendancePresent: 68,
+                             attendanceTotal: 70,
+                             teacherRemark: 'Student has shown great improvement in core subjects. Needs to maintain same level of discipline.',
+                             headmasterRemark: 'A commendable performance. Promotion granted.'
+                          }),
+                          position: studentRankings[selectedStudent.studentId]?.position,
+                          totalStudents: classStudents.length
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (

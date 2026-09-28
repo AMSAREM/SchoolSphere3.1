@@ -91,27 +91,79 @@ const FIX_COLORS_STYLE = `
   .text-slate-600 { color: #475569 !important; }
   .text-slate-500 { color: #64748b !important; }
   .text-slate-400 { color: #94a3b8 !important; }
+  .border-slate-300 { border-color: #cbd5e1 !important; }
   .border-slate-200 { border-color: #e2e8f0 !important; }
   .border-slate-100 { border-color: #f1f5f9 !important; }
   .bg-slate-50 { background-color: #f8fafc !important; }
   .bg-slate-100 { background-color: #f1f5f9 !important; }
+  .text-rose-700 { color: #be123c !important; }
   .text-rose-600 { color: #e11d48 !important; }
   .text-emerald-600 { color: #059669 !important; }
   .bg-indigo-50 { background-color: #eef2ff !important; }
-  .bg-indigo-900 { background-color: #000 !important; }
-  .text-indigo-900 { color: #000 !important; }
+  .bg-indigo-900 { background-color: #1e1b4b !important; }
+  .text-indigo-950 { color: #1e1b4b !important; }
+  .text-indigo-900 { color: #1e1b4b !important; }
   .text-white { color: #ffffff !important; }
   
   /* Table specific fixes */
-  thead { background-color: #000 !important; }
+  thead { background-color: #1e1b4b !important; }
   th { color: #ffffff !important; }
   
   /* Ensure border colors also show */
   .border-white { border-color: #ffffff !important; }
-  .border-indigo-900 { border-color: #000 !important; }
+  .border-indigo-900 { border-color: #1e1b4b !important; }
+  .border-indigo-800 { border-color: #312e81 !important; }
+
+  /* Force exact A4 geometry for ReportCard during PDF capture on any screen */
+  .ReportCard {
+    width: 794px !important;
+    min-width: 794px !important;
+    max-width: 794px !important;
+    min-height: 1123px !important;
+    padding: 42px 45px !important;
+    border-radius: 0 !important;
+    border: 8px double #1e1b4b !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    margin: 0 !important;
+  }
+
+  .ReportCard-bio-grid {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    align-items: center !important;
+  }
+
+  .ReportCard-bio-grid > :first-child {
+    grid-column: span 3 / span 3 !important;
+  }
+
+  .ReportCard-details-grid {
+    display: grid !important;
+    grid-column: span 9 / span 9 !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 20px !important;
+    row-gap: 6px !important;
+  }
+
+  .ReportCard-footer-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 18px !important;
+  }
+
+  .ReportCard-sig-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 40px !important;
+  }
 `;
 
-function onCloneForPDF(clonedDoc: Document) {
+function onCloneForPDF(clonedDoc: Document, targetElementId?: string) {
   const allElements = clonedDoc.getElementsByTagName('*');
   const problematicProps = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'stopColor', 'fill', 'stroke', 'border-color', 'background-color'];
   
@@ -137,6 +189,17 @@ function onCloneForPDF(clonedDoc: Document) {
   const style = clonedDoc.createElement('style');
   style.innerHTML = FIX_COLORS_STYLE;
   clonedDoc.head.appendChild(style);
+
+  if (targetElementId) {
+    const targetEl = clonedDoc.getElementById(targetElementId);
+    if (targetEl && (targetEl.classList.contains('ReportCard') || targetEl.querySelector('.ReportCard'))) {
+      targetEl.style.width = '794px';
+      targetEl.style.minWidth = '794px';
+      targetEl.style.maxWidth = '794px';
+      targetEl.style.margin = '0';
+      targetEl.style.padding = '0';
+    }
+  }
 }
 
 export async function exportToPDF(elementId: string, filename: string) {
@@ -146,13 +209,15 @@ export async function exportToPDF(elementId: string, filename: string) {
   try {
     const { jsPDF } = await import('jspdf');
     const html2canvas = (await import('html2canvas')).default;
+    const isReportCard = element.classList.contains('ReportCard') || Boolean(element.querySelector('.ReportCard'));
 
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff',
-      onclone: onCloneForPDF
+      windowWidth: isReportCard ? 1024 : Math.max(window.innerWidth, 1024),
+      onclone: (doc) => onCloneForPDF(doc, elementId)
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -164,7 +229,13 @@ export async function exportToPDF(elementId: string, filename: string) {
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    if (isReportCard) {
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    } else {
+      const ratio = canvas.height / canvas.width;
+      const renderedHeight = Math.min(pdfHeight, pdfWidth * ratio);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, renderedHeight);
+    }
     pdf.save(`${filename}.pdf`);
   } catch (error) {
     console.error('Error generating PDF:', error);
@@ -184,7 +255,8 @@ export async function exportBatchToPDF(elementIds: string[], filename: string) {
     });
 
     for (let i = 0; i < elementIds.length; i++) {
-       const element = document.getElementById(elementIds[i]);
+       const elementId = elementIds[i];
+       const element = document.getElementById(elementId);
        if (!element) continue;
 
        if (i > 0) pdf.addPage();
@@ -194,7 +266,8 @@ export async function exportBatchToPDF(elementIds: string[], filename: string) {
          useCORS: true,
          logging: false,
          backgroundColor: '#ffffff',
-         onclone: onCloneForPDF
+         windowWidth: 1024,
+         onclone: (doc) => onCloneForPDF(doc, elementId)
        });
 
        const imgData = canvas.toDataURL('image/png');
