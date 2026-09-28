@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to optimize the Student Report Card for all screen sizes (mobile, tablet, desktop) and exact A4 sheets (both browser print and PDF export).",
-  "updatedAt":  "2026-09-28T13:41:07.717054287Z",
+  "summary":  "Implementation plan to replace blurry html2canvas screenshot PDFs with true vector A4 PDF generation using jsPDF vector text, tables, and geometric paths.",
+  "updatedAt":  "2026-09-28T19:32:44.728793129Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

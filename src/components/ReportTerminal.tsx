@@ -22,7 +22,16 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn, exportToPDF, exportBatchToPDF, triggerPrint, formatCurrency } from '../lib/utils';
+import {
+  cn,
+  exportToPDF,
+  exportReportCardVectorPDF,
+  exportBatchReportCardsVectorPDF,
+  exportBroadsheetVectorPDF,
+  exportFeeStatementVectorPDF,
+  triggerPrint,
+  formatCurrency,
+} from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { ReportCard } from './ReportCard';
 import { useAuth } from '../contexts/AuthContext';
@@ -196,6 +205,66 @@ export default function ReportTerminal() {
   const handleExportPDF = async (elementId: string, filename: string) => {
     setIsExportingPDF(true);
     try {
+      if (elementId.startsWith('report-')) {
+        const targetStudentId = elementId.replace(/^report-/, '');
+        const targetStudent =
+          students?.find((s) => s.studentId === targetStudentId) || selectedStudent;
+        if (targetStudent) {
+          const targetClassCount =
+            students?.filter((s) => s.class === targetStudent.class).length || classStudents.length;
+          await exportReportCardVectorPDF(
+            {
+              student: targetStudent,
+              results: classResults?.filter((r) => r.studentId === targetStudent.studentId) || [],
+              term: selectedTerm,
+              academicYear,
+              schoolProfile,
+              academicConfig,
+              termReport: {
+                studentId: targetStudent.studentId,
+                term: selectedTerm,
+                academicYear,
+                ...(termReports?.find((tr) => tr.studentId === targetStudent.studentId) || {
+                  attendancePresent: 68,
+                  attendanceTotal: 70,
+                  teacherRemark:
+                    'Student has shown great improvement in core subjects. Needs to maintain same level of discipline.',
+                  headmasterRemark: 'A commendable performance. Promotion granted.',
+                }),
+                position: studentRankings[targetStudent.studentId]?.position,
+                totalStudents: targetClassCount,
+              },
+            },
+            filename
+          );
+          return;
+        }
+      } else if (elementId === 'broadsheet-content') {
+        await exportBroadsheetVectorPDF(
+          {
+            schoolName: schoolProfile?.schoolName || 'ESEPA INTERNATIONAL SCHOOL',
+            selectedClass,
+            selectedTerm,
+            academicYear,
+            subjects: subjects || [],
+            students: classStudents,
+            results: classResults || [],
+            rankings: studentRankings,
+          },
+          filename
+        );
+        return;
+      } else if (elementId === 'bill-reminder-content' && selectedBillStudent) {
+        await exportFeeStatementVectorPDF(
+          {
+            schoolName: schoolProfile?.schoolName || 'ESEPA INTERNATIONAL SCHOOL',
+            student: selectedBillStudent,
+          },
+          filename
+        );
+        return;
+      }
+
       await exportToPDF(elementId, filename);
     } catch (err) {
       showToast('Failed to export PDF report card.', 'error');
@@ -208,8 +277,31 @@ export default function ReportTerminal() {
     if (!classStudents.length) return;
     setIsExportingPDF(true);
     try {
-      const ids = classStudents.map(s => `report-${s.studentId}`);
-      await exportBatchToPDF(ids, `${selectedClass}_${selectedTerm}_Batch_Reports`);
+      const payloads = classStudents.map((student) => ({
+        student,
+        results: classResults?.filter((r) => r.studentId === student.studentId) || [],
+        term: selectedTerm,
+        academicYear,
+        schoolProfile,
+        academicConfig,
+        termReport: {
+          studentId: student.studentId,
+          term: selectedTerm,
+          academicYear,
+          ...(termReports?.find((tr) => tr.studentId === student.studentId) || {
+            attendancePresent: 68,
+            attendanceTotal: 70,
+            teacherRemark:
+              studentRankings[student.studentId]?.total > 500
+                ? 'An excellent performance. Keep it up.'
+                : 'Good effort, but needs more focus in weak subjects.',
+            headmasterRemark: 'Satisfactory progress. Promoted to next class.',
+          }),
+          position: studentRankings[student.studentId]?.position,
+          totalStudents: classStudents.length,
+        },
+      }));
+      await exportBatchReportCardsVectorPDF(payloads, `${selectedClass}_${selectedTerm}_Batch_Reports`);
     } catch (err) {
       showToast('Failed to export batch PDF of class reports.', 'error');
     } finally {

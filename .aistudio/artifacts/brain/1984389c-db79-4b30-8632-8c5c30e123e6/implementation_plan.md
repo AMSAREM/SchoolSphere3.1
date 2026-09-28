@@ -1,43 +1,38 @@
-# Adaptive Screen & True A4 Sheet Report Card Optimization
+# True Vector A4 PDF Generation for Report Cards & Broadsheets
 
-Optimize the Student Terminal Report Card (in both Batch Reports and Individual Terminal Report views) so it is crystal-clear and responsive across mobile, tablet, and desktop screens while rendering as a pixel-accurate single-page A4 sheet (`210mm × 297mm`) when printed or exported to PDF from any device.
+Replace the blurry `html2canvas` screenshot-based PDF export with a **True Vector A4 PDF Engine** powered directly by `jsPDF` vector drawing primitives so exported report cards, batch class reports, and broadsheets contain razor-sharp, selectable vector text and crisp geometric borders at any zoom level.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Dual-Posture Layout (Fluid Screen + True A4 Print/PDF)**: On mobile and compact screens, the report card adapts fluidly so text and tables remain large and readable without pinching or zooming. On large screens, print dialogs, and PDF exports, the report card locks to exact A4 sheet geometry (`210mm × 297mm`) with preserved multi-column grids.
-> - **Device-Independent A4 PDF Generation**: Exporting a PDF from a mobile phone previously captured the narrow mobile layout and stretched it onto an A4 page. The PDF exporter will now normalize the cloned report card to standard A4 dimensions (`794px × 1123px` at 96 DPI) before rendering so PDF downloads look identical whether triggered on a phone or a desktop monitor.
+> - **Why the Previous PDF Looked Like a Blurry Screenshot**: Previously, clicking **PDF** or **Batch PDF** used `html2canvas` to take a bitmap screenshot of the webpage and stretch that image across an A4 page. In addition, Tailwind v4 `oklch()` colors were stripped during cloning, degrading contrast and borders.
+> - **True Vector PDF Architecture**: Report cards (both Individual and Batch) and Examination Broadsheets will now be drawn directly onto the A4 PDF canvas (`210mm × 297mm`) using native `jsPDF` vector text, vector lines, and vector rectangles. Text will be 100% selectable, searchable, and infinitely sharp at 400%+ zoom.
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Delivers a unified academic transcript component that automatically adapts its layout density and grid structure to the viewing medium—fluid and touch-friendly on small screens, structured A4 sheet preview on desktop, and strict 1-page-per-student A4 pagination in print and PDF output.
-- **Target Audience / Persona**: School Administrators, Headmasters, Class Teachers, and Parents reviewing terminal reports on phones, tablets, laptops, or printing physical A4 transcripts.
-- **Key Value**: Eliminates clipped signatures, broken print grids, distorted mobile PDF exports, and multi-page spillover during batch printing.
+- **What It Does**: Generates authentic, print-shop-grade vector A4 PDF documents for Individual Student Report Cards, Batch Class Report Cards, Examination Broadsheets, and Fee Arrears Statements—eliminating raster screenshots completely for academic reports.
+- **Target Audience / Persona**: School Administrators, Headmasters, Class Teachers, Accountants, and Parents downloading, printing, or sharing official PDF transcripts on mobile or desktop.
+- **Key Value**: Produces lightweight, instant, crystal-clear PDFs with selectable text, exact `210mm × 297mm` A4 margins, and zero pixelation or aspect-ratio stretching.
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Mobile & Tablet Viewing**: Users open Batch Reports or Individual Report on a phone or tablet; the header, student passport portrait, bio details, subject scores table, attendance, remarks, and signatures stack and scroll cleanly with high-contrast typography (`12px–14px`).
-  2. **Desktop A4 Sheet Preview**: On desktop screens, each report card is framed in an A4-proportioned sheet container (`max-w-[210mm] min-h-[297mm]`) with an option to toggle between **Fit to Screen** and **A4 Sheet Preview** so staff can verify exact page fit before printing.
-  3. **1-Page-Per-Student Print & Batch PDF**: Clicking **Print All Reports**, **Print Card**, **PDF**, or **Batch PDF** outputs each student's report card onto a single A4 portrait page with intact 2-column bio, 2-column attendance/remarks, and side-by-side signature blocks.
+  1. **Individual Report Card Vector PDF**: Clicking **PDF** in the Individual Report view generates a single-page A4 vector PDF (`210mm × 297mm`) matching the official `ReportCard` design (double-border indigo frame, school crest & header, student portrait & 2-column bio grid, bordered 6-column subject table with aggregate/GPA footer, 2-column attendance/next-term & remarks boxes, and signature blocks).
+  2. **Batch Class Reports Vector PDF**: Clicking **Batch PDF** in Batch Reports generates a multi-page A4 vector PDF where each student in the class occupies one crisp vector A4 page—completing almost instantaneously without browser lag.
+  3. **Broadsheet & Arrears Statement Vector PDF**: Clicking **PDF** on the Examination Broadsheet or Fee Arrears Reminder generates a clean vector table document.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Authoritative institutional academic transcript with crisp double-bordered framing and tabular numeric precision.
-  - *Color Palette & Mood*: Clean white paper surface (`#FFFFFF`), deep indigo institutional framing (`#312E81`), high-contrast slate ink (`#0F172A` primary text, `#475569` secondary labels), and semantic accents for fee balances (`#BE123C`).
-  - *Typography & Hierarchy*: Bold uppercase institutional headers, `tabular-nums` monospace alignment (`font-mono`) for all scores, totals, averages, GPAs, and admission numbers, and minimum `11px–13px` print/screen body copy.
-  - *Component Styling & Layout*: Outer double border with balanced internal padding (`16px` on mobile, `12mm` on A4 sheet/print) and compact table row heights (`32px–36px`) so up to 12–14 subjects fit comfortably on a single A4 sheet without pushing signatures off the page.
+  - *Aesthetic Direction*: Official institutional transcript rendered with sharp vector rules (`0.25mm–0.6mm` strokes), deep indigo headers (`#1E1B4B`), slate typography (`#0F172A` / `#475569`), and high-contrast tabular numerals.
+  - *Typography & Hierarchy*: Native PDF vector fonts (`Helvetica` / `Courier` bold & regular for tabular scores and admission numbers) scaled to exact millimeter coordinates so every label, score, grade, and remark is crisp on both screen PDF viewers and physical printers.
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Preserve CSS Grid Inside Report Cards During Print**
-  - *Chosen Approach*: Scope the global print rule that collapses `.grid` into `display: block` so it excludes `.ReportCard` and its internal sections.
-  - *Why*: Collapsing grids into vertical blocks with `1.5rem` margins during print caused the student bio, attendance, remarks, and signatures to stack vertically and overflow the bottom of the 297mm A4 sheet.
-  - *Alternatives Considered*: Using HTML tables for all layout sections, which reduces responsive flexibility on mobile screens.
-- **Decision 2: Suppress Redundant Page Banner When Printing Report Cards**
-  - *Chosen Approach*: Hide the generic top print letterhead when `batch-reports` or `terminal-report` is active, since each `ReportCard` already contains the official school crest, name, address, academic year, and term header.
-  - *Why*: An extra letterhead above the first report card pushed the card down by ~35mm, causing every A4 page break to misalign.
-- **Decision 3: Offscreen A4 Normalization for PDF Exports**
-  - *Chosen Approach*: Force the cloned report card DOM tree inside the PDF generator to `794px` width (`210mm`) and desktop/A4 grid rules prior to canvas rasterization, preserving aspect ratio on A4 PDF pages.
-  - *Why*: Ensures clicking "Batch PDF" or "PDF" on a 375px mobile screen produces an authentic A4 document rather than a stretched mobile screenshot.
+- **Decision 1: Native Vector `jsPDF` Drawing Instead of `html2canvas` Rasterization for Reports**
+  - *Chosen Approach*: Build dedicated vector PDF builders (`exportReportCardVectorPDF`, `exportBatchReportCardsVectorPDF`, `exportBroadsheetVectorPDF`, and `exportFeeBillVectorPDF`) that plot text, tables, and borders directly in millimeter coordinates on A4 pages.
+  - *Why*: Vector PDFs never blur when zoomed or printed, support text selection/copying, never stretch on mobile viewports, and generate 10–20× faster for whole-class batches.
+  - *Alternatives Considered*: Increasing `html2canvas` scale factor, which still produces huge bitmap files (15–40 MB for a class) that look like raster images and suffer from browser CSS cloning glitches.
+- **Decision 2: Exact `oklch` Color Normalization & 384-DPI Fallback for Generic DOM Captures**
+  - *Chosen Approach*: For any remaining DOM-capture PDF buttons outside Report Terminal (such as custom modal receipts), convert modern `oklch`/`oklab` CSS colors to standard `#RRGGBB` hex via a 1×1 canvas color resolver instead of resetting them to `inherit`, and capture at `scale: 4` without aspect-ratio distortion.
+  - *Why*: Ensures every PDF export across the entire platform is sharp and preserves all colors and borders.
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
@@ -45,32 +40,27 @@ Optimize the Student Terminal Report Card (in both Batch Reports and Individual 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Report Terminal Workspace                        │
-│  ┌───────────────────────────┐       ┌───────────────────────────────┐  │
-│  │  Batch Reports View       │       │  Individual Report View       │  │
-│  │  (#batch-reports-content) │       │  (Student Selector + Preview) │  │
-│  └─────────────┬─────────────┘       └───────────────┬───────────────┘  │
-│                └──────────────────┬──────────────────┘                  │
-│                                   ▼                                     │
+│                         Report Terminal Actions                         │
+│  • Individual Report ("PDF")      • Batch Reports ("Batch PDF")         │
+│  • Broadsheet ("PDF")             • Fee Arrears Notice ("Save PDF")     │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   True Vector A4 PDF Engine (jsPDF)                     │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                     Adaptive ReportCard Surface                   │  │
-│  │  • Mobile (<640px): Fluid padding, stacked bio, scrollable table  │  │
-│  │  • Desktop (≥768px): A4 Sheet proportion (210mm × 297mm preview)  │  │
-│  │  • Print (@media print): Exact 210mm × 297mm, preserved 2-col     │  │
-│  │    grids, compact row density, strict 1-page break per student    │  │
-│  └────────────────┬──────────────────────────────────┬───────────────┘  │
-│                   ▼                                  ▼                  │
-│  ┌────────────────────────────────┐ ┌────────────────────────────────┐  │
-│  │   Browser Print Engine (A4)    │ │   PDF Rasterizer (jsPDF A4)    │  │
-│  │  • @page { size: A4 portrait } │ │  • Clones node at 794px×1123px │  │
-│  │  • Preserves ReportCard grids  │ │  • Forces A4 multi-column grid │  │
-│  │  • Hides duplicate letterhead  │ │  • Fits 210mm×297mm without    │  │
-│  │  • Page-break after each card  │ │    aspect-ratio distortion     │  │
-│  └────────────────────────────────┘ └────────────────────────────────┘  │
+│  │ A4 Page Vector Composer (210mm × 297mm, Portrait)                 │  │
+│  │  1. Outer & Inner Double Frame (10mm margin, #1E1B4B stroke)      │  │
+│  │  2. Vector Institutional Header + Embedded Crest Image            │  │
+│  │  3. Student Passport Image / Vector Box + 2-Col Bio Metadata      │  │
+│  │  4. Vector Academic Table (6 cols, dynamic row height, #1E1B4B    │  │
+│  │     header fill, tabular score alignment, Aggregate/GPA footer)   │  │
+│  │  5. 2-Col Attendance/Next Term & Teacher/Headmaster Remarks       │  │
+│  │  6. Dual Signature & Stamp Blocks + Verified AIMS Footer          │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Interactive Component & State Mapping**:
-  - **View Mode Toggle (Batch & Individual Reports)**: Allows users to switch between *Responsive Screen Fit* and *A4 Sheet Preview* on screen, while print and PDF actions always enforce A4 geometry.
-  - **Print Handler (`triggerPrint`)**: Applies `printing-in-progress` state, hides non-report chrome and duplicate headers, and formats every `.ReportCard` to fit one A4 portrait sheet.
-  - **Single & Batch PDF Handlers (`exportToPDF` / `exportBatchToPDF`)**: Clones each `report-<studentId>` container, normalizes its width and internal `.ReportCard` layout to A4 dimensions, and writes crisp, proportional A4 pages into the generated PDF file.
+  - **Single Report Card Export**: Passes `selectedStudent`, filtered `results`, `termReport`, `schoolProfile`, and `academicConfig` into `exportReportCardVectorPDF` to download a vector A4 PDF.
+  - **Batch Class Export**: Passes `classStudents`, `classResults`, `termReports`, `studentRankings`, `schoolProfile`, and `academicConfig` into `exportBatchReportCardsVectorPDF` to render one vector A4 page per student in a single PDF file.
+  - **Broadsheet & Arrears Export**: Passes structured class summary / debtor data into vector PDF generators for crisp tabular output.
