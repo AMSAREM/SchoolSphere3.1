@@ -835,43 +835,84 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       </div>
 
       {/* Role-Aware Deep Teal Hero Summary Card */}
-      <div className="bg-[#1c4a59] rounded-3xl p-5 sm:p-7 text-white relative overflow-hidden shadow-[0_8px_24px_rgba(28,74,89,0.18)] print:hidden">
-        <div className="absolute -right-8 -bottom-8 w-44 h-44 rounded-full border-8 border-white/5 pointer-events-none" />
-        <div className="absolute -right-16 -bottom-16 w-64 h-64 rounded-full border-8 border-white/5 pointer-events-none" />
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 lg:p-7 text-white relative overflow-hidden shadow-[0_8px_24px_rgba(28,74,89,0.18)] print:hidden">
+        <div className="absolute -right-8 -bottom-8 w-36 h-36 sm:w-44 sm:h-44 rounded-full border-8 border-white/5 pointer-events-none" />
+        <div className="absolute -right-16 -bottom-16 w-52 h-52 sm:w-64 sm:h-64 rounded-full border-8 border-white/5 pointer-events-none" />
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
-          <div className="space-y-3 flex-1 min-w-0">
-            <span className="text-xs font-bold text-[#faae57] tracking-wide block">
-              {heroSummary.kicker}
-            </span>
-            <h3 className="text-lg sm:text-2xl font-bold leading-snug text-white max-w-2xl">
-              {heroSummary.title}
-            </h3>
-            <p className="text-xs sm:text-sm text-white/80 font-medium max-w-xl leading-relaxed">
-              {heroSummary.subtitle}
-            </p>
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-5 relative z-10">
+          <div className="space-y-2.5 sm:space-y-3 flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
+                <span className="text-[10px] sm:text-xs font-bold text-[#faae57] tracking-wide block truncate">
+                  {heroSummary.kicker}
+                </span>
+                <h3 className="text-base sm:text-xl lg:text-2xl font-bold leading-tight sm:leading-snug text-white max-w-2xl">
+                  {heroSummary.title}
+                </h3>
+                <p className="text-[11px] sm:text-sm text-white/80 font-medium max-w-xl leading-snug sm:leading-relaxed line-clamp-2 sm:line-clamp-none">
+                  {heroSummary.subtitle}
+                </p>
+              </div>
+
+              {/* Compact Progress Ring beside header text on mobile */}
+              <div className="flex sm:hidden items-center justify-center shrink-0 bg-white/5 rounded-xl p-2 border border-white/10">
+                <div className="relative w-14 h-14 flex items-center justify-center shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      stroke="rgba(255, 255, 255, 0.15)"
+                      strokeWidth="9"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      stroke="#faae57"
+                      strokeWidth="9"
+                      fill="transparent"
+                      strokeDasharray={2 * Math.PI * 40}
+                      strokeDashoffset={2 * Math.PI * 40 * (1 - heroSummary.percentage / 100)}
+                      strokeLinecap="round"
+                      className="transition-all duration-500 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className="text-xs font-bold text-white font-mono tabular-nums leading-none">
+                      {heroSummary.percentage}%
+                    </span>
+                    <span className="text-[8px] font-medium text-white/75 mt-0.5 leading-none">
+                      {heroSummary.ringLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3 pt-0.5 sm:pt-1">
               <button
                 type="button"
                 onClick={() => onViewChange(heroSummary.primaryView)}
-                className="px-5 py-2.5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] font-bold text-xs shadow-md transition-all active:scale-[0.97] cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
+                className="px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] font-bold text-[11px] sm:text-xs shadow-md transition-all active:scale-[0.97] cursor-pointer inline-flex items-center justify-center gap-1.5 sm:gap-2 min-h-[36px] sm:min-h-[44px] whitespace-nowrap"
               >
                 <span>{heroSummary.primaryCta}</span>
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               </button>
               <button
                 type="button"
                 onClick={() => onViewChange(heroSummary.secondaryView)}
-                className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all active:scale-[0.97] cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
+                className="px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] sm:text-xs transition-all active:scale-[0.97] cursor-pointer inline-flex items-center justify-center gap-1.5 sm:gap-2 min-h-[36px] sm:min-h-[44px] whitespace-nowrap"
               >
                 <span>{heroSummary.secondaryCta}</span>
               </button>
             </div>
           </div>
 
-          {/* Animated Amber Progress Ring */}
-          <div className="flex items-center gap-4 self-start sm:self-center shrink-0 bg-white/5 rounded-2xl p-3 sm:p-4 border border-white/10">
-            <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center shrink-0">
+          {/* Animated Amber Progress Ring (Tablet & Desktop) */}
+          <div className="hidden sm:flex items-center gap-4 self-center shrink-0 bg-white/5 rounded-2xl p-3 lg:p-4 border border-white/10">
+            <div className="relative w-20 h-20 lg:w-24 lg:h-24 flex items-center justify-center shrink-0">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                 <circle
                   cx="50"
@@ -895,7 +936,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 />
               </svg>
               <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-base sm:text-xl font-bold text-white font-mono tabular-nums">
+                <span className="text-base lg:text-xl font-bold text-white font-mono tabular-nums">
                   {heroSummary.percentage}%
                 </span>
                 <span className="text-[10px] font-medium text-white/75">

@@ -849,6 +849,7 @@ export default function StudentManagement() {
   };
 
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -933,161 +934,200 @@ export default function StudentManagement() {
 
       {activeTab === 'registry' && (
         <>
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 print:hidden bg-white p-4 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
-        <div className="relative flex-1 max-w-2xl">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84]" />
-          <input 
-            type="text"
-            placeholder="Search students by name, ID, or guardian..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c4a59] focus:bg-white transition-all text-sm text-[#1f2a2e]"
-          />
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          <div className="relative">
-            <button 
-              onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className={cn(
-                "flex items-center gap-2 px-3.5 py-2.5 border rounded-full font-bold transition-all text-xs min-h-[44px] cursor-pointer",
-                activeFilter ? "bg-[#1c4a59] border-[#1c4a59] text-white" : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
-              )}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span>{activeFilter || 'Filter Class'}</span>
-            </button>
-            
-            <AnimatePresence>
-              {isFilterOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setIsFilterOpen(false)} />
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
-                  >
-                    <div className="p-2 space-y-1">
-                      <button 
-                        onClick={() => {
-                          setActiveFilter(null);
-                          setIsFilterOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm rounded-xl hover:bg-[#f6f8f7] font-bold text-[#1f2a2e]"
-                      >
-                        All Classes
-                      </button>
-                      {classes?.map(c => (
-                        <button 
-                          key={c.id}
-                          onClick={() => {
-                            setActiveFilter(c.name);
-                            setIsFilterOpen(false);
-                          }}
-                          className={cn(
-                            "w-full text-left px-3 py-2 text-sm rounded-xl font-bold",
-                            activeFilter === c.name ? "bg-[#1c4a59] text-[#faae57]" : "hover:bg-[#f6f8f7] text-[#1f2a2e]"
-                          )}
-                        >
-                          {c.name}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {isAdmin && (
-              <>
-                <button 
-                  onClick={downloadTemplate}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
-                  title="Download CSV Template"
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 print:hidden bg-white p-3.5 sm:p-4 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
+            <div className="relative w-full xl:flex-1 xl:max-w-lg min-w-0">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
+              <input 
+                type="text"
+                placeholder="Search students by name, ID, or guardian..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full h-10 pl-10 pr-8 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c4a59] focus:bg-white transition-all text-xs sm:text-sm text-[#1f2a2e]"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-[#6a7f84] hover:text-[#1f2a2e] hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+                  title="Clear search"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-[#06d6a0]" />
-                  <span className="hidden sm:inline">CSV Template</span>
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                <input 
-                  type="file" 
-                  id="import-csv" 
-                  className="hidden" 
-                  accept=".csv, text/csv"
-                  onChange={importFromCsv}
-                />
+              )}
+            </div>
+            
+            <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2 w-full xl:w-auto">
+              {/* Filter Class Dropdown */}
+              <div className="relative shrink-0">
                 <button 
-                  disabled={isImporting}
-                  onClick={() => document.getElementById('import-csv')?.click()}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs min-h-[44px] cursor-pointer"
-                  title="Import CSV File Only"
+                  type="button"
+                  onClick={() => {
+                    setIsFilterOpen(!isFilterOpen);
+                    setIsActionsMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 h-10 px-3.5 border rounded-xl font-bold transition-all text-xs whitespace-nowrap cursor-pointer",
+                    activeFilter ? "bg-[#1c4a59] border-[#1c4a59] text-white" : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
+                  )}
+                  title="Filter by class"
                 >
-                  {isImporting ? (
+                  <span className="truncate max-w-[130px]">{activeFilter ? `Class: ${activeFilter}` : 'Filter Class'}</span>
+                  <span className="text-[10px] opacity-70">▾</span>
+                </button>
+                
+                <AnimatePresence>
+                  {isFilterOpen && (
                     <>
-                      <div className="w-4 h-4 border-2 border-[#1c4a59]/30 border-t-[#1c4a59] rounded-full animate-spin" />
-                      <span className="hidden sm:inline">Importing CSV...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4 text-[#1c4a59]" />
-                      <span className="hidden sm:inline">Import CSV</span>
+                      <div className="fixed inset-0 z-20" onClick={() => setIsFilterOpen(false)} />
+                      <motion.div 
+                        initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                        className="absolute left-0 xl:left-auto xl:right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
+                      >
+                        <div className="p-2 space-y-1 max-h-64 overflow-y-auto">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setActiveFilter(null);
+                              setIsFilterOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-3 py-2 text-xs rounded-xl font-bold transition-colors cursor-pointer",
+                              !activeFilter ? "bg-[#1c4a59] text-[#faae57]" : "hover:bg-[#f6f8f7] text-[#1f2a2e]"
+                            )}
+                          >
+                            All Classes
+                          </button>
+                          {classes?.map(c => (
+                            <button 
+                              type="button"
+                              key={c.id}
+                              onClick={() => {
+                                setActiveFilter(c.name);
+                                setIsFilterOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-2 text-xs rounded-xl font-bold transition-colors cursor-pointer",
+                                activeFilter === c.name ? "bg-[#1c4a59] text-[#faae57]" : "hover:bg-[#f6f8f7] text-[#1f2a2e]"
+                              )}
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
                     </>
                   )}
-                </button>
-              </>
-            )}
-            <button 
-              onClick={exportToExcel}
-              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
-            >
-              <Download className="w-4 h-4 text-[#1c4a59]" />
-              <span className="hidden sm:inline">Export</span>
-            </button>
-            <button 
-              onClick={triggerPrint}
-              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] cursor-pointer"
-              title="Print List"
-            >
-              <Printer className="w-4 h-4 text-[#1c4a59]" />
-              <span className="hidden sm:inline">Print</span>
-            </button>
-            <button 
-              disabled={isBackendSyncing}
-              onClick={() => refreshFromBackend(true)}
-              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-[#bac4c6] text-[#1c4a59] font-bold hover:bg-[#f6f8f7] transition-colors text-xs min-h-[44px] rounded-full cursor-pointer"
-              title="Query and sync directly with server / Supabase backend"
-            >
-              <RefreshCw className={cn("w-4 h-4 text-[#1c4a59]", isBackendSyncing && "animate-spin")} />
-              <span className="hidden sm:inline">{isBackendSyncing ? "Syncing..." : "Sync"}</span>
-            </button>
-            {isAdmin && (
-              <button 
-                disabled={isBackendPushing}
-                onClick={pushAllLocalToBackend}
-                className="flex items-center gap-2 px-3.5 py-2 bg-[#1c4a59] text-white font-bold hover:bg-[#163b47] transition-colors text-xs min-h-[44px] rounded-full shadow-xs cursor-pointer"
-                title="Push all local students and records into Supabase backend database"
-              >
-                <UploadCloud className={cn("w-4 h-4 text-[#faae57]", isBackendPushing && "animate-pulse")} />
-                <span className="hidden sm:inline">{isBackendPushing ? "Pushing..." : "Push to DB"}</span>
-              </button>
-            )}
-          </div>
+                </AnimatePresence>
+              </div>
 
-          {isAdmin && (
-            <div className="flex items-center gap-2 ml-auto sm:ml-0">
-              <button 
-                onClick={() => setIsPromotionModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-[#06d6a0] text-[#1f2a2e] rounded-full font-bold hover:opacity-90 transition-all shadow-xs min-h-[44px] text-xs cursor-pointer"
-              >
-                <TrendingUp className="w-4 h-4" />
-                <span>Promote Class</span>
-              </button>
+              {/* Consolidated Template / Import / Export / Print Dropdown */}
+              <div className="relative shrink-0">
+                {isAdmin && (
+                  <input 
+                    type="file" 
+                    id="import-csv" 
+                    className="hidden" 
+                    accept=".csv, text/csv"
+                    onChange={importFromCsv}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsMenuOpen(!isActionsMenuOpen);
+                    setIsFilterOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 h-10 px-3.5 border rounded-xl font-bold transition-all text-xs whitespace-nowrap cursor-pointer",
+                    isActionsMenuOpen
+                      ? "bg-[#1c4a59] border-[#1c4a59] text-white"
+                      : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
+                  )}
+                  title="CSV Template, Import, Export & Print Options"
+                >
+                  <span>{isImporting ? 'Importing CSV...' : 'Import / Export'}</span>
+                  <span className="text-[10px] opacity-70">▾</span>
+                </button>
+
+                <AnimatePresence>
+                  {isActionsMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setIsActionsMenuOpen(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                        className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
+                      >
+                        <div className="p-1.5 space-y-0.5">
+                          {isAdmin && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsActionsMenuOpen(false);
+                                  downloadTemplate();
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs rounded-xl font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] transition-colors cursor-pointer"
+                              >
+                                CSV Template
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isImporting}
+                                onClick={() => {
+                                  setIsActionsMenuOpen(false);
+                                  document.getElementById('import-csv')?.click();
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs rounded-xl font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                              >
+                                {isImporting ? 'Importing CSV...' : 'Import CSV'}
+                              </button>
+                              <div className="my-1 h-px bg-[#bac4c6]/40" />
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsActionsMenuOpen(false);
+                              exportToExcel();
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs rounded-xl font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] transition-colors cursor-pointer"
+                          >
+                            Export to Excel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsActionsMenuOpen(false);
+                              triggerPrint();
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs rounded-xl font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] transition-colors cursor-pointer"
+                          >
+                            Print Directory
+                          </button>
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Promote Class Primary Action */}
+              {isAdmin && (
+                <button 
+                  type="button"
+                  onClick={() => setIsPromotionModalOpen(true)}
+                  className="flex items-center justify-center h-10 px-4 bg-[#06d6a0] text-[#1f2a2e] rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-xs text-xs whitespace-nowrap cursor-pointer shrink-0"
+                  title="Promote Class"
+                >
+                  <span>Promote Class</span>
+                </button>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
       {/* Bulk Action Toolbar */}
       <AnimatePresence>
@@ -1141,118 +1181,329 @@ export default function StudentManagement() {
         )}
       </AnimatePresence>
 
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+      <div className="bg-white border border-[#bac4c6]/80 rounded-2xl overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[#1f2a2e]">
+        {/* Mobile & Small Screen Card View (< 768px) */}
+        <div className="md:hidden print:hidden">
+          {filteredStudents && filteredStudents.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 bg-[#f6f8f7] border-b border-[#bac4c6]/60">
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={filteredStudents.length > 0 && filteredStudents.every(s => s.id && selectedStudentIds.includes(s.id))}
+                  onChange={handleSelectAll}
+                  className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer"
+                />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#1c4a59]">
+                  Select All Visible ({filteredStudents.length})
+                </span>
+              </label>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#4e6166]">
+                {activeFilter || 'All Classes'}
+              </span>
+            </div>
+          )}
+
+          <div className="divide-y divide-[#ecf0ee]">
+            {filteredStudents?.map((student) => {
+              const isSelected = student.id ? selectedStudentIds.includes(student.id) : false;
+              const feesPaid = student.feesPaid || 0;
+              const totalFees = student.totalFees || 0;
+              const balance = totalFees - feesPaid;
+              const progressPct = Math.min(100, Math.max(0, (feesPaid / (totalFees || 1)) * 100));
+
+              return (
+                <div
+                  key={student.id}
+                  className={cn(
+                    "p-4 transition-colors space-y-3",
+                    isSelected ? "bg-[#f0f5f7] border-l-4 border-l-[#1c4a59]" : "bg-white hover:bg-[#f6f8f7]/70"
+                  )}
+                >
+                  {/* Top Row: Checkbox, Avatar, Name, ID & Class */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelect(student.id)}
+                        className="mt-2.5 w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer shrink-0"
+                      />
+                      <div className="w-10 h-10 rounded-xl bg-[#f0f5f7] flex-shrink-0 overflow-hidden border border-[#bcd3da]">
+                        {student.photo ? (
+                          <img src={student.photo} alt={getStudentFullName(student)} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-[#f0f5f7] text-[#1c4a59] font-bold text-xs uppercase">
+                            {(student.firstName?.[0] || student.first_name?.[0] || '')}{(student.lastName?.[0] || student.last_name?.[0] || '') || 'S'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-[#1f2a2e] text-sm leading-snug break-words">
+                          {getStudentFullName(student)}
+                        </div>
+                        <div className="text-xs font-medium text-[#4e6166] mt-0.5">
+                          {student.gender || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span className="font-mono text-xs font-bold text-[#1c4a59] bg-[#f0f5f7] px-2.5 py-0.5 rounded-md border border-[#bcd3da]">
+                        {student.studentId}
+                      </span>
+                      <span className="text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] px-2.5 py-0.5 rounded-md border border-[#bac4c6]">
+                        {student.class || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Middle Row: Guardian & Fees Summary */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="bg-[#f6f8f7] border border-[#bac4c6]/60 rounded-xl p-2.5">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#1c4a59]">
+                        Guardian
+                      </div>
+                      <div className="text-xs font-semibold text-[#1f2a2e] mt-0.5 truncate">
+                        {student.guardianName || '—'}
+                      </div>
+                      <div className="text-xs font-mono font-medium text-[#4e6166] mt-0.5">
+                        {student.guardianPhone || '—'}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#f6f8f7] border border-[#bac4c6]/60 rounded-xl p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#1c4a59]">
+                          Fees Balance
+                        </span>
+                        <span
+                          className={cn(
+                            "text-xs font-mono font-bold tabular-nums px-2 py-0.5 rounded-md border",
+                            balance > 0
+                              ? "text-[#9f1239] bg-[#fff1f2] border-[#fecdd3]"
+                              : "text-[#065f46] bg-[#ecfdf5] border-[#a7f3d0]"
+                          )}
+                        >
+                          {formatCurrency(balance)}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#ecf0ee] border border-[#bac4c6]/40 rounded-sm overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-xs transition-all duration-500",
+                            progressPct >= 100 ? "bg-[#059669]" : "bg-[#1c4a59]"
+                          )}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                      <div className="text-[11px] font-mono font-semibold text-[#1f2a2e] tabular-nums">
+                        Paid: {formatCurrency(feesPaid)} / {formatCurrency(totalFees)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Consistent Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProfileStudent(student)}
+                      className="px-2.5 py-1.5 bg-[#f0f5f7] hover:bg-[#dce8ec] text-[#1c4a59] border border-[#bcd3da] rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                      title="View Student Profile, Progression & Exam Results"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-[#1c4a59]" />
+                      <span>Profile</span>
+                    </button>
+
+                    {(isAdmin || isAccountant) && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPaymentStudent(student)}
+                        className="px-2.5 py-1.5 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#065f46] border border-[#a7f3d0] rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                        title="Record Fee Payment"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-[#065f46]" />
+                        <span>Fee Pay</span>
+                      </button>
+                    )}
+
+                    {isAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(student)}
+                          className="p-1.5 bg-[#f6f8f7] hover:bg-[#ecf0ee] text-[#1f2a2e] border border-[#bac4c6] rounded-lg transition-colors cursor-pointer"
+                          title="Edit Student Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-[#1f2a2e]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteStudent(student)}
+                          className="p-1.5 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#9f1239] border border-[#fecdd3] rounded-lg transition-colors cursor-pointer"
+                          title="Delete Student Record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-[#9f1239]" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredStudents?.length === 0 && (
+              <div className="px-6 py-12 text-center text-[#4e6166]">
+                <div className="flex flex-col items-center gap-3">
+                  <Users className="w-12 h-12 text-[#bac4c6]" />
+                  <p className="font-semibold text-[#1f2a2e]">No students found. Add your first student to get started!</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="mt-1 px-4 py-2 bg-[#1c4a59] text-white rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    Add Student
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tablet, Desktop & Print Table View (>= 768px) */}
+        <div className="hidden md:block print:block overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-4 w-12 text-center print:hidden">
+              <tr className="bg-[#f6f8f7] border-b border-[#bac4c6]/60">
+                <th className="px-3 lg:px-4 py-3.5 w-11 text-center print:hidden">
                   <input 
                     type="checkbox"
                     checked={filteredStudents && filteredStudents.length > 0 && filteredStudents.every(s => s.id && selectedStudentIds.includes(s.id))}
                     onChange={handleSelectAll}
-                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer"
                     title={filteredStudents && filteredStudents.length > 0 && filteredStudents.every(s => s.id && selectedStudentIds.includes(s.id)) ? "Deselect All" : "Select All Visible"}
                   />
                 </th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student ID</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Class</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Guardian</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Fees Paid/Total</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Fees Balance</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider print:hidden text-right">Actions</th>
+                <th className="px-3 lg:px-4 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Student ID</th>
+                <th className="px-3 lg:px-5 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider">Name</th>
+                <th className="px-3 lg:px-4 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Class</th>
+                <th className="px-3 lg:px-4 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider">Guardian</th>
+                <th className="px-3 lg:px-4 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Fees Paid/Total</th>
+                <th className="px-3 lg:px-4 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Fees Balance</th>
+                <th className="px-3 lg:px-5 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider print:hidden text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#ecf0ee]">
               {filteredStudents?.map((student) => {
                 const isSelected = student.id ? selectedStudentIds.includes(student.id) : false;
+                const feesPaid = student.feesPaid || 0;
+                const totalFees = student.totalFees || 0;
+                const balance = totalFees - feesPaid;
+                const progressPct = Math.min(100, Math.max(0, (feesPaid / (totalFees || 1)) * 100));
+
                 return (
-                  <tr key={student.id} className={cn("hover:bg-slate-50 transition-colors", isSelected && "bg-indigo-50/40 hover:bg-indigo-50/60")}>
-                    <td className="px-4 py-4 w-12 text-center print:hidden">
+                  <tr
+                    key={student.id}
+                    className={cn(
+                      "transition-colors",
+                      isSelected ? "bg-[#f0f5f7] hover:bg-[#dce8ec]/60" : "bg-white hover:bg-[#f6f8f7]/80"
+                    )}
+                  >
+                    <td className="px-3 lg:px-4 py-3.5 w-11 text-center print:hidden">
                       <input 
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => handleToggleSelect(student.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer"
                       />
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/50">
+                    <td className="px-3 lg:px-4 py-3.5 whitespace-nowrap">
+                      <span className="font-mono text-xs font-bold text-[#1c4a59] bg-[#f0f5f7] px-2.5 py-1 rounded-md border border-[#bcd3da] inline-block">
                         {student.studentId}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
+                    <td className="px-3 lg:px-5 py-3.5">
+                      <div className="flex items-center gap-3 min-w-[160px]">
+                        <div className="w-9 h-9 rounded-xl bg-[#f0f5f7] flex-shrink-0 overflow-hidden border border-[#bcd3da]">
                           {student.photo ? (
                             <img src={student.photo} alt={getStudentFullName(student)} className="w-full h-full object-cover" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase">
+                            <div className="w-full h-full flex items-center justify-center bg-[#f0f5f7] text-[#1c4a59] font-bold text-xs uppercase">
                               {(student.firstName?.[0] || student.first_name?.[0] || '')}{(student.lastName?.[0] || student.last_name?.[0] || '') || 'S'}
                             </div>
                           )}
                         </div>
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-slate-100 text-sm">{getStudentFullName(student)}</div>
-                          <div className="text-xs text-slate-400">{student.gender || 'N/A'}</div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#1f2a2e] text-sm leading-tight truncate max-w-[200px] xl:max-w-[260px]">
+                            {getStudentFullName(student)}
+                          </div>
+                          <div className="text-xs font-medium text-[#4e6166] mt-0.5">
+                            {student.gender || 'N/A'}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 font-medium">
-                      {student.class || 'N/A'}
+                    <td className="px-3 lg:px-4 py-3.5 whitespace-nowrap">
+                      <span className="text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] px-2.5 py-1 rounded-md border border-[#bac4c6] inline-block">
+                        {student.class || 'N/A'}
+                      </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{student.guardianName || '—'}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">{student.guardianPhone || '—'}</div>
+                    <td className="px-3 lg:px-4 py-3.5">
+                      <div className="text-xs lg:text-sm font-semibold text-[#1f2a2e] leading-tight truncate max-w-[160px] xl:max-w-[220px]">
+                        {student.guardianName || '—'}
+                      </div>
+                      <div className="text-xs font-mono font-medium text-[#4e6166] mt-0.5 whitespace-nowrap">
+                        {student.guardianPhone || '—'}
+                      </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 lg:px-4 py-3.5 whitespace-nowrap">
                       <div className="flex flex-col gap-1.5">
-                        <div className="w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-sm overflow-hidden">
+                        <div className="w-24 h-1.5 bg-[#ecf0ee] border border-[#bac4c6]/40 rounded-sm overflow-hidden">
                           <div 
                             className={cn(
                               "h-full rounded-xs transition-all duration-500",
-                              ((student.feesPaid || 0) / (student.totalFees || 1)) >= 1 ? "bg-emerald-500" : "bg-indigo-500"
+                              progressPct >= 100 ? "bg-[#059669]" : "bg-[#1c4a59]"
                             )}
-                            style={{ width: `${Math.min(100, Math.max(0, ((student.feesPaid || 0) / (student.totalFees || 1)) * 100))}%` }}
+                            style={{ width: `${progressPct}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-                          {formatCurrency(student.feesPaid || 0)} / {formatCurrency(student.totalFees || 0)}
+                        <span className="text-[11px] font-mono font-semibold text-[#1f2a2e] tabular-nums">
+                          {formatCurrency(feesPaid)} / {formatCurrency(totalFees)}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 lg:px-4 py-3.5 whitespace-nowrap">
                       <span className={cn(
-                        "text-xs font-mono font-semibold tabular-nums px-2 py-0.5 rounded-md inline-block",
-                        (student.totalFees || 0) - (student.feesPaid || 0) > 0 
-                          ? "text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-900/40" 
-                          : "text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40"
+                        "text-xs font-mono font-bold tabular-nums px-2.5 py-1 rounded-md border inline-block",
+                        balance > 0 
+                          ? "text-[#9f1239] bg-[#fff1f2] border-[#fecdd3]" 
+                          : "text-[#065f46] bg-[#ecfdf5] border-[#a7f3d0]"
                       )}>
-                        {formatCurrency((student.totalFees || 0) - (student.feesPaid || 0))}
+                        {formatCurrency(balance)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right print:hidden">
+                    <td className="px-3 lg:px-5 py-3.5 text-right print:hidden whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         {/* Profile action - available to all roles */}
                         <button 
+                          type="button"
                           onClick={() => setSelectedProfileStudent(student)}
-                          className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer"
+                          className="px-2.5 py-1.5 bg-[#f0f5f7] hover:bg-[#dce8ec] text-[#1c4a59] border border-[#bcd3da] rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
                           title="View Student Profile, Progression & Exam Results"
                         >
-                          <Eye className="w-4 h-4 text-indigo-500" />
-                          <span className="hidden xl:inline text-slate-600">Profile</span>
+                          <Eye className="w-3.5 h-3.5 text-[#1c4a59]" />
+                          <span className="hidden xl:inline text-[#1c4a59]">Profile</span>
                         </button>
 
                         {/* Fee Payment action - available to Admins & Accountants */}
                         {(isAdmin || isAccountant) && (
                           <button 
+                            type="button"
                             onClick={() => setSelectedPaymentStudent(student)}
-                            className="p-2 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer"
+                            className="px-2.5 py-1.5 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#065f46] border border-[#a7f3d0] rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
                             title="Record Fee Payment"
                           >
-                            <CreditCard className="w-4 h-4 text-emerald-500" />
-                            <span className="hidden xl:inline text-slate-600">Fee Pay</span>
+                            <CreditCard className="w-3.5 h-3.5 text-[#065f46]" />
+                            <span className="hidden xl:inline text-[#065f46]">Fee Pay</span>
                           </button>
                         )}
 
@@ -1260,18 +1511,20 @@ export default function StudentManagement() {
                         {isAdmin && (
                           <>
                             <button 
+                              type="button"
                               onClick={() => openEditModal(student)}
-                              className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"
+                              className="p-1.5 bg-[#f6f8f7] hover:bg-[#ecf0ee] text-[#1f2a2e] border border-[#bac4c6] rounded-lg transition-colors cursor-pointer"
                               title="Edit Student Details"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              <Edit2 className="w-3.5 h-3.5 text-[#1f2a2e]" />
                             </button>
                             <button 
+                              type="button"
                               onClick={() => deleteStudent(student)}
-                              className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"
+                              className="p-1.5 bg-[#fff1f2] hover:bg-[#ffe4e6] text-[#9f1239] border border-[#fecdd3] rounded-lg transition-colors cursor-pointer"
                               title="Delete Student Record"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5 text-[#9f1239]" />
                             </button>
                           </>
                         )}
@@ -1282,13 +1535,14 @@ export default function StudentManagement() {
               })}
               {filteredStudents?.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-[#4e6166]">
                     <div className="flex flex-col items-center gap-3">
-                      <Users className="w-12 h-12 text-slate-200" />
-                      <p className="font-medium">No students found. Add your first student to get started!</p>
+                      <Users className="w-12 h-12 text-[#bac4c6]" />
+                      <p className="font-semibold text-[#1f2a2e]">No students found. Add your first student to get started!</p>
                       <button 
+                        type="button"
                         onClick={() => setIsAddModalOpen(true)}
-                        className="mt-2 text-indigo-600 font-bold hover:underline"
+                        className="mt-1 px-4 py-2 bg-[#1c4a59] text-white rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
                       >
                         Add Student
                       </button>

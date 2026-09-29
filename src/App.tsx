@@ -1112,11 +1112,11 @@ function AppContent() {
 
         {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-16 bg-white border-b border-[#bac4c6] flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
-            <div className="flex items-center gap-2.5 sm:gap-4 overflow-hidden min-w-0">
+          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/70 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden p-2 text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] rounded-xl transition-all cursor-pointer min-h-[44px]"
+                className="lg:hidden w-9 h-9 flex items-center justify-center shrink-0 text-[#6a7f84] hover:bg-[#f6f8f7] hover:text-[#1c4a59] rounded-xl transition-all cursor-pointer"
                 title="Open Navigation"
               >
                 <Menu className="w-5 h-5" />
@@ -1124,7 +1124,7 @@ function AppContent() {
 
               {/* Multi-Tenant Switcher - Restricted strictly to Creator */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
-                <>
+                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                   <TenantSwitcher 
                     currentSchoolName={schoolName}
                     userRole={user.role}
@@ -1147,32 +1147,34 @@ function AppContent() {
                     }}
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
-                  <div className="hidden lg:flex items-center gap-2">
-                    <div className="h-4 w-px bg-[#bac4c6] mx-1" />
-                    <span className="px-3 py-1 rounded-full bg-[#1c4a59] text-[#faae57] text-xs font-bold capitalize shadow-2xs">
-                      {activeView.replace('_', ' ').replace('-', ' ')}
+                  <div className="hidden md:flex items-center gap-2 shrink-0">
+                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                    <span className="text-xs font-semibold text-[#6a7f84] capitalize whitespace-nowrap">
+                      {activeView.replace(/_/g, ' ').replace(/-/g, ' ')}
                     </span>
                   </div>
-                </>
+                </div>
               ) : (
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                   {schoolLogo && (
-                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-[#bac4c6] shadow-2xs bg-white p-1 shrink-0 flex items-center justify-center">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl overflow-hidden border border-[#bac4c6]/70 bg-white p-0.5 sm:p-1 shrink-0 flex items-center justify-center">
                       <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   )}
-                  <h1 className="text-xs sm:text-base font-bold text-[#1c4a59] uppercase truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none tracking-tight">
+                  <h1 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight">
                     {schoolName}
                   </h1>
-                  <div className="hidden sm:block h-4 w-px bg-[#bac4c6] mx-1" />
-                  <span className="hidden sm:inline-flex px-3 py-1 rounded-full bg-[#1c4a59] text-[#faae57] text-xs font-bold capitalize shadow-2xs">
-                    {activeView.replace('_', ' ').replace('-', ' ')}
-                  </span>
+                  <div className="hidden md:flex items-center gap-2 shrink-0">
+                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                    <span className="text-xs font-semibold text-[#6a7f84] capitalize whitespace-nowrap">
+                      {activeView.replace(/_/g, ' ').replace(/-/g, ' ')}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {/* Supabase Database Connection Indicator - Visible ONLY for Creator accessibility */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
                 <button
@@ -1187,7 +1189,7 @@ function AppContent() {
                         : "Supabase DB: Disconnected • Click to retry connection"
                   }
                   className={cn(
-                    "flex items-center gap-1.5 sm:gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none shadow-2xs active:scale-95",
+                    "flex items-center gap-1.5 h-9 px-2 sm:px-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none active:scale-95 shrink-0",
                     supabaseConnected === true 
                       ? "bg-[#06D6A0]/10 border-[#06D6A0]/35 text-[#047857] hover:bg-[#06D6A0]/20" 
                       : supabaseConnected === false 
@@ -1195,8 +1197,7 @@ function AppContent() {
                         : "bg-[#FFC43D]/15 border-[#FFC43D]/40 text-[#92400e]"
                   )}
                 >
-                  {/* Status Indicator Dot */}
-                  <span className="relative flex h-2 w-2">
+                  <span className="relative flex h-2 w-2 shrink-0">
                     <span 
                       className={cn(
                         "relative inline-flex rounded-full h-2 w-2",
@@ -1208,47 +1209,23 @@ function AppContent() {
                       )} 
                     />
                   </span>
-
-                  <div className="flex items-center gap-1.5">
-                    <Database className={cn(
-                      "w-3.5 h-3.5",
-                      supabaseConnected === true ? "text-[#06D6A0]" : supabaseConnected === false ? "text-[#EF476F]" : "text-[#FFC43D]"
-                    )} />
-                    <span className="hidden md:inline font-bold tracking-tight text-[11px]">
-                      Supabase
-                    </span>
-                    <span className="hidden sm:inline text-[10px] font-extrabold uppercase tracking-wider">
-                      {supabaseChecking 
-                        ? "Checking..." 
-                        : supabaseConnected === true 
-                          ? "Connected" 
-                          : supabaseConnected === false 
-                            ? "Disconnected" 
-                            : "Connecting"}
-                    </span>
-                  </div>
+                  <Database className={cn(
+                    "w-3.5 h-3.5 shrink-0",
+                    supabaseConnected === true ? "text-[#06D6A0]" : supabaseConnected === false ? "text-[#EF476F]" : "text-[#FFC43D]"
+                  )} />
+                  <span className="hidden xl:inline text-[11px] font-bold tracking-tight whitespace-nowrap">
+                    {supabaseChecking 
+                      ? "Checking..." 
+                      : supabaseConnected === true 
+                        ? "Connected" 
+                        : supabaseConnected === false 
+                          ? "Offline" 
+                          : "Connecting"}
+                  </span>
                 </button>
               )}
 
               <PWAInstallButton variant="header" />
-
-              <button
-                type="button"
-                id="open-frontend-test-runner"
-                onClick={() => setActiveView('test_runner')}
-                className={cn(
-                  "flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-xs font-bold shadow-2xs cursor-pointer min-h-[44px]",
-                  activeView === 'test_runner'
-                    ? "bg-[#1c4a59] text-white border-[#1c4a59]"
-                    : "bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] border-[#faae57]"
-                )}
-                title="Open Interactive Frontend Test Runner"
-              >
-                <Activity className="w-3.5 h-3.5" />
-                <span className="hidden md:inline text-xs tracking-tight font-bold">
-                  Test Suite
-                </span>
-              </button>
 
               <button 
                 id="manual-sync"
@@ -1258,32 +1235,32 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#bac4c6] bg-white hover:bg-[#f6f8f7] text-[#1c4a59] active:scale-[0.98] transition-all text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed min-h-[44px]"
+                className="flex items-center justify-center gap-1.5 h-9 w-9 lg:w-auto lg:px-3 rounded-xl border border-[#bac4c6]/80 bg-white hover:bg-[#f6f8f7] text-[#1c4a59] active:scale-[0.98] transition-all text-xs font-bold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
                 title="Synchronize with Cloud Database (Fetch Latest Updates)"
               >
-                <RefreshCcw className={cn("w-3.5 h-3.5 text-[#6a7f84] transition-transform", isSyncing && "animate-spin text-[#1c4a59]")} />
-                <span className="hidden md:inline text-xs tracking-tight font-bold">
-                  {isSyncing ? 'Syncing...' : 'Sync Database'}
+                <RefreshCcw className={cn("w-3.5 h-3.5 text-[#6a7f84] transition-transform shrink-0", isSyncing && "animate-spin text-[#1c4a59]")} />
+                <span className="hidden lg:inline text-xs tracking-tight font-bold whitespace-nowrap">
+                  {isSyncing ? 'Syncing...' : 'Sync'}
                 </span>
               </button>
 
-              <div className="h-6 w-px bg-[#bac4c6] hidden sm:block" />
+              <div className="h-5 w-px bg-[#bac4c6]/60 hidden sm:block mx-0.5" />
               
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
                   onClick={() => setIsSecurityModalOpen(true)}
-                  className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left group cursor-pointer min-h-[44px]"
+                  className="flex items-center gap-2 h-9 px-1 sm:px-2 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left group cursor-pointer"
                   title="View Profile, Permissions & Change Password"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 flex items-center justify-center font-bold text-xs shadow-2xs group-hover:bg-[#163b47] transition-colors">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-[#163b47] transition-colors">
                     {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                   </div>
-                  <div className="text-left hidden sm:block">
-                    <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[120px]">
+                  <div className="text-left hidden md:block min-w-0">
+                    <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[110px] lg:max-w-[140px]">
                       {user.fullName || user.username}
                     </p>
-                    <p className="text-[10px] text-[#807654] font-bold uppercase tracking-wider mt-0.5">
+                    <p className="text-[10px] text-[#807654] font-semibold uppercase tracking-wider mt-0.5 truncate">
                       {user.role?.replace('_', ' ')}
                     </p>
                   </div>
@@ -1291,7 +1268,7 @@ function AppContent() {
                 <button 
                   type="button"
                   onClick={handleLogout}
-                  className="w-9 h-9 rounded-xl bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6] flex items-center justify-center shrink-0 transition-colors group cursor-pointer min-h-[44px]"
+                  className="w-9 h-9 rounded-xl bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 flex items-center justify-center shrink-0 transition-colors group cursor-pointer"
                   title="Log Out"
                 >
                   <LogOut className="w-4 h-4 text-[#6a7f84] group-hover:text-[#ef476f] transition-colors" />
