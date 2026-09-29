@@ -89,6 +89,8 @@ export type AppPermission =
   | 'settings:view'
   | 'settings:edit_school_profile'
   | 'settings:academic_year'
+  | 'settings:fees_config'
+  | 'settings:personal_preferences'
   | 'settings:database_sync'
 
   // Multi-Tenancy & Platform Control
@@ -96,6 +98,16 @@ export type AppPermission =
   | 'platform:manage_licenses'
   | 'platform:creator_console'
   | 'platform:audit_logs';
+
+export type SettingsSection =
+  | 'profile'
+  | 'academic'
+  | 'fees'
+  | 'personal'
+  | 'theme'
+  | 'global_theme'
+  | 'database'
+  | 'creator';
 
 export interface RoleDefinition {
   role: UserRole;
@@ -137,7 +149,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'evoting:view', 'evoting:vote', 'evoting:manage_polls',
       'inventory:view', 'inventory:manage',
       'users:view', 'users:create', 'users:edit', 'users:toggle_status', 'users:reset_password', 'users:delete',
-      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:database_sync',
+      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:fees_config', 'settings:personal_preferences', 'settings:database_sync',
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
@@ -170,7 +182,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'evoting:view', 'evoting:vote', 'evoting:manage_polls',
       'inventory:view', 'inventory:manage',
       'users:view', 'users:create', 'users:edit', 'users:toggle_status', 'users:reset_password', 'users:delete',
-      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:database_sync',
+      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:fees_config', 'settings:personal_preferences', 'settings:database_sync',
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
@@ -203,7 +215,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'evoting:view', 'evoting:vote', 'evoting:manage_polls',
       'inventory:view', 'inventory:manage',
       'users:view', 'users:create', 'users:edit', 'users:toggle_status', 'users:reset_password',
-      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:database_sync'
+      'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:fees_config', 'settings:personal_preferences', 'settings:database_sync'
     ],
     allowedModules: [
       'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
@@ -234,7 +246,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'siren:view', 'siren:trigger',
       'evoting:view', 'evoting:vote',
       'inventory:view',
-      'settings:view'
+      'settings:view', 'settings:academic_year', 'settings:personal_preferences'
     ],
     allowedModules: [
       'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
@@ -263,7 +275,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'results:view', 'results:record', 'results:edit', 'exam_analysis:view',
       'reports:view', 'reports:generate',
       'siren:view', 'siren:trigger',
-      'settings:view'
+      'settings:view', 'settings:academic_year', 'settings:personal_preferences'
     ],
     allowedModules: [
       'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
@@ -291,7 +303,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'results:view', 'results:record', 'results:edit', 'exam_analysis:view',
       'reports:view', 'reports:generate',
       'siren:view', 'siren:trigger',
-      'settings:view'
+      'settings:view', 'settings:personal_preferences'
     ],
     allowedModules: [
       'dashboard', 'students', 'timetable', 'lesson_notes', 'attendance', 'results',
@@ -314,10 +326,11 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'students:view',
       'fees:view', 'fees:record_payment', 'fees:manage_structure', 'fees:export',
       'reports:view',
-      'inventory:view', 'inventory:manage'
+      'inventory:view', 'inventory:manage',
+      'settings:view', 'settings:fees_config', 'settings:personal_preferences'
     ],
     allowedModules: [
-      'dashboard', 'students', 'fees', 'reports', 'inventory'
+      'dashboard', 'students', 'fees', 'reports', 'inventory', 'settings'
     ]
   },
   student: {
@@ -338,10 +351,11 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'exam_analysis:view',
       'reports:view',
       'fees:view',
-      'evoting:view', 'evoting:vote'
+      'evoting:view', 'evoting:vote',
+      'settings:view', 'settings:personal_preferences'
     ],
     allowedModules: [
-      'dashboard', 'timetable', 'results', 'exam_analysis', 'reports', 'fees', 'evoting'
+      'dashboard', 'timetable', 'results', 'exam_analysis', 'reports', 'fees', 'evoting', 'settings'
     ]
   },
   parent: {
@@ -361,13 +375,51 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'attendance:view',
       'results:view',
       'reports:view',
-      'fees:view', 'fees:record_payment'
+      'fees:view', 'fees:record_payment',
+      'settings:view', 'settings:personal_preferences'
     ],
     allowedModules: [
-      'dashboard', 'timetable', 'attendance', 'results', 'reports', 'fees'
+      'dashboard', 'timetable', 'attendance', 'results', 'reports', 'fees', 'settings'
     ]
   }
 };
+
+/**
+ * Check if a given user role is a School/Client Administrator or Platform Lead.
+ */
+export function isSchoolOrPlatformAdmin(role: UserRole | string | undefined): boolean {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized === 'admin' || normalized === 'super_admin' || normalized === 'creator';
+}
+
+/**
+ * Determine whether a role is permitted to edit a specific App Settings section.
+ */
+export function canEditSettingsSection(
+  role: UserRole | string | undefined,
+  section: SettingsSection | string
+): boolean {
+  const normalizedRole = String(role || 'teacher').trim().toLowerCase() as UserRole;
+  const isAdmin = isSchoolOrPlatformAdmin(normalizedRole);
+
+  switch (section) {
+    case 'profile':
+    case 'database':
+    case 'global_theme':
+      return isAdmin;
+    case 'academic':
+      return isAdmin || normalizedRole === 'headteacher' || normalizedRole === 'hod';
+    case 'fees':
+      return isAdmin || normalizedRole === 'accountant';
+    case 'personal':
+    case 'theme':
+      return Boolean(normalizedRole);
+    case 'creator':
+      return normalizedRole === 'creator' || normalizedRole === 'super_admin';
+    default:
+      return isAdmin;
+  }
+}
 
 /**
  * Check if a given user role has a specific permission capability.

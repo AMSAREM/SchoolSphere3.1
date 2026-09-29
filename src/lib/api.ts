@@ -2734,9 +2734,223 @@ export const usersApi = {
   }
 };
 
+export const reconcileSettingsStateInDexie = async (stateData: any) => {
+  if (!stateData || typeof stateData !== 'object') return;
+  const upsertSettingKey = async (key: string, value: any) => {
+    if (value === undefined) return;
+    try {
+      const existing = await db.settings.where('key').equals(key).first();
+      if (existing && existing.id) {
+        await db.settings.update(existing.id, { value });
+      } else {
+        await db.settings.add({ key, value } as any);
+      }
+    } catch {}
+  };
+
+  if (stateData.schoolProfile && typeof stateData.schoolProfile === 'object') {
+    await upsertSettingKey('schoolProfile', stateData.schoolProfile);
+  }
+  if (stateData.academicConfig && typeof stateData.academicConfig === 'object') {
+    await upsertSettingKey('academicConfig', stateData.academicConfig);
+  }
+  if (Array.isArray(stateData.gradeBoundaries)) {
+    await upsertSettingKey('gradeBoundaries', stateData.gradeBoundaries);
+  }
+  if (Array.isArray(stateData.customFeeTypes)) {
+    await upsertSettingKey('customFeeTypes', stateData.customFeeTypes);
+  }
+  if (stateData.rolePreferences && typeof stateData.rolePreferences === 'object') {
+    await upsertSettingKey('rolePreferences', stateData.rolePreferences);
+  }
+  if (stateData.userPreferences && typeof stateData.userPreferences === 'object') {
+    const userKey = String(
+      stateData.userProfile?.id || stateData.userProfile?.username || stateData.userProfile?.role || 'default_user'
+    ).toLowerCase();
+    await upsertSettingKey(`userPreferences_${userKey}`, stateData.userPreferences);
+  }
+};
+
 export const settingsApi = {
-  set: async (key: string, value: any, schoolId?: string) => {
+  getState: async (params?: {
+    schoolId?: string;
+    userId?: number | string | null;
+    username?: string | null;
+    role?: string | null;
+  }) => {
+    const targetSchoolId = params?.schoolId || (await getCurrentSchoolId());
+    try {
+      const q = new URLSearchParams();
+      if (targetSchoolId) q.set('school_id', targetSchoolId);
+      if (params?.userId !== undefined && params?.userId !== null) q.set('user_id', String(params.userId));
+      if (params?.username) q.set('username', String(params.username));
+      if (params?.role) q.set('role', String(params.role));
+
+      const headers = getApiHeaders(targetSchoolId || undefined);
+      if (params?.role) headers['x-user-role'] = String(params.role);
+
+      const res = await fetch(`/api/settings/state?${q.toString()}`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          await reconcileSettingsStateInDexie(json);
+          return json;
+        }
+      }
+    } catch (e) {
+      console.warn('Notice fetching /api/settings/state from Supabase backend:', e);
+    }
+
+    // Fallback: direct Supabase query on public.schools and public.school_settings
+    if (targetSchoolId) {
+      try {
+        const [{ data: schoolRow }, { data: settingsRow }] = await Promise.all([
+          supabase.from('schools').select('*').eq('id', targetSchoolId).maybeSingle(),
+          supabase.from('school_settings').select('*').eq('school_id', targetSchoolId).maybeSingle()
+        ]);
+        const appSettings = settingsRow?.streams?.app_settings || {};
+        const fallbackState = {
+          success: true,
+          schoolId: targetSchoolId,
+          schoolRecord: schoolRow || null,
+          schoolProfile: appSettings.schoolProfile || (schoolRow ? {
+            schoolName: schoolRow.name,
+            schoolAddress: schoolRow.address || 'Accra, Ghana',
+            schoolPhone: schoolRow.phone || '+233 24 000 0000',
+            schoolEmail: schoolRow.email || 'info@schoolsphere.edu.gh',
+            website: 'www.schoolsphere.edu.gh',
+            logo: schoolRow.logo_url || '',
+            theme: schoolRow.theme || 'indigo'
+          } : undefined),
+          academicConfig: appSettings.academicConfig || (Array.isArray(settingsRow?.terms) ? settingsRow.terms[0] : undefined),
+          gradeBoundaries: settingsRow?.grade_boundaries || appSettings.gradeBoundaries || [],
+          customFeeTypes: appSettings.customFeeTypes || [],
+          rolePreferences: appSettings.rolePreferences || {},
+          userPreferences: {},
+          tableStatus: {
+            school_settings: { exists: Boolean(settingsRow), count: settingsRow ? 1 : 0, status: 'ready' as const },
+            schools: { exists: Boolean(schoolRow), count: schoolRow ? 1 : 0, status: 'ready' as const },
+            users: { exists: true, count: 1, status: 'ready' as const }
+          },
+          syncedAt: Date.now()
+        };
+        await reconcileSettingsStateInDexie(fallbackState);
+        return fallbackState;
+      } catch {}
+    }
+
+    return null;
+  },
+
+  saveSection: async (payload: {
+    section: string;
+    value?: any;
+    gradeBoundaries?: any[];
+    userUpdates?: {
+      fullName?: string;
+      email?: string;
+      phone?: string;
+      newPassword?: string;
+    };
+    role?: string | null;
+    userId?: number | string | null;
+    username?: string | null;
+    schoolId?: string;
+  }) => {
+    const targetSchoolId = payload.schoolId || (await getCurrentSchoolId());
+    const headers = getApiHeaders(targetSchoolId || undefined);
+    if (payload.role) {
+      headers['x-user-role'] = String(payload.role);
+    }
+
+    const res = await fetch('/api/settings/save', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...payload,
+        schoolId: targetSchoolId,
+        school_id: targetSchoolId
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `Failed to save settings section "${payload.section}" in Supabase (HTTP ${res.status})`);
+    }
+
+    await reconcileSettingsStateInDexie(data);
+    broadcastLocalMutation('settings', 'update', {
+      section: payload.section,
+      value: payload.value,
+      schoolId: targetSchoolId
+    });
+    return data;
+  },
+
+  syncState: async (
+    payload: {
+      schoolProfile?: any;
+      academicConfig?: any;
+      gradeBoundaries?: any[];
+      customFeeTypes?: any[];
+      userPreferences?: any;
+      role?: string | null;
+      userId?: number | string | null;
+      username?: string | null;
+    },
+    schoolId?: string
+  ) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const headers = getApiHeaders(targetSchoolId || undefined);
+    if (payload.role) {
+      headers['x-user-role'] = String(payload.role);
+    }
+
+    const res = await fetch('/api/settings/sync', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...payload,
+        schoolId: targetSchoolId,
+        school_id: targetSchoolId
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      await reconcileSettingsStateInDexie(data);
+      broadcastLocalMutation('settings', 'sync', data);
+      return data;
+    }
+    throw new Error(data.error || 'Failed to synchronize App Settings with Supabase');
+  },
+
+  set: async (
+    key: string,
+    value: any,
+    schoolId?: string,
+    opts?: { role?: string | null; userId?: number | string | null; username?: string | null }
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+
+    // Map setting key to section for RBAC validation & Supabase persistence
+    const keyLower = String(key || '').toLowerCase();
+    let section = key;
+    if (keyLower === 'schoolprofile') section = 'profile';
+    else if (keyLower === 'academicconfig') section = 'academic';
+    else if (keyLower === 'gradeboundaries') section = 'gradeBoundaries';
+    else if (keyLower === 'customfeetypes') section = 'fees';
+    else if (keyLower.startsWith('userpreferences') || keyLower === 'personal') section = 'personal';
+
+    const saved = await settingsApi.saveSection({
+      section,
+      value,
+      schoolId: targetSchoolId || undefined,
+      role: opts?.role || 'admin',
+      userId: opts?.userId,
+      username: opts?.username
+    });
+
     const existing = await db.settings.where('key').equals(key).first();
     let settingRecord: any = { key, value, school_id: targetSchoolId };
     if (existing && existing.id) {
@@ -2747,30 +2961,8 @@ export const settingsApi = {
       settingRecord.id = id;
     }
 
-    try {
-      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
-        method: 'POST',
-        headers: getApiHeaders(targetSchoolId || undefined),
-        body: JSON.stringify({ settings: [settingRecord] })
-      });
-    } catch (e) {}
-
-    try {
-      const { data: remExisting } = await supabase
-        .from('settings')
-        .select('id')
-        .eq('key', key)
-        .eq('school_id', targetSchoolId)
-        .maybeSingle();
-      if (remExisting?.id) {
-        await supabase.from('settings').update({ value }).eq('id', remExisting.id);
-      } else {
-        await supabase.from('settings').insert([{ key, value, school_id: targetSchoolId }]);
-      }
-    } catch (e) {}
-
     broadcastLocalMutation('settings', 'update', settingRecord);
-    return settingRecord;
+    return saved || settingRecord;
   }
 };
 

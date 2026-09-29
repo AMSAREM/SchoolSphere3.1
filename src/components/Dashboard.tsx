@@ -908,7 +908,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
       </div>
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-5">
         {stats.map((stat, i) => (
           <button 
             key={i} 
@@ -918,20 +918,20 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
               }
             }}
             className={cn(
-              "bg-white p-5 rounded-2xl border shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:shadow-md transition-all text-left group cursor-pointer active:scale-[0.99]",
+              "bg-white p-3 sm:p-3.5 lg:p-5 rounded-xl lg:rounded-2xl border shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:shadow-md transition-all text-left group cursor-pointer active:scale-[0.99] min-w-0",
               stat.accent || "border-[#bac4c6]/60"
             )}
           >
-            <div className="flex items-center justify-between mb-3.5">
-              <div className={cn("p-2.5 rounded-xl group-hover:scale-105 transition-transform", stat.bg)}>
-                <stat.icon className={cn("w-5 h-5", stat.color)} />
+            <div className="flex items-center justify-between gap-1.5 mb-1.5 sm:mb-2 lg:mb-3.5">
+              <div className={cn("p-1.5 sm:p-2 lg:p-2.5 rounded-lg lg:rounded-xl group-hover:scale-105 transition-transform shrink-0", stat.bg)}>
+                <stat.icon className={cn("w-4 h-4 lg:w-5 lg:h-5", stat.color)} />
               </div>
-              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#06d6a0] tabular-nums">
-                <TrendingUp className="w-3.5 h-3.5" /> Active
+              <span className="inline-flex items-center gap-0.5 sm:gap-1 text-[10px] lg:text-xs font-bold text-[#06d6a0] tabular-nums shrink-0">
+                <TrendingUp className="w-3 h-3 lg:w-3.5 lg:h-3.5" /> Active
               </span>
             </div>
-            <p className="text-[#6a7f84] text-xs font-medium tracking-tight">{stat.label}</p>
-            <h3 className="text-xl sm:text-2xl font-bold text-[#1f2a2e] mt-1 tabular-nums font-mono">{stat.value}</h3>
+            <p className="text-[#6a7f84] text-[11px] lg:text-xs font-medium tracking-tight truncate">{stat.label}</p>
+            <h3 className="text-base sm:text-lg lg:text-2xl font-bold text-[#1f2a2e] mt-0.5 lg:mt-1 tabular-nums font-mono truncate">{stat.value}</h3>
           </button>
         ))}
       </div>

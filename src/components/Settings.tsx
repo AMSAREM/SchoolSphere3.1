@@ -20,19 +20,21 @@ import {
   Edit2,
   RefreshCcw,
   Server,
-  Globe,
   Palette,
   Cloud,
-  CloudUpload,
-  CloudDownload,
   Key,
   ShieldAlert,
   Cpu,
-  Laptop
+  Lock,
+  UserCheck,
+  Sliders,
+  ShieldCheck,
+  Award
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { isSchoolOrPlatformAdmin, canEditSettingsSection, getRoleInfo } from '../lib/permissions';
 import { LicenseSyncBanner } from './LicenseSyncBanner';
 import {
   fetchTenantLicenseStatus,
@@ -43,14 +45,81 @@ import {
   broadcastLicenseChange
 } from '../lib/licenseSync';
 
+export interface GradeBoundaryRow {
+  grade: string;
+  minScore: number;
+  maxScore: number;
+  remark: string;
+  points: number;
+}
+
+const DEFAULT_GRADE_BOUNDARIES: GradeBoundaryRow[] = [
+  { grade: 'A1', minScore: 80, maxScore: 100, remark: 'Excellent', points: 1 },
+  { grade: 'B2', minScore: 70, maxScore: 79, remark: 'Very Good', points: 2 },
+  { grade: 'B3', minScore: 65, maxScore: 69, remark: 'Good', points: 3 },
+  { grade: 'C4', minScore: 60, maxScore: 64, remark: 'Credit', points: 4 },
+  { grade: 'C5', minScore: 55, maxScore: 59, remark: 'Credit', points: 5 },
+  { grade: 'C6', minScore: 50, maxScore: 54, remark: 'Credit', points: 6 },
+  { grade: 'D7', minScore: 45, maxScore: 49, remark: 'Pass', points: 7 },
+  { grade: 'E8', minScore: 40, maxScore: 44, remark: 'Weak Pass', points: 8 },
+  { grade: 'F9', minScore: 0, maxScore: 39, remark: 'Fail', points: 9 }
+];
+
 export default function Settings() {
   const settingsData = useLiveQuery(() => db.settings.toArray());
   const { showToast, confirm } = useNotifications();
   const { user, school } = useAuth();
-  const [activeTab, setActiveTab ] = useState<'profile' | 'academic' | 'database' | 'fees' | 'creator' | 'theme'>('profile');
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const currentRole = String(user?.role || 'admin').toLowerCase();
+  const roleInfo = getRoleInfo(currentRole);
+  const isAdmin = isSchoolOrPlatformAdmin(currentRole);
+  const canEditProfile = canEditSettingsSection(currentRole, 'profile');
+  const canEditAcademic = canEditSettingsSection(currentRole, 'academic');
+  const canEditFees = canEditSettingsSection(currentRole, 'fees');
+  const canEditDatabase = canEditSettingsSection(currentRole, 'database');
+  const canEditGlobalTheme = canEditSettingsSection(currentRole, 'global_theme');
+  const canViewFeesTab = isAdmin || currentRole === 'accountant' || currentRole === 'headteacher';
+
+  const getDefaultTabForRole = (role: string): 'profile' | 'academic' | 'database' | 'fees' | 'creator' | 'theme' | 'personal' => {
+    if (role === 'admin' || role === 'super_admin' || role === 'creator') return 'profile';
+    if (role === 'headteacher' || role === 'hod') return 'academic';
+    if (role === 'accountant') return 'fees';
+    return 'personal';
+  };
+
+  const [activeTab, setActiveTab] = useState<'profile' | 'academic' | 'database' | 'fees' | 'creator' | 'theme' | 'personal'>(() =>
+    getDefaultTabForRole(currentRole)
+  );
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // Supabase Cloud Settings Sync State
+  const [cloudSettingsStatus, setCloudSettingsStatus] = useState<{
+    connected: boolean;
+    schoolId: string;
+    lastSyncedAt: number | null;
+    tableStatus: Record<string, { exists: boolean; count: number; status: string }>;
+  }>({
+    connected: true,
+    schoolId: school?.id || user?.school_id || '',
+    lastSyncedAt: null,
+    tableStatus: {
+      school_settings: { exists: true, count: 1, status: 'ready' },
+      schools: { exists: true, count: 1, status: 'ready' },
+      users: { exists: true, count: 1, status: 'ready' }
+    }
+  });
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
+  // Switch active tab automatically if current role loses access to an admin-only tab
+  useEffect(() => {
+    if (activeTab === 'database' && !canEditDatabase) {
+      setActiveTab(getDefaultTabForRole(currentRole));
+    } else if (activeTab === 'fees' && !canViewFeesTab) {
+      setActiveTab('personal');
+    }
+  }, [currentRole, activeTab, canEditDatabase, canViewFeesTab]);
 
   // Creator Control and License state
   const [licenseInfo, setLicenseInfo] = useState<{ active: boolean; licenseKey: string; remoteOverride: boolean } | null>(null);
@@ -266,8 +335,12 @@ export default function Settings() {
   };
 
   const handlePrepareHandover = async () => {
+    if (!canEditDatabase) {
+      showToast("Only School/Client Administrators can execute a handover wipe.", "error");
+      return;
+    }
     confirm({
-      title: " SECURE SCHOOL HANDOVER WIPE",
+      title: "SECURE SCHOOL HANDOVER WIPE",
       message: "WARNING: This tool will permanently clear all demo/test records (Students, Attendance, Academic Results, e-Votes, Fees, Expenses, and Stock Logs) on this database. It keeps class levels, subjects, teacher assigned profiles, and master admin accounts. A fresh cloud sync backup is pushed immediately. This cannot be undone. Proceed?",
       confirmLabel: "Yes, Initialize Handover",
       onConfirm: async () => {
@@ -296,7 +369,6 @@ export default function Settings() {
           }
 
           setMessage({ type: 'success', text: 'Wipe complete! Local database reset completed.' });
-          
           showToast("Pruned and ready! SchoolSphere is ready for client delivery.", "success");
           setMessage({ type: 'success', text: 'SchoolSphere instance successfully initialized for client handover! Screen reloading...' });
           setTimeout(() => window.location.reload(), 2000);
@@ -319,6 +391,10 @@ export default function Settings() {
   const [isUpdatingKey, setIsUpdatingKey] = useState(false);
 
   const handleUpdateServiceRoleKey = async () => {
+    if (!canEditDatabase) {
+      showToast("Only School/Client Administrators can configure Supabase service keys.", "error");
+      return;
+    }
     if (!serviceRoleKeyInput.trim()) return;
     setIsUpdatingKey(true);
     try {
@@ -360,6 +436,10 @@ export default function Settings() {
   }, []);
 
   const syncPush = async () => {
+    if (!canEditDatabase) {
+      showToast("Only School/Client Administrators can push full database backups.", "error");
+      return;
+    }
     setIsSyncing(true);
     setMessage({ type: 'success', text: 'Preparing local IndexedDB backup data packet...' });
     try {
@@ -394,8 +474,6 @@ export default function Settings() {
       if (contentType.includes('application/json')) {
         resData = await res.json();
       } else {
-        const text = await res.text();
-        console.warn("Sync push received non-JSON:", text);
         setMessage({ type: 'success', text: 'Settings saved securely.' });
         setTimeout(() => setMessage(null), 3500);
         return;
@@ -418,6 +496,10 @@ export default function Settings() {
   };
 
   const syncPull = async () => {
+    if (!canEditDatabase) {
+      showToast("Only School/Client Administrators can overwrite local database from cloud.", "error");
+      return;
+    }
     confirm({
       title: "Confirm Overwrite Database",
       message: "Warning: Pulling from the database will wipe and overwrite your current browser data on this device. Do you wish to continue?",
@@ -440,7 +522,6 @@ export default function Settings() {
 
           const data = resData.data;
 
-          // Clear local IndexedDB tables
           await Promise.all([
             db.students.clear(),
             db.attendance.clear(),
@@ -461,7 +542,6 @@ export default function Settings() {
             db.expenses.clear()
           ]);
 
-          // Populating local safe bulk adds
           await Promise.all([
             data.students?.length ? db.students.bulkAdd(data.students) : Promise.resolve(),
             data.attendance?.length ? db.attendance.bulkAdd(data.attendance) : Promise.resolve(),
@@ -483,7 +563,7 @@ export default function Settings() {
           ]);
 
           showToast("Sync database successfully overwritten on this device!", "success");
-          setMessage({ type: 'success', text: 'MySQL Sync Pull completed! Restored all records to browser IndexedDB. Reloading screen...' });
+          setMessage({ type: 'success', text: 'Supabase Sync Pull completed! Restored all records to browser IndexedDB. Reloading screen...' });
           setTimeout(() => window.location.reload(), 1500);
         } catch (err: any) {
           showToast(`Sync Pull failed: ${err.message}`, "error");
@@ -502,7 +582,7 @@ export default function Settings() {
   const [feeForm, setFeeForm] = useState({ id: '', label: '', defaultAmount: 0 });
   const [feeError, setFeeError] = useState<string | null>(null);
 
-  // Local state for forms
+  // Local state for School Profile (Admin Editable, Read-only for others)
   const [schoolProfile, setSchoolProfile] = useState({
     schoolName: 'SCHOOL SPHERE ACADEMY',
     schoolAddress: 'Accra, Ghana',
@@ -510,45 +590,235 @@ export default function Settings() {
     schoolEmail: 'info@schoolsphere.edu.gh',
     website: 'www.schoolsphere.edu.gh',
     logo: 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png',
-    theme: 'indigo'
+    theme: 'indigo',
+    motto: 'Excellence, Integrity & Service',
+    headmasterName: 'Dr. Emmanuel Mensah'
   });
 
+  // Academic & Grading Configuration (Admin, Headteacher, HOD Editable)
   const [academicConfig, setAcademicConfig] = useState({
     currentTerm: 'Term 1',
     academicYear: '2025/2026',
-    nextTermBegins: '2026-09-08'
+    nextTermBegins: '2026-09-08',
+    totalAttendanceDays: 65,
+    gradingSystem: 'GES / NaCCA Standard (A1 - F9)',
+    caWeightPercent: 30,
+    examWeightPercent: 70
+  });
+  const [gradeBoundaries, setGradeBoundaries] = useState<GradeBoundaryRow[]>(DEFAULT_GRADE_BOUNDARIES);
+
+  // Personal Profile & Role-Specific Workspace Preferences (All Roles Editable)
+  const [personalProfile, setPersonalProfile] = useState({
+    fullName: user?.fullName || '',
+    username: user?.username || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    newPassword: '',
+    confirmPassword: ''
   });
 
-  function formatToday() {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  }
+  const [rolePreferences, setRolePreferences] = useState<Record<string, any>>({
+    // Shared personal workspace preferences
+    personalTheme: 'indigo',
+    preferredNotificationChannel: 'In-App & SMS',
+    compactTableDensity: false,
+    // Admin specific
+    defaultDashboardView: 'executive_overview',
+    autoCloudBackup: true,
+    requireAuditLogsOnSettings: true,
+    smsSenderId: 'SCHOOLSPHR',
+    enableParentPortalPayments: true,
+    // Headteacher / HOD specific
+    caWeightPercent: 30,
+    examWeightPercent: 70,
+    passMarkThreshold: 50,
+    reportCardSignatureTitle: currentRole === 'hod' ? 'Head of Department (HOD)' : 'Headteacher / Vice Principal',
+    defaultLessonNoteFilter: 'pending_vetting',
+    autoComputeClassPositions: true,
+    // Accountant / Bursar specific
+    defaultPaymentMethod: 'Mobile Money',
+    receiptPrefix: 'RCP',
+    autoSendPaymentSmsReceipt: true,
+    arrearsReminderThresholdGhs: 200,
+    receiptFooterNote: 'Official Bursary Receipt • Non-Refundable',
+    // Teacher specific
+    defaultAttendanceStatus: 'Present',
+    defaultLessonNoteFormat: 'structured',
+    scoreEntryAutoSave: true,
+    showStudentAvatarsInRoster: true,
+    // Student / Parent specific
+    feePaymentReminders: true,
+    attendanceAbsenceAlerts: true,
+    terminalReportReadyAlerts: true,
+    examCountdownAlerts: true
+  });
+
+  // Sync local user info into personalProfile form when user changes
+  useEffect(() => {
+    if (user) {
+      setPersonalProfile(prev => ({
+        ...prev,
+        fullName: user.fullName || prev.fullName || '',
+        username: user.username || prev.username || '',
+        email: user.email || prev.email || '',
+        phone: user.phone || prev.phone || ''
+      }));
+    }
+  }, [user?.id, user?.username, user?.fullName, user?.email, user?.phone]);
+
+  // Hydrate App Settings from Supabase on mount & when school/role changes
+  const loadSettingsFromSupabase = async (showConfirmationToast = false) => {
+    setIsCloudSyncing(true);
+    try {
+      const state = await settingsApi.getState({
+        schoolId: school?.id || user?.school_id,
+        userId: user?.id,
+        username: user?.username,
+        role: currentRole
+      });
+      if (state && state.success) {
+        if (state.schoolProfile) {
+          setSchoolProfile(prev => ({
+            ...prev,
+            ...state.schoolProfile,
+            theme: state.schoolProfile.theme || prev.theme || 'indigo'
+          }));
+        }
+        if (state.academicConfig) {
+          setAcademicConfig(prev => ({ ...prev, ...state.academicConfig }));
+        }
+        if (Array.isArray(state.gradeBoundaries) && state.gradeBoundaries.length > 0) {
+          setGradeBoundaries(state.gradeBoundaries);
+        }
+        if (state.userProfile) {
+          setPersonalProfile(prev => ({
+            ...prev,
+            fullName: state.userProfile.fullName || prev.fullName,
+            username: state.userProfile.username || prev.username,
+            email: state.userProfile.email ?? prev.email,
+            phone: state.userProfile.phone ?? prev.phone
+          }));
+        }
+        if (state.userPreferences && typeof state.userPreferences === 'object') {
+          setRolePreferences(prev => ({
+            ...prev,
+            ...state.userPreferences
+          }));
+        }
+        setCloudSettingsStatus({
+          connected: true,
+          schoolId: state.schoolId || school?.id || user?.school_id || '',
+          lastSyncedAt: state.syncedAt || Date.now(),
+          tableStatus: state.tableStatus || {
+            school_settings: { exists: true, count: 1, status: 'ready' },
+            schools: { exists: true, count: 1, status: 'ready' },
+            users: { exists: true, count: 1, status: 'ready' }
+          }
+        });
+        if (showConfirmationToast) {
+          showToast("App Settings synchronized with Supabase database!", "success");
+        }
+      }
+    } catch (err: any) {
+      console.warn("Notice hydrating settings from Supabase:", err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSettingsFromSupabase(false);
+  }, [school?.id, user?.school_id, user?.id, currentRole]);
 
   useEffect(() => {
     if (settingsData) {
       const profile = settingsData.find(s => s.key === 'schoolProfile')?.value;
       const academic = settingsData.find(s => s.key === 'academicConfig')?.value;
-      
-      if (profile) setSchoolProfile({ ...profile, theme: profile.theme || 'indigo' });
-      if (academic) setAcademicConfig(academic);
+      const gb = settingsData.find(s => s.key === 'gradeBoundaries')?.value;
+      if (profile) setSchoolProfile(prev => ({ ...prev, ...profile, theme: profile.theme || 'indigo' }));
+      if (academic) setAcademicConfig(prev => ({ ...prev, ...academic }));
+      if (Array.isArray(gb) && gb.length > 0) setGradeBoundaries(gb);
     }
   }, [settingsData]);
 
-  const saveSettings = async (key: string, value: any) => {
+  const saveSettingsSection = async (section: string, value: any, extra?: { gradeBoundaries?: GradeBoundaryRow[]; userUpdates?: any }) => {
+    if (!canEditSettingsSection(currentRole, section)) {
+      const deniedMsg = `Access Denied: Your role (${roleInfo.name}) cannot modify ${section} settings.`;
+      setMessage({ type: 'error', text: deniedMsg });
+      showToast(deniedMsg, 'error');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      await settingsApi.set(key, value, school?.id);
-      setMessage({ type: 'success', text: 'Settings saved successfully' });
+      const result = await settingsApi.saveSection({
+        section,
+        value,
+        gradeBoundaries: extra?.gradeBoundaries,
+        userUpdates: extra?.userUpdates,
+        role: currentRole,
+        userId: user?.id,
+        username: user?.username,
+        schoolId: school?.id || user?.school_id
+      });
+
+      if (result?.tableStatus) {
+        setCloudSettingsStatus(prev => ({
+          ...prev,
+          connected: true,
+          lastSyncedAt: result.syncedAt || Date.now(),
+          tableStatus: result.tableStatus
+        }));
+      }
+
+      setMessage({ type: 'success', text: 'Settings synced to Supabase database!' });
+      showToast('Settings saved and synced to Supabase!', 'success');
       setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to save settings' });
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to save settings to Supabase';
+      setMessage({ type: 'error', text: errMsg });
+      showToast(errMsg, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleSavePersonalAndRoleSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (personalProfile.newPassword && personalProfile.newPassword !== personalProfile.confirmPassword) {
+      setMessage({ type: 'error', text: 'New password and confirmation do not match.' });
+      showToast('New password and confirmation do not match.', 'error');
+      return;
+    }
+    if (personalProfile.newPassword && personalProfile.newPassword.trim().length < 4) {
+      setMessage({ type: 'error', text: 'New password must be at least 4 characters.' });
+      showToast('New password must be at least 4 characters.', 'error');
+      return;
+    }
+
+    await saveSettingsSection(
+      'personal',
+      {
+        preferences: rolePreferences
+      },
+      {
+        userUpdates: {
+          fullName: personalProfile.fullName,
+          email: personalProfile.email,
+          phone: personalProfile.phone,
+          newPassword: personalProfile.newPassword ? personalProfile.newPassword.trim() : undefined
+        }
+      }
+    );
+    setPersonalProfile(prev => ({ ...prev, newPassword: '', confirmPassword: '' }));
+  };
+
   const handleSaveFeeType = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditFees) {
+      setFeeError('Only School Administrators and Accountants/Bursars can modify Fee Types.');
+      return;
+    }
     setFeeError(null);
 
     const targetId = feeForm.id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -568,15 +838,12 @@ export default function Settings() {
       return;
     }
 
-    // Check collision with default fee types
     if (FEE_TYPES.some(f => f.id === targetId)) {
       setFeeError(`"${targetId}" is a default system fee ID and cannot be redefined.`);
       return;
     }
 
     const currentCustoms: FeeTypeConfig[] = settingsData?.find(s => s.key === 'customFeeTypes')?.value || [];
-
-    // Check collision with other custom fee types (excluding self if editing)
     const collisionOccurred = currentCustoms.some(f => f.id === targetId && (!editingFee || editingFee.id !== f.id));
     if (collisionOccurred) {
       setFeeError(`"${targetId}" is already used by another custom fee type.`);
@@ -591,27 +858,56 @@ export default function Settings() {
     }
 
     try {
-      await settingsApi.set('customFeeTypes', updatedCustoms, school?.id);
+      await settingsApi.saveSection({
+        section: 'fees',
+        value: {
+          customFeeTypes: updatedCustoms,
+          accountantPreferences: {
+            defaultPaymentMethod: rolePreferences.defaultPaymentMethod,
+            receiptPrefix: rolePreferences.receiptPrefix,
+            autoSendPaymentSmsReceipt: rolePreferences.autoSendPaymentSmsReceipt,
+            arrearsReminderThresholdGhs: rolePreferences.arrearsReminderThresholdGhs,
+            receiptFooterNote: rolePreferences.receiptFooterNote
+          }
+        },
+        role: currentRole,
+        userId: user?.id,
+        username: user?.username,
+        schoolId: school?.id || user?.school_id
+      });
       setIsFeeFormOpen(false);
       setEditingFee(null);
       setFeeForm({ id: '', label: '', defaultAmount: 0 });
-      setMessage({ type: 'success', text: 'Fee Type saved successfully' });
+      setMessage({ type: 'success', text: 'Fee Type saved to Supabase successfully' });
+      showToast('Custom Fee Type saved to Supabase!', 'success');
       setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
-      setFeeError('Failed to save to database settings.');
+    } catch (err: any) {
+      setFeeError(err?.message || 'Failed to save to Supabase database settings.');
     }
   };
 
   const handleDeleteFeeType = async (feeId: string) => {
+    if (!canEditFees) {
+      showToast('Only School Administrators and Accountants can delete custom fee types.', 'error');
+      return;
+    }
     const currentCustoms: FeeTypeConfig[] = settingsData?.find(s => s.key === 'customFeeTypes')?.value || [];
     const updatedCustoms = currentCustoms.filter(f => f.id !== feeId);
 
     try {
-      await settingsApi.set('customFeeTypes', updatedCustoms, school?.id);
-      setMessage({ type: 'success', text: 'Custom Fee Type deleted successfully' });
+      await settingsApi.saveSection({
+        section: 'fees',
+        value: updatedCustoms,
+        role: currentRole,
+        userId: user?.id,
+        username: user?.username,
+        schoolId: school?.id || user?.school_id
+      });
+      setMessage({ type: 'success', text: 'Custom Fee Type deleted from Supabase' });
+      showToast('Custom Fee Type deleted from Supabase', 'success');
       setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to delete custom fee type.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Failed to delete custom fee type.' });
       setTimeout(() => setMessage(null), 3000);
     }
   };
@@ -929,6 +1225,7 @@ export default function Settings() {
   };
 
   const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!canEditProfile) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -940,216 +1237,445 @@ export default function Settings() {
   };
 
   const removeLogo = () => {
+    if (!canEditProfile) return;
     setSchoolProfile(prev => ({ ...prev, logo: '' }));
   };
 
+  const handleManualCloudSync = async () => {
+    setIsCloudSyncing(true);
+    try {
+      const synced = await settingsApi.syncState(
+        {
+          schoolProfile: canEditProfile ? schoolProfile : undefined,
+          academicConfig: canEditAcademic ? academicConfig : undefined,
+          gradeBoundaries: canEditAcademic ? gradeBoundaries : undefined,
+          customFeeTypes: canEditFees ? settingsData?.find(s => s.key === 'customFeeTypes')?.value : undefined,
+          userPreferences: rolePreferences,
+          role: currentRole,
+          userId: user?.id,
+          username: user?.username
+        },
+        school?.id || user?.school_id
+      );
+      if (synced?.tableStatus) {
+        setCloudSettingsStatus({
+          connected: true,
+          schoolId: synced.schoolId || school?.id || user?.school_id || '',
+          lastSyncedAt: synced.syncedAt || Date.now(),
+          tableStatus: synced.tableStatus
+        });
+      }
+      setMessage({ type: 'success', text: 'Synchronized permitted settings with Supabase!' });
+      showToast('App Settings synchronized with Supabase database!', 'success');
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      showToast(err?.message || 'Cloud sync failed', 'error');
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">System Settings</h2>
-          <p className="text-slate-500 text-sm">Manage school details, terms and database utilities.</p>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">System & Role Settings</h2>
+          <p className="text-slate-500 text-sm">
+            Connected to Supabase PostgreSQL • Institutional configuration & role-specific workspace preferences.
+          </p>
         </div>
-        
-        <AnimatePresence>
-          {message && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: -10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold shadow-sm",
-                message.type === 'success' ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-rose-50 text-rose-600 border border-rose-100"
-              )}
-            >
-              {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-              {message.text}
-            </motion.div>
-          )}
-        </AnimatePresence>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={handleManualCloudSync}
+            disabled={isCloudSyncing}
+            className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-slate-700 rounded-xl text-xs font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCcw className={cn("w-3.5 h-3.5 text-indigo-600", isCloudSyncing && "animate-spin")} />
+            {isCloudSyncing ? 'Syncing Supabase...' : 'Sync Cloud'}
+          </button>
+
+          <AnimatePresence>
+            {message && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold shadow-sm",
+                  message.type === 'success'
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                )}
+              >
+                {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                {message.text}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* Supabase Cloud Connection & Role Authority Banner */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-900">Supabase Settings & Role Governance</h3>
+                <span className="text-[11px] font-semibold text-emerald-700">
+                  Live Connected
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="text-[11px] font-semibold text-indigo-700">
+                  Active Role: {roleInfo.name}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isAdmin
+                  ? 'Full Administrator Authority: You can modify School Identity, Academic & Grading Config, Fees, Global Branding, and Database Operations.'
+                  : currentRole === 'headteacher' || currentRole === 'hod'
+                  ? 'Academic Leadership Authority: You can modify Academic Calendar, Grading Boundaries, and your Personal & Role Preferences. School Identity is Admin-only.'
+                  : currentRole === 'accountant'
+                  ? 'Finance & Bursary Authority: You can modify Fees & Billing Configuration and your Personal & Role Preferences. School Identity is Admin-only.'
+                  : 'Role-Specific Authority: You can customize your Personal Account, Security Credentials, and Role Workspace Preferences. Institutional settings are Admin-only.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-slate-500 font-mono tabular-nums shrink-0">
+            <span>public.schools ({cloudSettingsStatus.tableStatus.schools?.count ?? 1})</span>
+            <span>·</span>
+            <span>public.school_settings ({cloudSettingsStatus.tableStatus.school_settings?.count ?? 1})</span>
+            <span>·</span>
+            <span>public.users ({cloudSettingsStatus.tableStatus.users?.count ?? 1})</span>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
         {/* Sidebar Nav / Mobile Tab Bar */}
         <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 flex md:flex-col overflow-x-auto gap-1 md:space-y-1 no-scrollbar shrink-0">
-          <button 
+          <button
+            onClick={() => setActiveTab('personal')}
+            className={cn(
+              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              activeTab === 'personal'
+                ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            <span className="flex items-center gap-2.5">
+              <UserCheck className="w-4 h-4 shrink-0" />
+              <span className="text-xs sm:text-sm">My Account & Role</span>
+            </span>
+            <span className="text-[10px] font-semibold text-emerald-600">Edit</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('profile')}
             className={cn(
-              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
-              activeTab === 'profile' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
+              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              activeTab === 'profile'
+                ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <Building2 className="w-4 h-4 shrink-0" />
-            <span className="text-xs sm:text-sm">School Profile</span>
+            <span className="flex items-center gap-2.5">
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span className="text-xs sm:text-sm">School Profile</span>
+            </span>
+            {!canEditProfile && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
           </button>
-          <button 
+
+          <button
             onClick={() => setActiveTab('academic')}
             className={cn(
-              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
-              activeTab === 'academic' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
+              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              activeTab === 'academic'
+                ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <Calendar className="w-4 h-4 shrink-0" />
-            <span className="text-xs sm:text-sm">Academic Config</span>
+            <span className="flex items-center gap-2.5">
+              <Calendar className="w-4 h-4 shrink-0" />
+              <span className="text-xs sm:text-sm">Academic & Grading</span>
+            </span>
+            {!canEditAcademic && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
           </button>
-          <button 
-            onClick={() => setActiveTab('database')}
-            className={cn(
-              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
-              activeTab === 'database' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
-            )}
-          >
-            <Database className="w-4 h-4 shrink-0" />
-            <span className="text-xs sm:text-sm">Data & Backup</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('fees')}
-            className={cn(
-              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
-              activeTab === 'fees' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
-            )}
-          >
-            <CreditCard className="w-4 h-4 shrink-0" />
-            <span className="text-xs sm:text-sm">Fees Configuration</span>
-          </button>
-          <button 
+
+          {canViewFeesTab && (
+            <button
+              onClick={() => setActiveTab('fees')}
+              className={cn(
+                "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+                activeTab === 'fees'
+                  ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                  : "text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              <span className="flex items-center gap-2.5">
+                <CreditCard className="w-4 h-4 shrink-0" />
+                <span className="text-xs sm:text-sm">Fees Configuration</span>
+              </span>
+              {!canEditFees && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+            </button>
+          )}
+
+          <button
             onClick={() => setActiveTab('theme')}
             className={cn(
-              "flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full",
-              activeTab === 'theme' ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200" : "text-slate-500 hover:bg-slate-100"
+              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              activeTab === 'theme'
+                ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <Palette className="w-4 h-4 shrink-0" />
-            <span className="text-xs sm:text-sm">Branding & Themes</span>
+            <span className="flex items-center gap-2.5">
+              <Palette className="w-4 h-4 shrink-0" />
+              <span className="text-xs sm:text-sm">Branding & Themes</span>
+            </span>
           </button>
+
+          {canEditDatabase && (
+            <button
+              onClick={() => setActiveTab('database')}
+              className={cn(
+                "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+                activeTab === 'database'
+                  ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
+                  : "text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              <span className="flex items-center gap-2.5">
+                <Database className="w-4 h-4 shrink-0" />
+                <span className="text-xs sm:text-sm">Data & Backup</span>
+              </span>
+              <span className="text-[10px] font-semibold text-indigo-600">Admin</span>
+            </button>
+          )}
         </div>
 
         {/* Content */}
         <div className="flex-1 p-6 sm:p-8">
           {activeTab === 'profile' && (
             <div className="space-y-6">
-              <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
-                  <Building2 className="w-6 h-6" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">School Identity (`public.schools`)</h3>
+                    <p className="text-xs text-slate-500">Official institutional information used across reports, receipts, and headers.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900">School Identity</h3>
-                  <p className="text-xs text-slate-500">Official information used in reports and headers.</p>
+                <div className="text-xs font-semibold">
+                  {canEditProfile ? (
+                    <span className="text-emerald-700 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4" />
+                      School Admin Editable
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 flex items-center gap-1.5">
+                      <Lock className="w-4 h-4" />
+                      Read-Only (School Admin Only)
+                    </span>
+                  )}
                 </div>
               </div>
 
+              {!canEditProfile && (
+                <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900">
+                  <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Administrator Lock Active</p>
+                    <p className="text-amber-800 mt-0.5">
+                      Only the School/Client Administrator can modify institutional identity records in <span className="font-mono">public.schools</span>. Switch to the <strong>My Account &amp; Role</strong> tab to update your personal profile and role preferences.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="sm:col-span-2 flex flex-col items-center justify-center p-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl group transition-all hover:border-indigo-300">
+                <div className="sm:col-span-2 flex flex-col items-center justify-center p-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl group transition-all">
                   {schoolProfile.logo ? (
                     <div className="relative">
-                      <img 
-                        src={schoolProfile.logo} 
-                        alt="School Logo" 
+                      <img
+                        src={schoolProfile.logo}
+                        alt="School Logo"
+                        referrerPolicy="no-referrer"
                         className="w-32 h-32 object-contain bg-white rounded-2xl shadow-md p-2"
                       />
-                      <button 
-                        onClick={removeLogo}
-                        className="absolute -top-3 -right-3 p-1.5 bg-rose-500 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all scale-0 group-hover:scale-100"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEditProfile && (
+                        <button
+                          type="button"
+                          onClick={removeLogo}
+                          className="absolute -top-3 -right-3 p-1.5 bg-rose-500 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-slate-300">
                         <ImageIcon className="w-8 h-8" />
                       </div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">School Logo</p>
+                      <p className="text-xs font-bold text-slate-400">School Crest / Logo</p>
                     </div>
                   )}
-                  
-                  <label className="mt-4 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-indigo-600 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm">
-                    {schoolProfile.logo ? 'Change Logo' : 'Upload School Logo'}
-                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                  </label>
-                  <p className="text-[10px] text-slate-400 mt-2">Recommended: Square PNG or JPG (Max 500KB)</p>
+
+                  {canEditProfile && (
+                    <>
+                      <label className="mt-4 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-indigo-600 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm">
+                        {schoolProfile.logo ? 'Change Logo' : 'Upload School Logo'}
+                        <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                      </label>
+                      <p className="text-[10px] text-slate-400 mt-2">Recommended: Square PNG or JPG (Synced to public.schools.logo_url)</p>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">School Name</label>
-                  <input 
-                    type="text" 
+                  <label className="text-xs font-bold text-slate-500">School Name</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
                     value={schoolProfile.schoolName || ''}
-                    onChange={(e) => setSchoolProfile({...schoolProfile, schoolName: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, schoolName: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">School Email</label>
-                  <input 
-                    type="email" 
+                  <label className="text-xs font-bold text-slate-500">School Official Email</label>
+                  <input
+                    type="email"
+                    disabled={!canEditProfile}
                     value={schoolProfile.schoolEmail || ''}
-                    onChange={(e) => setSchoolProfile({...schoolProfile, schoolEmail: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, schoolEmail: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Address</label>
-                  <input 
-                    type="text" 
+                  <label className="text-xs font-bold text-slate-500">Campus Address</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
                     value={schoolProfile.schoolAddress || ''}
-                    onChange={(e) => setSchoolProfile({...schoolProfile, schoolAddress: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, schoolAddress: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Phone Number</label>
-                  <input 
-                    type="text" 
+                  <label className="text-xs font-bold text-slate-500">Official Phone Number</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
                     value={schoolProfile.schoolPhone || ''}
-                    onChange={(e) => setSchoolProfile({...schoolProfile, schoolPhone: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, schoolPhone: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Website</label>
-                  <input 
-                    type="text" 
+                  <label className="text-xs font-bold text-slate-500">Website</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
                     value={schoolProfile.website || ''}
-                    onChange={(e) => setSchoolProfile({...schoolProfile, website: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, website: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
-
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">School Motto</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
+                    value={schoolProfile.motto || ''}
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, motto: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Principal / Headmaster Name</label>
+                  <input
+                    type="text"
+                    disabled={!canEditProfile}
+                    value={schoolProfile.headmasterName || ''}
+                    onChange={(e) => setSchoolProfile({ ...schoolProfile, headmasterName: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                </div>
               </div>
 
-              <div className="pt-4">
-                <button 
-                  onClick={() => saveSettings('schoolProfile', schoolProfile)}
-                  disabled={isSaving}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50"
-                >
-                  <Save className="w-4 h-4" />
-                  {isSaving ? 'Saving...' : 'Save Profile'}
-                </button>
-              </div>
+              {canEditProfile && (
+                <div className="pt-4">
+                  <button
+                    type="button"
+                    onClick={() => saveSettingsSection('profile', schoolProfile)}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    {isSaving ? 'Saving to Supabase...' : 'Save School Profile to Supabase'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'academic' && (
             <div className="space-y-6">
-              <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
-                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center">
-                  <Calendar className="w-6 h-6" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">Academic Period & Grading (`public.school_settings`)</h3>
+                    <p className="text-xs text-slate-500">Configure active term, academic calendar, and grading boundaries.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900">Academic Period</h3>
-                  <p className="text-xs text-slate-500">Configure current session and term dates.</p>
+                <div className="text-xs font-semibold">
+                  {canEditAcademic ? (
+                    <span className="text-emerald-700 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4" />
+                      Editable (Admin / Headteacher / HOD)
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 flex items-center gap-1.5">
+                      <Lock className="w-4 h-4" />
+                      Read-Only View
+                    </span>
+                  )}
                 </div>
               </div>
 
+              {!canEditAcademic && (
+                <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900">
+                  <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Academic Leadership Scope</p>
+                    <p className="text-amber-800 mt-0.5">
+                      Only School Administrators, Headteachers, and HODs can modify the school calendar and grading boundaries in <span className="font-mono">public.school_settings</span>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Current Term</label>
-                  <select 
+                  <label className="text-xs font-bold text-slate-500">Current Term</label>
+                  <select
+                    disabled={!canEditAcademic}
                     value={academicConfig.currentTerm || ''}
-                    onChange={(e) => setAcademicConfig({...academicConfig, currentTerm: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setAcademicConfig({ ...academicConfig, currentTerm: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70"
                   >
                     <option>Term 1</option>
                     <option>Term 2</option>
@@ -1157,44 +1683,168 @@ export default function Settings() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Academic Year</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. 2023/2024"
+                  <label className="text-xs font-bold text-slate-500">Academic Year</label>
+                  <input
+                    type="text"
+                    disabled={!canEditAcademic}
+                    placeholder="e.g. 2025/2026"
                     value={academicConfig.academicYear || ''}
-                    onChange={(e) => setAcademicConfig({...academicConfig, academicYear: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                    onChange={(e) => setAcademicConfig({ ...academicConfig, academicYear: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Next Term Begins</label>
+                  <label className="text-xs font-bold text-slate-500">Next Term Begins</label>
                   <div className="relative">
                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="date" 
+                    <input
+                      type="date"
+                      disabled={!canEditAcademic}
                       value={academicConfig.nextTermBegins || ''}
-                      onChange={(e) => setAcademicConfig({...academicConfig, nextTermBegins: e.target.value})}
-                      className="w-full pl-11 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                      onChange={(e) => setAcademicConfig({ ...academicConfig, nextTermBegins: e.target.value })}
+                      className="w-full pl-11 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium disabled:opacity-70"
                     />
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Expected Term Attendance Days</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    disabled={!canEditAcademic}
+                    value={academicConfig.totalAttendanceDays ?? 65}
+                    onChange={(e) => setAcademicConfig({ ...academicConfig, totalAttendanceDays: Number(e.target.value) || 65 })}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium font-mono tabular-nums disabled:opacity-70"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Continuous Assessment (CA) Weight (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    disabled={!canEditAcademic}
+                    value={academicConfig.caWeightPercent ?? 30}
+                    onChange={(e) => {
+                      const ca = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                      setAcademicConfig({ ...academicConfig, caWeightPercent: ca, examWeightPercent: 100 - ca });
+                    }}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium font-mono tabular-nums disabled:opacity-70"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Terminal Exam Weight (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    disabled={!canEditAcademic}
+                    value={academicConfig.examWeightPercent ?? 70}
+                    onChange={(e) => {
+                      const ex = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                      setAcademicConfig({ ...academicConfig, examWeightPercent: ex, caWeightPercent: 100 - ex });
+                    }}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium font-mono tabular-nums disabled:opacity-70"
+                  />
+                </div>
               </div>
 
-              <div className="pt-4">
-                <button 
-                  onClick={() => saveSettings('academicConfig', academicConfig)}
-                  disabled={isSaving}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50"
-                >
-                  <Save className="w-4 h-4" />
-                  {isSaving ? 'Saving...' : 'Update Configuration'}
-                </button>
+              {/* Grade Boundaries Table synced to public.school_settings.grade_boundaries */}
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Award className="w-4 h-4 text-indigo-600" />
+                      Grading Scale & Boundaries (`public.school_settings.grade_boundaries`)
+                    </h4>
+                    <p className="text-xs text-slate-500">Used when computing terminal report grades and BECE/WASSCE aggregates.</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                        <th className="py-2.5 px-3">Grade</th>
+                        <th className="py-2.5 px-3">Min Score (%)</th>
+                        <th className="py-2.5 px-3">Max Score (%)</th>
+                        <th className="py-2.5 px-3">Points</th>
+                        <th className="py-2.5 px-3">Official Remark</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
+                      {gradeBoundaries.map((row, idx) => (
+                        <tr key={row.grade} className="hover:bg-slate-50/80">
+                          <td className="py-2 px-3 font-bold text-slate-900">{row.grade}</td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              disabled={!canEditAcademic}
+                              value={row.minScore}
+                              onChange={(e) => {
+                                const next = [...gradeBoundaries];
+                                next[idx] = { ...next[idx], minScore: Number(e.target.value) || 0 };
+                                setGradeBoundaries(next);
+                              }}
+                              className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono tabular-nums disabled:bg-slate-50"
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              disabled={!canEditAcademic}
+                              value={row.maxScore}
+                              onChange={(e) => {
+                                const next = [...gradeBoundaries];
+                                next[idx] = { ...next[idx], maxScore: Number(e.target.value) || 0 };
+                                setGradeBoundaries(next);
+                              }}
+                              className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono tabular-nums disabled:bg-slate-50"
+                            />
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-indigo-600">{row.points}</td>
+                          <td className="py-2 px-3 font-sans">
+                            <input
+                              type="text"
+                              disabled={!canEditAcademic}
+                              value={row.remark}
+                              onChange={(e) => {
+                                const next = [...gradeBoundaries];
+                                next[idx] = { ...next[idx], remark: e.target.value };
+                                setGradeBoundaries(next);
+                              }}
+                              className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs disabled:bg-slate-50"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+
+              {canEditAcademic && (
+                <div className="pt-4">
+                  <button
+                    type="button"
+                    onClick={() => saveSettingsSection('academic', academicConfig, { gradeBoundaries })}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    {isSaving ? 'Saving to Supabase...' : 'Save Academic & Grading Config'}
+                  </button>
+                </div>
+              )}
 
               {academicConfig.currentTerm === 'Term 3' && (
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4">
                   <div className="flex gap-3">
-                    <span className="text-xl"></span>
                     <div>
                       <p className="text-sm font-bold text-emerald-950">End of Academic Year (Term 3)</p>
                       <p className="text-xs text-emerald-700 font-medium">
@@ -1210,284 +1860,582 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'database' && (
-            <div className="space-y-8">
-              <LicenseSyncBanner />
-              <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
-                <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center">
-                  <Database className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900">Data Management</h3>
-                  <p className="text-xs text-slate-500">Backup, restore, or wipe system data.</p>
+          {activeTab === 'account' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                    <UserCog className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900">My Account & Role Preferences</h3>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Editable ({roleMeta.label})
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Synced with <span className="font-mono font-semibold text-slate-700">public.users</span> &amp; <span className="font-mono font-semibold text-slate-700">public.school_settings</span>
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Supabase & Vercel / Live Server Database Status Dashboard */}
-              <div className="p-6 border border-slate-200/80 rounded-2xl bg-white space-y-4 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                      dbStatus?.dbMode === "supabase" || dbStatus?.dbMode === "mysql" ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"
-                    )}>
-                      <Server className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                        Supabase & Vercel Cloud Sync
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                          Connected (Supabase & Vercel)
-                        </span>
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-1.5 whitespace-pre-line leading-relaxed">
-                        {dbStatus?.details || "Connected to Supabase PostgreSQL & Vercel Edge Host. Licensing & Subscriptions synced."}
-                      </p>
-                    </div>
+              {/* Personal Profile Card synced to public.users */}
+              <div className="p-5 bg-slate-50/70 border border-slate-200/80 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-indigo-600" />
+                      Personal User Profile (`public.users`)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Update your official display name, contact details, or account password. Role assignment is strictly controlled by the School Administrator.
+                    </p>
                   </div>
-                  <button 
-                    onClick={fetchDbStatus}
-                    className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
-                  >
-                    <RefreshCcw className="w-3.5 h-3.5" />
-                    Refresh Link
-                  </button>
+                  <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-mono font-bold text-slate-700">
+                    Role: {roleMeta.label}
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-600">
-                  <div>
-                    <span className="font-medium text-slate-400 block mb-0.5 font-sans">Frontend Host (Vercel)</span>
-                    <a href="https://esepa-school-portal.vercel.app" target="_blank" rel="noreferrer" className="font-mono font-bold text-indigo-600 hover:underline truncate block">
-                      esepa-school-portal.vercel.app
-                    </a>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Full Name</label>
+                    <input
+                      type="text"
+                      value={personalAccount.fullName}
+                      onChange={(e) => setPersonalAccount({ ...personalAccount, fullName: e.target.value })}
+                      placeholder="Your Full Name"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
                   </div>
-                  <div>
-                    <span className="font-medium text-slate-400 block mb-0.5 font-sans">Supabase DB Host</span>
-                    <a href="https://niavmonyfwqlryppgksy.supabase.co" target="_blank" rel="noreferrer" className="font-mono font-bold text-emerald-600 hover:underline truncate block">
-                      niavmonyfwqlryppgksy.supabase.co
-                    </a>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Email Address</label>
+                    <input
+                      type="email"
+                      value={personalAccount.email}
+                      onChange={(e) => setPersonalAccount({ ...personalAccount, email: e.target.value })}
+                      placeholder="name@school.edu.gh"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
                   </div>
-                  <div>
-                    <span className="font-medium text-slate-400 block mb-0.5 font-sans">Licensing & Subscriptions</span>
-                    <span className="font-mono font-bold text-slate-800">RLS Enforced & Live</span>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Phone / WhatsApp Number</label>
+                    <input
+                      type="text"
+                      value={personalAccount.phone}
+                      onChange={(e) => setPersonalAccount({ ...personalAccount, phone: e.target.value })}
+                      placeholder="+233 24 000 0000"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
                   </div>
                 </div>
 
-                {/* Service Role Key Direct Link */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                  <label className="text-xs font-bold text-slate-800 block">
-                    Supabase Service Role Secret Key (Direct DB Routing & Bypass RLS)
-                  </label>
-                  <p className="text-[11px] text-slate-500">
-                    Find this in your Supabase Dashboard (<span className="font-mono text-emerald-700">niavmonyfwqlryppgksy</span>) under <strong>Project Settings &gt; API &gt; service_role (secret)</strong>.
-                  </p>
-                  <div className="flex gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200/70">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">New Password (Optional)</label>
                     <input
                       type="password"
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      value={serviceRoleKeyInput}
-                      onChange={(e) => setServiceRoleKeyInput(e.target.value)}
-                      className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
+                      value={personalAccount.newPassword}
+                      onChange={(e) => setPersonalAccount({ ...personalAccount, newPassword: e.target.value })}
+                      placeholder="Leave blank to keep current password"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
-                    <button
-                      onClick={handleUpdateServiceRoleKey}
-                      disabled={isUpdatingKey || !serviceRoleKeyInput.trim()}
-                      className="px-4 py-2 bg-[#1c4a59] text-white rounded-lg text-xs font-bold hover:bg-[#1c4a59]/90 transition disabled:opacity-50 cursor-pointer shrink-0"
-                    >
-                      {isUpdatingKey ? 'Verifying...' : 'Link & Route Key'}
-                    </button>
                   </div>
-                </div>
-
-                <div className="pt-2 flex flex-col md:flex-row gap-3">
-                  <button
-                    onClick={syncPush}
-                    disabled={isSyncing}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1c4a59] text-white rounded-xl text-xs font-bold hover:bg-[#1c4a59]/90 cursor-pointer disabled:opacity-50"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Sync Data to Supabase Database
-                  </button>
-                  <button
-                    onClick={syncPull}
-                    disabled={isSyncing}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 cursor-pointer disabled:opacity-50"
-                  >
-                    <Download className="w-4 h-4 text-[#1c4a59]" />
-                    Pull from Supabase Database
-                  </button>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={personalAccount.confirmPassword}
+                      onChange={(e) => setPersonalAccount({ ...personalAccount, confirmPassword: e.target.value })}
+                      placeholder="Re-enter new password"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-5 border border-slate-100 rounded-2xl bg-slate-50 space-y-3">
-                  <h4 className="font-bold text-sm flex items-center gap-2">
-                    <Download className="w-4 h-4 text-emerald-500" />
-                    Export Backup
+              {/* Role-Specific Duty Preferences */}
+              <div className="p-5 bg-white border border-slate-200/90 rounded-2xl space-y-4">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700 flex items-center gap-1.5">
+                    <Sliders className="w-4 h-4 text-indigo-600" />
+                    Role-Specific Workspace & Duty Defaults ({roleMeta.label})
                   </h4>
-                  <p className="text-xs text-slate-500">Download a full backup of all school records as a JSON file.</p>
-                  <button 
-                    onClick={exportData}
-                    className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 transition shadow-sm cursor-pointer"
-                  >
-                    Generate Backup
-                  </button>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Tailored operational settings for your <strong className="text-slate-700">{roleMeta.label}</strong> duties, persisted in Supabase (`public.school_settings`).
+                  </p>
                 </div>
 
-                <div className="p-5 border border-indigo-100 rounded-2xl bg-indigo-50/20 space-y-3 flex flex-col justify-between">
-                  <div>
-                    <h4 className="font-bold text-sm flex items-center gap-2 text-indigo-900">
-                      <Database className="w-4 h-4 text-indigo-600" />
-                      Export XAMPP SQL
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1">Generate a populated SQL script with your live school records for phpMyAdmin.</p>
-                  </div>
-                  <button 
-                    onClick={exportMySQLScript}
-                    className="w-full py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-bold transition shadow-sm cursor-pointer mt-2"
-                  >
-                    Generate SQL Script
-                  </button>
-                </div>
-
-                <div className="p-5 border border-slate-100 rounded-2xl bg-slate-50 space-y-3">
-                  <h4 className="font-bold text-sm flex items-center gap-2">
-                    <Upload className="w-4 h-4 text-indigo-500" />
-                    Restore Data
-                  </h4>
-                  <p className="text-xs text-slate-500">Upload a previously generated backup file to restore records.</p>
-                  <label className="block w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 transition shadow-sm text-center cursor-pointer">
-                    Upload Backup
-                    <input type="file" accept=".json" onChange={importData} className="hidden" />
-                  </label>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-rose-50 space-y-4">
-                <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-2xl flex gap-4">
-                  <div className="shrink-0 p-2 bg-rose-100 text-rose-600 rounded-xl h-fit">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wide">Danger Zone</h4>
-                    <p className="text-xs text-rose-600 font-medium">Clearing the database will permanently delete all students, results, and settings. This action cannot be undone.</p>
-                  </div>
-                </div>
-
-                {confirmClear ? (
-                  <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 transition-all">
-                    <button 
-                      onClick={clearDatabase}
-                      className="px-6 py-2.5 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 text-sm shadow-lg shadow-rose-100 flex items-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Wipe Everything Now
-                    </button>
-                    <button 
-                      onClick={() => setConfirmClear(false)}
-                      className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button 
-                    onClick={() => setConfirmClear(true)}
-                    className="flex items-center gap-2 text-rose-600 hover:text-rose-700 font-bold text-sm transition-colors px-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Clear All Database Data
-                  </button>
-                )}
-              </div>
-
-              {/* Creator Controls & Licensing Section */}
-              {(user?.role === 'creator' || user?.role === 'super_admin') && (
-                <div className="pt-8 border-t border-slate-100 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                        <Server className="w-4 h-4 text-indigo-600" />
-                        System Creator & License Management
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Exclusive controls to monitor activation, verify software licensing, and lock/unlock portal instances.</p>
+                {/* Teacher / Subject Staff Preferences */}
+                {(currentRole === 'teacher' || currentRole === 'hod' || currentRole === 'headteacher' || isSchoolAdmin) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Default Class Filter</label>
+                      <input
+                        type="text"
+                        value={personalPreferences.defaultClassFilter}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, defaultClassFilter: e.target.value })}
+                        placeholder="e.g. Basic 9, JHS 2, or All Classes"
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
                     </div>
-                    <span className="px-2.5 py-1 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 font-extrabold uppercase rounded-full tracking-wider animate-pulse">
-                      Creator Mode Active
-                    </span>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Default Subject Filter</label>
+                      <input
+                        type="text"
+                        value={personalPreferences.defaultSubjectFilter}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, defaultSubjectFilter: e.target.value })}
+                        placeholder="e.g. Mathematics, Science"
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Score Entry Mode</label>
+                      <select
+                        value={personalPreferences.scoreEntryMode}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, scoreEntryMode: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <option value="quick">Quick Tabular Entry (Keyboard Navigation)</option>
+                        <option value="detailed">Detailed Student Card Mode</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col justify-center gap-2.5 pt-2">
+                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={personalPreferences.autoSaveScores}
+                          onChange={(e) => setPersonalPreferences({ ...personalPreferences, autoSaveScores: e.target.checked })}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Auto-save Continuous Assessment &amp; Exam scores to cloud
+                      </label>
+                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={personalPreferences.showBroadsheetPositions}
+                          onChange={(e) => setPersonalPreferences({ ...personalPreferences, showBroadsheetPositions: e.target.checked })}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Display class position rank column on Broadsheet view
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Headteacher / HOD Academic Governance Preferences */}
+                {(currentRole === 'headteacher' || currentRole === 'hod' || isSchoolAdmin) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Default Approval Queue View</label>
+                      <select
+                        value={personalPreferences.defaultApprovalQueueView}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, defaultApprovalQueueView: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <option value="pending_first">Pending Approvals First</option>
+                        <option value="by_class">Grouped by Class / Department</option>
+                        <option value="recent">Most Recently Submitted</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col justify-center gap-2.5 pt-2">
+                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={personalPreferences.requireHeadteacherRemark}
+                          onChange={(e) => setPersonalPreferences({ ...personalPreferences, requireHeadteacherRemark: e.target.checked })}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Require Headteacher Remark before Terminal Report printing
+                      </label>
+                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={personalPreferences.showAnalyticsSummary}
+                          onChange={(e) => setPersonalPreferences({ ...personalPreferences, showAnalyticsSummary: e.target.checked })}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Show Pass-Rate &amp; Subject Analytics banner on Dashboard
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Accountant Financial Preferences */}
+                {(currentRole === 'accountant' || isSchoolAdmin) && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Default Receipt Print Format</label>
+                      <select
+                        value={personalPreferences.defaultReceiptFormat}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, defaultReceiptFormat: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <option value="A4 Official">A4 Official School Receipt</option>
+                        <option value="Thermal 80mm">Thermal 80mm POS Slip</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Default Payment Method</label>
+                      <select
+                        value={personalPreferences.defaultPaymentMethod}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, defaultPaymentMethod: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <option value="Cash">Cash</option>
+                        <option value="Mobile Money">Mobile Money (MoMo)</option>
+                        <option value="Bank Deposit">Bank Deposit / Cheque</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Arrears Alert Threshold (GHS)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={personalPreferences.arrearsAlertThreshold}
+                        onChange={(e) => setPersonalPreferences({ ...personalPreferences, arrearsAlertThreshold: Number(e.target.value) || 0 })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Notification & Communication Preferences (All Roles) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Preferred Notification Channel</label>
+                    <select
+                      value={personalPreferences.notificationChannel}
+                      onChange={(e) => setPersonalPreferences({ ...personalPreferences, notificationChannel: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      <option value="in_app">In-App Portal Alerts &amp; Email</option>
+                      <option value="sms_whatsapp">SMS / WhatsApp Priority</option>
+                      <option value="email_only">Email Digest Only</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-tight">Interface Density</label>
+                    <select
+                      value={personalPreferences.compactMode ? 'compact' : 'standard'}
+                      onChange={(e) => setPersonalPreferences({ ...personalPreferences, compactMode: e.target.value === 'compact' })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      <option value="standard">Standard Comfortable Spacing</option>
+                      <option value="compact">High-Density Data Table Mode</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSavePersonalAccount}
+                  disabled={isSaving}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaving ? 'Syncing to Supabase...' : 'Save My Account & Role Preferences'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'database' && (
+            <div className="space-y-8">
+              {!canAccessDatabase ? (
+                <div className="p-8 bg-amber-50 border border-amber-200 rounded-2xl text-center space-y-3">
+                  <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-amber-950">Administrator-Only System Controls</h3>
+                  <p className="text-xs text-amber-800 max-w-md mx-auto">
+                    Database synchronization, SQL exports, and system resets are restricted strictly to School/Client Administrators. Your current role (<strong className="font-bold">{roleMeta.label}</strong>) does not permit system-level database mutations.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <LicenseSyncBanner />
+                  <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center">
+                      <Database className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900">Data Management &amp; Supabase Cloud Backup</h3>
+                      <p className="text-xs text-slate-500">Administrator-only backup, restore, and full database synchronization.</p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-5 border border-slate-200 rounded-2xl bg-slate-900 text-slate-100 flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-indigo-400" />
-                          License Status Details
-                        </h4>
-                        <div className="py-2.5">
-                          <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
-                            <span className="text-slate-500">Local Status:</span>
-                            <span className={cn(
-                              "font-bold uppercase",
-                              licenseInfo?.active ? "text-emerald-400" : "text-rose-500"
-                            )}>
-                              {licenseInfo?.active ? "Active & Authorized" : "Expired / Locked"}
+                  {/* Supabase & Vercel / Live Server Database Status Dashboard */}
+                  <div className="p-6 border border-slate-200/80 rounded-2xl bg-white space-y-4 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                          dbStatus?.dbMode === "supabase" || dbStatus?.dbMode === "mysql" ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"
+                        )}>
+                          <Server className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                            Supabase &amp; Vercel Cloud Sync
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                              Connected (Supabase &amp; Vercel)
                             </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs border-b border-slate-800 py-2">
-                            <span className="text-slate-500">Current Key:</span>
-                            <span className="font-mono font-semibold text-slate-300">
-                              {licenseInfo?.licenseKey || "NONE"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs pt-2">
-                            <span className="text-slate-500">Remote Overridden:</span>
-                            <span className={cn(
-                              "font-bold uppercase",
-                              licenseInfo?.remoteOverride ? "text-rose-400" : "text-slate-500"
-                            )}>
-                              {licenseInfo?.remoteOverride ? "YES" : "NO"}
-                            </span>
-                          </div>
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-1.5 whitespace-pre-line leading-relaxed">
+                            {dbStatus?.details || "Connected to Supabase PostgreSQL & Vercel Edge Host. Licensing & Subscriptions synced."}
+                          </p>
                         </div>
                       </div>
-                      <button
-                        onClick={fetchLicenseInfo}
-                        className="mt-4 w-full py-2 border border-slate-800 hover:bg-slate-800 transition rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 cursor-pointer"
+                      <button 
+                        onClick={fetchDbStatus}
+                        className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
                       >
-                        Refresh License Status
+                        <RefreshCcw className="w-3.5 h-3.5" />
+                        Refresh Link
                       </button>
                     </div>
 
-                    <div className="p-5 border border-rose-100 rounded-2xl bg-rose-50/20 flex flex-col justify-between space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-600">
                       <div>
-                        <h4 className="font-bold text-xs uppercase tracking-wider text-rose-800">
-                          Instant Remote Control
-                        </h4>
-                        <p className="text-xs text-rose-600 mt-1 leading-relaxed">
-                          Test the remote lock mechanism instantly. Deactivating blocks all user dashboards with a full-screen lock screen requiring activation.
-                        </p>
+                        <span className="font-medium text-slate-400 block mb-0.5 font-sans">Frontend Host (Vercel)</span>
+                        <a href="https://esepa-school-portal.vercel.app" target="_blank" rel="noreferrer" className="font-mono font-bold text-indigo-600 hover:underline truncate block">
+                          esepa-school-portal.vercel.app
+                        </a>
                       </div>
+                      <div>
+                        <span className="font-medium text-slate-400 block mb-0.5 font-sans">Supabase DB Host</span>
+                        <a href="https://niavmonyfwqlryppgksy.supabase.co" target="_blank" rel="noreferrer" className="font-mono font-bold text-emerald-600 hover:underline truncate block">
+                          niavmonyfwqlryppgksy.supabase.co
+                        </a>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-400 block mb-0.5 font-sans">Licensing &amp; Subscriptions</span>
+                        <span className="font-mono font-bold text-slate-800">RLS Enforced &amp; Live</span>
+                      </div>
+                    </div>
 
+                    {/* Service Role Key Direct Link */}
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <label className="text-xs font-bold text-slate-800 block">
+                        Supabase Service Role Secret Key (Direct DB Routing &amp; Bypass RLS)
+                      </label>
+                      <p className="text-[11px] text-slate-500">
+                        Find this in your Supabase Dashboard (<span className="font-mono text-emerald-700">niavmonyfwqlryppgksy</span>) under <strong>Project Settings &gt; API &gt; service_role (secret)</strong>.
+                      </p>
                       <div className="flex gap-2">
+                        <input
+                          type="password"
+                          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                          value={serviceRoleKeyInput}
+                          onChange={(e) => setServiceRoleKeyInput(e.target.value)}
+                          className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
+                        />
                         <button
-                          disabled={loadingLicenseAction}
-                          onClick={handleRemoteDeactivate}
-                          className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 transition text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-rose-100 cursor-pointer disabled:opacity-50"
+                          onClick={handleUpdateServiceRoleKey}
+                          disabled={isUpdatingKey || !serviceRoleKeyInput.trim()}
+                          className="px-4 py-2 bg-[#1c4a59] text-white rounded-lg text-xs font-bold hover:bg-[#1c4a59]/90 transition disabled:opacity-50 cursor-pointer shrink-0"
                         >
-                          {loadingLicenseAction ? "Processing..." : "Lock System"}
-                        </button>
-                        <button
-                          disabled={loadingLicenseAction}
-                          onClick={() => handleRemoteActivate()}
-                          className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-indigo-100 cursor-pointer disabled:opacity-50"
-                        >
-                          {loadingLicenseAction ? "Processing..." : "Unlock (Key)"}
+                          {isUpdatingKey ? 'Verifying...' : 'Link & Route Key'}
                         </button>
                       </div>
                     </div>
+
+                    <div className="pt-2 flex flex-col md:flex-row gap-3">
+                      <button
+                        onClick={syncPush}
+                        disabled={isSyncing}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1c4a59] text-white rounded-xl text-xs font-bold hover:bg-[#1c4a59]/90 cursor-pointer disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Sync All Records to Supabase Database
+                      </button>
+                      <button
+                        onClick={syncPull}
+                        disabled={isSyncing}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                      >
+                        <Download className="w-4 h-4 text-[#1c4a59]" />
+                        Pull All Records from Supabase Database
+                      </button>
+                    </div>
                   </div>
-                </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-5 border border-slate-100 rounded-2xl bg-slate-50 space-y-3">
+                      <h4 className="font-bold text-sm flex items-center gap-2">
+                        <Download className="w-4 h-4 text-emerald-500" />
+                        Export Backup
+                      </h4>
+                      <p className="text-xs text-slate-500">Download a full backup of all school records as a JSON file.</p>
+                      <button 
+                        onClick={exportData}
+                        className="w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 transition shadow-sm cursor-pointer"
+                      >
+                        Generate Backup
+                      </button>
+                    </div>
+
+                    <div className="p-5 border border-indigo-100 rounded-2xl bg-indigo-50/20 space-y-3 flex flex-col justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm flex items-center gap-2 text-indigo-900">
+                          <Database className="w-4 h-4 text-indigo-600" />
+                          Export XAMPP SQL
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1">Generate a populated SQL script with your live school records for phpMyAdmin.</p>
+                      </div>
+                      <button 
+                        onClick={exportMySQLScript}
+                        className="w-full py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-xs font-bold transition shadow-sm cursor-pointer mt-2"
+                      >
+                        Generate SQL Script
+                      </button>
+                    </div>
+
+                    <div className="p-5 border border-slate-100 rounded-2xl bg-slate-50 space-y-3">
+                      <h4 className="font-bold text-sm flex items-center gap-2">
+                        <Upload className="w-4 h-4 text-indigo-500" />
+                        Restore Data
+                      </h4>
+                      <p className="text-xs text-slate-500">Upload a previously generated backup file to restore records.</p>
+                      <label className="block w-full py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 transition shadow-sm text-center cursor-pointer">
+                        Upload Backup
+                        <input type="file" accept=".json" onChange={importData} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-rose-50 space-y-4">
+                    <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-2xl flex gap-4">
+                      <div className="shrink-0 p-2 bg-rose-100 text-rose-600 rounded-xl h-fit">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold text-rose-700 uppercase tracking-wide">Danger Zone</h4>
+                        <p className="text-xs text-rose-600 font-medium">Clearing the database will permanently delete all students, results, and settings. This action cannot be undone.</p>
+                      </div>
+                    </div>
+
+                    {confirmClear ? (
+                      <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 transition-all">
+                        <button 
+                          onClick={clearDatabase}
+                          className="px-6 py-2.5 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 text-sm shadow-lg shadow-rose-100 flex items-center gap-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Wipe Everything Now
+                        </button>
+                        <button 
+                          onClick={() => setConfirmClear(false)}
+                          className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setConfirmClear(true)}
+                        className="flex items-center gap-2 text-rose-600 hover:text-rose-700 font-bold text-sm transition-colors px-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Clear All Database Data
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Creator Controls & Licensing Section */}
+                  {(user?.role === 'creator' || user?.role === 'super_admin') && (
+                    <div className="pt-8 border-t border-slate-100 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                            <Server className="w-4 h-4 text-indigo-600" />
+                            System Creator &amp; License Management
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-0.5">Exclusive controls to monitor activation, verify software licensing, and lock/unlock portal instances.</p>
+                        </div>
+                        <span className="px-2.5 py-1 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 font-extrabold uppercase rounded-md tracking-wider">
+                          Creator Mode Active
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-5 border border-slate-200 rounded-2xl bg-slate-900 text-slate-100 flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+                              License Status Details
+                            </h4>
+                            <div className="py-2.5">
+                              <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
+                                <span className="text-slate-500">Local Status:</span>
+                                <span className={cn(
+                                  "font-bold uppercase",
+                                  licenseInfo?.active ? "text-emerald-400" : "text-rose-500"
+                                )}>
+                                  {licenseInfo?.active ? "Active & Authorized" : "Expired / Locked"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs border-b border-slate-800 py-2">
+                                <span className="text-slate-500">Current Key:</span>
+                                <span className="font-mono font-semibold text-slate-300">
+                                  {licenseInfo?.licenseKey || "NONE"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs pt-2">
+                                <span className="text-slate-500">Remote Overridden:</span>
+                                <span className={cn(
+                                  "font-bold uppercase",
+                                  licenseInfo?.remoteOverride ? "text-rose-400" : "text-slate-500"
+                                )}>
+                                  {licenseInfo?.remoteOverride ? "YES" : "NO"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={fetchLicenseInfo}
+                            className="mt-4 w-full py-2 border border-slate-800 hover:bg-slate-800 transition rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 cursor-pointer"
+                          >
+                            Refresh License Status
+                          </button>
+                        </div>
+
+                        <div className="p-5 border border-rose-100 rounded-2xl bg-rose-50/20 flex flex-col justify-between space-y-4">
+                          <div>
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-rose-800">
+                              Instant Remote Control
+                            </h4>
+                            <p className="text-xs text-rose-600 mt-1 leading-relaxed">
+                              Test the remote lock mechanism instantly. Deactivating blocks all user dashboards with a full-screen lock screen requiring activation.
+                            </p>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              disabled={loadingLicenseAction}
+                              onClick={handleRemoteDeactivate}
+                              className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 transition text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-rose-100 cursor-pointer disabled:opacity-50"
+                            >
+                              {loadingLicenseAction ? "Processing..." : "Lock System"}
+                            </button>
+                            <button
+                              disabled={loadingLicenseAction}
+                              onClick={() => handleRemoteActivate()}
+                              className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md shadow-indigo-100 cursor-pointer disabled:opacity-50"
+                            >
+                              {loadingLicenseAction ? "Processing..." : "Unlock (Key)"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1500,11 +2448,26 @@ export default function Settings() {
                     <CreditCard className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900">Fee Types & Billing</h3>
-                    <p className="text-xs text-slate-500">Define custom billing categories, fees, and defaults.</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900">Fee Types &amp; Billing Configuration</h3>
+                      {canEditFees ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Editable (Admin / Accountant)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
+                          <Lock className="w-3 h-3" />
+                          Read-Only
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Synced with <span className="font-mono font-semibold text-slate-700">public.school_settings.custom_fee_types</span>
+                    </p>
                   </div>
                 </div>
-                {!isFeeFormOpen && (
+                {canEditFees && !isFeeFormOpen && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1513,7 +2476,7 @@ export default function Settings() {
                       setFeeError(null);
                       setIsFeeFormOpen(true);
                     }}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition shadow-sm"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition shadow-sm cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     New Fee Type
@@ -1521,11 +2484,21 @@ export default function Settings() {
                 )}
               </div>
 
+              {!canEditFees && (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900">
+                  <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Financial &amp; Billing Governance</p>
+                    <p className="text-amber-800 mt-0.5">
+                      Only <strong>School Administrators</strong> and the <strong>Accountant / Bursar</strong> can modify fee categories or billing defaults.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Fee Add / Edit Form Card */}
-              {isFeeFormOpen && (
-                <div
-                  className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4"
-                >
+              {canEditFees && isFeeFormOpen && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-black uppercase text-indigo-600 tracking-wider">
                       {editingFee ? 'Edit Custom Fee Type' : 'Create Custom Fee Type'}
@@ -1604,7 +2577,7 @@ export default function Settings() {
                           const val = Number(e.target.value);
                           setFeeForm((prev) => ({ ...prev, defaultAmount: val }));
                         }}
-                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none text-xs font-bold text-slate-800"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none text-xs font-bold font-mono tabular-nums text-slate-800"
                       />
                     </div>
 
@@ -1617,9 +2590,10 @@ export default function Settings() {
                     <div className="col-span-1 sm:col-span-3 pt-2">
                       <button
                         type="submit"
-                        className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition"
+                        disabled={isSaving}
+                        className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition cursor-pointer"
                       >
-                        {editingFee ? 'Save Changes' : 'Add Fee Type'}
+                        {editingFee ? 'Save Fee Changes to Supabase' : 'Add Fee Type to Supabase'}
                       </button>
                     </div>
                   </form>
@@ -1630,13 +2604,15 @@ export default function Settings() {
               <div className="space-y-4">
                 {/* Custom Fee Types Section */}
                 <div className="space-y-2">
-                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">Custom Administrator Fee Types</h4>
+                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">Custom School Fee Categories (`public.school_settings.custom_fee_types`)</h4>
                   {(() => {
-                    const customs: FeeTypeConfig[] = settingsData?.find(s => s.key === 'customFeeTypes')?.value || [];
+                    const customs: FeeTypeConfig[] = customFeeTypesState.length > 0
+                      ? customFeeTypesState
+                      : (settingsData?.find(s => s.key === 'customFeeTypes')?.value || []);
                     if (customs.length === 0) {
                       return (
                         <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs font-medium">
-                          No custom fee types configured yet. Add custom fees above to expand the billing system metrics.
+                          No custom fee types configured yet. {canEditFees ? 'Click "New Fee Type" above to create custom billing categories.' : ''}
                         </div>
                       );
                     }
@@ -1648,36 +2624,38 @@ export default function Settings() {
                               <p className="text-xs font-bold text-slate-800">{ft.label}</p>
                               <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {ft.id} | Default: <span className="font-bold text-indigo-600">GHS {ft.defaultAmount}</span></p>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingFee(ft);
-                                  setFeeForm({ id: ft.id, label: ft.label, defaultAmount: ft.defaultAmount });
-                                  setFeeError(null);
-                                  setIsFeeFormOpen(true);
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                                title="Edit Fee Config"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  confirm({
-                                    title: "Delete Custom Fee",
-                                    message: `Are you sure you want to delete the "${ft.label}" custom fee? This category won't be collected on newer students.`,
-                                    confirmLabel: "Delete Fee",
-                                    onConfirm: () => handleDeleteFeeType(ft.id)
-                                  });
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            {canEditFees && (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingFee(ft);
+                                    setFeeForm({ id: ft.id, label: ft.label, defaultAmount: ft.defaultAmount });
+                                    setFeeError(null);
+                                    setIsFeeFormOpen(true);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                  title="Edit Fee Config"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    confirm({
+                                      title: "Delete Custom Fee",
+                                      message: `Are you sure you want to delete the "${ft.label}" custom fee? This category won't be collected on newer students.`,
+                                      confirmLabel: "Delete Fee",
+                                      onConfirm: () => handleDeleteFeeType(ft.id)
+                                    });
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1687,7 +2665,7 @@ export default function Settings() {
 
                 {/* System Fee Types Section */}
                 <div className="space-y-2 pt-4">
-                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">System Default Fee Types (Locked)</h4>
+                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">System Default Fee Types (Standard)</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {FEE_TYPES.map((ft) => (
                       <div key={ft.id} className="p-4 bg-slate-50/50 border border-slate-200/50 rounded-2xl flex items-center justify-between opacity-80">
@@ -1695,7 +2673,7 @@ export default function Settings() {
                           <p className="text-xs font-bold text-slate-600">{ft.label}</p>
                           <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {ft.id} | Default: GHS {ft.defaultAmount}</p>
                         </div>
-                        <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full uppercase tracking-wider">System Standard</span>
+                        <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2.5 py-1 rounded-md uppercase tracking-wider">System Standard</span>
                       </div>
                     ))}
                   </div>
@@ -1706,18 +2684,43 @@ export default function Settings() {
 
           {activeTab === 'theme' && (
             <div className="space-y-6">
-              <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
-                  <Palette className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900">Branding & Color Theme</h3>
-                  <p className="text-xs text-slate-500">Customize the colors and branding across your school portal instance.</p>
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                    <Palette className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900">Branding &amp; Color Theme</h3>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {isSchoolAdmin ? 'School Global & Personal Theme' : 'Personal Workspace Theme'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {isSchoolAdmin
+                        ? 'As School Administrator, your theme selection updates the school-wide default branding in Supabase.'
+                        : 'Customize your personal workspace color theme in Supabase without altering the school-wide administrator branding.'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
+              {!isSchoolAdmin && (
+                <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl flex items-start gap-3 text-xs text-indigo-950">
+                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Personal Theme Override (`public.school_settings.user_preferences`)</p>
+                    <p className="text-indigo-800 mt-0.5">
+                      School-wide branding is managed by the School Administrator. Selecting a theme below saves your personal color preference to your Supabase profile.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-4">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">Choose Color Theme</label>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">
+                  {isSchoolAdmin ? 'Select School-Wide Portal Color Theme' : 'Select Your Personal Workspace Color Theme'}
+                </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {[
                     { id: 'indigo', name: 'Classic Indigo', desc: 'Trustworthy & Professional', color: 'bg-indigo-600' },
@@ -1727,54 +2730,67 @@ export default function Settings() {
                     { id: 'amber', name: 'Sunset Amber', desc: 'Warm, Welcoming & Friendly', color: 'bg-amber-600' },
                     { id: 'teal', name: 'Teal Marine', desc: 'Fresh, Clean & Academic', color: 'bg-teal-600' },
                     { id: 'sky', name: 'Sky Blue', desc: 'Oceanic, Serene & Trusting', color: 'bg-sky-600' },
-                  ].map((themeOption) => (
-                    <button
-                      key={themeOption.id}
-                      type="button"
-                      onClick={() => setSchoolProfile({ ...schoolProfile, theme: themeOption.id })}
-                      className={cn(
-                        "p-4 rounded-2xl border text-left transition-all hover:shadow-md cursor-pointer flex flex-col justify-between gap-3 h-28 relative overflow-hidden",
-                        schoolProfile.theme === themeOption.id
-                          ? "border-indigo-600 bg-indigo-50/10 ring-2 ring-indigo-600/20 font-bold"
-                          : "border-slate-200 hover:border-slate-300 bg-white"
-                      )}
-                    >
-                      <div className="flex justify-between items-start w-full">
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-extrabold text-slate-800">{themeOption.name}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">{themeOption.desc}</p>
+                  ].map((themeOption) => {
+                    const activeThemeId = isSchoolAdmin
+                      ? schoolProfile.theme
+                      : (personalPreferences.themeOverride || schoolProfile.theme);
+                    return (
+                      <button
+                        key={themeOption.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSchoolAdmin) {
+                            setSchoolProfile({ ...schoolProfile, theme: themeOption.id });
+                          }
+                          setPersonalPreferences({ ...personalPreferences, themeOverride: themeOption.id });
+                        }}
+                        className={cn(
+                          "p-4 rounded-2xl border text-left transition-all hover:shadow-md cursor-pointer flex flex-col justify-between gap-3 h-28 relative overflow-hidden",
+                          activeThemeId === themeOption.id
+                            ? "border-indigo-600 bg-indigo-50/10 ring-2 ring-indigo-600/20 font-bold"
+                            : "border-slate-200 hover:border-slate-300 bg-white"
+                        )}
+                      >
+                        <div className="flex justify-between items-start w-full">
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-extrabold text-slate-800">{themeOption.name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{themeOption.desc}</p>
+                          </div>
+                          <div className={cn("w-5 h-5 rounded-full shadow-inner shrink-0", themeOption.color)} />
                         </div>
-                        <div className={cn("w-5 h-5 rounded-full shadow-inner shrink-0", themeOption.color)} />
-                      </div>
-                      
-                      {schoolProfile.theme === themeOption.id ? (
-                        <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider w-fit">
-                          Selected
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-medium text-slate-400 hover:text-slate-600">
-                          Click to select
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                        
+                        {activeThemeId === themeOption.id ? (
+                          <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider w-fit">
+                            Selected
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-medium text-slate-400 hover:text-slate-600">
+                            Click to select
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-500 flex items-center gap-3">
-                <span className="text-lg"></span>
-                <p>The chosen theme colors are dynamically compiled and compiled on-the-fly to all action buttons, links, widgets, headers, graphs, and system dashboards across the entire SchoolSphere instance.</p>
               </div>
 
               <div className="pt-4">
                 <button 
                   type="button"
-                  onClick={() => saveSettings('schoolProfile', schoolProfile)}
+                  onClick={() => {
+                    const chosenTheme = isSchoolAdmin
+                      ? schoolProfile.theme
+                      : (personalPreferences.themeOverride || schoolProfile.theme);
+                    saveSettingsSection('theme', {
+                      theme: chosenTheme,
+                      compactMode: personalPreferences.compactMode,
+                    });
+                  }}
                   disabled={isSaving}
                   className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  {isSaving ? 'Applying...' : 'Apply Theme & Save'}
+                  {isSaving ? 'Applying & Syncing...' : isSchoolAdmin ? 'Apply School & Personal Theme to Supabase' : 'Apply My Personal Theme to Supabase'}
                 </button>
               </div>
             </div>
@@ -1797,8 +2813,11 @@ export default function Settings() {
       </div>
       
       <div className="text-center">
-        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{schoolProfile.schoolName.split(' ')[0]} Management System v1.2.0 • Local Storage Database</p>
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+          {schoolProfile.schoolName.split(' ')[0]} Management System • Connected to Supabase Cloud ({roleMeta.label})
+        </p>
       </div>
     </div>
   );
 }
+

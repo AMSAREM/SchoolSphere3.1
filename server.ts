@@ -11494,28 +11494,89 @@ async function doStartServer() {
         let probeSchoolId = "";
         const probeStudentId = `DIAG-STU-ATT-${Date.now()}`;
         const probeDate = "2026-09-26";
+        let studentIdCol: "student_id" | "studentId" = "student_id";
 
         try {
           probeSchoolId = await createDiagnosticSchool("att-probe");
           details.push(`Provisioned temporary UUID tenant (${probeSchoolId}) in public.schools.`);
 
-          // 1. Insert initial Present attendance record using canonical snake_case student_id
-          let studentIdCol: "student_id" | "studentId" = "student_id";
-          let { error: insErr } = await diagTable("attendance").insert([
+          // 0. Insert parent student row in public.students first to satisfy foreign key "attendance_student_fk"
+          let { error: stuInsErr } = await diagTable("students").insert([
             {
               student_id: probeStudentId,
-              date: probeDate,
-              status: "Present",
+              first_name: "Diagnostic",
+              last_name: "AttendanceStudent",
               class: "Basic 7B",
+              gender: "Female",
+              date_of_birth: "2013-05-10",
+              guardian_name: "Attendance Guardian",
+              guardian_phone: "0240002222",
               school_id: probeSchoolId
             }
           ]);
 
-          if (insErr && insErr.message?.includes("student_id")) {
+          if (stuInsErr && stuInsErr.message?.includes("student_id")) {
             studentIdCol = "studentId";
+            const retryStu = await diagTable("students").insert([
+              {
+                studentId: probeStudentId,
+                firstName: "Diagnostic",
+                lastName: "AttendanceStudent",
+                class: "Basic 7B",
+                gender: "Female",
+                dateOfBirth: "2013-05-10",
+                guardianName: "Attendance Guardian",
+                guardianPhone: "0240002222",
+                school_id: probeSchoolId
+              }
+            ]);
+            stuInsErr = retryStu.error;
+          }
+
+          if (stuInsErr) {
+            throw new Error(`Parent student insert for attendance FK failed: ${stuInsErr.message}`);
+          }
+          details.push(
+            `Step 0: Provisioned parent student (${probeStudentId}) in public.students to satisfy "attendance_student_fk".`
+          );
+
+          // 1. Insert initial Present attendance record using canonical snake_case student_id
+          let attStudentCol: "student_id" | "studentId" = studentIdCol;
+          let { error: insErr } = await diagTable("attendance").insert([
+            attStudentCol === "student_id"
+              ? {
+                  student_id: probeStudentId,
+                  date: probeDate,
+                  status: "Present",
+                  class: "Basic 7B",
+                  school_id: probeSchoolId
+                }
+              : {
+                  studentId: probeStudentId,
+                  date: probeDate,
+                  status: "Present",
+                  class: "Basic 7B",
+                  school_id: probeSchoolId
+                }
+          ]);
+
+          if (insErr && insErr.message?.includes("student_id")) {
+            attStudentCol = "studentId";
             const retry = await diagTable("attendance").insert([
               {
                 studentId: probeStudentId,
+                date: probeDate,
+                status: "Present",
+                class: "Basic 7B",
+                school_id: probeSchoolId
+              }
+            ]);
+            insErr = retry.error;
+          } else if (insErr && insErr.message?.includes("studentId")) {
+            attStudentCol = "student_id";
+            const retry = await diagTable("attendance").insert([
+              {
+                student_id: probeStudentId,
                 date: probeDate,
                 status: "Present",
                 class: "Basic 7B",
@@ -11533,7 +11594,7 @@ async function doStartServer() {
           // 2. Reconcile / update same (school_id, student_id, date) to "Late"
           const { data: existingRows } = await diagTable("attendance").select({
             school_id: probeSchoolId,
-            [studentIdCol]: probeStudentId,
+            [attStudentCol]: probeStudentId,
             date: probeDate
           });
 
@@ -11542,7 +11603,7 @@ async function doStartServer() {
               { status: "Late" },
               {
                 school_id: probeSchoolId,
-                [studentIdCol]: probeStudentId,
+                [attStudentCol]: probeStudentId,
                 date: probeDate
               }
             );
@@ -11552,7 +11613,7 @@ async function doStartServer() {
           // 3. Verify exactly 1 record exists for (school_id, student_id, date) with status = "Late"
           const { data: verifyRows, error: verErr } = await diagTable("attendance").select({
             school_id: probeSchoolId,
-            [studentIdCol]: probeStudentId,
+            [attStudentCol]: probeStudentId,
             date: probeDate
           });
 
@@ -11569,10 +11630,14 @@ async function doStartServer() {
         } finally {
           if (probeSchoolId) {
             await diagTable("attendance").delete({ school_id: probeSchoolId });
+            await diagTable("students").delete({
+              school_id: probeSchoolId,
+              [studentIdCol]: probeStudentId
+            });
             await cleanupDiagnosticSchool(probeSchoolId);
           }
           details.push(
-            `Step 3 (Rollback): Deleted sandbox attendance probe (${probeStudentId}) and temporary school cleanly.`
+            `Step 3 (Rollback): Deleted sandbox attendance probe (${probeStudentId}), parent student, and temporary school cleanly.`
           );
         }
 
@@ -11580,7 +11645,7 @@ async function doStartServer() {
           success: true,
           action,
           durationMs: Date.now() - startTime,
-          summary: `Composite (school_id, student_id, date) attendance uniqueness and upsert verified with clean rollback.`,
+          summary: `Composite (school_id, student_id, date) attendance uniqueness and FK integrity verified with clean rollback.`,
           details
         });
       }
@@ -15496,24 +15561,42 @@ async function doStartServer() {
     const normalizedList = Array.from(dedupedMap.values()).filter(Boolean) as NonNullable<ReturnType<typeof normalizeAttendanceRecord>>[];
     if (normalizedList.length === 0) return [];
 
-    // Resolve missing class names from public.students when not supplied on a record
-    const missingClassStudentIds = Array.from(
-      new Set(normalizedList.filter(r => !r.class).map(r => r.studentId))
-    );
+    // Ensure parent student records exist in public.students to satisfy "attendance_student_fk" and resolve missing class names
+    const allStudentIds = Array.from(new Set(normalizedList.map(r => r.studentId)));
     const studentClassMap = new Map<string, string>();
-    if (missingClassStudentIds.length > 0) {
+    const existingStudentIdSet = new Set<string>();
+
+    if (allStudentIds.length > 0) {
       try {
         const { data: stuRows } = await adminClient
           .from('students')
           .select('student_id, class')
           .eq('school_id', schoolId)
-          .in('student_id', missingClassStudentIds);
+          .in('student_id', allStudentIds);
         for (const st of (stuRows || [])) {
-          if (st.student_id && st.class) {
-            studentClassMap.set(String(st.student_id), String(st.class));
+          if (st.student_id) {
+            existingStudentIdSet.add(String(st.student_id));
+            if (st.class) {
+              studentClassMap.set(String(st.student_id), String(st.class));
+            }
           }
         }
       } catch {}
+
+      const missingStudentIds = allStudentIds.filter(sid => !existingStudentIdSet.has(sid));
+      if (missingStudentIds.length > 0) {
+        const stubStudents = missingStudentIds.map(sid => {
+          const matchingAtt = normalizedList.find(r => r.studentId === sid);
+          return {
+            studentId: sid,
+            firstName: 'Student',
+            lastName: sid,
+            class: matchingAtt?.class || 'P1',
+            gender: 'Male'
+          };
+        });
+        await ensureAttendanceReferenceRecordsInSupabase(schoolId, [], stubStudents);
+      }
     }
 
     const dbPayload = normalizedList.map(r => ({
@@ -24108,6 +24191,874 @@ NOTIFY pgrst, 'reload schema';`;
         expenses: invData.expenses,
         tableStatus,
         syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // APP SETTINGS & ROLE-BASED GOVERNANCE SUPABASE ENDPOINTS
+  // Connects public.school_settings, public.schools, and public.users
+  // =========================================================================
+
+  const DEFAULT_GRADE_BOUNDARIES = [
+    { grade: 'A1', minScore: 80, maxScore: 100, remark: 'Excellent', points: 1 },
+    { grade: 'B2', minScore: 70, maxScore: 79, remark: 'Very Good', points: 2 },
+    { grade: 'B3', minScore: 65, maxScore: 69, remark: 'Good', points: 3 },
+    { grade: 'C4', minScore: 60, maxScore: 64, remark: 'Credit', points: 4 },
+    { grade: 'C5', minScore: 55, maxScore: 59, remark: 'Credit', points: 5 },
+    { grade: 'C6', minScore: 50, maxScore: 54, remark: 'Credit', points: 6 },
+    { grade: 'D7', minScore: 45, maxScore: 49, remark: 'Pass', points: 7 },
+    { grade: 'E8', minScore: 40, maxScore: 44, remark: 'Weak Pass', points: 8 },
+    { grade: 'F9', minScore: 0, maxScore: 39, remark: 'Fail', points: 9 }
+  ];
+
+  const DEFAULT_ROLE_PREFERENCES: Record<string, any> = {
+    admin: {
+      defaultDashboardView: 'executive_overview',
+      autoCloudBackup: true,
+      requireAuditLogsOnSettings: true,
+      smsSenderId: 'SCHOOLSPHR',
+      enableParentPortalPayments: true,
+      allowTeacherScoreEditsAfterPublish: false
+    },
+    headteacher: {
+      caWeightPercent: 30,
+      examWeightPercent: 70,
+      passMarkThreshold: 50,
+      reportCardSignatureTitle: 'Headteacher / Vice Principal',
+      defaultLessonNoteFilter: 'pending_vetting',
+      autoComputeClassPositions: true
+    },
+    hod: {
+      caWeightPercent: 30,
+      examWeightPercent: 70,
+      passMarkThreshold: 50,
+      reportCardSignatureTitle: 'Head of Department (HOD)',
+      defaultLessonNoteFilter: 'department_submissions',
+      autoComputeClassPositions: true
+    },
+    accountant: {
+      defaultPaymentMethod: 'Mobile Money',
+      receiptPrefix: 'RCP',
+      autoSendPaymentSmsReceipt: true,
+      arrearsReminderThresholdGhs: 200,
+      receiptFooterNote: 'Official Bursary Receipt • Non-Refundable'
+    },
+    teacher: {
+      defaultAttendanceStatus: 'Present',
+      defaultLessonNoteFormat: 'structured',
+      scoreEntryAutoSave: true,
+      showStudentAvatarsInRoster: true
+    },
+    student: {
+      preferredNotificationChannel: 'In-App',
+      examCountdownAlerts: true,
+      showRankComparisonOnReports: true
+    },
+    parent: {
+      preferredNotificationChannel: 'SMS & Email',
+      feePaymentReminders: true,
+      attendanceAbsenceAlerts: true,
+      terminalReportReadyAlerts: true
+    }
+  };
+
+  function isServerAdminRole(roleRaw: string | undefined | null): boolean {
+    const r = String(roleRaw || '').trim().toLowerCase();
+    return r === 'admin' || r === 'super_admin' || r === 'creator';
+  }
+
+  function canRoleModifySettingsSection(roleRaw: string | undefined | null, sectionRaw: string | undefined | null): {
+    allowed: boolean;
+    reason?: string;
+  } {
+    const role = String(roleRaw || 'teacher').trim().toLowerCase();
+    const section = String(sectionRaw || '').trim().toLowerCase();
+    const isAdmin = isServerAdminRole(role);
+
+    if (section === 'profile' || section === 'schoolprofile' || section === 'school_profile') {
+      if (!isAdmin) {
+        return {
+          allowed: false,
+          reason: 'Only School/Client Administrators can modify School Identity & Institutional Profile settings.'
+        };
+      }
+      return { allowed: true };
+    }
+
+    if (section === 'database' || section === 'global_theme' || section === 'admin_controls') {
+      if (!isAdmin) {
+        return {
+          allowed: false,
+          reason: 'Only School/Client Administrators can modify system database, handover, or school-wide branding controls.'
+        };
+      }
+      return { allowed: true };
+    }
+
+    if (section === 'academic' || section === 'academicconfig' || section === 'gradeboundaries' || section === 'grading') {
+      if (isAdmin || role === 'headteacher' || role === 'hod') {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        reason: 'Only School Administrators, Headteachers, and HODs can modify Academic Period & Grading Configuration.'
+      };
+    }
+
+    if (section === 'fees' || section === 'customfeetypes' || section === 'fee_types') {
+      if (isAdmin || role === 'accountant') {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        reason: 'Only School Administrators and Accountants/Bursars can modify Fees & Billing Configuration.'
+      };
+    }
+
+    if (section === 'personal' || section === 'role_preferences' || section === 'theme' || section === 'personal_theme') {
+      return { allowed: true };
+    }
+
+    if (section === 'creator') {
+      if (role === 'creator' || role === 'super_admin') {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        reason: 'Only Platform Creators and Super Administrators can modify Creator Console settings.'
+      };
+    }
+
+    return isAdmin
+      ? { allowed: true }
+      : { allowed: false, reason: 'Only School/Client Administrators can modify this administrative setting.' };
+  }
+
+  async function inspectSettingsDatabaseTables(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const result: Record<string, { exists: boolean; count: number; status: 'ready' | 'missing' | 'error'; message?: string }> = {
+      school_settings: { exists: false, count: 0, status: 'missing' },
+      schools: { exists: false, count: 0, status: 'missing' },
+      users: { exists: false, count: 0, status: 'missing' },
+      fee_structures: { exists: false, count: 0, status: 'missing' }
+    };
+
+    for (const table of ['school_settings', 'schools', 'users', 'fee_structures'] as const) {
+      try {
+        let q = adminClient.from(table).select('*', { count: 'exact', head: true });
+        if (schoolId) {
+          if (table === 'schools') {
+            q = q.eq('id', schoolId);
+          } else {
+            q = q.eq('school_id', schoolId);
+          }
+        }
+        const { count, error } = await q;
+        if (!error) {
+          result[table] = { exists: true, count: count ?? 0, status: 'ready' };
+        } else {
+          result[table] = { exists: false, count: 0, status: 'error', message: error.message };
+        }
+      } catch (e: any) {
+        result[table] = { exists: false, count: 0, status: 'error', message: e?.message };
+      }
+    }
+
+    return result;
+  }
+
+  async function fetchFullAppSettingsFromSupabase(params: {
+    schoolId: string;
+    userId?: string | number | null;
+    username?: string | null;
+    role?: string | null;
+  }) {
+    const { schoolId, userId, username, role } = params;
+    const adminClient = getSupabaseAdmin();
+    const now = Date.now();
+
+    // 1. Read public.schools
+    let schoolRow: any = null;
+    if (schoolId) {
+      try {
+        const { data } = await adminClient
+          .from('schools')
+          .select('*')
+          .eq('id', schoolId)
+          .limit(1)
+          .maybeSingle();
+        schoolRow = data || null;
+      } catch {}
+    }
+    if (!schoolRow) {
+      try {
+        const { data } = await adminClient.from('schools').select('*').limit(1).maybeSingle();
+        schoolRow = data || null;
+      } catch {}
+    }
+
+    const effectiveSchoolId = String(schoolRow?.id || schoolId || '');
+
+    // 2. Read public.school_settings
+    let settingsRow: any = null;
+    if (effectiveSchoolId) {
+      try {
+        const { data } = await adminClient
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', effectiveSchoolId)
+          .limit(1)
+          .maybeSingle();
+        settingsRow = data || null;
+      } catch {}
+    }
+
+    const streamsObj =
+      settingsRow?.streams && typeof settingsRow.streams === 'object' && !Array.isArray(settingsRow.streams)
+        ? settingsRow.streams
+        : {};
+    const appSettingsBag =
+      streamsObj.app_settings && typeof streamsObj.app_settings === 'object' && !Array.isArray(streamsObj.app_settings)
+        ? streamsObj.app_settings
+        : {};
+
+    const savedProfile = appSettingsBag.schoolProfile || {};
+    const schoolProfile = {
+      schoolName: String(savedProfile.schoolName || schoolRow?.name || 'SCHOOL SPHERE ACADEMY').trim(),
+      schoolAddress: String(savedProfile.schoolAddress || schoolRow?.address || 'Accra, Ghana').trim(),
+      schoolPhone: String(savedProfile.schoolPhone || schoolRow?.phone || '+233 24 000 0000').trim(),
+      schoolEmail: String(savedProfile.schoolEmail || schoolRow?.email || 'info@schoolsphere.edu.gh').trim(),
+      website: String(savedProfile.website || 'www.schoolsphere.edu.gh').trim(),
+      logo: String(
+        savedProfile.logo !== undefined
+          ? savedProfile.logo
+          : schoolRow?.logo_url || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png'
+      ),
+      theme: String(savedProfile.theme || schoolRow?.theme || 'indigo').trim(),
+      motto: String(savedProfile.motto || 'Excellence, Integrity & Service').trim(),
+      headmasterName: String(savedProfile.headmasterName || 'Dr. Emmanuel Mensah').trim()
+    };
+
+    const rawTerms = Array.isArray(settingsRow?.terms) ? settingsRow.terms : [];
+    const savedAcademic = appSettingsBag.academicConfig || {};
+    const academicConfig = {
+      currentTerm: String(savedAcademic.currentTerm || rawTerms[0]?.currentTerm || 'Term 1').trim(),
+      academicYear: String(savedAcademic.academicYear || rawTerms[0]?.academicYear || '2025/2026').trim(),
+      nextTermBegins: String(savedAcademic.nextTermBegins || rawTerms[0]?.nextTermBegins || '2026-09-08').trim(),
+      totalAttendanceDays: Number(savedAcademic.totalAttendanceDays || rawTerms[0]?.totalAttendanceDays || 65),
+      gradingSystem: String(savedAcademic.gradingSystem || 'GES / NaCCA Standard (A1 - F9)').trim(),
+      caWeightPercent: Number(savedAcademic.caWeightPercent ?? 30),
+      examWeightPercent: Number(savedAcademic.examWeightPercent ?? 70)
+    };
+
+    const gradeBoundaries =
+      Array.isArray(settingsRow?.grade_boundaries) && settingsRow.grade_boundaries.length > 0
+        ? settingsRow.grade_boundaries
+        : Array.isArray(appSettingsBag.gradeBoundaries) && appSettingsBag.gradeBoundaries.length > 0
+        ? appSettingsBag.gradeBoundaries
+        : DEFAULT_GRADE_BOUNDARIES;
+
+    const customFeeTypes = Array.isArray(appSettingsBag.customFeeTypes)
+      ? appSettingsBag.customFeeTypes
+      : [];
+
+    const rolePreferences = {
+      ...DEFAULT_ROLE_PREFERENCES,
+      ...(appSettingsBag.rolePreferences && typeof appSettingsBag.rolePreferences === 'object'
+        ? appSettingsBag.rolePreferences
+        : {})
+    };
+
+    const userPreferencesMap =
+      appSettingsBag.userPreferences && typeof appSettingsBag.userPreferences === 'object'
+        ? appSettingsBag.userPreferences
+        : {};
+
+    // Auto-initialize school_settings row in Supabase if not yet created
+    if (effectiveSchoolId && (!settingsRow || !streamsObj.app_settings)) {
+      try {
+        const nextStreams = {
+          ...streamsObj,
+          app_settings: {
+            schoolProfile,
+            academicConfig,
+            gradeBoundaries,
+            customFeeTypes,
+            rolePreferences,
+            userPreferences: userPreferencesMap,
+            updatedAt: now
+          }
+        };
+        if (settingsRow?.id) {
+          await adminClient
+            .from('school_settings')
+            .update({
+              grade_boundaries: gradeBoundaries,
+              terms: [academicConfig],
+              streams: nextStreams,
+              updated_at: now
+            })
+            .eq('id', settingsRow.id);
+        } else {
+          await adminClient.from('school_settings').insert([
+            {
+              school_id: effectiveSchoolId,
+              grade_boundaries: gradeBoundaries,
+              terms: [academicConfig],
+              streams: nextStreams,
+              updated_at: now
+            }
+          ]);
+        }
+      } catch {}
+    }
+
+    // 3. Read authenticated user profile from public.users
+    let userRow: any = null;
+    try {
+      if (userId !== undefined && userId !== null && !isNaN(Number(userId)) && Number(userId) > 0) {
+        const { data } = await adminClient
+          .from('users')
+          .select('id, school_id, username, full_name, email, phone, role, status, created_at, last_login')
+          .eq('id', Number(userId))
+          .limit(1)
+          .maybeSingle();
+        userRow = data || null;
+      }
+      if (!userRow && username) {
+        const cleanU = String(username).trim().toLowerCase();
+        let q = adminClient
+          .from('users')
+          .select('id, school_id, username, full_name, email, phone, role, status, created_at, last_login')
+          .ilike('username', `${cleanU}%`)
+          .limit(1);
+        if (effectiveSchoolId) q = q.eq('school_id', effectiveSchoolId);
+        const { data } = await q.maybeSingle();
+        userRow = data || null;
+      }
+      if (!userRow && effectiveSchoolId) {
+        let q = adminClient
+          .from('users')
+          .select('id, school_id, username, full_name, email, phone, role, status, created_at, last_login')
+          .eq('school_id', effectiveSchoolId);
+        if (role) q = q.eq('role', String(role).toLowerCase());
+        const { data } = await q.limit(1).maybeSingle();
+        userRow = data || null;
+      }
+    } catch {}
+
+    const userKey = String(userRow?.id || userRow?.username || username || role || 'default_user').toLowerCase();
+    const activeRole = String(role || userRow?.role || 'admin').toLowerCase();
+    const mergedUserPreferences = {
+      ...(DEFAULT_ROLE_PREFERENCES[activeRole] || DEFAULT_ROLE_PREFERENCES.teacher),
+      ...(rolePreferences[activeRole] || {}),
+      ...(userPreferencesMap[userKey] || {})
+    };
+
+    const userProfile = userRow
+      ? {
+          id: userRow.id,
+          username: userRow.username,
+          fullName: userRow.full_name || userRow.username,
+          email: userRow.email || '',
+          phone: userRow.phone || '',
+          role: activeRole,
+          status: userRow.status || 'active',
+          schoolId: userRow.school_id || effectiveSchoolId,
+          lastLogin: userRow.last_login || null
+        }
+      : {
+          id: userId || null,
+          username: username || activeRole,
+          fullName: username || `${activeRole.charAt(0).toUpperCase() + activeRole.slice(1)} User`,
+          email: '',
+          phone: '',
+          role: activeRole,
+          status: 'active',
+          schoolId: effectiveSchoolId,
+          lastLogin: null
+        };
+
+    const settingsList = [
+      { key: 'schoolProfile', value: schoolProfile },
+      { key: 'academicConfig', value: academicConfig },
+      { key: 'gradeBoundaries', value: gradeBoundaries },
+      { key: 'customFeeTypes', value: customFeeTypes },
+      { key: 'rolePreferences', value: rolePreferences },
+      { key: `userPreferences_${userKey}`, value: mergedUserPreferences }
+    ];
+
+    return {
+      schoolId: effectiveSchoolId,
+      schoolRecord: schoolRow,
+      schoolProfile,
+      academicConfig,
+      gradeBoundaries,
+      customFeeTypes,
+      rolePreferences,
+      userPreferences: mergedUserPreferences,
+      allUserPreferences: userPreferencesMap,
+      userProfile,
+      settingsList,
+      updatedAt: Number(appSettingsBag.updatedAt || settingsRow?.updated_at || now)
+    };
+  }
+
+  app.get("/api/settings/state", async (req: any, res) => {
+    try {
+      const schoolId = await resolveInventorySchoolId(req);
+      const userId = req.query.user_id || req.user?.id || null;
+      const username = (req.query.username as string) || req.user?.username || null;
+      const role = (req.query.role as string) || (req.headers['x-user-role'] as string) || req.user?.role || null;
+
+      const state = await fetchFullAppSettingsFromSupabase({
+        schoolId,
+        userId,
+        username,
+        role
+      });
+      const tableStatus = await inspectSettingsDatabaseTables(state.schoolId);
+
+      return res.json({
+        success: true,
+        ...state,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/settings/save", async (req: any, res) => {
+    try {
+      const schoolId = await resolveInventorySchoolId(req);
+      const body = req.body || {};
+      const callerRole = String(
+        body.role || req.headers['x-user-role'] || req.user?.role || 'admin'
+      )
+        .trim()
+        .toLowerCase();
+      const rawSection = String(body.section || body.key || 'profile').trim();
+      const userId = body.userId ?? body.user_id ?? req.user?.id ?? null;
+      const username = body.username ?? req.user?.username ?? null;
+
+      // 1. Enforce Role-Based Access Control (RBAC)
+      const permCheck = canRoleModifySettingsSection(callerRole, rawSection);
+      if (!permCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN_ROLE',
+          role: callerRole,
+          section: rawSection,
+          error: permCheck.reason || 'Your current role does not have permission to modify this setting.'
+        });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const current = await fetchFullAppSettingsFromSupabase({
+        schoolId,
+        userId,
+        username,
+        role: callerRole
+      });
+      const effectiveSchoolId = current.schoolId;
+      const now = Date.now();
+
+      let nextSchoolProfile = { ...current.schoolProfile };
+      let nextAcademicConfig = { ...current.academicConfig };
+      let nextGradeBoundaries = [...current.gradeBoundaries];
+      let nextCustomFeeTypes = [...current.customFeeTypes];
+      let nextRolePreferences = { ...current.rolePreferences };
+      let nextAllUserPreferences = { ...(current.allUserPreferences || {}) };
+
+      const sectionNorm = rawSection.toLowerCase();
+      const payloadValue = body.value !== undefined ? body.value : body;
+
+      // 2. Apply section-specific updates & persist to canonical Supabase tables
+      if (sectionNorm === 'profile' || sectionNorm === 'schoolprofile' || sectionNorm === 'school_profile') {
+        nextSchoolProfile = {
+          ...nextSchoolProfile,
+          ...(typeof payloadValue === 'object' && payloadValue ? payloadValue : {})
+        };
+
+        if (effectiveSchoolId) {
+          await adminClient
+            .from('schools')
+            .update({
+              name: nextSchoolProfile.schoolName || 'School Sphere Academy',
+              address: nextSchoolProfile.schoolAddress || null,
+              phone: nextSchoolProfile.schoolPhone || null,
+              email: nextSchoolProfile.schoolEmail || null,
+              logo_url: nextSchoolProfile.logo || null,
+              theme: nextSchoolProfile.theme || 'indigo',
+              updated_at: now
+            })
+            .eq('id', effectiveSchoolId);
+        }
+      } else if (sectionNorm === 'global_theme') {
+        const nextTheme = String(payloadValue?.theme || payloadValue || nextSchoolProfile.theme || 'indigo').trim();
+        nextSchoolProfile = { ...nextSchoolProfile, theme: nextTheme };
+        if (effectiveSchoolId) {
+          await adminClient
+            .from('schools')
+            .update({
+              theme: nextTheme,
+              updated_at: now
+            })
+            .eq('id', effectiveSchoolId);
+        }
+      } else if (sectionNorm === 'academic' || sectionNorm === 'academicconfig') {
+        if (payloadValue?.academicConfig && typeof payloadValue.academicConfig === 'object') {
+          nextAcademicConfig = { ...nextAcademicConfig, ...payloadValue.academicConfig };
+        } else if (typeof payloadValue === 'object' && payloadValue && !Array.isArray(payloadValue)) {
+          const { gradeBoundaries: gbInPayload, ...restAcademic } = payloadValue;
+          nextAcademicConfig = { ...nextAcademicConfig, ...restAcademic };
+          if (Array.isArray(gbInPayload) && gbInPayload.length > 0) {
+            nextGradeBoundaries = gbInPayload;
+          }
+        }
+        if (Array.isArray(body.gradeBoundaries) && body.gradeBoundaries.length > 0) {
+          nextGradeBoundaries = body.gradeBoundaries;
+        }
+      } else if (sectionNorm === 'gradeboundaries' || sectionNorm === 'grading') {
+        if (Array.isArray(payloadValue) && payloadValue.length > 0) {
+          nextGradeBoundaries = payloadValue;
+        } else if (Array.isArray(payloadValue?.gradeBoundaries)) {
+          nextGradeBoundaries = payloadValue.gradeBoundaries;
+        }
+      } else if (sectionNorm === 'fees' || sectionNorm === 'customfeetypes' || sectionNorm === 'fee_types') {
+        if (Array.isArray(payloadValue)) {
+          nextCustomFeeTypes = payloadValue;
+        } else if (Array.isArray(payloadValue?.customFeeTypes)) {
+          nextCustomFeeTypes = payloadValue.customFeeTypes;
+        }
+        if (payloadValue?.accountantPreferences && typeof payloadValue.accountantPreferences === 'object') {
+          nextRolePreferences = {
+            ...nextRolePreferences,
+            accountant: {
+              ...(nextRolePreferences.accountant || DEFAULT_ROLE_PREFERENCES.accountant),
+              ...payloadValue.accountantPreferences
+            }
+          };
+        }
+      } else if (
+        sectionNorm === 'personal' ||
+        sectionNorm === 'role_preferences' ||
+        sectionNorm === 'theme' ||
+        sectionNorm === 'personal_theme'
+      ) {
+        const userKey = String(userId || username || current.userProfile?.id || callerRole || 'default_user').toLowerCase();
+        const incomingPrefs =
+          payloadValue?.preferences && typeof payloadValue.preferences === 'object'
+            ? payloadValue.preferences
+            : typeof payloadValue === 'object' && payloadValue
+            ? payloadValue
+            : {};
+
+        nextAllUserPreferences[userKey] = {
+          ...(nextAllUserPreferences[userKey] || {}),
+          ...incomingPrefs,
+          updatedAt: now
+        };
+
+        nextRolePreferences[callerRole] = {
+          ...(nextRolePreferences[callerRole] || DEFAULT_ROLE_PREFERENCES[callerRole] || {}),
+          ...incomingPrefs
+        };
+
+        // If user profile fields (fullName, email, phone, newPassword) are provided, update public.users
+        const userUpdates = body.userUpdates || payloadValue?.userUpdates || payloadValue;
+        if (userUpdates && typeof userUpdates === 'object') {
+          let targetUserRowId: number | null =
+            userId && !isNaN(Number(userId)) && Number(userId) > 0
+              ? Number(userId)
+              : current.userProfile?.id && !isNaN(Number(current.userProfile.id))
+              ? Number(current.userProfile.id)
+              : null;
+
+          if (!targetUserRowId && username && effectiveSchoolId) {
+            const { data: matchedUser } = await adminClient
+              .from('users')
+              .select('id')
+              .eq('school_id', effectiveSchoolId)
+              .ilike('username', `${String(username).trim()}%`)
+              .limit(1)
+              .maybeSingle();
+            if (matchedUser?.id) targetUserRowId = Number(matchedUser.id);
+          }
+
+          if (targetUserRowId) {
+            const dbPatch: Record<string, any> = {};
+            if (typeof userUpdates.fullName === 'string' && userUpdates.fullName.trim()) {
+              dbPatch.full_name = userUpdates.fullName.trim();
+            }
+            if (typeof userUpdates.email === 'string') {
+              dbPatch.email = userUpdates.email.trim() || null;
+            }
+            if (typeof userUpdates.phone === 'string') {
+              dbPatch.phone = userUpdates.phone.trim() || null;
+            }
+            if (typeof userUpdates.newPassword === 'string' && userUpdates.newPassword.trim().length >= 4) {
+              dbPatch.password_hash = hashPassword(userUpdates.newPassword.trim());
+            }
+            // Note: Only School/Client Admin can change role or status
+            if (isServerAdminRole(callerRole)) {
+              if (typeof userUpdates.status === 'string' && userUpdates.status.trim()) {
+                dbPatch.status = userUpdates.status.trim();
+              }
+            }
+            if (Object.keys(dbPatch).length > 0) {
+              await adminClient.from('users').update(dbPatch).eq('id', targetUserRowId);
+            }
+          }
+        }
+      }
+
+      // 3. Upsert into public.school_settings
+      if (effectiveSchoolId) {
+        const { data: existingSettings } = await adminClient
+          .from('school_settings')
+          .select('id, streams')
+          .eq('school_id', effectiveSchoolId)
+          .limit(1)
+          .maybeSingle();
+
+        const prevStreams =
+          existingSettings?.streams && typeof existingSettings.streams === 'object' && !Array.isArray(existingSettings.streams)
+            ? existingSettings.streams
+            : {};
+
+        const nextStreams = {
+          ...prevStreams,
+          app_settings: {
+            ...(prevStreams.app_settings || {}),
+            schoolProfile: nextSchoolProfile,
+            academicConfig: nextAcademicConfig,
+            gradeBoundaries: nextGradeBoundaries,
+            customFeeTypes: nextCustomFeeTypes,
+            rolePreferences: nextRolePreferences,
+            userPreferences: nextAllUserPreferences,
+            lastModifiedByRole: callerRole,
+            lastModifiedSection: rawSection,
+            updatedAt: now
+          }
+        };
+
+        if (existingSettings?.id) {
+          await adminClient
+            .from('school_settings')
+            .update({
+              grade_boundaries: nextGradeBoundaries,
+              terms: [nextAcademicConfig],
+              streams: nextStreams,
+              updated_at: now
+            })
+            .eq('id', existingSettings.id);
+        } else {
+          await adminClient.from('school_settings').insert([
+            {
+              school_id: effectiveSchoolId,
+              grade_boundaries: nextGradeBoundaries,
+              terms: [nextAcademicConfig],
+              streams: nextStreams,
+              updated_at: now
+            }
+          ]);
+        }
+
+        // Log audit record
+        try {
+          const validAuditUserId = await resolveValidSupabaseUserId(effectiveSchoolId, userId);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: effectiveSchoolId,
+              user_id: validAuditUserId,
+              action: 'SETTINGS_SECTION_UPDATED',
+              entity_type: 'school_settings',
+              entity_id: String(rawSection),
+              details: {
+                section: rawSection,
+                role: callerRole,
+                updatedAt: now
+              },
+              ip_address: extractIpAddress(req),
+              timestamp: now
+            }
+          ]);
+        } catch {}
+      }
+
+      const refreshed = await fetchFullAppSettingsFromSupabase({
+        schoolId: effectiveSchoolId,
+        userId,
+        username,
+        role: callerRole
+      });
+      const tableStatus = await inspectSettingsDatabaseTables(effectiveSchoolId);
+
+      return res.json({
+        success: true,
+        section: rawSection,
+        role: callerRole,
+        ...refreshed,
+        tableStatus,
+        syncedAt: now
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/settings/sync", async (req: any, res) => {
+    try {
+      const schoolId = await resolveInventorySchoolId(req);
+      const body = req.body || {};
+      const callerRole = String(body.role || req.headers['x-user-role'] || req.user?.role || 'admin')
+        .trim()
+        .toLowerCase();
+      const userId = body.userId ?? body.user_id ?? req.user?.id ?? null;
+      const username = body.username ?? req.user?.username ?? null;
+
+      const current = await fetchFullAppSettingsFromSupabase({
+        schoolId,
+        userId,
+        username,
+        role: callerRole
+      });
+      const effectiveSchoolId = current.schoolId;
+      const adminClient = getSupabaseAdmin();
+      const now = Date.now();
+
+      let nextSchoolProfile = { ...current.schoolProfile };
+      let nextAcademicConfig = { ...current.academicConfig };
+      let nextGradeBoundaries = [...current.gradeBoundaries];
+      let nextCustomFeeTypes = [...current.customFeeTypes];
+      let nextRolePreferences = { ...current.rolePreferences };
+      let nextAllUserPreferences = { ...(current.allUserPreferences || {}) };
+
+      // Apply incoming changes only for sections the caller's role is permitted to edit
+      if (isServerAdminRole(callerRole) && body.schoolProfile && typeof body.schoolProfile === 'object') {
+        nextSchoolProfile = { ...nextSchoolProfile, ...body.schoolProfile };
+        if (effectiveSchoolId) {
+          await adminClient
+            .from('schools')
+            .update({
+              name: nextSchoolProfile.schoolName || 'School Sphere Academy',
+              address: nextSchoolProfile.schoolAddress || null,
+              phone: nextSchoolProfile.schoolPhone || null,
+              email: nextSchoolProfile.schoolEmail || null,
+              logo_url: nextSchoolProfile.logo || null,
+              theme: nextSchoolProfile.theme || 'indigo',
+              updated_at: now
+            })
+            .eq('id', effectiveSchoolId);
+        }
+      }
+
+      if (
+        (isServerAdminRole(callerRole) || callerRole === 'headteacher' || callerRole === 'hod') &&
+        body.academicConfig &&
+        typeof body.academicConfig === 'object'
+      ) {
+        nextAcademicConfig = { ...nextAcademicConfig, ...body.academicConfig };
+      }
+
+      if (
+        (isServerAdminRole(callerRole) || callerRole === 'headteacher' || callerRole === 'hod') &&
+        Array.isArray(body.gradeBoundaries) &&
+        body.gradeBoundaries.length > 0
+      ) {
+        nextGradeBoundaries = body.gradeBoundaries;
+      }
+
+      if (
+        (isServerAdminRole(callerRole) || callerRole === 'accountant') &&
+        Array.isArray(body.customFeeTypes)
+      ) {
+        nextCustomFeeTypes = body.customFeeTypes;
+      }
+
+      if (body.userPreferences && typeof body.userPreferences === 'object') {
+        const userKey = String(userId || username || current.userProfile?.id || callerRole || 'default_user').toLowerCase();
+        nextAllUserPreferences[userKey] = {
+          ...(nextAllUserPreferences[userKey] || {}),
+          ...body.userPreferences,
+          updatedAt: now
+        };
+        nextRolePreferences[callerRole] = {
+          ...(nextRolePreferences[callerRole] || DEFAULT_ROLE_PREFERENCES[callerRole] || {}),
+          ...body.userPreferences
+        };
+      }
+
+      if (effectiveSchoolId) {
+        const { data: existingSettings } = await adminClient
+          .from('school_settings')
+          .select('id, streams')
+          .eq('school_id', effectiveSchoolId)
+          .limit(1)
+          .maybeSingle();
+
+        const prevStreams =
+          existingSettings?.streams && typeof existingSettings.streams === 'object' && !Array.isArray(existingSettings.streams)
+            ? existingSettings.streams
+            : {};
+
+        const nextStreams = {
+          ...prevStreams,
+          app_settings: {
+            ...(prevStreams.app_settings || {}),
+            schoolProfile: nextSchoolProfile,
+            academicConfig: nextAcademicConfig,
+            gradeBoundaries: nextGradeBoundaries,
+            customFeeTypes: nextCustomFeeTypes,
+            rolePreferences: nextRolePreferences,
+            userPreferences: nextAllUserPreferences,
+            lastModifiedByRole: callerRole,
+            updatedAt: now
+          }
+        };
+
+        if (existingSettings?.id) {
+          await adminClient
+            .from('school_settings')
+            .update({
+              grade_boundaries: nextGradeBoundaries,
+              terms: [nextAcademicConfig],
+              streams: nextStreams,
+              updated_at: now
+            })
+            .eq('id', existingSettings.id);
+        } else {
+          await adminClient.from('school_settings').insert([
+            {
+              school_id: effectiveSchoolId,
+              grade_boundaries: nextGradeBoundaries,
+              terms: [nextAcademicConfig],
+              streams: nextStreams,
+              updated_at: now
+            }
+          ]);
+        }
+      }
+
+      const refreshed = await fetchFullAppSettingsFromSupabase({
+        schoolId: effectiveSchoolId,
+        userId,
+        username,
+        role: callerRole
+      });
+      const tableStatus = await inspectSettingsDatabaseTables(effectiveSchoolId);
+
+      return res.json({
+        success: true,
+        ...refreshed,
+        tableStatus,
+        syncedAt: now
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });

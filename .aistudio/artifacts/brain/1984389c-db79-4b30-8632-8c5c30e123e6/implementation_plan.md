@@ -1,51 +1,74 @@
-# Inventory Registry & Expenses — Supabase Database Integration Plan
+# Compact Mobile & Tablet KPI Stat Cards
 
-Connect the **Assets, Inventory & Expense Terminal** (`src/components/InventoryManagement.tsx`) directly to the multi-tenant **Supabase PostgreSQL database** (`public.inventory_items`, `public.stock_movements`, `public.school_expenses`, `public.school_settings`, and `public.audit_logs`).
+Reduce the visual footprint and grid spacing of the selected Institutional Overview KPI stat cards on mobile and tablet viewports so all four metrics fit into two compact rows on mobile and a single row on tablet without sacrificing desktop readability.
 
----
+## User Review & Critical Decisions
 
-## 1. Supabase Schema & Multi-Table Architecture
+> [!IMPORTANT]
+> The layout and interior sizing rules below incorporate your confirmed preferences from the clarification step.
 
-The current frontend component (`InventoryManagement.tsx`) calls non-existent client tables (`inventory` and `expenses`). We will wire the module to the actual multi-tenant Supabase tables in your project:
+- **Confirmed Decision 1 (Responsive Grid Columns)**: Arrange the 4 KPI stat cards in **2 columns per row on mobile** (2 rows total) and **4 columns per row on tablet and desktop** (1 row total).
+- **Confirmed Decision 2 (Compact Card Interior)**: Reduce interior card padding, shrink the icon badge container and icon dimensions, tighten vertical spacing, and scale down label and metric font sizes on mobile and tablet while preserving full desktop proportions on large screens.
 
-1. **`public.inventory_items` (Stock Commodities Registry)**
-   - Stores all school commodities and apparatus (`id`, `school_id`, `item_name`, `category`, `quantity`, `min_quantity`, `unit_price`, `location`, `supplier_name`, `supplier_phone`, `last_updated`).
-2. **`public.stock_movements` (Stock Adjustment, Issuance & Restock Ledger)**
-   - Tracks every stock change (`id`, `school_id`, `item_id`, `item_name`, `movement_type` (`IN`, `OUT`, `RESTOCK`, `ISSUE`, `ADJUSTMENT`), `quantity_change`, `previous_quantity`, `new_quantity`, `reason`, `performed_by`, `created_at`).
-   - Automatically synchronizes with both physical `public.stock_movements` rows and `public.school_settings.streams.inventory.movements` so movement history is preserved across all schema configurations.
-3. **`public.school_expenses` (Overhead & Inventory Restock Purchases)**
-   - Stores all financial expenditures (`id`, `school_id`, `description`, `category`, `amount`, `date`, `inventory_item_id`, `quantity_purchased`, `payment_method`, `recorded_by`).
-   - When an **Inventory Restock** expense is logged (or deleted), the server atomically increments (or rolls back) the linked commodity's `quantity` in `public.inventory_items` and records a corresponding entry in `public.stock_movements`.
-4. **`public.school_settings` JSONB Backup & Starter Commodities Auto-Seed**
-   - Mirrors the school's inventory items, stock movements, and expenses to `public.school_settings.streams.inventory`.
-   - On first initialization of a school with an empty `public.inventory_items` table, automatically seeds starter campus commodities (e.g., *Whiteboard Markers & Duster Set*, *A4 Printing Paper Reams*, *Core Mathematics Textbooks*, *Student Khaki Uniform Sets*, *Classroom Dual Desks*, *Science Lab Beakers*) so the registry is immediately populated.
+## 1. Overview & Core Concept
 
----
+- **What It Does**: Streamlines the Institutional Overview KPI stats section so mobile and tablet users can scan all four institutional metrics at a glance without excessive vertical scrolling.
+- **Target Audience / Persona**: School administrators, headteachers, accountants, teachers, parents, and students accessing the dashboard on phones and tablets.
+- **Key Value**: Cuts vertical screen height consumed by the KPI summary grid by more than half on mobile (from 4 stacked full-width cards to a compact 2×2 grid) and fits all 4 cards onto a single horizontal line on tablet viewports.
 
-## 2. Backend API Endpoints (`server.ts`)
+## 2. User Experience & Visual Design
 
-Add a dedicated `/api/inventory/*` suite in `server.ts`:
+- **Key User Flows**:
+  1. On **mobile screens (`< 768px`)**, the user sees a 2-column grid (2 cards per line, 2 lines total) with compact padding, a smaller icon container, single-line truncated labels, and tabular monospace figures.
+  2. On **tablet screens (`768px – 1023px`)**, all 4 KPI cards align on a **single line** (`4 columns`) with compact padding and balanced typography so values and labels fit cleanly without awkward wrapping.
+  3. On **desktop screens (`≥ 1024px`)**, the cards expand to their spacious desktop padding and typography while remaining in a single 4-column row.
+  4. Tapping or clicking any KPI card navigates immediately to its linked module view.
+- **Visual Identity & Theme**:
+  - *Aesthetic Direction*: High-density, scannable institutional SaaS dashboard with clean single-elevation card surfaces.
+  - *Color Palette & Mood*: Crisp white card surfaces (`#FFFFFF`) over a subtle neutral canvas (`#F6F8F7`), accented with deep institutional teal (`#1C4A59`), warm amber (`#FAAE57`), and semantic status emerald (`#06D6A0`).
+  - *Typography & Hierarchy*: Tabular monospace numerals (`font-mono tabular-nums`) scaled to `text-base` / `text-lg` on mobile and tablet (`lg:text-2xl` on desktop), paired with compact `11px`–`12px` single-line truncated labels (`truncate`).
+  - *Component Styling & Layout*: Responsive CSS Grid (`grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-5`) with reduced mobile/tablet card padding (`p-3 sm:p-3.5 lg:p-5`), compact icon badges (`p-1.5 sm:p-2 lg:p-2.5`), and tighter header-to-metric spacing (`mb-1.5 sm:mb-2 lg:mb-3.5`).
+- **Interactive Feedback & Motion**: Smooth press scaling (`active:scale-[0.99]`), subtle icon hover lift (`group-hover:scale-105`), and instant view transitions when a card is activated.
 
-- **`GET /api/inventory/state`**
-  - Resolves the active `school_id`, fetches `inventory_items`, `stock_movements`, and `school_expenses` from Supabase (auto-seeding starter items if uninitialized), inspects table health (`tableStatus`), and returns the full state plus `inventorySql` DDL.
-- **`POST /api/inventory/sync`**
-  - Performs two-way reconciliation between local IndexedDB (`db.inventory`, `db.expenses`) and Supabase (`public.inventory_items`, `public.stock_movements`, `public.school_expenses`), migrating any offline/local items and expenses to Supabase.
-- **`POST /api/inventory/items` & `PUT /api/inventory/items/:id` & `DELETE /api/inventory/items/:id`**
-  - Creates, updates, or deletes stock items in `public.inventory_items`, logs initial stock or quantity deltas in `public.stock_movements`, and writes an audit trail to `public.audit_logs`.
-- **`POST /api/inventory/items/:id/adjust`**
-  - Atomically adjusts a commodity's stock count (`+1`, `-1`, custom restock, or departmental issuance), updates `public.inventory_items.quantity`, and logs the movement in `public.stock_movements` with `previous_quantity`, `new_quantity`, `reason`, and `performed_by`.
-- **`POST /api/inventory/expenses` & `DELETE /api/inventory/expenses/:id`**
-  - Records or deletes expenditures in `public.school_expenses`. For `Inventory Restock` purchases, automatically increments/reverts `public.inventory_items.quantity` and logs the restock movement in `public.stock_movements`.
+## 3. Key Product Decisions & Trade-Offs
 
----
+- **Decision 1: Responsive `2 → 4` Column Grid (`grid-cols-2 md:grid-cols-4`)**
+  - *Chosen Approach*: Use a 2-column layout at the base mobile breakpoint and transition to a 4-column single-row layout starting at the tablet (`md`) breakpoint.
+  - *Why*: Directly fulfills the requirement to fit the cards into two lines on mobile and one line on tablet, eliminating the tall 4-card vertical stack on phones and 2-row split on tablets.
+  - *Alternatives Considered*: Keeping 1 column on mobile or 2 columns on tablet was rejected because it consumes too much vertical viewport space above the analytics chart.
+- **Decision 2: Tiered Padding & Typography Scaling**
+  - *Chosen Approach*: Apply compact padding (`p-3 sm:p-3.5`), smaller icons (`w-4 h-4`), and compact metric text (`text-base sm:text-lg`) on mobile and tablet, restoring `lg:p-5`, `lg:w-5 lg:h-5`, and `lg:text-2xl` at the desktop breakpoint.
+  - *Why*: Prevents horizontal text overflow when 2 cards share a narrow mobile row or 4 cards share a tablet row.
 
-## 3. Frontend API Client & UI Enhancements (`src/lib/api.ts` & `src/components/InventoryManagement.tsx`)
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-1. **`inventoryApi` Client (`src/lib/api.ts`)**
-   - Add `inventoryApi` (`getState`, `syncState`, `saveItem`, `deleteItem`, `adjustQuantity`, `createExpense`, `deleteExpense`) with automatic local Dexie (`db.inventory`, `db.expenses`) reconciliation (`reconcileInventoryStateInDexie`).
-2. **Supabase Cloud Status Header & Table Inspector (`InventoryManagement.tsx`)**
-   - Add a dark slate header hero banner displaying real-time Supabase connection status, last sync timestamp, a **Sync Cloud** button, and a **Supabase Tables** inspector drawer showing live row counts and status for `public.inventory_items`, `public.stock_movements`, `public.school_expenses`, and `public.school_settings`.
-3. **Dedicated `Stock Movements` History Tab & Custom Stock Adjustment Modal**
-   - Add a 3rd tab — **Stock Movements (`stock_movements`)** — alongside **Stock Commodities** and **Expenses & Restocks**.
-   - Display a complete chronological movement ledger with badges for **Restock (+IN)**, **Issuance (-OUT)**, and **Adjustment**, showing previous vs. new quantity, staff member (`performed_by`), reason/department, timestamp, search/type filters, **Export CSV**, and **Print Movement Ledger**.
-   - Add a **Record Stock Issuance / Adjustment** action on each commodity so staff can issue items to classrooms/departments or restock with a reason note.
+- **Architecture & Component Diagram**:
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Institutional Overview Dashboard                    │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│          Selected Element: KPI Stats Grid (div:nth-of-type(4))          │
+│     • Mobile (<768px): 2 Columns × 2 Rows (gap-2.5, compact cards)      │
+│     • Tablet (768px–1023px): 4 Columns × 1 Row (gap-3, compact cards)   │
+│     • Desktop (≥1024px): 4 Columns × 1 Row (gap-5, full-size cards)     │
+└─────────┬──────────────────┬──────────────────┬──────────────────┬──────┘
+          │                  │                  │                  │
+          ▼                  ▼                  ▼                  ▼
+   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+   │ KPI Card 1  │    │ KPI Card 2  │    │ KPI Card 3  │    │ KPI Card 4  │
+   │ • Icon/Stat │    │ • Icon/Stat │    │ • Icon/Stat │    │ • Icon/Stat │
+   │ • 1-Line Lbl│    │ • 1-Line Lbl│    │ • 1-Line Lbl│    │ • 1-Line Lbl│
+   │ • Tabular # │    │ • Tabular # │    │ • Tabular # │    │ • Tabular # │
+   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘
+          └──────────────────┴────────┬─────────┴──────────────────┘
+                                      │ onClick(stat.view)
+                                      ▼
+                     ┌─────────────────────────────────┐
+                     │   Active Module View Navigation │
+                     └─────────────────────────────────┘
+```
+- **Data Model & State**: Uses the existing role-aware `stats` array (label, formatted value, icon, accent border, and target `view`) computed from live institutional state.
+- **Interactive Component & State Mapping**: Clicking any card triggers `onViewChange(stat.view)` to navigate to the corresponding module (Students, Attendance, Results, Fees, or Academic Management), while `truncate` and `tabular-nums` guarantee clean alignment across all screen widths.

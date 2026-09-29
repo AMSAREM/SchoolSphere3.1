@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for connecting the Inventory Registry & Expenses module to Supabase (public.inventory_items, public.stock_movements, public.school_expenses, and public.school_settings backup) with two-way cloud sync, starter items seeding, and a Stock Movements history tab.",
-  "updatedAt":  "2026-09-29T09:15:54.316081386Z",
+  "summary":  "Implementation plan to compact the selected KPI stats grid and cards on mobile and tablet viewports so the four cards fit into two rows on mobile and a single row on tablet with tighter padding, smaller icon badges, and compact typography.",
+  "updatedAt":  "2026-09-29T10:29:04.701545554Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
