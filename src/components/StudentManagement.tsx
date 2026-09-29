@@ -852,7 +852,7 @@ export default function StudentManagement() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Print Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -866,47 +866,49 @@ export default function StudentManagement() {
       </div>
 
       {/* Deep Teal Hero Header Card */}
-      <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
-            <Users className="w-3.5 h-3.5 text-[#faae57]" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5 print:hidden">
+        <div className="space-y-1.5 sm:space-y-2 min-w-0">
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-white/10 border border-white/15">
+            <Users className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#e1c594] truncate">
               Student Enrollment & Records
             </span>
           </div>
-          <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+          <h2 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold tracking-tight text-white leading-tight">
             Students Directory & Class Registry
           </h2>
-          <p className="text-sm text-[#e1c594]/90 font-medium">
+          <p className="text-xs sm:text-sm text-[#e1c594]/90 font-medium leading-relaxed">
             {allStudents?.length || 0} active students across {classes?.length || 0} classes • {activeFilter || 'All Class Streams'}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
           {/* Tab Switcher Pills inside Teal Header */}
-          <div className="flex items-center bg-white/10 p-1 rounded-full border border-white/15">
+          <div className="grid grid-cols-2 sm:flex items-center bg-white/10 p-1 rounded-2xl sm:rounded-full border border-white/15 w-full sm:w-auto">
             <button
+              type="button"
               onClick={() => setActiveTab('registry')}
               className={cn(
-                "px-4 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-2 cursor-pointer min-h-[38px]",
+                "px-3 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] whitespace-nowrap",
                 activeTab === 'registry' 
                   ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
                   : "text-white/85 hover:text-white"
               )}
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 shrink-0" />
               <span>Active Registry</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('promotions')}
               className={cn(
-                "px-4 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-2 cursor-pointer min-h-[38px]",
+                "px-3 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] whitespace-nowrap",
                 activeTab === 'promotions' 
                   ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
                   : "text-white/85 hover:text-white"
               )}
             >
-              <History className="w-3.5 h-3.5" />
+              <History className="w-3.5 h-3.5 shrink-0" />
               <span>Promotions</span>
               {promotionHistory.length > 0 && (
                 <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#1c4a59] text-[#faae57] rounded-full">
@@ -918,14 +920,15 @@ export default function StudentManagement() {
 
           {isAdmin && (
             <button 
+              type="button"
               id="add-student-btn"
               onClick={() => {
                 setEditingStudent(null);
                 setIsAddModalOpen(true);
               }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full font-bold active:scale-[0.97] transition-all shadow-sm min-h-[44px] text-sm cursor-pointer"
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl sm:rounded-full font-bold active:scale-[0.97] transition-all shadow-sm min-h-[42px] sm:min-h-[44px] text-xs sm:text-sm cursor-pointer w-full sm:w-auto"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
               <span>Add Student</span>
             </button>
           )}
@@ -1136,43 +1139,46 @@ export default function StudentManagement() {
             initial={{ opacity: 0, y: -10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.98 }}
-            className="bg-slate-900 text-white rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4 border border-slate-800"
+            className="bg-[#1c4a59] text-white rounded-2xl p-3.5 sm:p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border border-white/15 print:hidden"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-sm text-white">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#faae57] flex items-center justify-center font-black text-sm text-[#1f2a2e] shrink-0">
                 {selectedStudentIds.length}
               </div>
-              <div>
-                <div className="font-bold text-sm text-white">
+              <div className="min-w-0">
+                <div className="font-bold text-xs sm:text-sm text-white">
                   {selectedStudentIds.length} {selectedStudentIds.length === 1 ? 'Student' : 'Students'} Selected
                 </div>
-                <div className="text-xs text-slate-400">
-                  Bulk actions apply directly across Supabase cloud database & local registry
+                <div className="text-[11px] text-[#e1c594] truncate">
+                  Bulk actions apply across cloud database & local registry
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
+                type="button"
                 onClick={handleClearSelection}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial justify-center px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer whitespace-nowrap"
               >
                 Clear Selection
               </button>
               <button
+                type="button"
                 onClick={exportSelectedToCsv}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 bg-white/15 hover:bg-white/25 border border-white/20 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Download className="w-3.5 h-3.5 text-indigo-400" />
+                <Download className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
                 <span>Export CSV ({selectedStudentIds.length})</span>
               </button>
               {isAdmin && (
                 <button
+                  type="button"
                   onClick={handleBulkDelete}
                   disabled={isBulkDeleting}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 bg-[#ef476f] hover:opacity-90 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>{isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedStudentIds.length})`}</span>
                 </button>
               )}
@@ -1558,48 +1564,49 @@ export default function StudentManagement() {
       )}
 
       {activeTab === 'promotions' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header Description */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="bg-white border border-[#bac4c6]/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3.5 sm:gap-4 text-[#1f2a2e]">
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <History className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] flex items-center gap-2">
+                <History className="w-5 h-5 text-[#1c4a59] shrink-0" />
                 <span>Student Promotion Audit Trail</span>
               </h3>
-              <p className="text-xs text-slate-500 font-medium max-w-2xl leading-relaxed">
+              <p className="text-xs text-[#4e6166] font-medium max-w-2xl leading-relaxed">
                 Review historical student transitions across academic classes and years. 
                 Admins can revert any promotion record to return students to their source class and restore their exact previous fee payment snapshot.
               </p>
             </div>
             {isAdmin && (
               <button
+                type="button"
                 onClick={() => setIsPromotionModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-sm text-xs shrink-0 cursor-pointer"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#06d6a0] text-[#1f2a2e] rounded-xl font-bold hover:opacity-90 transition-all shadow-xs text-xs shrink-0 cursor-pointer w-full sm:w-auto"
               >
-                <TrendingUp className="w-4 h-4" />
+                <TrendingUp className="w-4 h-4 shrink-0" />
                 <span>Promote Students</span>
               </button>
             )}
           </div>
 
           {/* Audit Search & Filter controls */}
-          <div className="flex flex-col md:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
               <input 
                 type="text"
-                placeholder="Search by student name, identifier, source or destination class..."
+                placeholder="Search by student name, ID, source or destination class..."
                 value={promoSearchTerm}
                 onChange={(e) => setPromoSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-sm"
+                className="w-full h-10 pl-10 pr-4 bg-white border border-[#bac4c6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c4a59] transition-all text-xs sm:text-sm text-[#1f2a2e]"
               />
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
               <select 
                 value={promoYearFilter}
                 onChange={(e) => setPromoYearFilter(e.target.value)}
-                className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:border-indigo-600 outline-none hover:bg-slate-50 cursor-pointer"
+                className="flex-1 sm:flex-initial h-10 px-3.5 bg-white border border-[#bac4c6] rounded-xl text-xs sm:text-sm font-bold text-[#1f2a2e] focus:border-[#1c4a59] outline-none hover:bg-[#f6f8f7] cursor-pointer"
               >
                 <option value="">All Academic Years</option>
                 {uniquePromoYears.map(year => (
@@ -1608,11 +1615,12 @@ export default function StudentManagement() {
               </select>
               {(promoSearchTerm || promoYearFilter) && (
                 <button
+                  type="button"
                   onClick={() => {
                     setPromoSearchTerm('');
                     setPromoYearFilter('');
                   }}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-600 transition-colors cursor-pointer"
+                  className="h-10 px-3.5 bg-[#f6f8f7] hover:bg-[#ecf0ee] border border-[#bac4c6] rounded-xl text-xs font-bold text-[#1f2a2e] transition-colors cursor-pointer whitespace-nowrap"
                 >
                   Clear Filters
                 </button>
@@ -1620,21 +1628,93 @@ export default function StudentManagement() {
             </div>
           </div>
 
-          {/* Promotion Records Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+          {/* Promotion Records Container (Mobile Cards + Desktop Table) */}
+          <div className="bg-white border border-[#bac4c6]/80 rounded-2xl overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.05)] text-[#1f2a2e]">
+            {/* Mobile Card List (< 768px) */}
+            <div className="md:hidden divide-y divide-[#ecf0ee]">
+              {filteredPromoHistory.map((record) => {
+                const formattedDate = new Date(record.timestamp).toLocaleString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+                return (
+                  <div key={record.id} className="p-4 space-y-3 bg-white hover:bg-[#f6f8f7]/70 transition-colors">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-[#1f2a2e] break-words">{record.studentName}</div>
+                        <div className="text-xs font-medium text-[#4e6166] mt-0.5">{formattedDate}</div>
+                      </div>
+                      <span className="font-mono text-xs font-bold text-[#1c4a59] bg-[#f0f5f7] px-2.5 py-0.5 rounded-md border border-[#bcd3da] shrink-0">
+                        {record.studentIdentifier}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-[#f6f8f7] border border-[#bac4c6]/60 rounded-xl p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#1f2a2e] bg-white px-2.5 py-1 rounded-lg border border-[#bac4c6]">
+                          {record.sourceClass}
+                        </span>
+                        <ArrowRight className="w-3.5 h-3.5 text-[#4e6166] shrink-0" />
+                        <span className="text-xs font-extrabold text-[#065f46] bg-[#ecfdf5] px-2.5 py-1 rounded-lg border border-[#a7f3d0]">
+                          {record.destClass}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-bold text-[#1f2a2e]">{record.academicYear}</div>
+                        <div className="text-[10px] font-bold text-[#4e6166] uppercase tracking-wider">{record.term}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end pt-0.5">
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRevertPromotion(record)}
+                          className="w-full sm:w-auto px-3 py-2 bg-[#fff1f2] border border-[#fecdd3] hover:bg-[#ffe4e6] text-[#9f1239] rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          title="Revert this promotion transition"
+                        >
+                          <Undo2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Revert Promotion</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[#4e6166] font-medium italic">Reversible by Admin</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {filteredPromoHistory.length === 0 && (
+                <div className="px-6 py-12 text-center text-[#4e6166]">
+                  <div className="flex flex-col items-center gap-2.5">
+                    <History className="w-10 h-10 text-[#bac4c6]" />
+                    <p className="font-bold text-sm text-[#1f2a2e]">No promotion transitions found</p>
+                    <p className="text-xs text-[#4e6166] max-w-sm">
+                      {promoSearchTerm || promoYearFilter 
+                        ? "Try widening your search terms or clearing filters to locate previous records."
+                        : "Transitions performed using the 'Promote Students' wizard will log full rollback backups here."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tablet & Desktop Table (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student ID</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Transition</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Academic Period</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Promoted On</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6]/60">
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Student ID</th>
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider">Name</th>
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Transition</th>
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Academic Period</th>
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider whitespace-nowrap">Promoted On</th>
+                    <th className="px-4 lg:px-6 py-3.5 text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#ecf0ee]">
                   {filteredPromoHistory.map((record) => {
                     const formattedDate = new Date(record.timestamp).toLocaleString('en-GB', {
                       day: 'numeric',
@@ -1644,45 +1724,46 @@ export default function StudentManagement() {
                       minute: '2-digit'
                     });
                     return (
-                      <tr key={record.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-sm text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
+                      <tr key={record.id} className="bg-white hover:bg-[#f6f8f7]/80 transition-colors">
+                        <td className="px-4 lg:px-6 py-3.5 whitespace-nowrap">
+                          <span className="font-mono text-xs font-bold text-[#1c4a59] bg-[#f0f5f7] px-2.5 py-1 rounded-md border border-[#bcd3da]">
                             {record.studentIdentifier}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-slate-800">{record.studentName}</div>
+                        <td className="px-4 lg:px-6 py-3.5">
+                          <div className="font-bold text-sm text-[#1f2a2e]">{record.studentName}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 lg:px-6 py-3.5 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200/50">
+                            <span className="text-xs font-bold text-[#1f2a2e] bg-[#f6f8f7] px-2.5 py-1 rounded-lg border border-[#bac4c6]">
                               {record.sourceClass}
                             </span>
-                            <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
+                            <ArrowRight className="w-3.5 h-3.5 text-[#4e6166]" />
+                            <span className="text-xs font-extrabold text-[#065f46] bg-[#ecfdf5] px-2.5 py-1 rounded-lg border border-[#a7f3d0]">
                               {record.destClass}
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="text-xs font-bold text-slate-600">{record.academicYear}</div>
-                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{record.term}</div>
+                        <td className="px-4 lg:px-6 py-3.5 whitespace-nowrap">
+                          <div className="text-xs font-bold text-[#1f2a2e]">{record.academicYear}</div>
+                          <div className="text-[10px] font-bold text-[#4e6166] uppercase tracking-wider">{record.term}</div>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="text-xs text-slate-500 font-medium">{formattedDate}</span>
+                        <td className="px-4 lg:px-6 py-3.5 whitespace-nowrap">
+                          <span className="text-xs text-[#4e6166] font-medium">{formattedDate}</span>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-4 lg:px-6 py-3.5 text-right whitespace-nowrap">
                           {isAdmin ? (
                             <button
+                              type="button"
                               onClick={() => handleRevertPromotion(record)}
-                              className="px-3 py-1.5 bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-50 flex items-center gap-1.5 ml-auto cursor-pointer"
+                              className="px-3 py-1.5 bg-[#fff1f2] border border-[#fecdd3] hover:bg-[#ffe4e6] text-[#9f1239] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ml-auto cursor-pointer"
                               title="Revert this promotion transition"
                             >
                               <Undo2 className="w-3.5 h-3.5" />
                               <span>Revert Promotion</span>
                             </button>
                           ) : (
-                            <span className="text-xs text-slate-400 font-medium italic">Reversible by Admin</span>
+                            <span className="text-xs text-[#4e6166] font-medium italic">Reversible by Admin</span>
                           )}
                         </td>
                       </tr>
@@ -1690,11 +1771,11 @@ export default function StudentManagement() {
                   })}
                   {filteredPromoHistory.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
+                      <td colSpan={6} className="px-6 py-16 text-center text-[#4e6166]">
                         <div className="flex flex-col items-center gap-3">
-                          <History className="w-12 h-12 text-slate-200" />
-                          <p className="font-bold text-slate-600">No promotion transitions found</p>
-                          <p className="text-xs text-slate-400 max-w-sm">
+                          <History className="w-12 h-12 text-[#bac4c6]" />
+                          <p className="font-bold text-[#1f2a2e]">No promotion transitions found</p>
+                          <p className="text-xs text-[#4e6166] max-w-sm">
                             {promoSearchTerm || promoYearFilter 
                               ? "Try widening your search terms or clearing filters to locate previous records."
                               : "Transitions performed using the 'Promote Students' wizard will log full rollback backups here."}
@@ -1712,44 +1793,45 @@ export default function StudentManagement() {
 
       {/* Add Student Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-sm">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col"
+            className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col text-[#1f2a2e]"
           >
-            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <h3 className="text-lg sm:text-xl font-bold text-slate-900">
+            <div className="px-4 py-3.5 sm:p-6 border-b border-[#ecf0ee] flex items-center justify-between shrink-0 bg-[#f6f8f7]">
+              <h3 className="text-base sm:text-xl font-bold text-[#1f2a2e]">
                 {editingStudent ? 'Edit Student Details' : 'New Student Registration'}
               </h3>
               <button 
+                type="button"
                 onClick={() => {
                   setIsAddModalOpen(false);
                   setEditingStudent(null);
                   setPhotoPreview(null);
                 }}
-                className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-1.5 text-[#4e6166] hover:text-[#1f2a2e] rounded-lg hover:bg-[#ecf0ee] transition-colors cursor-pointer"
                 id="close-modal"
               >
-                <Plus className="w-6 h-6 rotate-45" />
+                <Plus className="w-5 h-5 sm:w-6 sm:h-6 rotate-45" />
               </button>
             </div>
             
-            <form onSubmit={handleStudentSubmit} className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6 sm:space-y-8">
+            <form onSubmit={handleStudentSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-7">
               {/* Profile Photo Section */}
-              <div className="flex flex-col items-center gap-4 py-6 bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
+              <div className="flex flex-col items-center gap-3 py-4 sm:py-6 bg-[#f6f8f7] rounded-2xl border-2 border-dashed border-[#bac4c6]">
                 <div className="relative group">
-                  <div className="w-28 h-28 rounded-full overflow-hidden bg-white border-4 border-white shadow-md flex items-center justify-center relative">
+                  <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden bg-white border-4 border-white shadow-md flex items-center justify-center relative">
                     {photoPreview ? (
                       <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
                     ) : (
-                      <User className="w-16 h-16 text-slate-200" />
+                      <User className="w-12 h-12 sm:w-16 sm:h-16 text-[#bac4c6]" />
                     )}
                     <label 
                       htmlFor="photo-upload"
                       className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     >
-                      <Camera className="w-8 h-8 text-white" />
+                      <Camera className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                     </label>
                   </div>
                   <input 
@@ -1760,89 +1842,89 @@ export default function StudentManagement() {
                     onChange={handlePhotoChange}
                   />
                 </div>
-                <div className="text-center">
-                  <p className="text-sm font-bold text-slate-900">Student Profile Picture</p>
-                  <p className="text-xs text-slate-500">JPG or PNG (max 1MB recommended)</p>
+                <div className="text-center px-3">
+                  <p className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Student Profile Picture</p>
+                  <p className="text-[11px] sm:text-xs text-[#4e6166]">Tap photo to upload JPG or PNG (max 1MB)</p>
                 </div>
               </div>
 
               {/* Personal Information */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                  <User className="w-4 h-4 text-indigo-600" />
-                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Personal Information</h4>
+              <div className="space-y-3.5 sm:space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#ecf0ee] pb-2">
+                  <User className="w-4 h-4 text-[#1c4a59]" />
+                  <h4 className="text-xs sm:text-sm font-black text-[#1f2a2e] uppercase tracking-widest">Personal Information</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">First Name</label>
-                    <input required name="firstName" defaultValue={editingStudent?.firstName} className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">First Name</label>
+                    <input required name="firstName" defaultValue={editingStudent?.firstName} className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Last Name</label>
-                    <input required name="lastName" defaultValue={editingStudent?.lastName} className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Last Name</label>
+                    <input required name="lastName" defaultValue={editingStudent?.lastName} className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Gender</label>
-                    <div className="flex gap-4 p-2 bg-slate-50/50 border border-slate-200 rounded-xl">
-                      <label className="flex-1 flex items-center justify-center gap-2 py-1 px-3 rounded-lg hover:bg-white transition-all cursor-pointer accent-indigo-600 font-medium text-sm">
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Gender</label>
+                    <div className="flex gap-3 p-1.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl">
+                      <label className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg hover:bg-white transition-all cursor-pointer accent-[#1c4a59] font-semibold text-xs sm:text-sm text-[#1f2a2e]">
                         <input type="radio" name="gender" value="Male" defaultChecked={editingStudent?.gender !== 'Female'} /> Male
                       </label>
-                      <label className="flex-1 flex items-center justify-center gap-2 py-1 px-3 rounded-lg hover:bg-white transition-all cursor-pointer accent-indigo-600 font-medium text-sm">
+                      <label className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg hover:bg-white transition-all cursor-pointer accent-[#1c4a59] font-semibold text-xs sm:text-sm text-[#1f2a2e]">
                         <input type="radio" name="gender" value="Female" defaultChecked={editingStudent?.gender === 'Female'} /> Female
                       </label>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Date of Birth</label>
-                    <input required type="date" name="dob" defaultValue={editingStudent?.dateOfBirth} className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Date of Birth</label>
+                    <input required type="date" name="dob" defaultValue={editingStudent?.dateOfBirth} className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
                 </div>
               </div>
 
               {/* Guardian Information */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                  <Users className="w-4 h-4 text-indigo-600" />
-                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Parent / Guardian Information</h4>
+              <div className="space-y-3.5 sm:space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#ecf0ee] pb-2">
+                  <Users className="w-4 h-4 text-[#1c4a59]" />
+                  <h4 className="text-xs sm:text-sm font-black text-[#1f2a2e] uppercase tracking-widest">Parent / Guardian Information</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Guardian Name</label>
-                    <input required name="guardianName" defaultValue={editingStudent?.guardianName} className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Guardian Name</label>
+                    <input required name="guardianName" defaultValue={editingStudent?.guardianName} className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Guardian Phone</label>
-                    <input required name="guardianPhone" defaultValue={editingStudent?.guardianPhone} placeholder="024XXXXXXX" className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Guardian Phone</label>
+                    <input required name="guardianPhone" defaultValue={editingStudent?.guardianPhone} placeholder="024XXXXXXX" className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
                 </div>
               </div>
 
               {/* Academic & Financial */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                  <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Academic & School Info</h4>
+              <div className="space-y-3.5 sm:space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#ecf0ee] pb-2">
+                  <FileSpreadsheet className="w-4 h-4 text-[#1c4a59]" />
+                  <h4 className="text-xs sm:text-sm font-black text-[#1f2a2e] uppercase tracking-widest">Academic & School Info</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Assigned Class</label>
-                    <select name="class" defaultValue={editingStudent?.class} className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Assigned Class</label>
+                    <select name="class" defaultValue={editingStudent?.class} className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]">
                       {classes?.length ? classes.map(c => <option key={c.id} value={c.name}>{c.name}</option>) : <option>P1</option>}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">House / Hostel</label>
-                    <input name="house" defaultValue={editingStudent?.house} placeholder="e.g. Blue House" className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">House / Hostel</label>
+                    <input name="house" defaultValue={editingStudent?.house} placeholder="e.g. Blue House" className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Department</label>
-                    <input name="department" defaultValue={editingStudent?.department} placeholder="e.g. General Arts" className="w-full px-4 py-2 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all shadow-sm" />
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="text-xs sm:text-sm font-semibold text-[#1f2a2e]">Department</label>
+                    <input name="department" defaultValue={editingStudent?.department} placeholder="e.g. General Arts" className="w-full px-3.5 py-2 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-sm text-[#1f2a2e]" />
                   </div>
-                  <div className="md:col-span-2 space-y-4 pt-4 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                        <CreditCard className="w-4 h-4 text-indigo-600" />
-                        Billing Breakdown by Fee Type
+                  <div className="sm:col-span-2 space-y-4 pt-3 border-t border-[#ecf0ee]">
+                    <div className="flex items-center justify-between gap-2">
+                      <h5 className="font-bold text-[#1f2a2e] text-xs sm:text-sm flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-[#1c4a59] shrink-0" />
+                        <span>Billing Breakdown by Fee Type</span>
                       </h5>
                       <button 
                         type="button"
@@ -1853,17 +1935,17 @@ export default function StudentManagement() {
                           });
                           setFeeInputs(resetVals);
                         }}
-                        className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-600 hover:text-white transition-all"
+                        className="text-[10px] font-black uppercase text-[#1c4a59] bg-[#f0f5f7] border border-[#bcd3da] px-2.5 py-1 rounded-lg hover:bg-[#1c4a59] hover:text-white transition-all shrink-0 cursor-pointer"
                       >
                         Reset Defaults
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-200/50">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5 bg-[#f6f8f7] p-3 sm:p-4 rounded-2xl border border-[#bac4c6]/60">
                       {feeTypes.map(ft => {
                         const amount = feeInputs[ft.id] ?? 0;
                         return (
-                          <div key={ft.id} className="space-y-1 bg-white p-3 rounded-xl border border-slate-100 shadow-xs">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block">
+                          <div key={ft.id} className="space-y-1 bg-white p-2.5 sm:p-3 rounded-xl border border-[#bac4c6]/50 shadow-2xs">
+                            <label className="text-[10px] font-bold text-[#4e6166] uppercase tracking-tight block truncate">
                               {ft.label}
                             </label>
                             <input 
@@ -1875,7 +1957,7 @@ export default function StudentManagement() {
                                 const val = Number(e.target.value);
                                 setFeeInputs(prev => ({ ...prev, [ft.id]: val }));
                               }}
-                              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white transition-all text-xs font-bold text-slate-800"
+                              className="w-full px-2.5 py-1.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-lg focus:ring-2 focus:ring-[#1c4a59] focus:outline-none focus:bg-white transition-all text-xs font-bold text-[#1f2a2e]"
                             />
                           </div>
                         );
@@ -1883,9 +1965,9 @@ export default function StudentManagement() {
                     </div>
                     
                     {/* Live Fees Paid Input Field */}
-                    <div className="space-y-1.5 p-4 bg-slate-50/60 border border-slate-200 rounded-2xl">
-                      <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4 text-indigo-600" />
+                    <div className="space-y-1.5 p-3.5 sm:p-4 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-2xl">
+                      <label className="text-xs font-black text-[#1f2a2e] uppercase tracking-wider flex items-center gap-1.5">
+                        <CreditCard className="w-4 h-4 text-[#1c4a59]" />
                         Amount Paid So Far
                       </label>
                       <input 
@@ -1898,28 +1980,28 @@ export default function StudentManagement() {
                           const val = Number(e.target.value);
                           setModalFeesPaid(val);
                         }}
-                        className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all text-sm font-bold text-slate-800"
+                        className="w-full px-3.5 py-2.5 bg-white border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:outline-none transition-all text-sm font-bold text-[#1f2a2e]"
                       />
-                      <p className="text-[10px] text-slate-400 font-bold">
+                      <p className="text-[10px] text-[#4e6166] font-semibold">
                         Specify if the student has made any initial payments towards their total fees.
                       </p>
                     </div>
 
                     {/* Live Fees Balance & Pricing Summary Dashboard */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-indigo-600 text-white rounded-2xl shadow-md">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-200 block">Total Fees (Billed)</span>
-                        <span className="text-lg font-black">{formatCurrency(computedTotalFees)}</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 p-3.5 sm:p-4 bg-[#1c4a59] text-white rounded-2xl shadow-md">
+                      <div className="flex sm:block items-center justify-between space-y-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#e1c594] block">Total Fees (Billed)</span>
+                        <span className="text-base sm:text-lg font-black text-white">{formatCurrency(computedTotalFees)}</span>
                       </div>
-                      <div className="space-y-0.5 border-t border-indigo-500/40 pt-2 md:pt-0 md:border-t-0 md:border-l md:border-indigo-55 md:pl-4">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-200 block">Total Paid</span>
-                        <span className="text-lg font-black text-emerald-300">{formatCurrency(modalFeesPaid)}</span>
+                      <div className="flex sm:block items-center justify-between space-y-0.5 border-t border-white/15 pt-2 sm:pt-0 sm:border-t-0 sm:border-l sm:border-white/15 sm:pl-4">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#e1c594] block">Total Paid</span>
+                        <span className="text-base sm:text-lg font-black text-[#06d6a0]">{formatCurrency(modalFeesPaid)}</span>
                       </div>
-                      <div className="space-y-0.5 border-t border-indigo-500/40 pt-2 md:pt-0 md:border-t-0 md:border-l md:border-indigo-55 md:pl-4">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-200 block">Fees Balance (Due)</span>
+                      <div className="flex sm:block items-center justify-between space-y-0.5 border-t border-white/15 pt-2 sm:pt-0 sm:border-t-0 sm:border-l sm:border-white/15 sm:pl-4">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#e1c594] block">Fees Balance (Due)</span>
                         <span className={cn(
-                          "text-lg font-black",
-                          computedBalance > 0 ? "text-rose-300" : "text-emerald-300"
+                          "text-base sm:text-lg font-black",
+                          computedBalance > 0 ? "text-[#faae57]" : "text-[#06d6a0]"
                         )}>{formatCurrency(computedBalance)}</span>
                       </div>
                     </div>
@@ -1927,7 +2009,7 @@ export default function StudentManagement() {
                 </div>
               </div>
               
-              <div className="pt-6 border-t border-slate-100 flex gap-4 shrink-0">
+              <div className="pt-4 sm:pt-6 border-t border-[#ecf0ee] flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-4 shrink-0">
                 <button 
                   type="button"
                   onClick={() => {
@@ -1935,19 +2017,19 @@ export default function StudentManagement() {
                     setEditingStudent(null);
                     setPhotoPreview(null);
                   }}
-                  className="flex-1 py-3 px-6 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                  className="flex-1 py-2.5 sm:py-3 px-5 border border-[#bac4c6] text-[#1f2a2e] rounded-xl font-bold hover:bg-[#f6f8f7] transition-all text-xs sm:text-sm cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 py-3 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 py-2.5 sm:py-3 px-5 bg-[#1c4a59] hover:bg-[#163b47] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl font-bold active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Saving to Supabase...</span>
+                      <span>Saving to Database...</span>
                     </>
                   ) : (
                     <>
@@ -1965,49 +2047,54 @@ export default function StudentManagement() {
       {/* Student Biodata & Profile Modal for Teachers & Accountants */}
       <AnimatePresence>
         {selectedProfileStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh] text-[#1f2a2e]"
             >
               {/* Profile Header */}
-              <div className="p-6 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center overflow-hidden border-2 border-white/20 shrink-0">
+              <div className="p-4 sm:p-6 bg-[#1c4a59] text-white flex items-start sm:items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/10 flex items-center justify-center overflow-hidden border-2 border-white/20 shrink-0">
                     {selectedProfileStudent.photo ? (
                       <img src={selectedProfileStudent.photo} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <User className="w-8 h-8 text-indigo-200" />
+                      <User className="w-6 h-6 sm:w-8 sm:h-8 text-[#e1c594]" />
                     )}
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold">{selectedProfileStudent.firstName} {selectedProfileStudent.lastName}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-indigo-200 font-mono tracking-wider">{selectedProfileStudent.studentId}</span>
-                      <span className="text-xs font-semibold px-2 py-0.5 bg-white/15 rounded-md text-white border border-white/20">Active: {selectedProfileStudent.class}</span>
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-xl font-bold text-white leading-tight break-words">
+                      {selectedProfileStudent.firstName} {selectedProfileStudent.lastName}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1">
+                      <span className="text-xs text-[#e1c594] font-mono font-bold tracking-wider">{selectedProfileStudent.studentId}</span>
+                      <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 bg-white/15 rounded-md text-white border border-white/20">
+                        Active: {selectedProfileStudent.class}
+                      </span>
                     </div>
                   </div>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setSelectedProfileStudent(null)}
-                  className="p-1.5 px-3 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  className="py-1.5 px-3 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold text-white transition-all cursor-pointer shrink-0"
                 >
                   Close
                 </button>
               </div>
 
               {/* Profile Tabs Navigation */}
-              <div className="flex border-b border-slate-100 bg-slate-50/50 px-6 gap-2 pt-2">
+              <div className="flex overflow-x-auto no-scrollbar border-b border-[#bac4c6]/60 bg-[#f6f8f7] px-3 sm:px-6 gap-1 sm:gap-2 pt-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setProfileModalTab('details')}
                   className={cn(
-                    "pb-3 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer",
+                    "pb-2.5 sm:pb-3 px-2.5 sm:px-3 text-xs font-bold transition-all border-b-2 cursor-pointer whitespace-nowrap",
                     profileModalTab === 'details'
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
+                      ? "border-[#1c4a59] text-[#1c4a59]"
+                      : "border-transparent text-[#4e6166] hover:text-[#1f2a2e]"
                   )}
                 >
                   Overview & Fees
@@ -2016,16 +2103,16 @@ export default function StudentManagement() {
                   type="button"
                   onClick={() => setProfileModalTab('progression')}
                   className={cn(
-                    "pb-3 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5",
+                    "pb-2.5 sm:pb-3 px-2.5 sm:px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 whitespace-nowrap",
                     profileModalTab === 'progression'
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
+                      ? "border-[#1c4a59] text-[#1c4a59]"
+                      : "border-transparent text-[#4e6166] hover:text-[#1f2a2e]"
                   )}
                 >
-                  <History className="w-3.5 h-3.5" />
+                  <History className="w-3.5 h-3.5 shrink-0" />
                   <span>Class Progression</span>
                   {((selectedProfileStudent.classHistory?.length || 0) + (profileStudentPromotions?.length || 0)) > 0 && (
-                    <span className="px-1.5 py-0.2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-md border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono">
+                    <span className="px-1.5 py-0.5 bg-[#f0f5f7] text-[#1c4a59] rounded-md border border-[#bcd3da] text-[10px] font-mono font-bold">
                       {(selectedProfileStudent.classHistory?.length || profileStudentPromotions?.length || 0)}
                     </span>
                   )}
@@ -2034,16 +2121,16 @@ export default function StudentManagement() {
                   type="button"
                   onClick={() => setProfileModalTab('results')}
                   className={cn(
-                    "pb-3 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5",
+                    "pb-2.5 sm:pb-3 px-2.5 sm:px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 whitespace-nowrap",
                     profileModalTab === 'results'
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
+                      ? "border-[#1c4a59] text-[#1c4a59]"
+                      : "border-transparent text-[#4e6166] hover:text-[#1f2a2e]"
                   )}
                 >
-                  <Award className="w-3.5 h-3.5" />
+                  <Award className="w-3.5 h-3.5 shrink-0" />
                   <span>Results History</span>
                   {profileStudentResults.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-md border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono">
+                    <span className="px-1.5 py-0.5 bg-[#f0f5f7] text-[#1c4a59] rounded-md border border-[#bcd3da] text-[10px] font-mono font-bold">
                       {profileStudentResults.length}
                     </span>
                   )}
@@ -2051,78 +2138,80 @@ export default function StudentManagement() {
               </div>
 
               {/* Tab Content */}
-              <div className="p-6 overflow-y-auto space-y-6 max-h-[calc(90vh-180px)]">
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 flex-1">
                 {profileModalTab === 'details' && (
                   <>
-                    <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <span className="text-xs font-bold text-slate-400 uppercase">Current Class</span>
-                        <p className="text-base font-bold text-slate-800">{selectedProfileStudent.class}</p>
+                    <div className="grid grid-cols-2 gap-3.5 sm:gap-6">
+                      <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                        <span className="text-[10px] font-bold text-[#4e6166] uppercase">Current Class</span>
+                        <p className="text-sm sm:text-base font-bold text-[#1f2a2e] mt-0.5">{selectedProfileStudent.class}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-400 uppercase">Gender</span>
-                        <p className="text-base font-bold text-slate-800">{selectedProfileStudent.gender || 'N/A'}</p>
+                      <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                        <span className="text-[10px] font-bold text-[#4e6166] uppercase">Gender</span>
+                        <p className="text-sm sm:text-base font-bold text-[#1f2a2e] mt-0.5">{selectedProfileStudent.gender || 'N/A'}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-400 uppercase">Date of Birth</span>
-                        <p className="text-base font-bold text-slate-800">{selectedProfileStudent.dateOfBirth || 'N/A'}</p>
+                      <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                        <span className="text-[10px] font-bold text-[#4e6166] uppercase">Date of Birth</span>
+                        <p className="text-sm sm:text-base font-bold text-[#1f2a2e] mt-0.5">{selectedProfileStudent.dateOfBirth || 'N/A'}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-400 uppercase">House Designation</span>
-                        <p className="text-base font-bold text-slate-800">{selectedProfileStudent.house || 'None'}</p>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-100 pt-6">
-                      <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-4">Parental Contacts</h4>
-                      <div className="grid grid-cols-2 gap-6">
-                        <div>
-                          <span className="text-xs font-bold text-slate-400 uppercase">Guardian Name</span>
-                          <p className="text-base font-bold text-slate-800">{selectedProfileStudent.guardianName}</p>
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-slate-400 uppercase">Contact Handset</span>
-                          <p className="text-base font-bold text-indigo-600 font-mono">{selectedProfileStudent.guardianPhone}</p>
-                        </div>
+                      <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                        <span className="text-[10px] font-bold text-[#4e6166] uppercase">House Designation</span>
+                        <p className="text-sm sm:text-base font-bold text-[#1f2a2e] mt-0.5">{selectedProfileStudent.house || 'None'}</p>
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-100 pt-6">
-                      <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-4">Active Term Financial Standing</h4>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="p-4 bg-slate-50 rounded-2xl">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Billed Amount</span>
-                          <p className="text-sm font-bold text-slate-800 mt-1">{formatCurrency(selectedProfileStudent.totalFees)}</p>
+                    <div className="border-t border-[#ecf0ee] pt-4 sm:pt-6">
+                      <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-widest mb-3">Parental Contacts</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
+                        <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                          <span className="text-[10px] font-bold text-[#4e6166] uppercase">Guardian Name</span>
+                          <p className="text-sm sm:text-base font-bold text-[#1f2a2e] mt-0.5 break-words">{selectedProfileStudent.guardianName || '—'}</p>
                         </div>
-                        <div className="p-4 bg-emerald-50 rounded-2xl">
-                          <span className="text-[10px] font-bold text-emerald-600 uppercase">Total Paid</span>
-                          <p className="text-sm font-bold text-emerald-700 mt-1">{formatCurrency(selectedProfileStudent.feesPaid)}</p>
+                        <div className="bg-[#f6f8f7] p-3 rounded-xl border border-[#bac4c6]/50">
+                          <span className="text-[10px] font-bold text-[#4e6166] uppercase">Contact Handset</span>
+                          <p className="text-sm sm:text-base font-bold text-[#1c4a59] font-mono mt-0.5">{selectedProfileStudent.guardianPhone || '—'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-[#ecf0ee] pt-4 sm:pt-6">
+                      <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-widest mb-3">Active Term Financial Standing</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
+                        <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border border-[#bac4c6]/60 rounded-2xl flex sm:block items-center justify-between">
+                          <span className="text-[10px] font-bold text-[#4e6166] uppercase">Billed Amount</span>
+                          <p className="text-sm font-bold text-[#1f2a2e] sm:mt-1 font-mono">{formatCurrency(selectedProfileStudent.totalFees)}</p>
+                        </div>
+                        <div className="p-3.5 sm:p-4 bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl flex sm:block items-center justify-between">
+                          <span className="text-[10px] font-bold text-[#065f46] uppercase">Total Paid</span>
+                          <p className="text-sm font-bold text-[#065f46] sm:mt-1 font-mono">{formatCurrency(selectedProfileStudent.feesPaid)}</p>
                         </div>
                         <div className={cn(
-                          "p-4 rounded-2xl",
-                          selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0 ? "bg-rose-50" : "bg-emerald-50"
+                          "p-3.5 sm:p-4 rounded-2xl border flex sm:block items-center justify-between",
+                          selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0
+                            ? "bg-[#fff1f2] border-[#fecdd3]"
+                            : "bg-[#ecfdf5] border-[#a7f3d0]"
                         )}>
                           <span className={cn(
                             "text-[10px] font-bold uppercase",
-                            selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0 ? "text-rose-600" : "text-emerald-600"
+                            selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0 ? "text-[#9f1239]" : "text-[#065f46]"
                           )}>Outstanding</span>
                           <p className={cn(
-                            "text-sm font-bold mt-1",
-                            selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0 ? "text-rose-700" : "text-emerald-700"
+                            "text-sm font-bold sm:mt-1 font-mono",
+                            selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid > 0 ? "text-[#9f1239]" : "text-[#065f46]"
                           )}>{formatCurrency(selectedProfileStudent.totalFees - selectedProfileStudent.feesPaid)}</p>
                         </div>
                       </div>
 
-                      <div className="mt-4 border border-slate-150 rounded-xl overflow-hidden bg-slate-50/50 p-4">
-                        <p className="text-[10px] font-bold text-indigo-600 uppercase mb-3 tracking-wider">Itemized Bill Breakdown</p>
+                      <div className="mt-3.5 sm:mt-4 border border-[#bac4c6]/60 rounded-xl overflow-hidden bg-[#f6f8f7] p-3.5 sm:p-4">
+                        <p className="text-[10px] font-bold text-[#1c4a59] uppercase mb-2.5 tracking-wider">Itemized Bill Breakdown</p>
                         <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                           {feeTypes.map(ft => {
                             const amount = selectedProfileStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedProfileStudent.totalFees : 0);
                             if (amount === 0) return null;
                             return (
-                              <div key={ft.id} className="flex justify-between items-center text-xs py-1 border-b border-slate-100 last:border-0">
-                                <span className="text-slate-600 font-medium">{ft.label}</span>
-                                <span className="font-bold text-slate-800 font-mono">{formatCurrency(amount)}</span>
+                              <div key={ft.id} className="flex justify-between items-center text-xs py-1 border-b border-[#bac4c6]/40 last:border-0">
+                                <span className="text-[#4e6166] font-semibold">{ft.label}</span>
+                                <span className="font-bold text-[#1f2a2e] font-mono">{formatCurrency(amount)}</span>
                               </div>
                             );
                           })}
@@ -2133,66 +2222,66 @@ export default function StudentManagement() {
                 )}
 
                 {profileModalTab === 'progression' && (
-                  <div className="space-y-6">
+                  <div className="space-y-5 sm:space-y-6">
                     {/* Active Class Highlight */}
-                    <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                    <div className="p-3.5 sm:p-4 bg-[#f0f5f7] border border-[#bcd3da] rounded-2xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                        <div className="w-10 h-10 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center font-bold shrink-0">
                           <GraduationCap className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-indigo-500 uppercase tracking-wider">Current Active Class</p>
-                          <p className="text-base font-black text-slate-800">{selectedProfileStudent.class}</p>
+                          <p className="text-[10px] sm:text-xs font-bold text-[#1c4a59] uppercase tracking-wider">Current Active Class</p>
+                          <p className="text-sm sm:text-base font-black text-[#1f2a2e]">{selectedProfileStudent.class}</p>
                         </div>
                       </div>
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#065f46] bg-[#ecfdf5] border border-[#a7f3d0] px-2.5 py-1 rounded-lg">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#059669]" />
                         <span>Enrolled</span>
                       </span>
                     </div>
 
                     {/* Historical Class Roster Timeline */}
                     <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <History className="w-4 h-4 text-indigo-600" />
+                      <h4 className="text-xs font-bold text-[#4e6166] uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <History className="w-4 h-4 text-[#1c4a59]" />
                         <span>Academic Progression Timeline</span>
                       </h4>
 
                       {((selectedProfileStudent.classHistory && selectedProfileStudent.classHistory.length > 0) || profileStudentPromotions.length > 0) ? (
-                        <div className="relative border-l-2 border-indigo-200 ml-4 pl-6 space-y-6 py-2">
+                        <div className="relative border-l-2 border-[#bcd3da] ml-3 sm:ml-4 pl-5 sm:pl-6 space-y-5 py-2">
                           {/* Current Class Node */}
                           <div className="relative">
-                            <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-indigo-600 border-2 border-white shadow-sm ring-2 ring-indigo-200" />
-                            <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                            <div className="absolute -left-[27px] sm:-left-[31px] top-1 w-4 h-4 rounded-full bg-[#1c4a59] border-2 border-white shadow-sm ring-2 ring-[#bcd3da]" />
+                            <div className="p-3.5 sm:p-4 bg-white border border-[#bac4c6]/80 rounded-2xl shadow-2xs">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-sm font-bold text-slate-800">{selectedProfileStudent.class}</span>
-                                <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md">Present Class</span>
+                                <span className="text-sm font-bold text-[#1f2a2e]">{selectedProfileStudent.class}</span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-[#f0f5f7] text-[#1c4a59] border border-[#bcd3da] rounded-md">Present Class</span>
                               </div>
-                              <p className="text-xs text-slate-500">Currently active academic standing</p>
+                              <p className="text-xs text-[#4e6166]">Currently active academic standing</p>
                             </div>
                           </div>
 
                           {/* Historical Class Nodes */}
                           {selectedProfileStudent.classHistory?.map((hist, idx) => (
                             <div key={idx} className="relative">
-                              <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
-                              <div className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-bold text-slate-700">{hist.class}</span>
-                                  <span className="text-[11px] font-bold text-slate-500 font-mono">{hist.academicYear} • {hist.term}</span>
+                              <div className="absolute -left-[27px] sm:-left-[31px] top-1 w-4 h-4 rounded-full bg-[#6a7f84] border-2 border-white shadow-sm" />
+                              <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-2xl space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-1">
+                                  <span className="text-sm font-bold text-[#1f2a2e]">{hist.class}</span>
+                                  <span className="text-[11px] font-bold text-[#4e6166] font-mono">{hist.academicYear} • {hist.term}</span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100">
+                                <div className="grid grid-cols-2 gap-2 text-xs bg-white p-2.5 rounded-xl border border-[#bac4c6]/50">
                                   <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Archived Billed:</span>
-                                    <p className="font-bold text-slate-800">{formatCurrency(hist.totalFees || 0)}</p>
+                                    <span className="text-[10px] font-bold text-[#4e6166] uppercase">Archived Billed:</span>
+                                    <p className="font-bold text-[#1f2a2e] font-mono">{formatCurrency(hist.totalFees || 0)}</p>
                                   </div>
                                   <div>
-                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">Archived Paid:</span>
-                                    <p className="font-bold text-emerald-700">{formatCurrency(hist.feesPaid || 0)}</p>
+                                    <span className="text-[10px] font-bold text-[#065f46] uppercase">Archived Paid:</span>
+                                    <p className="font-bold text-[#065f46] font-mono">{formatCurrency(hist.feesPaid || 0)}</p>
                                   </div>
                                 </div>
                                 {hist.promotedAt && (
-                                  <p className="text-[10px] text-slate-400">Promoted on {new Date(hist.promotedAt).toLocaleDateString()}</p>
+                                  <p className="text-[10px] text-[#4e6166]">Promoted on {new Date(hist.promotedAt).toLocaleDateString()}</p>
                                 )}
                               </div>
                             </div>
@@ -2201,31 +2290,31 @@ export default function StudentManagement() {
                           {/* Fallback to promotion history if classHistory not populated */}
                           {(!selectedProfileStudent.classHistory || selectedProfileStudent.classHistory.length === 0) && profileStudentPromotions.map((promo, idx) => (
                             <div key={idx} className="relative">
-                              <div className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
-                              <div className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-bold text-slate-700">{promo.sourceClass} &rarr; {promo.destClass}</span>
-                                  <span className="text-[11px] font-bold text-slate-500 font-mono">{promo.academicYear}</span>
+                              <div className="absolute -left-[27px] sm:-left-[31px] top-1 w-4 h-4 rounded-full bg-[#6a7f84] border-2 border-white shadow-sm" />
+                              <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-2xl space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-1">
+                                  <span className="text-sm font-bold text-[#1f2a2e]">{promo.sourceClass} &rarr; {promo.destClass}</span>
+                                  <span className="text-[11px] font-bold text-[#4e6166] font-mono">{promo.academicYear}</span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100">
+                                <div className="grid grid-cols-2 gap-2 text-xs bg-white p-2.5 rounded-xl border border-[#bac4c6]/50">
                                   <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Archived Billed:</span>
-                                    <p className="font-bold text-slate-800">{formatCurrency(promo.previousTotalFees || 0)}</p>
+                                    <span className="text-[10px] font-bold text-[#4e6166] uppercase">Archived Billed:</span>
+                                    <p className="font-bold text-[#1f2a2e] font-mono">{formatCurrency(promo.previousTotalFees || 0)}</p>
                                   </div>
                                   <div>
-                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">Archived Paid:</span>
-                                    <p className="font-bold text-emerald-700">{formatCurrency(promo.previousFeesPaid || 0)}</p>
+                                    <span className="text-[10px] font-bold text-[#065f46] uppercase">Archived Paid:</span>
+                                    <p className="font-bold text-[#065f46] font-mono">{formatCurrency(promo.previousFeesPaid || 0)}</p>
                                   </div>
                                 </div>
-                                <p className="text-[10px] text-slate-400">Promoted on {new Date(promo.timestamp).toLocaleDateString()}</p>
+                                <p className="text-[10px] text-[#4e6166]">Promoted on {new Date(promo.timestamp).toLocaleDateString()}</p>
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="p-6 bg-slate-50 rounded-2xl text-center border border-slate-150">
-                          <p className="text-xs font-bold text-slate-600">First Academic Session Enrolled</p>
-                          <p className="text-xs text-slate-400 mt-1">This student is in their inaugural class ({selectedProfileStudent.class}). Subsequent promotions across academic years will be safely logged here.</p>
+                        <div className="p-5 sm:p-6 bg-[#f6f8f7] rounded-2xl text-center border border-[#bac4c6]/60">
+                          <p className="text-xs font-bold text-[#1f2a2e]">First Academic Session Enrolled</p>
+                          <p className="text-xs text-[#4e6166] mt-1">This student is in their inaugural class ({selectedProfileStudent.class}). Subsequent promotions across academic years will be safely logged here.</p>
                         </div>
                       )}
                     </div>
@@ -2235,44 +2324,68 @@ export default function StudentManagement() {
                 {profileModalTab === 'results' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Historical Exam Results</h4>
-                      <span className="text-xs font-bold text-slate-500 font-mono">{profileStudentResults.length} records found</span>
+                      <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-widest">Historical Exam Results</h4>
+                      <span className="text-xs font-bold text-[#4e6166] font-mono">{profileStudentResults.length} records found</span>
                     </div>
 
                     {profileStudentResults.length > 0 ? (
-                      <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                            <tr>
-                              <th className="py-2.5 px-3">Class & Term</th>
-                              <th className="py-2.5 px-3">Subject</th>
-                              <th className="py-2.5 px-3 text-center">Score (100%)</th>
-                              <th className="py-2.5 px-3 text-center">Grade</th>
-                              <th className="py-2.5 px-3">Remarks</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {profileStudentResults.map((res, i) => (
-                              <tr key={i} className="hover:bg-slate-50/50">
-                                <td className="py-2 px-3 font-semibold text-slate-800">{res.class || selectedProfileStudent.class} • {res.term}</td>
-                                <td className="py-2 px-3 text-slate-700">{res.subject}</td>
-                                <td className="py-2 px-3 text-center font-mono font-bold text-slate-900">{res.totalScore}</td>
-                                <td className="py-2 px-3 text-center">
-                                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-md text-[11px] font-mono">
+                      <div className="border border-[#bac4c6]/80 rounded-2xl overflow-hidden">
+                        {/* Mobile Result Cards (< 640px) */}
+                        <div className="sm:hidden divide-y divide-[#ecf0ee]">
+                          {profileStudentResults.map((res, i) => (
+                            <div key={i} className="p-3.5 bg-white space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-xs text-[#1f2a2e]">{res.subject}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-xs text-[#1f2a2e]">{res.totalScore}%</span>
+                                  <span className="px-2 py-0.5 bg-[#f0f5f7] text-[#1c4a59] border border-[#bcd3da] font-bold rounded-md text-[11px] font-mono">
                                     {res.grade}
                                   </span>
-                                </td>
-                                <td className="py-2 px-3 text-slate-500 italic">{res.remarks || 'Pass'}</td>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] text-[#4e6166]">
+                                <span className="font-semibold">{res.class || selectedProfileStudent.class} • {res.term}</span>
+                                <span className="italic">{res.remarks || 'Pass'}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Tablet/Desktop Table (>= 640px) */}
+                        <div className="hidden sm:block overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-[#f6f8f7] text-[#1c4a59] font-bold border-b border-[#bac4c6]/60">
+                              <tr>
+                                <th className="py-2.5 px-3">Class & Term</th>
+                                <th className="py-2.5 px-3">Subject</th>
+                                <th className="py-2.5 px-3 text-center">Score (100%)</th>
+                                <th className="py-2.5 px-3 text-center">Grade</th>
+                                <th className="py-2.5 px-3">Remarks</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-[#ecf0ee]">
+                              {profileStudentResults.map((res, i) => (
+                                <tr key={i} className="bg-white hover:bg-[#f6f8f7]/80">
+                                  <td className="py-2.5 px-3 font-semibold text-[#1f2a2e]">{res.class || selectedProfileStudent.class} • {res.term}</td>
+                                  <td className="py-2.5 px-3 text-[#1f2a2e]">{res.subject}</td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-[#1f2a2e]">{res.totalScore}</td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <span className="px-2 py-0.5 bg-[#f0f5f7] text-[#1c4a59] border border-[#bcd3da] font-bold rounded-md text-[11px] font-mono">
+                                      {res.grade}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-[#4e6166] italic">{res.remarks || 'Pass'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     ) : (
-                      <div className="p-8 bg-slate-50 rounded-2xl text-center border border-slate-150">
-                        <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <p className="text-xs font-bold text-slate-600">No Terminal Exam Results Recorded Yet</p>
-                        <p className="text-xs text-slate-400 mt-1">Scores entered via the Results Terminal for any term or class are permanently retained and will display here.</p>
+                      <div className="p-6 sm:p-8 bg-[#f6f8f7] rounded-2xl text-center border border-[#bac4c6]/60">
+                        <BookOpen className="w-8 h-8 text-[#bac4c6] mx-auto mb-2" />
+                        <p className="text-xs font-bold text-[#1f2a2e]">No Terminal Exam Results Recorded Yet</p>
+                        <p className="text-xs text-[#4e6166] mt-1">Scores entered via the Results Terminal for any term or class are permanently retained and will display here.</p>
                       </div>
                     )}
                   </div>
@@ -2286,42 +2399,43 @@ export default function StudentManagement() {
       {/* Quick Payment Entry Modal for Accountants */}
       <AnimatePresence>
         {selectedPaymentStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-md overflow-hidden text-[#1f2a2e]"
             >
-              <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Process Fee Payment</h3>
-                  <p className="text-xs text-slate-500">{selectedPaymentStudent.firstName} {selectedPaymentStudent.lastName}</p>
+              <div className="p-4 sm:p-6 bg-[#f6f8f7] border-b border-[#ecf0ee] flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e]">Process Fee Payment</h3>
+                  <p className="text-xs text-[#4e6166] font-medium truncate">{selectedPaymentStudent.firstName} {selectedPaymentStudent.lastName}</p>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setSelectedPaymentStudent(null)}
-                  className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+                  className="text-[#4e6166] hover:text-[#1f2a2e] text-xs sm:text-sm font-bold cursor-pointer shrink-0"
                 >
                   Cancel
                 </button>
               </div>
 
-              <form onSubmit={handleQuickPayment} className="p-6 space-y-4">
-                <div className="p-4 bg-indigo-50/50 rounded-2xl flex justify-between items-center">
+              <form onSubmit={handleQuickPayment} className="p-4 sm:p-6 space-y-4">
+                <div className="p-3.5 sm:p-4 bg-[#f0f5f7] border border-[#bcd3da] rounded-2xl flex justify-between items-center gap-3">
                   <div>
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase">Pending Balance</span>
-                    <p className="text-lg font-black text-slate-800 mt-0.5">
+                    <span className="text-[10px] font-bold text-[#1c4a59] uppercase">Pending Balance</span>
+                    <p className="text-base sm:text-lg font-black text-[#1f2a2e] mt-0.5 font-mono">
                       {formatCurrency(selectedPaymentStudent.totalFees - selectedPaymentStudent.feesPaid)}
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Total Billed</span>
-                    <p className="text-sm font-bold text-slate-600">{formatCurrency(selectedPaymentStudent.totalFees)}</p>
+                    <span className="text-[10px] font-bold text-[#4e6166] uppercase">Total Billed</span>
+                    <p className="text-xs sm:text-sm font-bold text-[#1f2a2e] font-mono">{formatCurrency(selectedPaymentStudent.totalFees)}</p>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Payment Amount (GHS)</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#1f2a2e] uppercase">Payment Amount (GHS)</label>
                   <input 
                     type="number" 
                     required 
@@ -2329,15 +2443,15 @@ export default function StudentManagement() {
                     placeholder="e.g. 500" 
                     value={paymentAmount || ''}
                     onChange={(e) => setPaymentAmount(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-lg text-slate-800"
+                    className="w-full px-3.5 py-2.5 sm:px-4 sm:py-3 bg-white border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#059669] focus:outline-none font-bold text-base sm:text-lg text-[#1f2a2e]"
                   />
                 </div>
 
                 <button 
                   type="submit"
-                  className="w-full bg-emerald-600 text-white font-bold py-3.5 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full bg-[#059669] text-white font-bold py-3 sm:py-3.5 rounded-xl hover:bg-[#047857] transition-all shadow-md flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer"
                 >
-                  <CreditCard className="w-5 h-5" />
+                  <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
                   <span>Receive Payment</span>
                 </button>
               </form>
@@ -2349,70 +2463,73 @@ export default function StudentManagement() {
       {/* Print Friendly Receipt Modal */}
       <AnimatePresence>
         {isReceiptModalOpen && lastPayment && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:p-0">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:p-0">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col print:shadow-none print:rounded-none"
+              className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col print:shadow-none print:rounded-none text-[#1f2a2e]"
             >
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between print:hidden">
-                <span className="font-bold text-slate-800">Payment Invoice Receipt</span>
+              <div className="p-3.5 sm:p-4 border-b border-[#ecf0ee] bg-[#f6f8f7] flex items-center justify-between print:hidden">
+                <span className="font-bold text-sm text-[#1f2a2e]">Payment Invoice Receipt</span>
                 <button 
+                  type="button"
                   onClick={() => setIsReceiptModalOpen(false)}
-                  className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                  className="text-xs font-bold text-[#4e6166] hover:text-[#1f2a2e] cursor-pointer"
                 >
                   Close
                 </button>
               </div>
 
               {/* Printable Area */}
-              <div id="quick-receipt-content" className="p-8 space-y-6">
+              <div id="quick-receipt-content" className="p-5 sm:p-8 space-y-5 sm:space-y-6">
                 <div className="text-center space-y-1">
-                  <h1 className="text-xl font-black text-slate-900 uppercase tracking-tighter">{schoolName}</h1>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Official Fee Receipt</p>
+                  <h1 className="text-lg sm:text-xl font-black text-[#1f2a2e] uppercase tracking-tighter">{schoolName}</h1>
+                  <p className="text-[10px] text-[#4e6166] font-bold uppercase tracking-widest">Official Fee Receipt</p>
                 </div>
 
-                <div className="border-t border-b border-dashed border-slate-200 py-4 space-y-2">
+                <div className="border-t border-b border-dashed border-[#bac4c6] py-3.5 sm:py-4 space-y-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400 font-semibold">Receipt Date:</span>
-                    <span className="text-slate-700 font-bold">{new Date(lastPayment.date).toLocaleDateString()}</span>
+                    <span className="text-[#4e6166] font-semibold">Receipt Date:</span>
+                    <span className="text-[#1f2a2e] font-bold">{new Date(lastPayment.date).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400 font-semibold">Transaction ID:</span>
-                    <span className="text-slate-700 font-mono font-bold">TXN{Math.floor(lastPayment.date / 1000)}</span>
+                    <span className="text-[#4e6166] font-semibold">Transaction ID:</span>
+                    <span className="text-[#1f2a2e] font-mono font-bold">TXN{Math.floor(lastPayment.date / 1000)}</span>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Payment Allocation</p>
-                  <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
+                <div className="space-y-2.5 sm:space-y-3">
+                  <p className="text-xs text-[#4e6166] font-bold uppercase tracking-wider">Payment Allocation</p>
+                  <div className="bg-[#f6f8f7] border border-[#bac4c6]/60 p-3.5 sm:p-4 rounded-2xl space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 font-bold">Amount Paid:</span>
-                      <span className="text-emerald-600 font-black">{formatCurrency(lastPayment.amount)}</span>
+                      <span className="text-[#1f2a2e] font-bold">Amount Paid:</span>
+                      <span className="text-[#065f46] font-black font-mono">{formatCurrency(lastPayment.amount)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100">
+                <div className="text-center text-[10px] text-[#4e6166] pt-3.5 sm:pt-4 border-t border-[#ecf0ee]">
                   Thank you for your prompt payment.<br/>For inquiries contact treasury administration office.
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3 print:hidden">
+              <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border-t border-[#ecf0ee] flex gap-2.5 sm:gap-3 print:hidden">
                 <button 
+                  type="button"
                   onClick={() => exportToPDF('quick-receipt-content', 'Receipt_SchoolSphere')}
-                  className="flex-1 py-2.5 px-4 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-600 flex items-center justify-center gap-1 cursor-pointer"
+                  className="flex-1 py-2.5 px-3 bg-white border border-[#bac4c6] hover:bg-[#ecf0ee] rounded-xl text-xs font-bold text-[#1f2a2e] flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  PDF Receipt
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span>PDF Receipt</span>
                 </button>
                 <button 
+                  type="button"
                   onClick={() => triggerPrint()}
-                  className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer"
+                  className="flex-1 py-2.5 px-3 bg-[#1c4a59] hover:bg-[#163b47] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  Print Receipt
+                  <Printer className="w-3.5 h-3.5 shrink-0" />
+                  <span>Print Receipt</span>
                 </button>
               </div>
             </motion.div>
@@ -2423,46 +2540,47 @@ export default function StudentManagement() {
       {/* Student Promotion Modal */}
       <AnimatePresence>
         {isPromotionModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col"
+              className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col text-[#1f2a2e]"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                    <TrendingUp className="w-5 h-5" />
+              <div className="p-4 sm:p-6 border-b border-[#ecf0ee] flex items-center justify-between gap-3 shrink-0 bg-[#f6f8f7]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0] rounded-xl shrink-0">
+                    <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">Promote Students to Next Class</h3>
-                    <p className="text-xs text-slate-500 font-medium">Batch move students and configure new term fees</p>
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] leading-tight">Promote Students to Next Class</h3>
+                    <p className="text-[11px] sm:text-xs text-[#4e6166] font-medium truncate">Batch move students and configure new term fees</p>
                   </div>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => {
                     setIsPromotionModalOpen(false);
                     setPromoSourceClass('');
                     setPromoDestClass('');
                     setPromoSelectedStudentIds([]);
                   }}
-                  className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                  className="p-1.5 text-[#4e6166] hover:text-[#1f2a2e] rounded-lg hover:bg-[#ecf0ee] transition-colors shrink-0 cursor-pointer"
                 >
-                  <Plus className="w-6 h-6 rotate-45" />
+                  <Plus className="w-5 h-5 sm:w-6 sm:h-6 rotate-45" />
                 </button>
               </div>
 
-              <form onSubmit={handlePromotionSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+              <form onSubmit={handlePromotionSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
                 {/* Academic Year Timing Alert */}
                 {academicConfig.currentTerm !== 'Term 3' ? (
-                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex gap-3">
-                    <span className="text-xl"></span>
+                  <div className="p-3.5 sm:p-4 bg-[#fdf8f0] border border-[#e1c594] rounded-2xl flex gap-2.5 sm:gap-3">
+                    <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-[#807654] shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="text-sm font-bold text-amber-900 leading-snug">
+                      <p className="text-xs sm:text-sm font-bold text-[#1f2a2e] leading-snug">
                         Early Academic Year Promotion Notice
                       </p>
-                      <p className="text-xs text-amber-700 font-medium leading-relaxed">
+                      <p className="text-xs text-[#4e6166] font-medium leading-relaxed">
                         Promotion is designed for the end of the academic year (typically <strong>Term 3</strong>). 
                         The current active school period is configured as <strong>{academicConfig.currentTerm}</strong> of the <strong>{academicConfig.academicYear || '2025/2026'}</strong> academic year.
                         Please verify that you intend to promote students mid-session.
@@ -2470,13 +2588,13 @@ export default function StudentManagement() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex gap-3">
-                    <span className="text-xl"></span>
+                  <div className="p-3.5 sm:p-4 bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl flex gap-2.5 sm:gap-3">
+                    <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-[#065f46] shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="text-sm font-bold text-emerald-950 leading-snug">
+                      <p className="text-xs sm:text-sm font-bold text-[#065f46] leading-snug">
                         End of Academic Year Reached ({academicConfig.academicYear})
                       </p>
-                      <p className="text-xs text-emerald-800 font-medium leading-relaxed">
+                      <p className="text-xs text-[#065f46]/90 font-medium leading-relaxed">
                         You are performing end-of-year student promotions. This batch operation moves students to their next class registers and prepares their bills for the upcoming academic year.
                       </p>
                     </div>
@@ -2484,14 +2602,14 @@ export default function StudentManagement() {
                 )}
 
                 {/* Class Selection Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Source Class (Current)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black text-[#4e6166] uppercase tracking-widest">Source Class (Current)</label>
                     <select 
                       required
                       value={promoSourceClass}
                       onChange={e => setPromoSourceClass(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-600 focus:bg-white transition-all text-sm font-bold text-slate-700"
+                      className="w-full px-3.5 py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl outline-none focus:border-[#1c4a59] focus:bg-white transition-all text-xs sm:text-sm font-bold text-[#1f2a2e]"
                     >
                       <option value="">-- Select Class --</option>
                       {classes?.map(c => (
@@ -2500,13 +2618,13 @@ export default function StudentManagement() {
                     </select>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Destination Class (Next)</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black text-[#4e6166] uppercase tracking-widest">Destination Class (Next)</label>
                     <select 
                       required
                       value={promoDestClass}
                       onChange={e => setPromoDestClass(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-600 focus:bg-white transition-all text-sm font-bold text-slate-700"
+                      className="w-full px-3.5 py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl outline-none focus:border-[#1c4a59] focus:bg-white transition-all text-xs sm:text-sm font-bold text-[#1f2a2e]"
                     >
                       <option value="">-- Select Class --</option>
                       {classes?.map(c => (
@@ -2517,30 +2635,30 @@ export default function StudentManagement() {
                 </div>
 
                 {/* Safe Transition Guarantee Notice */}
-                <div className="p-3.5 bg-emerald-50/90 border border-emerald-200/90 rounded-2xl flex items-start gap-3">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                  <div className="text-xs text-emerald-800 space-y-0.5">
+                <div className="p-3 sm:p-3.5 bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl flex items-start gap-2.5 sm:gap-3">
+                  <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-[#065f46] shrink-0 mt-0.5" />
+                  <div className="text-xs text-[#065f46] space-y-0.5">
                     <p className="font-bold">Permanent Historical Data Guarantee</p>
-                    <p className="text-emerald-700/90 leading-relaxed">
+                    <p className="text-[#065f46]/90 leading-relaxed">
                       Promoting students moves their active enrollment to the next class. All previous terminal exam results, attendance logs, and past fee records are permanently retained in the database.
                     </p>
                   </div>
                 </div>
 
                 {/* Promotion Configurations */}
-                <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Promotion & Year Configurations</p>
+                <div className="bg-[#f6f8f7] p-3.5 sm:p-4 rounded-2xl border border-[#bac4c6]/70 space-y-3.5 sm:space-y-4">
+                  <p className="text-[11px] font-black text-[#1c4a59] uppercase tracking-widest">Promotion & Year Configurations</p>
                   
                   <label className="flex items-start gap-3 cursor-pointer select-none">
                     <input 
                       type="checkbox" 
                       checked={promoResetFees}
                       onChange={e => setPromoResetFees(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 mt-0.5 accent-emerald-600"
+                      className="w-4 h-4 text-[#059669] border-[#bac4c6] rounded focus:ring-[#059669] mt-0.5 accent-[#059669] shrink-0"
                     />
                     <div>
-                      <p className="text-sm font-bold text-slate-700 leading-none">Start New Session with Fresh GHS 0.00 Active Balance</p>
-                      <p className="text-xs text-slate-500 mt-1">Safely archives previous class payment totals in student history and starts a fresh ledger for the new class.</p>
+                      <p className="text-xs sm:text-sm font-bold text-[#1f2a2e] leading-snug">Start New Session with Fresh GHS 0.00 Active Balance</p>
+                      <p className="text-[11px] sm:text-xs text-[#4e6166] mt-0.5">Safely archives previous class payment totals in student history and starts a fresh ledger for the new class.</p>
                     </div>
                   </label>
 
@@ -2549,25 +2667,25 @@ export default function StudentManagement() {
                       type="checkbox" 
                       checked={promoApplyNewDefaults}
                       onChange={e => setPromoApplyNewDefaults(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 mt-0.5 accent-emerald-600"
+                      className="w-4 h-4 text-[#059669] border-[#bac4c6] rounded focus:ring-[#059669] mt-0.5 accent-[#059669] shrink-0"
                     />
                     <div>
-                      <p className="text-sm font-bold text-slate-700 leading-none">Apply Default Fees of Destination Class</p>
-                      <p className="text-xs text-slate-500 mt-1">Recalculates student bills automatically based on active default fee configurations of the new class.</p>
+                      <p className="text-xs sm:text-sm font-bold text-[#1f2a2e] leading-snug">Apply Default Fees of Destination Class</p>
+                      <p className="text-[11px] sm:text-xs text-[#4e6166] mt-0.5">Recalculates student bills automatically based on active default fee configurations of the new class.</p>
                     </div>
                   </label>
 
-                  <div className="pt-2 border-t border-slate-200/60 space-y-3">
+                  <div className="pt-2.5 border-t border-[#bac4c6]/50 space-y-3">
                     <label className="flex items-start gap-3 cursor-pointer select-none">
                       <input 
                         type="checkbox" 
                         checked={promoRolloverYear}
                         onChange={e => setPromoRolloverYear(e.target.checked)}
-                        className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 mt-0.5 accent-emerald-600"
+                        className="w-4 h-4 text-[#059669] border-[#bac4c6] rounded focus:ring-[#059669] mt-0.5 accent-[#059669] shrink-0"
                       />
                       <div>
-                        <p className="text-sm font-bold text-slate-700 leading-none">Roll over School Academic Year</p>
-                        <p className="text-xs text-slate-500 mt-1">Increment the school's global calendar year and set current term back to Term 1.</p>
+                        <p className="text-xs sm:text-sm font-bold text-[#1f2a2e] leading-snug">Roll over School Academic Year</p>
+                        <p className="text-[11px] sm:text-xs text-[#4e6166] mt-0.5">Increment the school's global calendar year and set current term back to Term 1.</p>
                       </div>
                     </label>
 
@@ -2575,18 +2693,18 @@ export default function StudentManagement() {
                       <motion.div 
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
-                        className="pl-7 space-y-2"
+                        className="pl-7 space-y-1.5"
                       >
-                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider">New Academic Year Period</label>
+                        <label className="block text-[11px] font-black text-[#4e6166] uppercase tracking-wider">New Academic Year Period</label>
                         <input 
                           type="text"
                           required={promoRolloverYear}
                           placeholder="e.g. 2026/2027"
                           value={promoNextYearVal}
                           onChange={e => setPromoNextYearVal(e.target.value)}
-                          className="w-full max-w-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-600 text-sm font-bold text-slate-700"
+                          className="w-full sm:max-w-xs px-3 py-1.5 bg-white border border-[#bac4c6] rounded-lg outline-none focus:border-[#1c4a59] text-sm font-bold text-[#1f2a2e]"
                         />
-                        <p className="text-[10px] text-slate-400 font-medium">This will automatically transition active terminals, report cards, and logs to Term 1 of the new academic period.</p>
+                        <p className="text-[10px] text-[#4e6166] font-medium">This will automatically transition active terminals, report cards, and logs to Term 1 of the new academic period.</p>
                       </motion.div>
                     )}
                   </div>
@@ -2595,23 +2713,23 @@ export default function StudentManagement() {
                 {/* Selected Students List */}
                 {promoSourceClass ? (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[11px] font-black text-[#4e6166] uppercase tracking-widest">
                         Students in {promoSourceClass} ({promoSourceStudents.length})
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         <button 
                           type="button"
                           onClick={() => setPromoSelectedStudentIds(promoSourceStudents.map(s => s.id).filter((id): id is number => id !== undefined))}
-                          className="text-[10px] font-bold text-indigo-600 hover:underline"
+                          className="text-[11px] font-bold text-[#1c4a59] hover:underline cursor-pointer"
                         >
                           Select All
                         </button>
-                        <span className="text-[10px] text-slate-300 font-bold">|</span>
+                        <span className="text-[11px] text-[#bac4c6] font-bold">|</span>
                         <button 
                           type="button"
                           onClick={() => setPromoSelectedStudentIds([])}
-                          className="text-[10px] font-bold text-rose-500 hover:underline"
+                          className="text-[11px] font-bold text-[#9f1239] hover:underline cursor-pointer"
                         >
                           Deselect All
                         </button>
@@ -2619,15 +2737,15 @@ export default function StudentManagement() {
                     </div>
 
                     {promoSourceStudents.length > 0 ? (
-                      <div className="max-h-[180px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50 bg-white">
+                      <div className="max-h-[180px] overflow-y-auto border border-[#bac4c6]/80 rounded-xl divide-y divide-[#ecf0ee] bg-white">
                         {promoSourceStudents.map(student => {
                           const isSelected = promoSelectedStudentIds.includes(student.id!);
                           return (
                             <label 
                               key={student.id} 
-                              className="flex items-center justify-between p-3 hover:bg-slate-50/50 cursor-pointer transition-colors"
+                              className="flex items-center justify-between gap-2 p-2.5 sm:p-3 hover:bg-[#f6f8f7] cursor-pointer transition-colors"
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
                                 <input 
                                   type="checkbox" 
                                   checked={isSelected}
@@ -2638,13 +2756,13 @@ export default function StudentManagement() {
                                       setPromoSelectedStudentIds([...promoSelectedStudentIds, student.id!]);
                                     }
                                   }}
-                                  className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 accent-emerald-600"
+                                  className="w-4 h-4 text-[#059669] border-[#bac4c6] rounded focus:ring-[#059669] accent-[#059669] shrink-0"
                                 />
-                                <span className="text-sm font-bold text-slate-700">
+                                <span className="text-xs sm:text-sm font-bold text-[#1f2a2e] truncate">
                                   {student.firstName} {student.lastName}
                                 </span>
                               </div>
-                              <span className="font-mono text-xs text-slate-400 font-medium">
+                              <span className="font-mono text-xs text-[#1c4a59] bg-[#f0f5f7] px-2 py-0.5 rounded border border-[#bcd3da] font-bold shrink-0">
                                 {student.studentId}
                               </span>
                             </label>
@@ -2652,20 +2770,20 @@ export default function StudentManagement() {
                         })}
                       </div>
                     ) : (
-                      <p className="text-center text-xs text-slate-400 py-6 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      <p className="text-center text-xs text-[#4e6166] py-6 italic bg-[#f6f8f7] rounded-xl border border-dashed border-[#bac4c6]">
                         No students found registered in {promoSourceClass}
                       </p>
                     )}
                   </div>
                 ) : (
-                  <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
-                    <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs font-semibold text-slate-500">Select a source class to view and choose students for promotion</p>
+                  <div className="p-6 sm:p-8 text-center bg-[#f6f8f7] border border-dashed border-[#bac4c6] rounded-2xl">
+                    <Users className="w-8 h-8 text-[#bac4c6] mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-[#4e6166]">Select a source class to view and choose students for promotion</p>
                   </div>
                 )}
 
                 {/* Form Action Buttons */}
-                <div className="flex gap-3 pt-2">
+                <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-2">
                   <button 
                     type="button"
                     onClick={() => {
@@ -2674,14 +2792,14 @@ export default function StudentManagement() {
                       setPromoDestClass('');
                       setPromoSelectedStudentIds([]);
                     }}
-                    className="flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition-colors"
+                    className="flex-1 py-2.5 sm:py-3 bg-white border border-[#bac4c6] hover:bg-[#f6f8f7] rounded-xl text-xs sm:text-sm font-bold text-[#1f2a2e] transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit"
                     disabled={!promoSourceClass || !promoDestClass || promoSelectedStudentIds.length === 0}
-                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-md shadow-emerald-50 flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 py-2.5 sm:py-3 bg-[#059669] hover:bg-[#047857] disabled:bg-[#ecf0ee] disabled:text-[#6a7f84] disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer"
                   >
                     <Check className="w-4 h-4" />
                     <span>Promote Selected</span>

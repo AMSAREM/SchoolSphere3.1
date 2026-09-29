@@ -2,7 +2,7 @@ import { useState } from 'react';
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Teacher, type Subject, type ClassInfo } from '../db/schema';
-import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer } from 'lucide-react';
+import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn, triggerPrint } from '../lib/utils';
 import { teachersApi, classesApi, subjectsApi } from '../lib/api';
@@ -19,7 +19,7 @@ export default function AcademicManagement() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-5 text-[#1f2a2e] min-w-0">
       {/* Print Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -32,51 +32,69 @@ export default function AcademicManagement() {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-hide no-scrollbar items-center justify-between print:hidden">
-        <div className="flex">
+      {/* Responsive Equal-Width 3-Tab Bar + Compact Print Action */}
+      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+        <div className="flex-1 grid grid-cols-3 sm:flex sm:flex-initial">
           <button
+            type="button"
             onClick={() => setActiveTab('teachers')}
             className={cn(
-              "px-6 py-3 font-bold text-sm transition-all border-b-2 whitespace-nowrap shrink-0",
-              activeTab === 'teachers' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
+              "px-2 sm:px-5 py-2.5 sm:py-3 font-bold text-xs sm:text-sm transition-all border-b-2 whitespace-nowrap text-center flex items-center justify-center gap-1.5 cursor-pointer",
+              activeTab === 'teachers'
+                ? "border-[#1c4a59] text-[#1c4a59]"
+                : "border-transparent text-[#6a7f84] hover:text-[#1f2a2e]"
             )}
           >
-            Teachers
+            <Users className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'teachers' ? "text-[#faae57]" : "text-[#6a7f84]")} />
+            <span>Teachers</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('classes')}
             className={cn(
-              "px-6 py-3 font-bold text-sm transition-all border-b-2 whitespace-nowrap shrink-0",
-              activeTab === 'classes' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
+              "px-2 sm:px-5 py-2.5 sm:py-3 font-bold text-xs sm:text-sm transition-all border-b-2 whitespace-nowrap text-center flex items-center justify-center gap-1.5 cursor-pointer",
+              activeTab === 'classes'
+                ? "border-[#1c4a59] text-[#1c4a59]"
+                : "border-transparent text-[#6a7f84] hover:text-[#1f2a2e]"
             )}
           >
-            Classes
+            <GraduationCap className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'classes' ? "text-[#faae57]" : "text-[#6a7f84]")} />
+            <span>Classes</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('subjects')}
             className={cn(
-              "px-6 py-3 font-bold text-sm transition-all border-b-2 whitespace-nowrap shrink-0",
-              activeTab === 'subjects' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
+              "px-2 sm:px-5 py-2.5 sm:py-3 font-bold text-xs sm:text-sm transition-all border-b-2 whitespace-nowrap text-center flex items-center justify-center gap-1.5 cursor-pointer",
+              activeTab === 'subjects'
+                ? "border-[#1c4a59] text-[#1c4a59]"
+                : "border-transparent text-[#6a7f84] hover:text-[#1f2a2e]"
             )}
           >
-            Subjects
+            <Book className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'subjects' ? "text-[#faae57]" : "text-[#6a7f84]")} />
+            <span>Subjects</span>
           </button>
         </div>
         
         <button 
+          type="button"
           onClick={triggerPrint}
-          className="print:hidden flex items-center gap-2 px-4 py-1.5 mr-4 text-slate-500 hover:text-indigo-600 transition-colors text-xs font-bold"
+          title="Print Active List"
+          className="print:hidden flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 text-[#1c4a59] hover:text-[#1f2a2e] bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] rounded-xl transition-colors text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.98]"
         >
-          <Printer className="w-4 h-4" />
-          Print List
+          <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+          <span className="hidden sm:inline">Print List</span>
+          <span className="sm:hidden">Print</span>
         </button>
       </div>
 
+      {/* Selected Element: Active Tab Content Container (div:nth-of-type(3)) */}
       <motion.div
         key={activeTab}
         initial={{ opacity: 0, x: 10 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.2 }}
+        className="w-full min-w-0"
       >
         {activeTab === 'teachers' && <TeacherList />}
         {activeTab === 'classes' && <ClassList />}
@@ -154,127 +172,191 @@ function TeacherList() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+    <div className="space-y-3 sm:space-y-4 min-w-0">
+      {/* Compact Single-Row Search & Add Toolbar */}
+      <div className="flex items-center justify-between gap-2 sm:gap-3 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
+        <div className="relative flex-1 min-w-0 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
           <input 
             type="text"
-            placeholder="Search teachers..."
+            placeholder="Search teachers by name or ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <button 
+          type="button"
           onClick={() => {
             setEditingTeacher(null);
             setIsModalOpen(true);
             setSelectedClasses([]);
             setSelectedSubjects([]);
           }}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-indigo-700"
+          className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
         >
-          <Plus className="w-4 h-4" /> Add Teacher
+          <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+          <span>Add Teacher</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {teachers?.map(teacher => (
-          <div key={teacher.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-4">
-                <div className="w-11 h-11 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold uppercase text-sm">
-                  {(teacher.firstName?.[0] || '')}{(teacher.lastName?.[0] || '') || 'T'}
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => openEditModal(teacher)}
-                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => teachersApi.delete(teacher.id!)}
-                    className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              <h4 className="font-bold text-slate-900">{teacher.firstName} {teacher.lastName}</h4>
-              <p className="text-xs text-slate-400 font-mono mb-2">{teacher.staffId}</p>
-              <p className="text-sm text-slate-600 mb-4">{teacher.phone}</p>
-              
-              {(teacher.assignedClasses || []).length > 0 && (
-                <div className="mb-3">
-                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Assigned Classes</p>
-                  <div className="flex flex-wrap gap-1">
-                    {teacher.assignedClasses.map(c => (
-                      <span key={c} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md">
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(teacher.subjects || []).length > 0 && (
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Subjects</p>
-                  <div className="flex flex-wrap gap-1">
-                    {teacher.subjects.map(s => (
-                      <span key={s} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-md">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+      {/* High-Density Teachers List-Card Grid */}
+      {teachers && teachers.length === 0 ? (
+        <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-6 sm:p-10 text-center text-[#6a7f84]">
+          <div className="w-11 h-11 rounded-2xl bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mx-auto mb-2.5">
+            <Users className="w-5 h-5" />
           </div>
-        ))}
-      </div>
+          <p className="font-bold text-[#1f2a2e] text-sm sm:text-base">No teachers found</p>
+          <p className="text-xs text-[#6a7f84] mt-0.5">Try adjusting your search or add a new teacher record.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
+          {teachers?.map(teacher => (
+            <div key={teacher.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-[#bac4c6]/80 hover:border-[#1c4a59]/60 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col justify-between text-[#1f2a2e] transition-colors min-w-0">
+              <div className="min-w-0">
+                <div className="flex justify-between items-start gap-2.5 mb-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 rounded-xl flex items-center justify-center font-bold uppercase text-xs sm:text-sm shrink-0">
+                      {(teacher.firstName?.[0] || '')}{(teacher.lastName?.[0] || '') || 'T'}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm leading-snug truncate">
+                        {teacher.firstName} {teacher.lastName}
+                      </h4>
+                      <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] mt-0.5">
+                        <span className="font-bold text-[#807654] font-mono tabular-nums">{teacher.staffId}</span>
+                        {teacher.phone && (
+                          <>
+                            <span className="text-[#bac4c6]" aria-hidden="true">·</span>
+                            <span className="font-semibold text-[#6a7f84] font-mono tabular-nums truncate">{teacher.phone}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 print:hidden">
+                    <button 
+                      type="button"
+                      onClick={() => openEditModal(teacher)}
+                      title="Edit Teacher"
+                      className="w-8 h-8 flex items-center justify-center text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#1c4a59]/10 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => teachersApi.delete(teacher.id!)}
+                      title="Delete Teacher"
+                      className="w-8 h-8 flex items-center justify-center text-[#6a7f84] hover:text-[#ef476f] bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
 
+                {teacher.email && (
+                  <p className="text-[11px] text-[#6a7f84] truncate mb-2 pb-2 border-b border-[#bac4c6]/40">
+                    {teacher.email}
+                  </p>
+                )}
+                
+                <div className={cn("space-y-1.5", !teacher.email && "pt-2 border-t border-[#bac4c6]/40")}>
+                  {(teacher.assignedClasses || []).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] font-bold text-[#807654] uppercase tracking-wider mr-0.5">Classes:</span>
+                      {teacher.assignedClasses.map(c => (
+                        <span key={c} className="px-1.5 py-0.5 bg-[#1c4a59]/10 text-[#1c4a59] border border-[#1c4a59]/20 text-[10px] font-bold rounded-md">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {(teacher.subjects || []).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider mr-0.5">Subjects:</span>
+                      {teacher.subjects.map(s => (
+                        <span key={s} className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#1f2a2e] border border-[#bac4c6]/80 text-[10px] font-bold rounded-md">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {(teacher.assignedClasses || []).length === 0 && (teacher.subjects || []).length === 0 && (
+                    <p className="text-[11px] text-[#6a7f84] italic">No classes or subjects assigned yet</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Responsive Add/Edit Teacher Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-6 text-slate-800">{editingTeacher ? 'Edit Teacher' : 'Add New Teacher'}</h3>
-            <form onSubmit={handleTeacherSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
+          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
+            <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Users className="w-4 h-4 sm:w-5 sm:h-5 text-[#faae57] shrink-0" />
+                <h3 className="text-sm sm:text-lg font-bold text-white truncate">
+                  {editingTeacher ? 'Edit Teacher Record' : 'Add New Teacher'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleTeacherSubmit} className="p-3.5 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">First Name</label>
-                  <input name="firstName" defaultValue={editingTeacher?.firstName} placeholder="First Name" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">First Name</label>
+                  <input name="firstName" defaultValue={editingTeacher?.firstName} placeholder="First Name" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Last Name</label>
-                  <input name="lastName" defaultValue={editingTeacher?.lastName} placeholder="Last Name" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Last Name</label>
+                  <input name="lastName" defaultValue={editingTeacher?.lastName} placeholder="Last Name" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Phone</label>
-                  <input name="phone" defaultValue={editingTeacher?.phone} placeholder="Phone Number" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Phone</label>
+                  <input name="phone" defaultValue={editingTeacher?.phone} placeholder="Phone Number" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none font-mono" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
-                  <input name="email" type="email" defaultValue={editingTeacher?.email} placeholder="Email Address" className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Email</label>
+                  <input name="email" type="email" defaultValue={editingTeacher?.email} placeholder="Email Address" className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Assign Classes</label>
-                <div className="flex flex-wrap gap-2">
+              <div className="space-y-1.5 pt-0.5">
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Assign Classes</label>
+                <div className="flex flex-wrap gap-1.5 max-h-28 sm:max-h-36 overflow-y-auto p-2 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/60">
                   {classes?.map(cls => (
                     <button
                       key={cls.id}
                       type="button"
                       onClick={() => toggleClass(cls.name)}
                       className={cn(
-                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                        "px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer",
                         selectedClasses.includes(cls.name)
-                          ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                          ? "bg-[#1c4a59] border-[#1c4a59] text-[#faae57]"
+                          : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:border-[#1c4a59]"
                       )}
                     >
                       {cls.name}
@@ -283,19 +365,19 @@ function TeacherList() {
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Assign Subjects</label>
-                <div className="flex flex-wrap gap-2">
+              <div className="space-y-1.5 pt-0.5">
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Assign Subjects</label>
+                <div className="flex flex-wrap gap-1.5 max-h-28 sm:max-h-36 overflow-y-auto p-2 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/60">
                   {subjects?.map(sub => (
                     <button
                       key={sub.id}
                       type="button"
                       onClick={() => toggleSubject(sub.name)}
                       className={cn(
-                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                        "px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer",
                         selectedSubjects.includes(sub.name)
-                          ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                          ? "bg-[#1c4a59] border-[#1c4a59] text-[#faae57]"
+                          : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:border-[#1c4a59]"
                       )}
                     >
                       {sub.name}
@@ -304,9 +386,9 @@ function TeacherList() {
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-6">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
-                <button id="teacher-submit-btn" type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 cursor-pointer transition-all active:scale-[0.99]">{editingTeacher ? 'Update Teacher' : 'Save Teacher'}</button>
+              <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-[#bac4c6]/50">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="w-full py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl font-bold text-xs sm:text-sm text-[#1f2a2e] hover:bg-[#e1c594]/30 cursor-pointer transition-colors">Cancel</button>
+                <button id="teacher-submit-btn" type="submit" className="w-full py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer transition-all active:scale-[0.98]">{editingTeacher ? 'Update Teacher' : 'Save Teacher'}</button>
               </div>
             </form>
           </div>
@@ -352,68 +434,125 @@ function ClassList() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+    <div className="space-y-3 sm:space-y-4 min-w-0">
+      {/* Compact Single-Row Search & Add Toolbar */}
+      <div className="flex items-center justify-between gap-2 sm:gap-3 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
+        <div className="relative flex-1 min-w-0 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
           <input 
             type="text"
-            placeholder="Search classes..."
+            placeholder="Search classes by name or level..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <button 
+          type="button"
           onClick={() => {
             setEditingClass(null);
             setIsModalOpen(true);
           }}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-indigo-700"
+          className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
         >
-          <Plus className="w-4 h-4" /> Add Class
+          <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+          <span>Add Class</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {classes?.map(cls => (
-          <div key={cls.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative group">
-            <GraduationCap className="w-8 h-8 text-indigo-200 mb-2" />
-            <h4 className="font-bold text-slate-900 border-b pb-2 mb-2">{cls.name}</h4>
-            <p className="text-xs text-indigo-600 font-bold uppercase">{cls.level}</p>
-            <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-              <button 
-                onClick={() => openEditModal(cls)}
-                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+      {/* Compact 2-Column Mobile Classes Card Grid */}
+      {classes && classes.length === 0 ? (
+        <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-6 sm:p-10 text-center text-[#6a7f84]">
+          <div className="w-11 h-11 rounded-2xl bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mx-auto mb-2.5">
+            <GraduationCap className="w-5 h-5" />
+          </div>
+          <p className="font-bold text-[#1f2a2e] text-sm sm:text-base">No classes found</p>
+          <p className="text-xs text-[#6a7f84] mt-0.5">Try adjusting your search or add a new class level.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+          {classes?.map(cls => (
+            <div key={cls.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-[#bac4c6]/80 hover:border-[#1c4a59]/60 shadow-[0_2px_10px_rgba(0,0,0,0.04)] relative group text-[#1f2a2e] transition-colors min-w-0">
+              <div className="flex items-center justify-between gap-1.5 mb-2">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#1c4a59]/10 border border-[#1c4a59]/20 rounded-xl flex items-center justify-center text-[#1c4a59] shrink-0">
+                  <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                <div className="flex items-center gap-1 print:hidden">
+                  <button 
+                    type="button"
+                    onClick={() => openEditModal(cls)}
+                    title="Edit Class"
+                    className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#1c4a59]/10 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                  >
+                    <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => classesApi.delete(cls.id!)}
+                    title="Delete Class"
+                    className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-[#6a7f84] hover:text-[#ef476f] bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                  >
+                    <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm border-b border-[#bac4c6]/40 pb-1.5 mb-1.5 truncate" title={cls.name}>
+                {cls.name}
+              </h4>
+              <p className="text-[10px] sm:text-[11px] text-[#807654] font-bold uppercase tracking-wider truncate" title={cls.level}>
+                {cls.level}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Responsive Add/Edit Class Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
+          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-[#bac4c6]">
+            <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5 text-[#faae57] shrink-0" />
+                <h3 className="text-sm sm:text-lg font-bold text-white truncate">
+                  {editingClass ? 'Edit Class' : 'Add New Class'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
               >
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
-              <button 
-                onClick={() => classesApi.delete(cls.id!)}
-                className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
-          </div>
-        ))}
-      </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold mb-6">{editingClass ? 'Edit Class' : 'Add New Class'}</h3>
-            <form onSubmit={handleClassSubmit} className="space-y-4">
-              <input name="name" defaultValue={editingClass?.name} placeholder="Class Name (e.g., Primary 1A)" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-              <select name="level" defaultValue={editingClass?.level} className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
-                <option>Lower Primary</option>
-                <option>Upper Primary</option>
-                <option>Junior High School</option>
-                <option>Senior High School</option>
-              </select>
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-slate-200 rounded-xl font-bold">Cancel</button>
-                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">{editingClass ? 'Update' : 'Save'}</button>
+            <form onSubmit={handleClassSubmit} className="p-3.5 sm:p-6 space-y-3 sm:space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Class Name</label>
+                <input name="name" defaultValue={editingClass?.name} placeholder="Class Name (e.g., Primary 1A)" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Academic Level</label>
+                <select name="level" defaultValue={editingClass?.level} className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none">
+                  <option>Lower Primary</option>
+                  <option>Upper Primary</option>
+                  <option>Junior High School</option>
+                  <option>Senior High School</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-[#bac4c6]/50">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="w-full py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl font-bold text-xs sm:text-sm text-[#1f2a2e] hover:bg-[#e1c594]/30 cursor-pointer transition-colors">Cancel</button>
+                <button type="submit" className="w-full py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer transition-all active:scale-[0.98]">{editingClass ? 'Update' : 'Save'}</button>
               </div>
             </form>
           </div>
@@ -445,9 +584,6 @@ function SubjectList() {
     setSelectedClasses(prev => 
       prev.includes(className) ? prev.filter(c => c !== className) : [...prev, className]
     );
-    if (selectedClasses.includes(className) && selectedClasses.length === 1) {
-      // If we are removing the last class, we don't automatically go to "All Classes" but the user might want to
-    }
     setIsAllClasses(false);
   };
 
@@ -480,102 +616,143 @@ function SubjectList() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+    <div className="space-y-3 sm:space-y-4 min-w-0">
+      {/* Compact Single-Row Search & Add Toolbar */}
+      <div className="flex items-center justify-between gap-2 sm:gap-3 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
+        <div className="relative flex-1 min-w-0 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
           <input 
             type="text"
-            placeholder="Search subjects..."
+            placeholder="Search subjects by name or code..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
           />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <button 
+          type="button"
           onClick={() => {
             setEditingSubject(null);
             setIsModalOpen(true);
             setSelectedClasses([]);
             setIsAllClasses(true);
           }}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-indigo-700"
+          className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
         >
-          <Plus className="w-4 h-4" /> Add Subject
+          <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+          <span>Add Subject</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {subjects?.map(sub => (
-          <div key={sub.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                  <Book className="w-5 h-5" />
+      {/* High-Density Subjects List-Card Grid */}
+      {subjects && subjects.length === 0 ? (
+        <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-6 sm:p-10 text-center text-[#6a7f84]">
+          <div className="w-11 h-11 rounded-2xl bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mx-auto mb-2.5">
+            <Book className="w-5 h-5" />
+          </div>
+          <p className="font-bold text-[#1f2a2e] text-sm sm:text-base">No subjects found</p>
+          <p className="text-xs text-[#6a7f84] mt-0.5">Try adjusting your search or add a new curriculum subject.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
+          {subjects?.map(sub => (
+            <div key={sub.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-[#bac4c6]/80 hover:border-[#1c4a59]/60 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col justify-between text-[#1f2a2e] transition-colors min-w-0">
+              <div className="flex items-start justify-between gap-2.5 mb-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 bg-[#1c4a59]/10 border border-[#1c4a59]/20 rounded-xl flex items-center justify-center text-[#1c4a59] shrink-0">
+                    <Book className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm truncate">{sub.name}</h4>
+                    <p className="text-[10px] sm:text-[11px] font-bold text-[#807654] font-mono tabular-nums">{sub.code}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-slate-900">{sub.name}</h4>
-                  <p className="text-xs text-slate-400 font-mono">{sub.code}</p>
+                <div className="flex items-center gap-1 shrink-0 print:hidden">
+                  <button 
+                    type="button"
+                    onClick={() => openEditModal(sub)}
+                    title="Edit Subject"
+                    className="w-8 h-8 flex items-center justify-center text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#1c4a59]/10 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => subjectsApi.delete(sub.id!)}
+                    title="Delete Subject"
+                    className="w-8 h-8 flex items-center justify-center text-[#6a7f84] hover:text-[#ef476f] bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => openEditModal(sub)}
-                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => subjectsApi.delete(sub.id!)}
-                  className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="mt-2">
-              <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Applicable Classes</p>
-              <div className="flex flex-wrap gap-1">
+              
+              <div className="pt-2 border-t border-[#bac4c6]/40 flex flex-wrap items-center gap-1">
+                <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider mr-0.5">Classes:</span>
                 {sub.applicableClasses?.includes('All') ? (
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-md">
+                  <span className="px-2 py-0.5 bg-[#06d6a0]/15 text-[#065f46] border border-[#06d6a0]/40 text-[10px] font-bold rounded-md">
                     All Classes
                   </span>
                 ) : (
                   sub.applicableClasses?.map(c => (
-                    <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-md">
+                    <span key={c} className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#1c4a59] border border-[#bac4c6]/80 text-[10px] font-bold rounded-md">
                       {c}
                     </span>
                   ))
                 )}
                 {(!sub.applicableClasses || sub.applicableClasses.length === 0) && (
-                   <span className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[10px] font-bold rounded-md">
+                  <span className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#6a7f84] border border-[#bac4c6]/60 text-[10px] font-bold rounded-md">
                     Not Assigned
                   </span>
                 )}
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
+      {/* Responsive Add/Edit Subject Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold mb-6">{editingSubject ? 'Edit Subject' : 'Add New Subject'}</h3>
-            <form onSubmit={handleSubjectSubmit} className="space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
+          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
+            <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Book className="w-4 h-4 sm:w-5 sm:h-5 text-[#faae57] shrink-0" />
+                <h3 className="text-sm sm:text-lg font-bold text-white truncate">
+                  {editingSubject ? 'Edit Subject' : 'Add New Subject'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubjectSubmit} className="p-3.5 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Subject Name</label>
-                <input name="name" defaultValue={editingSubject?.name} placeholder="Subject Name" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Subject Name</label>
+                <input name="name" defaultValue={editingSubject?.name} placeholder="Subject Name" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Subject Code</label>
-                <input name="code" defaultValue={editingSubject?.code} placeholder="Subject Code" required className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Subject Code</label>
+                <input name="code" defaultValue={editingSubject?.code} placeholder="Subject Code (e.g., ENG-101)" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none font-mono" />
               </div>
 
-              <div className="space-y-2 pt-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Applicable Classes</label>
+              <div className="space-y-1.5 pt-0.5">
+                <div className="flex justify-between items-center gap-2">
+                  <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Applicable Classes</label>
                   <button 
                     type="button"
                     onClick={() => {
@@ -583,24 +760,26 @@ function SubjectList() {
                       setSelectedClasses([]);
                     }}
                     className={cn(
-                      "text-[10px] font-bold px-2 py-0.5 rounded",
-                      isAllClasses ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+                      "text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer",
+                      isAllClasses
+                        ? "bg-[#06d6a0]/20 border-[#06d6a0]/50 text-[#065f46]"
+                        : "bg-[#f6f8f7] border-[#bac4c6] text-[#6a7f84] hover:text-[#1f2a2e]"
                     )}
                   >
                     All Classes
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5 max-h-32 sm:max-h-40 overflow-y-auto p-2 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/60">
                   {classes?.map(cls => (
                     <button
                       key={cls.id}
                       type="button"
                       onClick={() => toggleClass(cls.name)}
                       className={cn(
-                        "px-3 py-1 text-xs font-bold transition-all border rounded-lg",
+                        "px-2.5 py-1 text-xs font-bold transition-all border rounded-lg cursor-pointer",
                         selectedClasses.includes(cls.name)
-                          ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                          ? "bg-[#1c4a59] border-[#1c4a59] text-[#faae57]"
+                          : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:border-[#1c4a59]"
                       )}
                     >
                       {cls.name}
@@ -609,9 +788,9 @@ function SubjectList() {
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-slate-200 rounded-xl font-bold text-slate-600">Cancel</button>
-                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">{editingSubject ? 'Update' : 'Save'}</button>
+              <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-[#bac4c6]/50">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="w-full py-2.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl font-bold text-xs sm:text-sm text-[#1f2a2e] hover:bg-[#e1c594]/30 cursor-pointer transition-colors">Cancel</button>
+                <button type="submit" className="w-full py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer transition-all active:scale-[0.98]">{editingSubject ? 'Update' : 'Save'}</button>
               </div>
             </form>
           </div>
@@ -620,3 +799,5 @@ function SubjectList() {
     </div>
   );
 }
+
+

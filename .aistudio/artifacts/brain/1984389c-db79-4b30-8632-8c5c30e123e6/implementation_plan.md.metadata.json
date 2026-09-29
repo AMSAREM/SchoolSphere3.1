@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to optimize the Student Directory toolbar across all screen sizes by consolidating CSV Template, Import CSV, Export, and Print into a single clean dropdown menu, using a full-width search bar with wrapped controls below 1280px (xl), and aligning all controls in a single row on wide desktop screens.",
-  "updatedAt":  "2026-09-29T11:50:32.722046430Z",
+  "summary":  "Implementation plan to optimize the selected Attendance module Deep Teal Header Card (div#print-attendance > div:nth-of-type(2)) and Student Roll Call Cards for all small screens using a 2x2 status counter grid, side-by-side Date and Class filters, compact action grid, and stacked mobile student status controls.",
+  "updatedAt":  "2026-09-29T13:32:15.389443541Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

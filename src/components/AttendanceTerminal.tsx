@@ -13,7 +13,8 @@ import {
   Printer,
   RefreshCw,
   ShieldCheck,
-  MessageSquare
+  MessageSquare,
+  ChevronDown
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -75,6 +76,25 @@ export default function AttendanceTerminal() {
   // Optional note/reason state per student
   const [openNoteStudentIds, setOpenNoteStudentIds] = useState<Set<string>>(new Set());
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [isBulkMenuOpen, setIsBulkMenuOpen] = useState(false);
+  const bulkMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+      if (bulkMenuRef.current && !bulkMenuRef.current.contains(e.target as Node)) {
+        setIsBulkMenuOpen(false);
+      }
+    };
+    if (isExportMenuOpen || isBulkMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isExportMenuOpen, isBulkMenuOpen]);
 
   const migratedKeysRef = useRef<Set<string>>(new Set());
 
@@ -749,7 +769,7 @@ export default function AttendanceTerminal() {
   };
 
   return (
-    <div className="space-y-6" id="print-attendance">
+    <div className="space-y-4 sm:space-y-6 min-w-0" id="print-attendance">
       {/* Print Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -766,14 +786,14 @@ export default function AttendanceTerminal() {
         </div>
       </div>
 
-      {/* Deep Teal Hero Header Card */}
-      <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col gap-5 print:hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
-                <CalendarDays className="w-3.5 h-3.5 text-[#faae57]" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+      {/* Selected Element (div#print-attendance > div:nth-of-type(2)): Deep Teal Hero Header Card */}
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col gap-3.5 sm:gap-5 print:hidden min-w-0">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4 min-w-0">
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-white/10 border border-white/15">
+                <CalendarDays className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
                   Daily Roll Call & Register
                 </span>
               </div>
@@ -783,7 +803,7 @@ export default function AttendanceTerminal() {
                 onClick={() => fetchAttendanceFromSupabase(true)}
                 disabled={syncState === 'loading' || syncState === 'saving'}
                 title="Sync attendance records with Supabase"
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                   syncState === 'error'
                     ? 'bg-[#ef476f] text-white'
                     : syncState === 'saving' || syncState === 'loading'
@@ -791,72 +811,83 @@ export default function AttendanceTerminal() {
                     : 'bg-[#06d6a0]/20 text-[#06d6a0] hover:bg-[#06d6a0]/30'
                 }`}
               >
-                <RefreshCw className={`w-3 h-3 ${syncState === 'loading' || syncState === 'saving' ? 'animate-spin' : ''}`} />
-                {syncState === 'loading'
-                  ? 'Loading Supabase…'
-                  : syncState === 'saving'
-                  ? 'Saving to Supabase…'
-                  : syncState === 'error'
-                  ? 'Sync Error — Retry'
-                  : `Supabase Synced (${filteredAttendance.length}/${students.length})`}
+                <RefreshCw className={`w-3 h-3 shrink-0 ${syncState === 'loading' || syncState === 'saving' ? 'animate-spin' : ''}`} />
+                <span className="truncate">
+                  {syncState === 'loading'
+                    ? 'Loading…'
+                    : syncState === 'saving'
+                    ? 'Saving…'
+                    : syncState === 'error'
+                    ? 'Sync Error — Retry'
+                    : `Synced (${filteredAttendance.length}/${students.length})`}
+                </span>
               </button>
             </div>
 
-            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+            <h2 className="text-lg sm:text-2xl lg:text-[26px] font-extrabold tracking-tight text-white leading-tight truncate">
               {isParent ? 'My Wards Daily Attendance' : `Class Attendance • ${selectedClass}`}
             </h2>
-            <p className="text-sm text-[#e1c594]/90 font-medium">
-              {format(new Date(selectedDate), 'EEEE, MMMM do, yyyy')} • {students?.length || 0} Students Listed
+            <p className="text-xs sm:text-sm text-[#e1c594]/90 font-medium truncate">
+              {format(new Date(selectedDate), 'EEE, MMM do, yyyy')} • {students?.length || 0} Students Listed
             </p>
           </div>
 
-          {/* Live Status Summary Badges inside Teal Header */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15">
-              <div className="w-2.5 h-2.5 bg-[#06d6a0] rounded-full" />
-              <span className="text-xs font-bold text-white">Present:</span>
-              <span className="text-base font-extrabold text-[#06d6a0] font-mono tabular-nums">{stats.present}</span>
+          {/* 2x2 Mobile / Inline Desktop Live Status Summary Grid */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 w-full lg:w-auto">
+            <div className="flex items-center justify-between sm:justify-start gap-2 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-[#06d6a0] rounded-full shrink-0" />
+                <span className="text-[11px] sm:text-xs font-bold text-white">Present</span>
+              </div>
+              <span className="text-sm sm:text-base font-extrabold text-[#06d6a0] font-mono tabular-nums">{stats.present}</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15">
-              <div className="w-2.5 h-2.5 bg-[#faae57] rounded-full" />
-              <span className="text-xs font-bold text-white">Late:</span>
-              <span className="text-base font-extrabold text-[#faae57] font-mono tabular-nums">{stats.late}</span>
+            <div className="flex items-center justify-between sm:justify-start gap-2 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-[#faae57] rounded-full shrink-0" />
+                <span className="text-[11px] sm:text-xs font-bold text-white">Late</span>
+              </div>
+              <span className="text-sm sm:text-base font-extrabold text-[#faae57] font-mono tabular-nums">{stats.late}</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15">
-              <div className="w-2.5 h-2.5 bg-[#ef476f] rounded-full" />
-              <span className="text-xs font-bold text-white">Absent:</span>
-              <span className="text-base font-extrabold text-[#ef476f] font-mono tabular-nums">{stats.absent}</span>
+            <div className="flex items-center justify-between sm:justify-start gap-2 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-[#ef476f] rounded-full shrink-0" />
+                <span className="text-[11px] sm:text-xs font-bold text-white">Absent</span>
+              </div>
+              <span className="text-sm sm:text-base font-extrabold text-[#ef476f] font-mono tabular-nums">{stats.absent}</span>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15">
-              <div className="w-2.5 h-2.5 bg-[#e1c594] rounded-full" />
-              <span className="text-xs font-bold text-white">Excused:</span>
-              <span className="text-base font-extrabold text-[#e1c594] font-mono tabular-nums">{stats.excused}</span>
+            <div className="flex items-center justify-between sm:justify-start gap-2 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-[#e1c594] rounded-full shrink-0" />
+                <span className="text-[11px] sm:text-xs font-bold text-white">Excused</span>
+              </div>
+              <span className="text-sm sm:text-base font-extrabold text-[#e1c594] font-mono tabular-nums">{stats.excused}</span>
             </div>
           </div>
         </div>
 
         {/* Filter & Action Bar */}
-        <div className="pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-full border border-[#bac4c6] min-h-[44px]">
-              <CalendarDays className="w-4 h-4 text-[#1c4a59]" />
+        <div className="pt-3 sm:pt-4 border-t border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3.5 min-w-0">
+          {/* Side-by-Side Date & Class Filter Row */}
+          <div className="grid grid-cols-[1fr_auto] sm:flex items-center gap-2 sm:gap-3 w-full lg:w-auto min-w-0">
+            <div className="flex items-center gap-2 bg-white px-3 sm:px-3.5 py-2 rounded-xl sm:rounded-full border border-[#bac4c6] min-h-[40px] sm:min-h-[42px] min-w-0">
+              <CalendarDays className="w-4 h-4 text-[#1c4a59] shrink-0" />
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-sm font-bold text-[#1f2a2e] outline-none cursor-pointer"
+                className="bg-transparent text-xs sm:text-sm font-bold text-[#1f2a2e] outline-none cursor-pointer w-full min-w-0 font-mono tabular-nums"
               />
             </div>
 
             {isParent ? (
-              <div className="px-4 py-2.5 bg-white/10 border border-white/15 rounded-full text-xs font-bold uppercase tracking-wider text-[#faae57]">
-                Linked Wards View
+              <div className="px-3 py-2 bg-white/10 border border-white/15 rounded-xl sm:rounded-full text-[11px] font-bold uppercase tracking-wider text-[#faae57] whitespace-nowrap">
+                Linked Wards
               </div>
             ) : (
               <select
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="bg-white border border-[#bac4c6] rounded-full px-4 py-2 text-sm font-bold text-[#1f2a2e] outline-none focus:ring-2 focus:ring-[#faae57] min-h-[44px] cursor-pointer"
+                className="bg-white border border-[#bac4c6] rounded-xl sm:rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold text-[#1f2a2e] outline-none focus:ring-2 focus:ring-[#faae57] min-h-[40px] sm:min-h-[42px] cursor-pointer shrink-0"
               >
                 {classes?.length
                   ? classes.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
@@ -865,53 +896,136 @@ export default function AttendanceTerminal() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          {/* Compact Bulk & Export Action Grid */}
+          <div className={`grid ${!isReadOnlyRole ? 'grid-cols-2' : 'grid-cols-1'} sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto`}>
             {!isReadOnlyRole && (
-              <>
+              <div ref={bulkMenuRef} className="relative w-full sm:w-auto">
                 <button
-                  onClick={() => markAll('Present')}
+                  type="button"
+                  onClick={() => setIsBulkMenuOpen(prev => !prev)}
                   disabled={isBulkSaving || syncState === 'saving'}
-                  className="px-4 py-2 text-xs font-bold bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full transition-all shadow-xs min-h-[44px] cursor-pointer active:scale-[0.97] disabled:opacity-50"
+                  className="w-full sm:w-auto flex items-center justify-between sm:justify-center gap-2 px-3.5 sm:px-4 py-2 text-xs font-bold bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl sm:rounded-full transition-all shadow-xs min-h-[40px] sm:min-h-[42px] cursor-pointer active:scale-[0.97] disabled:opacity-50 whitespace-nowrap"
                 >
-                  {isBulkSaving ? 'Saving…' : 'Mark All Present'}
+                  <span className="flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-[#1f2a2e] stroke-[2.5] shrink-0" />
+                    <span>{isBulkSaving ? 'Saving…' : 'Mark All'}</span>
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-[#1f2a2e] shrink-0 transition-transform ${isBulkMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
-                <button
-                  onClick={() => markAll('Absent')}
-                  disabled={isBulkSaving || syncState === 'saving'}
-                  className="px-4 py-2 text-xs font-bold bg-white/10 hover:bg-[#ef476f] text-white border border-white/15 rounded-full transition-all min-h-[44px] cursor-pointer active:scale-[0.97] disabled:opacity-50"
-                >
-                  Mark All Absent
-                </button>
-              </>
+
+                {isBulkMenuOpen && (
+                  <div className="absolute left-0 sm:right-0 sm:left-auto mt-1.5 w-48 bg-white border border-[#bac4c6] rounded-xl shadow-lg py-1.5 z-30 text-[#1f2a2e]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBulkMenuOpen(false);
+                        markAll('Present');
+                      }}
+                      disabled={isBulkSaving || syncState === 'saving'}
+                      className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#06d6a0] shrink-0" />
+                      <span>Mark All Present</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBulkMenuOpen(false);
+                        markAll('Late');
+                      }}
+                      disabled={isBulkSaving || syncState === 'saving'}
+                      className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#faae57] shrink-0" />
+                      <span>Mark All Late</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBulkMenuOpen(false);
+                        markAll('Absent');
+                      }}
+                      disabled={isBulkSaving || syncState === 'saving'}
+                      className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#ef476f] shrink-0" />
+                      <span>Mark All Absent</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBulkMenuOpen(false);
+                        markAll('Excused');
+                      }}
+                      disabled={isBulkSaving || syncState === 'saving'}
+                      className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#1c4a59] shrink-0" />
+                      <span>Mark All Excused</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
-            <button
-              onClick={handleExportPDF}
-              disabled={isExportingPDF}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-full font-bold transition-all text-xs min-h-[44px] disabled:opacity-50 cursor-pointer"
-            >
-              <FileText className="w-4 h-4 text-[#faae57]" />
-              <span>{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
-            </button>
-            <button
-              onClick={triggerPrint}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 rounded-full font-bold transition-all text-xs min-h-[44px] cursor-pointer"
-            >
-              <Printer className="w-4 h-4 text-[#faae57]" />
-              <span>Print</span>
-            </button>
-            <button
-              onClick={exportAttendance}
-              className="flex items-center gap-2 px-4 py-2 bg-white text-[#1c4a59] rounded-full font-bold hover:bg-[#f6f8f7] transition-all shadow-xs text-xs min-h-[44px] cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export CSV</span>
-            </button>
+
+            <div ref={exportMenuRef} className="relative w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setIsExportMenuOpen(prev => !prev)}
+                className="w-full sm:w-auto flex items-center justify-between sm:justify-center gap-2 px-3.5 sm:px-4 py-2 bg-white text-[#1c4a59] rounded-xl sm:rounded-full font-bold hover:bg-[#f6f8f7] transition-all shadow-xs text-xs min-h-[40px] sm:min-h-[42px] cursor-pointer whitespace-nowrap"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+                  <span>{isExportingPDF ? 'Exporting PDF…' : 'Export / Print'}</span>
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-[#1c4a59] shrink-0 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isExportMenuOpen && (
+                <div className="absolute right-0 left-0 sm:left-auto mt-1.5 sm:w-48 bg-white border border-[#bac4c6] rounded-xl shadow-lg py-1.5 z-30 text-[#1f2a2e]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsExportMenuOpen(false);
+                      handleExportPDF();
+                    }}
+                    disabled={isExportingPDF}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+                    <span>{isExportingPDF ? 'Exporting PDF…' : 'Download PDF'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsExportMenuOpen(false);
+                      triggerPrint();
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+                    <span>Print Attendance</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsExportMenuOpen(false);
+                      exportAttendance();
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-[#1f2a2e] hover:bg-[#f6f8f7] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                    <span>Export CSV / Excel</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Student Attendance Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-4">
         {students?.map((student) => {
           const status = getStatus(student.studentId);
           const savedReason = getReason(student.studentId);
@@ -922,113 +1036,136 @@ export default function AttendanceTerminal() {
             <motion.div
               layout
               key={student.studentId || student.id}
-              className="bg-white p-5 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)] flex flex-col gap-3 group hover:border-[#1c4a59]/40 transition-colors"
+              className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#bac4c6]/80 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col gap-2.5 group hover:border-[#1c4a59]/50 transition-colors min-w-0"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-11 h-11 bg-[#1c4a59] rounded-2xl flex items-center justify-center text-[#faae57] font-bold text-xs uppercase shrink-0">
-                    {(student.firstName?.[0] || '')}{(student.lastName?.[0] || '') || 'S'}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-[#1f2a2e] leading-tight truncate">
-                        {student.firstName} {student.lastName}
-                      </h4>
-                      {isParent && (
-                        <span className="px-2 py-0.5 bg-[#1c4a59]/10 text-[#1c4a59] rounded-full text-[9px] font-extrabold uppercase tracking-wider shrink-0">
-                          {student.class}
-                        </span>
-                      )}
+              {/* Stacked on Mobile, Single-Row on Tablet+ */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 min-w-0">
+                <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#1c4a59] rounded-xl flex items-center justify-center text-[#faae57] font-bold text-xs uppercase shrink-0">
+                      {(student.firstName?.[0] || '')}{(student.lastName?.[0] || '') || 'S'}
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-[11px] text-[#6a7f84] font-mono tabular-nums">{student.studentId}</p>
-                      {status !== 'None' && (
-                        <span className="text-[11px] font-bold text-[#1c4a59]">
-                          · {isSavingThis ? 'Saving…' : status}
-                        </span>
-                      )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs sm:text-sm font-bold text-[#1f2a2e] leading-snug truncate">
+                          {student.firstName} {student.lastName}
+                        </h4>
+                        {isParent && (
+                          <span className="px-2 py-0.5 bg-[#1c4a59]/10 text-[#1c4a59] rounded-md text-[9px] font-bold uppercase tracking-wider shrink-0">
+                            {student.class}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[11px] text-[#6a7f84] font-mono tabular-nums">{student.studentId}</p>
+                        {status !== 'None' && (
+                          <span className="hidden sm:inline text-[11px] font-bold text-[#1c4a59]">
+                            · {isSavingThis ? 'Saving…' : status}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Mobile Live Status Pill on Top-Right of Student Identity Row */}
+                  {status !== 'None' && (
+                    <span className={`sm:hidden px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 ${
+                      status === 'Present'
+                        ? 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]'
+                        : status === 'Late'
+                        ? 'bg-[#faae57]/20 text-[#807654] border border-[#e1c594]'
+                        : status === 'Absent'
+                        ? 'bg-[#fef2f2] text-[#ef476f] border border-[#fecdd3]'
+                        : 'bg-[#1c4a59] text-white'
+                    }`}>
+                      {isSavingThis ? 'Saving…' : status}
+                    </span>
+                  )}
                 </div>
 
-                {/* Status Action Buttons: Present, Late, Absent, Excused + Note Toggle */}
-                <div className="flex items-center gap-1 shrink-0">
+                {/* Status Action Buttons: 5-Column Equal Bar on Mobile, Compact Row on sm+ */}
+                <div className={`grid ${isReadOnlyRole ? 'grid-cols-4' : 'grid-cols-5'} sm:flex items-center gap-1.5 sm:gap-1 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#bac4c6]/40 shrink-0`}>
                   <button
                     type="button"
                     onClick={() => !isReadOnlyRole && markAttendance(student, 'Present')}
                     disabled={isReadOnlyRole || isSavingThis}
-                    className={`min-w-[40px] min-h-[44px] px-2 rounded-xl flex items-center justify-center gap-1 text-xs font-bold transition-all cursor-pointer active:scale-[0.97] ${
+                    className={`min-h-[38px] sm:min-w-[38px] sm:min-h-[40px] px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97] ${
                       status === 'Present'
-                        ? 'bg-[#06d6a0] text-[#1f2a2e] shadow-sm'
+                        ? 'bg-[#06d6a0] text-[#1f2a2e] shadow-2xs'
                         : isReadOnlyRole
                         ? 'bg-[#f6f8f7] text-[#bac4c6] opacity-40 cursor-not-allowed'
                         : 'bg-[#f6f8f7] text-[#6a7f84] hover:bg-[#06d6a0]/15 hover:text-[#1f2a2e]'
                     }`}
                     title={isReadOnlyRole ? 'Status: Present' : 'Mark Present'}
                   >
-                    <Check className="w-4 h-4 stroke-[2.5]" />
+                    <Check className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+                    <span className="sm:hidden">Pres</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => !isReadOnlyRole && markAttendance(student, 'Late')}
                     disabled={isReadOnlyRole || isSavingThis}
-                    className={`min-w-[40px] min-h-[44px] px-2 rounded-xl flex items-center justify-center gap-1 text-xs font-bold transition-all cursor-pointer active:scale-[0.97] ${
+                    className={`min-h-[38px] sm:min-w-[38px] sm:min-h-[40px] px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97] ${
                       status === 'Late'
-                        ? 'bg-[#faae57] text-[#1f2a2e] shadow-sm'
+                        ? 'bg-[#faae57] text-[#1f2a2e] shadow-2xs'
                         : isReadOnlyRole
                         ? 'bg-[#f6f8f7] text-[#bac4c6] opacity-40 cursor-not-allowed'
                         : 'bg-[#f6f8f7] text-[#6a7f84] hover:bg-[#faae57]/20 hover:text-[#1f2a2e]'
                     }`}
                     title={isReadOnlyRole ? 'Status: Late' : 'Mark Late'}
                   >
-                    <Clock className="w-4 h-4 stroke-[2.5]" />
+                    <Clock className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+                    <span className="sm:hidden">Late</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => !isReadOnlyRole && markAttendance(student, 'Absent')}
                     disabled={isReadOnlyRole || isSavingThis}
-                    className={`min-w-[40px] min-h-[44px] px-2 rounded-xl flex items-center justify-center gap-1 text-xs font-bold transition-all cursor-pointer active:scale-[0.97] ${
+                    className={`min-h-[38px] sm:min-w-[38px] sm:min-h-[40px] px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97] ${
                       status === 'Absent'
-                        ? 'bg-[#ef476f] text-white shadow-sm'
+                        ? 'bg-[#ef476f] text-white shadow-2xs'
                         : isReadOnlyRole
                         ? 'bg-[#f6f8f7] text-[#bac4c6] opacity-40 cursor-not-allowed'
                         : 'bg-[#f6f8f7] text-[#6a7f84] hover:bg-[#ef476f]/15 hover:text-[#ef476f]'
                     }`}
                     title={isReadOnlyRole ? 'Status: Absent' : 'Mark Absent'}
                   >
-                    <X className="w-4 h-4 stroke-[2.5]" />
+                    <X className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+                    <span className="sm:hidden">Abs</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => !isReadOnlyRole && markAttendance(student, 'Excused')}
                     disabled={isReadOnlyRole || isSavingThis}
-                    className={`min-w-[40px] min-h-[44px] px-2 rounded-xl flex items-center justify-center gap-1 text-xs font-bold transition-all cursor-pointer active:scale-[0.97] ${
+                    className={`min-h-[38px] sm:min-w-[38px] sm:min-h-[40px] px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97] ${
                       status === 'Excused'
-                        ? 'bg-[#1c4a59] text-white shadow-sm'
+                        ? 'bg-[#1c4a59] text-white shadow-2xs'
                         : isReadOnlyRole
                         ? 'bg-[#f6f8f7] text-[#bac4c6] opacity-40 cursor-not-allowed'
                         : 'bg-[#f6f8f7] text-[#6a7f84] hover:bg-[#1c4a59]/15 hover:text-[#1c4a59]'
                     }`}
                     title={isReadOnlyRole ? 'Status: Excused' : 'Mark Excused'}
                   >
-                    <ShieldCheck className="w-4 h-4 stroke-[2.2]" />
+                    <ShieldCheck className="w-3.5 h-3.5 stroke-[2.2] shrink-0" />
+                    <span className="sm:hidden">Exc</span>
                   </button>
 
                   {!isReadOnlyRole && (
                     <button
                       type="button"
                       onClick={() => toggleNoteEditor(student.studentId)}
-                      className={`min-w-[38px] min-h-[44px] px-2 rounded-xl flex items-center justify-center transition-all cursor-pointer active:scale-[0.97] ${
+                      className={`min-h-[38px] sm:min-w-[36px] sm:min-h-[40px] px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97] ${
                         isNoteOpen || savedReason
                           ? 'bg-[#e1c594]/50 text-[#1c4a59]'
                           : 'bg-[#f6f8f7] text-[#6a7f84] hover:bg-[#e1c594]/30 hover:text-[#1f2a2e]'
                       }`}
                       title={savedReason ? `Note: ${savedReason}` : 'Add / Edit Attendance Note'}
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                      <span className="sm:hidden">Note</span>
                     </button>
                   )}
                 </div>
@@ -1038,7 +1175,7 @@ export default function AttendanceTerminal() {
               {!isNoteOpen && savedReason && (
                 <div
                   onClick={() => !isReadOnlyRole && toggleNoteEditor(student.studentId)}
-                  className={`text-xs text-[#6a7f84] bg-[#f6f8f7] px-3 py-1.5 rounded-xl border border-[#bac4c6]/50 flex items-center justify-between gap-2 ${
+                  className={`text-xs text-[#6a7f84] bg-[#f6f8f7] px-3 py-1.5 rounded-xl border border-[#bac4c6]/60 flex items-center justify-between gap-2 ${
                     !isReadOnlyRole ? 'cursor-pointer hover:border-[#1c4a59]/40' : ''
                   }`}
                 >
@@ -1069,8 +1206,8 @@ export default function AttendanceTerminal() {
                         handleSaveStudentNote(student);
                       }
                     }}
-                    placeholder="Optional note or reason (e.g., Medical excuse, Bus delay)…"
-                    className="flex-1 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl px-3 py-1.5 text-xs font-medium text-[#1f2a2e] outline-none focus:border-[#1c4a59]"
+                    placeholder="Reason (e.g., Medical excuse, Bus delay)…"
+                    className="flex-1 min-w-0 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl px-3 py-1.5 text-xs font-medium text-[#1f2a2e] outline-none focus:border-[#1c4a59] focus:bg-white"
                   />
                   <button
                     type="button"
@@ -1087,9 +1224,9 @@ export default function AttendanceTerminal() {
         })}
 
         {students?.length === 0 && (
-          <div className="col-span-full py-12 text-center text-[#6a7f84] bg-white border border-dashed border-[#bac4c6] rounded-3xl">
-            <Users className="w-12 h-12 text-[#bac4c6] mx-auto mb-3" />
-            <p className="font-bold text-[#1f2a2e]">
+          <div className="col-span-full py-10 sm:py-12 text-center text-[#6a7f84] bg-white border border-dashed border-[#bac4c6] rounded-2xl sm:rounded-3xl">
+            <Users className="w-10 h-10 sm:w-12 sm:h-12 text-[#bac4c6] mx-auto mb-2.5" />
+            <p className="text-xs sm:text-sm font-bold text-[#1f2a2e]">
               {isParent
                 ? 'No related wards found linked to your account.'
                 : 'No students enrolled in this class yet.'}

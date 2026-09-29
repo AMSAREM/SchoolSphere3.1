@@ -2103,7 +2103,7 @@ export default function TimetableManagement() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 text-[#1f2a2e] min-w-0">
       {/* Printable Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -2127,13 +2127,13 @@ export default function TimetableManagement() {
       </div>
 
       {/* Primary Deep Teal Header Card */}
-      <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_24px_rgba(28,74,89,0.18)] flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden relative overflow-hidden">
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_24px_rgba(28,74,89,0.18)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden relative overflow-hidden">
         <div className="absolute -right-8 -bottom-8 w-40 h-40 rounded-full border-8 border-white/5 pointer-events-none" />
         <div className="absolute -right-16 -bottom-16 w-60 h-60 rounded-full border-8 border-white/5 pointer-events-none" />
 
-        <div className="space-y-1.5 relative z-10">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-xs font-bold text-[#faae57] tracking-wide">
+        <div className="space-y-1.5 relative z-10 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] sm:text-xs font-bold text-[#faae57] tracking-wide">
               Academic Schedule & Period Matrix
             </span>
             <button
@@ -2141,7 +2141,7 @@ export default function TimetableManagement() {
               onClick={() => fetchTimetableFromSupabase(true)}
               disabled={syncState === 'loading' || syncState === 'saving'}
               title="Sync timetable entries & periods with Supabase"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
                 syncState === 'error'
                   ? 'bg-[#ef476f] text-white'
                   : syncState === 'saving' || syncState === 'loading'
@@ -2149,115 +2149,116 @@ export default function TimetableManagement() {
                   : 'bg-[#06d6a0]/20 text-[#06d6a0] hover:bg-[#06d6a0]/30'
               }`}
             >
-              <RefreshCw className={`w-3 h-3 ${syncState === 'loading' || syncState === 'saving' ? 'animate-spin' : ''}`} />
-              {syncState === 'loading'
-                ? 'Loading Supabase…'
-                : syncState === 'saving'
-                ? 'Saving to Supabase…'
-                : syncState === 'error'
-                ? 'Sync Error — Retry'
-                : `Entries & Periods Synced (${slots.length})`}
+              <RefreshCw className={`w-3 h-3 shrink-0 ${syncState === 'loading' || syncState === 'saving' ? 'animate-spin' : ''}`} />
+              <span className="truncate">
+                {syncState === 'loading'
+                  ? 'Loading Supabase…'
+                  : syncState === 'saving'
+                  ? 'Saving…'
+                  : syncState === 'error'
+                  ? 'Sync Error — Retry'
+                  : `Synced (${slots.length})`}
+              </span>
             </button>
 
-            <span className="text-[11px] font-semibold text-white/85 flex items-center gap-1 font-mono tabular-nums">
-              <Bell className="w-3 h-3 text-[#faae57]" />
-              {periodBells.filter((b: any) => b?.enabled !== false).length} Period Bells Armed
+            <span className="text-[10px] sm:text-[11px] font-semibold text-[#e1c594] flex items-center gap-1 font-mono tabular-nums">
+              <Bell className="w-3 h-3 text-[#faae57] shrink-0" />
+              {periodBells.filter((b: any) => b?.enabled !== false).length} Bells Armed
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <Calendar className="w-6 h-6 text-[#faae57]" />
-            Timetable & Course Scheduler
+          <h2 className="text-lg sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-[#faae57] shrink-0" />
+            <span className="truncate">Timetable & Course Scheduler</span>
           </h2>
-          <p className="text-xs sm:text-sm text-white/80 font-medium leading-relaxed max-w-2xl">
-            Configure school lesson blocks, prevent classroom overlap collisions, and automatically synchronize campus period bells.
+          <p className="text-xs sm:text-sm text-[#e1c594]/90 font-medium leading-relaxed max-w-2xl">
+            Configure school lesson blocks, prevent classroom overlap collisions, and synchronize campus period bells.
           </p>
         </div>
 
         {(isAdmin || isTeacher) && (
-          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto relative z-10">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto relative z-10">
             <button
               type="button"
               onClick={handleSyncPeriodBells}
               disabled={isSyncingBells || syncState === 'saving'}
               title="Two-way sync School Timetable slots with the Siren Console Period Bell Timetable"
-              className="px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25 disabled:opacity-60"
+              className="px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25 disabled:opacity-60 whitespace-nowrap"
             >
-              <Bell className={`w-3.5 h-3.5 text-[#faae57] ${isSyncingBells ? 'animate-bounce' : ''}`} />
-              {isSyncingBells ? 'Syncing Period Bells…' : 'Sync Period Bells'}
+              <Bell className={`w-3.5 h-3.5 text-[#faae57] shrink-0 ${isSyncingBells ? 'animate-bounce' : ''}`} />
+              <span className="truncate">{isSyncingBells ? 'Syncing…' : 'Sync Bells'}</span>
             </button>
             <button
               type="button"
               onClick={() => setIsQuickPanelOpen(prev => !prev)}
-              className={`px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border ${
+              className={`px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border whitespace-nowrap ${
                 isQuickPanelOpen
                   ? 'bg-white/15 text-white border-white/30'
                   : 'bg-white/5 text-white/85 border-white/15 hover:bg-white/10'
               }`}
             >
-              <Clock className="w-3.5 h-3.5 text-[#faae57]" />
-              {isQuickPanelOpen ? 'Hide Quick Suggestions' : 'Quick Suggestions'}
+              <Clock className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+              <span className="truncate">{isQuickPanelOpen ? 'Hide Suggestions' : 'Suggestions'}</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 resetForm();
                 setIsFormOpen(true);
               }}
-              className="px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-xs font-bold flex items-center gap-2 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px]"
+              className="col-span-2 sm:col-span-1 px-4 sm:px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px] whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
-              {isTeacher ? 'Suggest Period' : 'Add Time Block'}
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>{isTeacher ? 'Suggest Period' : 'Add Time Block'}</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* On-Page Smart Quick Suggestion Panel (Course Combos + Conflict-Free Time Slots sharing unified entries & periods data) */}
+      {/* Selected Element (div:nth-of-type(3)): On-Page Smart Quick Suggestion Panel */}
       {(isAdmin || isTeacher) && isQuickPanelOpen && smartQuickSuggestions.length > 0 && (
-        <div className="bg-white border border-[#bac4c6] rounded-2xl p-4 sm:p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] space-y-3.5 print:hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#bac4c6]/50 pb-3">
-            <div className="space-y-0.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Clock className="w-4 h-4 text-[#1c4a59]" />
-                <h3 className="text-sm font-bold text-[#1f2a2e]">
+        <div className="bg-white border border-[#bac4c6] rounded-2xl p-3 sm:p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] space-y-3 print:hidden min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-[#bac4c6]/50 pb-2.5 sm:pb-3">
+            <div className="space-y-0.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <Clock className="w-4 h-4 text-[#1c4a59] shrink-0" />
+                <h3 className="text-xs sm:text-sm font-bold text-[#1f2a2e]">
                   Quick Time & Course Suggestions
                 </h3>
-                <span className="text-xs font-medium text-[#6a7f84]">
-                  · Unified <span className="font-mono">timetable_entries</span> & <span className="font-mono">timetable_periods</span> ({slots.length} synced records)
+                <span className="text-[11px] font-semibold text-[#6a7f84] font-mono tabular-nums">
+                  · {slots.length} synced records
                 </span>
               </div>
-              <p className="text-xs text-[#6a7f84] font-medium">
-                Click <span className="font-bold text-[#1f2a2e]">Pre-fill</span> to customize in the scheduler modal or <span className="font-bold text-[#1c4a59]">{isTeacher ? 'Suggest Now' : 'Schedule Now'}</span> to sync directly to both Supabase tables.
+              <p className="text-[11px] sm:text-xs text-[#6a7f84] font-medium leading-snug">
+                Tap <span className="font-bold text-[#1f2a2e]">Pre-fill</span> to customize or <span className="font-bold text-[#1c4a59]">{isTeacher ? 'Suggest Now' : 'Schedule Now'}</span> to save directly.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  if (smartQuickSuggestions[0]) {
-                    handleApplyQuickSuggestion(smartQuickSuggestions[0], 'prefill');
-                  }
-                }}
-                className="px-3 py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/40 text-[#1c4a59] border border-[#bac4c6] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97]"
-              >
-                Open Next Free Slot
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (smartQuickSuggestions[0]) {
+                  handleApplyQuickSuggestion(smartQuickSuggestions[0], 'prefill');
+                }
+              }}
+              className="w-full sm:w-auto px-3 py-2 sm:py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/40 text-[#1c4a59] border border-[#bac4c6] rounded-xl sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] text-center whitespace-nowrap shrink-0"
+            >
+              Open Next Free Slot
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
             {smartQuickSuggestions.map((rec) => {
               const isSavingThis = savingQuickId === rec.key;
               return (
                 <div
                   key={rec.key}
-                  className="p-3.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-2xl flex flex-col justify-between gap-3 hover:border-[#1c4a59] transition-colors"
+                  className="p-3 sm:p-3.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl sm:rounded-2xl flex flex-col justify-between gap-2.5 hover:border-[#1c4a59] transition-colors min-w-0"
                 >
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-bold text-[#1c4a59]">
+                      <span className="font-bold text-[#1c4a59] truncate">
                         {rec.classId} · {rec.subjectName}
                       </span>
-                      <span className="text-[11px] font-medium text-[#6a7f84] font-mono tabular-nums">
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-[#807654] font-mono tabular-nums shrink-0">
                         {rec.scheduledCount === 0 ? 'Unscheduled' : `${rec.scheduledCount}x/wk`}
                       </span>
                     </div>
@@ -2266,28 +2267,28 @@ export default function TimetableManagement() {
                       <span className="truncate" title={rec.teacherName}>
                         {rec.teacherName}
                       </span>
-                      <span className="text-[#6a7f84] shrink-0">
+                      <span className="text-[11px] font-semibold text-[#6a7f84] shrink-0">
                         {rec.room}
                       </span>
                     </div>
 
-                    <div className="pt-1 flex items-center justify-between gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-mono tabular-nums font-bold text-[#1f2a2e]">
-                        <span className="w-2 h-2 rounded-full bg-[#06d6a0]" />
+                    <div className="pt-0.5 flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-mono tabular-nums font-bold text-[#1f2a2e] text-[11px] sm:text-xs">
+                        <span className="w-2 h-2 rounded-full bg-[#06d6a0] shrink-0" />
                         {rec.day.slice(0, 3)} {rec.startTime} - {rec.endTime}
                       </span>
-                      <span className="text-[11px] text-[#6a7f84]">
-                        {rec.fromDatabase ? 'DB Period' : 'Standard Slot'}
+                      <span className="text-[10px] sm:text-[11px] text-[#6a7f84] shrink-0">
+                        {rec.fromDatabase ? 'DB Period' : 'Standard'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#bac4c6]/60">
+                  <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2 pt-2 border-t border-[#bac4c6]/60">
                     <button
                       type="button"
                       onClick={() => handleApplyQuickSuggestion(rec, 'prefill')}
                       disabled={syncState === 'saving'}
-                      className="px-3 py-1.5 bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border border-[#bac4c6] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50"
+                      className="px-2.5 sm:px-3 py-1.5 bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border border-[#bac4c6] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 text-center whitespace-nowrap"
                     >
                       Pre-fill
                     </button>
@@ -2295,14 +2296,16 @@ export default function TimetableManagement() {
                       type="button"
                       onClick={() => handleApplyQuickSuggestion(rec, 'instant')}
                       disabled={syncState === 'saving'}
-                      className="px-3.5 py-1.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 flex items-center gap-1"
+                      className="px-2.5 sm:px-3.5 py-1.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      {isSavingThis
-                        ? 'Saving…'
-                        : isTeacher
-                        ? 'Suggest Now'
-                        : 'Schedule Now'}
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {isSavingThis
+                          ? 'Saving…'
+                          : isTeacher
+                          ? 'Suggest'
+                          : 'Schedule'}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2313,44 +2316,47 @@ export default function TimetableManagement() {
       )}
 
       {/* Tabs navigation & Print Action row */}
-      <div className="flex border-b border-[#bac4c6] items-center justify-between overflow-x-auto print:hidden">
-        <div className="flex gap-5">
+      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-2 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)] min-w-0">
+        <div className="flex items-center gap-1 sm:gap-4 overflow-x-auto no-scrollbar min-w-0 flex-1">
           <button
+            type="button"
             onClick={() => setActiveTab('view')}
-            className={`pb-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'view' 
                 ? 'border-[#1c4a59] text-[#1c4a59]' 
                 : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
             }`}
           >
-            <Calendar className="w-4 h-4 text-[#faae57]" />
-            Grid Week Outlook
+            <Calendar className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+            <span>Weekly Outlook</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('class_view')}
-            className={`pb-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'class_view' 
                 ? 'border-[#1c4a59] text-[#1c4a59]' 
                 : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
             }`}
           >
-            <Building className="w-4 h-4" />
-            Class Grid View
+            <Building className="w-3.5 h-3.5 shrink-0" />
+            <span>Class Grid</span>
           </button>
           {/* Suggestions tab for Teachers and Admins */}
           {(isTeacher || isAdmin) && (
             <button
+              type="button"
               onClick={() => setActiveTab('suggestions')}
-              className={`pb-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-2 whitespace-nowrap relative cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 relative cursor-pointer ${
                 activeTab === 'suggestions' 
                   ? 'border-[#1c4a59] text-[#1c4a59]' 
                   : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
               }`}
             >
-              <Clock className="w-4 h-4 text-[#faae57]" />
-              Period Suggestions
+              <Clock className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+              <span>Suggestions</span>
               {isAdmin && suggestions.filter(s => s.status === 'pending').length > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 bg-[#faae57] text-[#1f2a2e] font-bold text-[10px] rounded-full">
+                <span className="px-1.5 py-0.5 bg-[#faae57] text-[#1f2a2e] font-bold text-[10px] rounded-full font-mono tabular-nums">
                   {suggestions.filter(s => s.status === 'pending').length}
                 </span>
               )}
@@ -2360,28 +2366,30 @@ export default function TimetableManagement() {
           {isAdmin && (
             <>
               <button
+                type="button"
                 onClick={() => setActiveTab('manage')}
-                className={`pb-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                   activeTab === 'manage' 
                     ? 'border-[#1c4a59] text-[#1c4a59]' 
                     : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
                 }`}
               >
-                <Edit2 className="w-4 h-4" />
-                All Slots ({slots.length})
+                <Edit2 className="w-3.5 h-3.5 shrink-0" />
+                <span>All Slots ({slots.length})</span>
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('diagnose')}
-                className={`pb-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-2 whitespace-nowrap relative cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 relative cursor-pointer ${
                   activeTab === 'diagnose' 
                     ? 'border-[#1c4a59] text-[#1c4a59]' 
                     : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
                 }`}
               >
-                <AlertTriangle className="w-4 h-4" />
-                Collision Checker
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>Collisions</span>
                 {detectedConflicts.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-[#ef476f] text-white font-bold text-[10px] rounded-full">
+                  <span className="px-1.5 py-0.5 bg-[#ef476f] text-white font-bold text-[10px] rounded-full font-mono tabular-nums">
                     {detectedConflicts.length}
                   </span>
                 )}
@@ -2391,33 +2399,36 @@ export default function TimetableManagement() {
         </div>
 
         <button 
+          type="button"
           onClick={triggerPrint}
-          className="ml-4 mb-2 flex items-center gap-2 px-4 py-2 bg-white border border-[#bac4c6] text-[#1c4a59] hover:bg-[#f6f8f7] rounded-full text-xs font-bold transition-all active:scale-95 shadow-2xs whitespace-nowrap cursor-pointer"
+          title="Print Timetable"
+          className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] text-[#1c4a59] rounded-xl text-xs font-bold transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          <Printer className="w-3.5 h-3.5 text-[#1c4a59]" />
-          Print Timetable
+          <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+          <span className="hidden sm:inline">Print Timetable</span>
+          <span className="sm:hidden">Print</span>
         </button>
       </div>
 
       {/* Grid view layout Filter Row */}
       {activeTab === 'view' && (
-        <div className={`bg-slate-50 border border-slate-200 rounded-xl p-4 gap-4 grid grid-cols-1 ${(isStudent || isParent) ? 'max-w-md' : 'sm:grid-cols-3'} print:hidden`}>
+        <div className={`bg-white border border-[#bac4c6]/80 rounded-2xl p-3 sm:p-4 gap-2.5 sm:gap-4 grid grid-cols-1 ${(isStudent || isParent) ? 'max-w-md' : 'sm:grid-cols-3'} print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)]`}>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Filter By Class</label>
+            <label className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider">Filter By Class</label>
             {isStudent ? (
-               <div className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-indigo-700 bg-indigo-50/50 flex items-center gap-1.5">
-                 {studentClass} (My Class)
-               </div>
+              <div className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] flex items-center gap-1.5">
+                {studentClass} (My Class)
+              </div>
             ) : isParent ? (
               classesList.length <= 1 ? (
-                <div className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-indigo-700 bg-indigo-50/50 flex items-center gap-1.5">
+                <div className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] flex items-center gap-1.5">
                   {classesList[0] || 'No Ward Class'} (My Ward's Class)
                 </div>
               ) : (
                 <select
                   value={selectedClassFilter}
                   onChange={(e) => setSelectedClassFilter(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
+                  className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                 >
                   <option value="All">All My Wards' Classes</option>
                   {classesList.map(cls => (
@@ -2429,7 +2440,7 @@ export default function TimetableManagement() {
               <select
                 value={selectedClassFilter}
                 onChange={(e) => setSelectedClassFilter(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
+                className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
               >
                 <option value="All">All Classes / Grades</option>
                 {classesList.map(cls => (
@@ -2442,11 +2453,11 @@ export default function TimetableManagement() {
           {!isStudent && !isParent && (
             <>
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Filter By Teacher</label>
+                <label className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider">Filter By Teacher</label>
                 <select
                   value={selectedTeacherFilter}
                   onChange={(e) => setSelectedTeacherFilter(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
+                  className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                 >
                   <option value="All">All Teachers</option>
                   {teachersList.map(tch => (
@@ -2456,11 +2467,11 @@ export default function TimetableManagement() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Filter By Room/Space</label>
+                <label className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider">Filter By Room/Space</label>
                 <select
                   value={selectedRoomFilter}
                   onChange={(e) => setSelectedRoomFilter(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white"
+                  className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                 >
                   <option value="All">All Buildings / Rooms</option>
                   {roomsList.map(rm => (
@@ -2474,54 +2485,139 @@ export default function TimetableManagement() {
       )}
 
       {/* Visual content panes */}
-      <div className="print:block">
+      <div className="print:block min-w-0">
 
         {/* Tab 1: Weekly Grid Map View */}
         {activeTab === 'view' && (
-          <div className="space-y-4">
+          <div className="space-y-3.5 sm:space-y-4">
             {filteredSlots.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center space-y-3 shadow-sm print:hidden">
-                <Calendar className="w-12 h-12 text-slate-300 mx-auto" />
-                <h4 className="text-md font-black text-slate-800 uppercase tracking-wider">No matching classes scheduled</h4>
-                <p className="text-xs text-slate-500 max-w-[400px] mx-auto font-semibold">
-                  There are no time blocks matching your current filters. Select "All Classes" or click "Add Time Block" above to get started.
+              <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-8 sm:p-14 text-center space-y-2.5 shadow-xs print:hidden">
+                <Calendar className="w-10 h-10 text-[#6a7f84]/50 mx-auto" />
+                <h4 className="text-sm font-bold text-[#1f2a2e] uppercase tracking-wider">No matching classes scheduled</h4>
+                <p className="text-xs text-[#6a7f84] max-w-[400px] mx-auto font-medium">
+                  There are no time blocks matching your current filters. Select "All Classes" or tap "Add Time Block" above to get started.
                 </p>
               </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden overflow-x-auto min-w-full">
-                <table className="w-full border-collapse text-left text-xs text-slate-700 min-w-[700px] table-fixed">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] uppercase font-black text-slate-500 tracking-widest">
-                      <th className="p-4 w-[120px]">Weekday</th>
-                      <th className="p-4">Period Blocks Scheduled</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/80 font-semibold">
-                    {WEEKDAYS.map((day) => {
-                      const daySlots = filteredSlots.filter(s => s.day === day);
-                      return (
-                        <tr key={day} className="hover:bg-slate-50/20 transition-colors align-top">
-                          <td className="p-4 font-black uppercase text-slate-800 tracking-widest text-[11px] bg-slate-50/20">
-                            {day}
-                            <span className="block font-medium text-[9px] text-indigo-500 lowercase mt-0.5">
-                              ({daySlots.length} blocks)
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            {daySlots.length === 0 ? (
-                              <span className="text-slate-400 italic font-medium block py-2 text-[11px]">
-                                No periods scheduled for {day}s
+              <>
+                {/* Mobile Stacked Weekday Cards (< 768px) */}
+                <div className="md:hidden space-y-3 print:hidden">
+                  {WEEKDAYS.map((day) => {
+                    const daySlots = filteredSlots.filter(s => s.day === day);
+                    return (
+                      <div key={day} className="bg-white border border-[#bac4c6]/80 rounded-2xl overflow-hidden shadow-xs">
+                        <div className="px-3.5 py-2.5 bg-[#f6f8f7] border-b border-[#bac4c6]/50 flex items-center justify-between">
+                          <span className="font-bold uppercase text-[#1c4a59] tracking-wider text-xs">{day}</span>
+                          <span className="text-[11px] font-mono tabular-nums font-bold text-[#807654]">
+                            {daySlots.length} {daySlots.length === 1 ? 'period' : 'periods'}
+                          </span>
+                        </div>
+                        <div className="p-3">
+                          {daySlots.length === 0 ? (
+                            <p className="text-[#6a7f84] italic text-xs py-1">No periods scheduled for {day}</p>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {daySlots.map(slot => {
+                                const bellInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                                return (
+                                  <div
+                                    key={slot.id}
+                                    className={`p-3 rounded-xl border transition-all relative flex flex-col justify-between ${
+                                      bellInfo.isActiveNow
+                                        ? 'bg-[#ecfdf5] border-[#a7f3d0]'
+                                        : 'bg-[#f6f8f7] border-[#e1c594]'
+                                    }`}
+                                  >
+                                    <div>
+                                      <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                                        <div className="inline-flex items-center gap-1 bg-white border border-[#bac4c6]/70 rounded-lg px-2 py-0.5 text-[10px] font-bold text-[#1f2a2e] font-mono tabular-nums">
+                                          <Clock className="w-3 h-3 text-[#faae57] shrink-0" />
+                                          {slot.startTime} - {slot.endTime}
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-[10px] font-bold px-2 py-0.5 bg-[#1c4a59] text-white rounded-lg">
+                                            {slot.classId}
+                                          </span>
+                                          {!isStudent && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleEditClick(slot)}
+                                              className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] cursor-pointer"
+                                              title="Edit Period"
+                                            >
+                                              <Edit2 className="w-3 h-3" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <h5 className="font-bold text-[#1f2a2e] text-xs sm:text-sm leading-tight truncate">
+                                        {slot.subjectName}
+                                      </h5>
+                                      <p className="text-[11px] text-[#6a7f84] font-medium mt-0.5 truncate">
+                                        {slot.teacherName}
+                                      </p>
+                                    </div>
+                                    <div className="mt-2.5 pt-2 border-t border-[#bac4c6]/50 flex items-center justify-between text-[10px] font-bold text-[#6a7f84]">
+                                      <span className="bg-white border border-[#bac4c6]/60 text-[#1c4a59] px-2 py-0.5 rounded-md">
+                                        {slot.room}
+                                      </span>
+                                      <span className={`inline-flex items-center gap-1 font-semibold ${
+                                        bellInfo.isActiveNow
+                                          ? 'text-[#065f46] font-bold'
+                                          : bellInfo.isArmed
+                                          ? 'text-[#1c4a59]'
+                                          : 'text-[#6a7f84]'
+                                      }`}>
+                                        <Bell className="w-3 h-3 text-[#faae57]" />
+                                        {bellInfo.isActiveNow ? 'Active Now' : bellInfo.isArmed ? 'Bell Armed' : 'Bell Linked'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Tablet & Desktop Table View (>= 768px and Print) */}
+                <div className="hidden md:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
+                  <table className="w-full border-collapse text-left text-xs text-[#1f2a2e] min-w-[700px] table-fixed">
+                    <thead>
+                      <tr className="bg-[#f6f8f7] border-b border-[#bac4c6]/60 text-[10px] uppercase font-bold text-[#6a7f84] tracking-wider">
+                        <th className="p-4 w-[130px]">Weekday</th>
+                        <th className="p-4">Period Blocks Scheduled</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#bac4c6]/40 font-semibold">
+                      {WEEKDAYS.map((day) => {
+                        const daySlots = filteredSlots.filter(s => s.day === day);
+                        return (
+                          <tr key={day} className="hover:bg-[#f6f8f7]/40 transition-colors align-top">
+                            <td className="p-4 font-bold uppercase text-[#1c4a59] tracking-wider text-[11px] bg-[#f6f8f7]/50">
+                              {day}
+                              <span className="block font-mono tabular-nums font-semibold text-[10px] text-[#807654] lowercase mt-0.5">
+                                ({daySlots.length} blocks)
                               </span>
-                            ) : (
+                            </td>
+                            <td className="p-4">
+                              {daySlots.length === 0 ? (
+                                <span className="text-[#6a7f84] italic font-medium block py-2 text-[11px]">
+                                  No periods scheduled for {day}s
+                                </span>
+                              ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 print:grid-cols-2">
                                   {daySlots.map(slot => {
                                     const bellInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
                                     return (
                                       <div 
                                         key={slot.id} 
-                                        className={`p-3.5 rounded-2xl border hover:shadow-sm transition-all relative flex flex-col justify-between group ${
+                                        className={`p-3.5 rounded-2xl border hover:shadow-xs transition-all relative flex flex-col justify-between group ${
                                           bellInfo.isActiveNow
-                                            ? 'bg-emerald-50/70 border-emerald-300'
+                                            ? 'bg-[#ecfdf5] border-[#a7f3d0]'
                                             : 'bg-[#f6f8f7] border-[#e1c594]'
                                         }`}
                                       >
@@ -2550,10 +2646,10 @@ export default function TimetableManagement() {
                                           </span>
                                           <span className={`inline-flex items-center gap-1 font-semibold ${
                                             bellInfo.isActiveNow
-                                              ? 'text-emerald-700 font-bold'
+                                              ? 'text-[#065f46] font-bold'
                                               : bellInfo.isArmed
                                               ? 'text-[#1c4a59]'
-                                              : 'text-slate-400'
+                                              : 'text-[#6a7f84]'
                                           }`} title={bellInfo.bell ? `Linked Siren Bell: ${bellInfo.bell.label}` : 'Period Bell Chime'}>
                                             <Bell className="w-3 h-3 text-[#faae57]" />
                                             {bellInfo.isActiveNow
@@ -2566,8 +2662,9 @@ export default function TimetableManagement() {
                                         
                                         {/* Action button triggers inside grid */}
                                         {!isStudent && (
-                                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                                          <div className="absolute top-2 right-2 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity print:hidden">
                                             <button
+                                              type="button"
                                               onClick={() => handleEditClick(slot)}
                                               className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] shadow-2xs cursor-pointer"
                                             >
@@ -2579,44 +2676,46 @@ export default function TimetableManagement() {
                                     );
                                   })}
                                 </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         )}
 
         {/* Tab: Class Timetable Grid View */}
         {activeTab === 'class_view' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-5">
             {classesList.length === 0 ? (
-              <div className="bg-white border border-slate-205 rounded-2xl p-16 text-center space-y-3 shadow-sm print:hidden">
-                <Building className="w-12 h-12 text-slate-300 mx-auto" />
-                <h4 className="text-md font-black text-slate-800 uppercase tracking-wider">No classes registered in the system</h4>
-                <p className="text-xs text-slate-500 max-w-[400px] mx-auto font-semibold">
-                  To view timetables by class, please create classes in Academic Management or click "Add Time Block" above.
+              <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-8 sm:p-14 text-center space-y-2.5 shadow-xs print:hidden">
+                <Building className="w-10 h-10 text-[#6a7f84]/50 mx-auto" />
+                <h4 className="text-sm font-bold text-[#1f2a2e] uppercase tracking-wider">No classes registered in the system</h4>
+                <p className="text-xs text-[#6a7f84] max-w-[400px] mx-auto font-medium">
+                  To view timetables by class, please create classes in Academic Management or tap "Add Time Block" above.
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3.5 sm:space-y-4">
                 {/* Horizontal Class Picker Pills */}
                 {!isStudent && !isParent ? (
-                  <div className="flex flex-wrap items-center gap-2 print:hidden bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-2">Select Class:</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 print:hidden bg-white p-3 rounded-2xl border border-[#bac4c6]/80 shadow-2xs">
+                    <span className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider shrink-0">Select Class:</span>
                     <div className="flex flex-wrap gap-1.5">
                       {classesList.map(cls => (
                         <button
                           key={cls}
+                          type="button"
                           onClick={() => setSelectedClassForGrid(cls)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 uppercase tracking-wider border ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer uppercase tracking-wider border ${
                             currentClass === cls
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
-                              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                              ? 'bg-[#1c4a59] text-white border-[#1c4a59] shadow-xs'
+                              : 'bg-[#f6f8f7] hover:bg-[#e1c594]/30 text-[#1f2a2e] border-[#bac4c6]'
                           }`}
                         >
                           {cls}
@@ -2625,25 +2724,29 @@ export default function TimetableManagement() {
                     </div>
                   </div>
                 ) : isParent ? (
-                  <div className="space-y-3">
-                    <div className="bg-indigo-50/40 border border-indigo-100/70 p-3 rounded-2xl text-xs text-indigo-950 font-extrabold tracking-wide flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5">
-                        Showing Timetable for My Ward(s): <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{parentWards.length > 0 ? parentWards.map(w => `${w.firstName} (${w.class})`).join(', ') : 'None'}</b>
+                  <div className="space-y-2.5">
+                    <div className="bg-[#f6f8f7] border border-[#bac4c6] p-3 rounded-2xl text-xs text-[#1f2a2e] font-bold tracking-wide flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        Showing Timetable for My Ward(s):{' '}
+                        <b className="text-[#1c4a59] bg-white border border-[#bac4c6] px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">
+                          {parentWards.length > 0 ? parentWards.map(w => `${w.firstName} (${w.class})`).join(', ') : 'None'}
+                        </b>
                       </span>
-                      <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Protected Parent Access</span>
+                      <span className="text-[10px] text-[#807654] font-bold uppercase tracking-wider">Protected Parent Access</span>
                     </div>
                     {classesList.length > 1 && (
-                      <div className="flex flex-wrap items-center gap-2 print:hidden bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-2">Select Ward's Class:</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 print:hidden bg-white p-3 rounded-2xl border border-[#bac4c6]/80">
+                        <span className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider shrink-0">Select Ward's Class:</span>
                         <div className="flex flex-wrap gap-1.5">
                           {classesList.map(cls => (
                             <button
                               key={cls}
+                              type="button"
                               onClick={() => setSelectedClassForGrid(cls)}
-                              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-150 uppercase tracking-wider border ${
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer uppercase tracking-wider border ${
                                 currentClass === cls
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
-                                  : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                                  ? 'bg-[#1c4a59] text-white border-[#1c4a59] shadow-xs'
+                                  : 'bg-[#f6f8f7] hover:bg-[#e1c594]/30 text-[#1f2a2e] border-[#bac4c6]'
                               }`}
                             >
                               {cls}
@@ -2654,157 +2757,290 @@ export default function TimetableManagement() {
                     )}
                   </div>
                 ) : (
-                  <div className="bg-indigo-50/40 border border-indigo-100/70 p-3 rounded-2xl text-xs text-indigo-950 font-extrabold tracking-wide flex items-center justify-between">
+                  <div className="bg-[#f6f8f7] border border-[#bac4c6] p-3 rounded-2xl text-xs text-[#1f2a2e] font-bold tracking-wide flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                     <span className="flex items-center gap-1.5">
-                      Showing Timetable for My Class: <b className="text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">{studentClass}</b>
+                      Showing Timetable for My Class:{' '}
+                      <b className="text-[#1c4a59] bg-white border border-[#bac4c6] px-2 py-0.5 rounded-lg text-xs uppercase tracking-wide">
+                        {studentClass}
+                      </b>
                     </span>
-                    <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Standard Student Access</span>
+                    <span className="text-[10px] text-[#807654] font-bold uppercase tracking-wider">Standard Student Access</span>
                   </div>
                 )}
 
                 {/* Main Class Weekly Grid Calendar */}
                 {getTimeSlotsSorted().length === 0 ? (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center space-y-3 shadow-sm">
-                    <Calendar className="w-12 h-12 text-slate-300 mx-auto" />
-                    <h4 className="text-md font-black text-slate-800 uppercase tracking-wider">No Scheduled Periods for Class {currentClass}</h4>
-                    <p className="text-xs text-slate-500 max-w-[420px] mx-auto font-semibold">
-                      This class does not have any weekly lesson periods scheduled yet. Click "Add Time Block" above to begin scheduling.
+                  <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-8 sm:p-14 text-center space-y-2.5 shadow-xs">
+                    <Calendar className="w-10 h-10 text-[#6a7f84]/50 mx-auto" />
+                    <h4 className="text-sm font-bold text-[#1f2a2e] uppercase tracking-wider">No Scheduled Periods for Class {currentClass}</h4>
+                    <p className="text-xs text-[#6a7f84] max-w-[420px] mx-auto font-medium">
+                      This class does not have any weekly lesson periods scheduled yet. Tap "Add Time Block" above to begin scheduling.
                     </p>
                   </div>
                 ) : (
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden overflow-x-auto min-w-full">
-                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                      <h4 className="text-xs font-black text-indigo-950 uppercase tracking-widest flex items-center gap-1.5">
-                        <Building className="w-4 h-4 text-indigo-500" />
-                        Class: {currentClass} Timetable Matrix
-                      </h4>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        {slots.filter(s => s.classId === currentClass).length} Periods Total
-                      </p>
-                    </div>
+                  <>
+                    {/* Mobile Class Schedule Cards by Weekday (< 768px) */}
+                    <div className="md:hidden space-y-3 print:hidden">
+                      <div className="bg-[#1c4a59] text-white px-3.5 py-2.5 rounded-xl flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Building className="w-3.5 h-3.5 text-[#faae57]" />
+                          Class {currentClass} Schedule
+                        </span>
+                        <span className="text-[11px] font-mono tabular-nums font-bold text-[#e1c594]">
+                          {slots.filter(s => s.classId === currentClass).length} Periods
+                        </span>
+                      </div>
 
-                    <table className="w-full border-collapse text-left text-xs text-slate-700 min-w-[800px] table-fixed">
-                      <thead>
-                        <tr className="bg-slate-50/30 border-b border-slate-100 text-[10px] uppercase font-black text-slate-500 tracking-widest">
-                          <th className="p-4 w-[130px] border-r border-slate-100 text-indigo-600 bg-slate-50/40">Time Period</th>
-                          {WEEKDAYS.map(day => (
-                            <th key={day} className="p-4 text-center border-r border-slate-100 last:border-r-0">
-                              {day}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {getTimeSlotsSorted().map(timeRange => {
-                          const [startTime, endTime] = timeRange.split(' - ');
-                          const rowBellInfo = getBellForSlotTime(startTime, endTime);
-                          return (
-                            <tr key={timeRange} className="hover:bg-slate-50/10 align-top">
-                              {/* Left-most Time Block Identifier */}
-                              <td className="p-4 font-black uppercase text-slate-800 border-r border-slate-100 bg-slate-50/40">
-                                <span className="block text-indigo-600 font-black text-[12px] tracking-tight font-mono tabular-nums">{startTime}</span>
-                                <span className="block text-slate-400 text-[9px] font-bold tracking-wider mt-0.5 font-mono tabular-nums">to {endTime}</span>
-                                <span className={`mt-1.5 inline-flex items-center gap-1 text-[9px] font-bold normal-case ${
-                                  rowBellInfo.isActiveNow
-                                    ? 'text-emerald-700'
-                                    : rowBellInfo.isArmed
-                                    ? 'text-indigo-700'
-                                    : 'text-slate-400'
-                                }`}>
-                                  <Bell className="w-2.5 h-2.5 text-[#faae57]" />
-                                  {rowBellInfo.isActiveNow
-                                    ? 'Active Period'
-                                    : rowBellInfo.bell?.label || 'Period Bell'}
+                      {WEEKDAYS.map(day => {
+                        const dayClassSlots = slots
+                          .filter(s => s.classId === currentClass && s.day === day)
+                          .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+                        return (
+                          <div key={day} className="bg-white border border-[#bac4c6]/80 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="px-3.5 py-2.5 bg-[#f6f8f7] border-b border-[#bac4c6]/50 flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase text-[#1c4a59] tracking-wider">{day}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-mono tabular-nums font-bold text-[#807654]">
+                                  {dayClassSlots.length} {dayClassSlots.length === 1 ? 'period' : 'periods'}
                                 </span>
-                              </td>
+                                {!isStudent && !isParent && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const freeWin = findNextConflictFreeWindow(
+                                        currentClass,
+                                        formTeacher,
+                                        'Room A',
+                                        day as any,
+                                        slots,
+                                        null
+                                      );
+                                      setFormClass(currentClass);
+                                      setFormDay(day as any);
+                                      setFormStartTime(freeWin.startTime);
+                                      setFormEndTime(freeWin.endTime);
+                                      setFormRoom(freeWin.room || 'Room A');
+                                      setFormNotes('');
+                                      setEditingSlotId(null);
+                                      setIsFormOpen(true);
+                                    }}
+                                    className="px-2 py-0.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-lg text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>{isTeacher ? 'Suggest' : 'Add'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
 
-                              {/* Weekdays Grid Slots */}
-                              {WEEKDAYS.map(day => {
-                                const matchedSlots = slots.filter(s => 
-                                  s.classId === currentClass && 
-                                  s.day === day && 
-                                  s.startTime === startTime && 
-                                  s.endTime === endTime
-                                );
-
-                                return (
-                                  <td key={day} className="p-2 border-r border-slate-100 last:border-r-0 relative group min-h-[95px]">
-                                    {matchedSlots.length === 0 ? (
-                                      /* Unscheduled Slot action link */
-                                      (isStudent || isParent) ? (
-                                        <div className="w-full h-full min-h-[75px] flex items-center justify-center border border-dashed border-slate-100 rounded-xl bg-slate-50/30">
-                                          <span className="text-[10px] text-slate-400 font-bold tracking-wide italic">Free Period</span>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          onClick={() => {
-                                            setFormClass(currentClass);
-                                            setFormDay(day);
-                                            setFormStartTime(startTime);
-                                            setFormEndTime(endTime);
-                                            setFormRoom('Room A');
-                                            setFormNotes('');
-                                            setEditingSlotId(null);
-                                            setIsFormOpen(true);
-                                          }}
-                                          className="w-full h-full min-h-[75px] flex flex-col items-center justify-center border border-dashed border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/10 rounded-xl transition-all duration-150 group/btn"
-                                        >
-                                          <Plus className="w-4 h-4 text-slate-300 group-hover/btn:text-indigo-500 hover:scale-110 transition-all" />
-                                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {isTeacher ? 'Suggest Period' : 'Add Period'}
-                                          </span>
-                                        </button>
-                                      )
-                                    ) : (
-                                      <div className="space-y-2">
-                                        {matchedSlots.map(slot => (
-                                          <div
-                                            key={slot.id}
-                                            className="p-2.5 rounded-xl border bg-gradient-to-br from-indigo-50/20 to-slate-50/30 border-indigo-100/65 hover:border-indigo-200 hover:shadow-xs transition-all relative"
-                                          >
-                                            <h5 className="font-extrabold text-slate-900 text-[11px] leading-snug truncate" title={slot.subjectName}>
-                                              {slot.subjectName}
-                                            </h5>
-                                            
-                                            <div className="mt-1 text-[9px] font-bold text-slate-500 space-y-0.5">
-                                              <p className="truncate"> {slot.teacherName}</p>
-                                              <p className="text-indigo-600 font-black tracking-tight bg-indigo-50/55 px-1 rounded inline-block">
-                                                 {slot.room}
-                                              </p>
-                                            </div>
-
-                                            {/* Hover micro-action overlays */}
+                            <div className="p-3">
+                              {dayClassSlots.length === 0 ? (
+                                <p className="text-xs text-[#6a7f84] italic py-1">No periods scheduled on {day}</p>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                  {dayClassSlots.map(slot => {
+                                    const bellInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                                    return (
+                                      <div
+                                        key={slot.id}
+                                        className={`p-3 rounded-xl border flex flex-col justify-between gap-2 ${
+                                          bellInfo.isActiveNow
+                                            ? 'bg-[#ecfdf5] border-[#a7f3d0]'
+                                            : 'bg-[#f6f8f7] border-[#e1c594]'
+                                        }`}
+                                      >
+                                        <div>
+                                          <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                                            <span className="inline-flex items-center gap-1 bg-white border border-[#bac4c6]/70 rounded-lg px-2 py-0.5 text-[10px] font-bold text-[#1f2a2e] font-mono tabular-nums">
+                                              <Clock className="w-3 h-3 text-[#faae57] shrink-0" />
+                                              {slot.startTime} - {slot.endTime}
+                                            </span>
                                             {isAdmin && (
-                                              <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                                              <div className="flex items-center gap-1">
                                                 <button
+                                                  type="button"
                                                   onClick={() => handleEditClick(slot)}
-                                                  className="p-1 bg-white border border-slate-100 rounded hover:text-indigo-600 text-slate-400 hover:shadow-sm"
+                                                  className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] cursor-pointer"
                                                   title="Edit Period"
                                                 >
-                                                  <Edit2 className="w-2.5 h-2.5" />
+                                                  <Edit2 className="w-3 h-3" />
                                                 </button>
                                                 <button
+                                                  type="button"
                                                   onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
-                                                  className="p-1 bg-white border border-slate-100 rounded hover:text-red-500 text-slate-400 hover:shadow-sm"
+                                                  className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#ef476f] hover:bg-[#fef2f2] cursor-pointer"
                                                   title="Delete Period"
                                                 >
-                                                  <Trash2 className="w-2.5 h-2.5" />
+                                                  <Trash2 className="w-3 h-3" />
                                                 </button>
                                               </div>
                                             )}
                                           </div>
-                                        ))}
+                                          <h5 className="font-bold text-[#1f2a2e] text-xs sm:text-sm leading-tight truncate">
+                                            {slot.subjectName}
+                                          </h5>
+                                          <p className="text-[11px] text-[#6a7f84] font-medium mt-0.5 truncate">
+                                            {slot.teacherName}
+                                          </p>
+                                        </div>
+                                        <div className="pt-1.5 border-t border-[#bac4c6]/50 flex items-center justify-between text-[10px] font-bold">
+                                          <span className="bg-white border border-[#bac4c6]/60 text-[#1c4a59] px-2 py-0.5 rounded-md">
+                                            {slot.room}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 text-[#6a7f84]">
+                                            <Bell className="w-3 h-3 text-[#faae57]" />
+                                            {bellInfo.isActiveNow ? 'Active Now' : bellInfo.isArmed ? 'Bell Armed' : 'Bell Linked'}
+                                          </span>
+                                        </div>
                                       </div>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Tablet & Desktop 5-Day Matrix Table (>= 768px and Print) */}
+                    <div className="hidden md:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
+                      <div className="p-4 bg-[#f6f8f7] border-b border-[#bac4c6]/60 flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider flex items-center gap-1.5">
+                          <Building className="w-4 h-4 text-[#faae57]" />
+                          Class: {currentClass} Timetable Matrix
+                        </h4>
+                        <p className="text-[10px] text-[#807654] font-bold uppercase tracking-wider font-mono tabular-nums">
+                          {slots.filter(s => s.classId === currentClass).length} Periods Total
+                        </p>
+                      </div>
+
+                      <table className="w-full border-collapse text-left text-xs text-[#1f2a2e] min-w-[800px] table-fixed">
+                        <thead>
+                          <tr className="bg-[#f6f8f7]/70 border-b border-[#bac4c6]/60 text-[10px] uppercase font-bold text-[#6a7f84] tracking-wider">
+                            <th className="p-4 w-[130px] border-r border-[#bac4c6]/40 text-[#1c4a59] bg-[#f6f8f7]">Time Period</th>
+                            {WEEKDAYS.map(day => (
+                              <th key={day} className="p-4 text-center border-r border-[#bac4c6]/40 last:border-r-0 text-[#1c4a59]">
+                                {day}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#bac4c6]/40">
+                          {getTimeSlotsSorted().map(timeRange => {
+                            const [startTime, endTime] = timeRange.split(' - ');
+                            const rowBellInfo = getBellForSlotTime(startTime, endTime);
+                            return (
+                              <tr key={timeRange} className="hover:bg-[#f6f8f7]/30 align-top">
+                                {/* Left-most Time Block Identifier */}
+                                <td className="p-4 font-bold uppercase text-[#1f2a2e] border-r border-[#bac4c6]/40 bg-[#f6f8f7]/50">
+                                  <span className="block text-[#1c4a59] font-bold text-xs tracking-tight font-mono tabular-nums">{startTime}</span>
+                                  <span className="block text-[#6a7f84] text-[10px] font-semibold tracking-wider mt-0.5 font-mono tabular-nums">to {endTime}</span>
+                                  <span className={`mt-1.5 inline-flex items-center gap-1 text-[9px] font-bold normal-case ${
+                                    rowBellInfo.isActiveNow
+                                      ? 'text-[#065f46]'
+                                      : rowBellInfo.isArmed
+                                      ? 'text-[#1c4a59]'
+                                      : 'text-[#6a7f84]'
+                                  }`}>
+                                    <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                                    {rowBellInfo.isActiveNow
+                                      ? 'Active Period'
+                                      : rowBellInfo.bell?.label || 'Period Bell'}
+                                  </span>
+                                </td>
+
+                                {/* Weekdays Grid Slots */}
+                                {WEEKDAYS.map(day => {
+                                  const matchedSlots = slots.filter(s => 
+                                    s.classId === currentClass && 
+                                    s.day === day && 
+                                    s.startTime === startTime && 
+                                    s.endTime === endTime
+                                  );
+
+                                  return (
+                                    <td key={day} className="p-2 border-r border-[#bac4c6]/40 last:border-r-0 relative group min-h-[95px]">
+                                      {matchedSlots.length === 0 ? (
+                                        (isStudent || isParent) ? (
+                                          <div className="w-full h-full min-h-[75px] flex items-center justify-center border border-dashed border-[#bac4c6]/60 rounded-xl bg-[#f6f8f7]/50">
+                                            <span className="text-[10px] text-[#6a7f84] font-semibold tracking-wide italic">Free Period</span>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setFormClass(currentClass);
+                                              setFormDay(day);
+                                              setFormStartTime(startTime);
+                                              setFormEndTime(endTime);
+                                              setFormRoom('Room A');
+                                              setFormNotes('');
+                                              setEditingSlotId(null);
+                                              setIsFormOpen(true);
+                                            }}
+                                            className="w-full h-full min-h-[75px] flex flex-col items-center justify-center border border-dashed border-[#bac4c6] hover:border-[#1c4a59] hover:bg-[#f6f8f7] rounded-xl transition-all duration-150 group/btn cursor-pointer"
+                                          >
+                                            <Plus className="w-4 h-4 text-[#6a7f84] group-hover/btn:text-[#1c4a59] transition-all" />
+                                            <span className="text-[9px] font-bold text-[#6a7f84] uppercase tracking-wider mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                              {isTeacher ? 'Suggest' : 'Add Period'}
+                                            </span>
+                                          </button>
+                                        )
+                                      ) : (
+                                        <div className="space-y-2">
+                                          {matchedSlots.map(slot => (
+                                            <div
+                                              key={slot.id}
+                                              className="p-2.5 rounded-xl border bg-[#f6f8f7] border-[#e1c594] hover:border-[#1c4a59] hover:shadow-2xs transition-all relative"
+                                            >
+                                              <h5 className="font-bold text-[#1f2a2e] text-[11px] leading-snug truncate pr-10" title={slot.subjectName}>
+                                                {slot.subjectName}
+                                              </h5>
+                                              
+                                              <div className="mt-1 text-[10px] font-medium text-[#6a7f84] space-y-0.5">
+                                                <p className="truncate">{slot.teacherName}</p>
+                                                <p className="text-[#1c4a59] font-bold tracking-tight bg-white border border-[#bac4c6]/60 px-1.5 py-0.5 rounded inline-block">
+                                                  {slot.room}
+                                                </p>
+                                              </div>
+
+                                              {/* Touch-visible & desktop-hover action overlays */}
+                                              {isAdmin && (
+                                                <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity print:hidden">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleEditClick(slot)}
+                                                    className="p-1 bg-white border border-[#bac4c6] rounded text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] cursor-pointer"
+                                                    title="Edit Period"
+                                                  >
+                                                    <Edit2 className="w-2.5 h-2.5" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
+                                                    className="p-1 bg-white border border-[#bac4c6] rounded text-[#ef476f] hover:bg-[#fef2f2] cursor-pointer"
+                                                    title="Delete Period"
+                                                  >
+                                                    <Trash2 className="w-2.5 h-2.5" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -2813,112 +3049,172 @@ export default function TimetableManagement() {
 
         {/* Tab 2: Manage List View Mode */}
         {activeTab === 'manage' && (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-              <h4 className="text-xs font-black text-slate-950 uppercase tracking-widest">School Wide Time Slots Directory</h4>
-              <p className="text-[10px] text-slate-500 font-bold uppercase">{slots.length} Total Registered Slots</p>
+          <div className="bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden">
+            <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border-b border-[#bac4c6]/60 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider">School-Wide Time Slots Directory</h4>
+              <p className="text-[11px] text-[#807654] font-bold font-mono tabular-nums">{slots.length} Registered Slots</p>
             </div>
 
             {slots.length === 0 ? (
-              <div className="p-16 text-center space-y-3">
-                <Calendar className="w-12 h-12 text-slate-300 mx-auto" />
-                <h5 className="font-black text-slate-800 text-sm uppercase">Timetable Is Empty</h5>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">Configure recurring lesson blocks and classes to fill school records.</p>
+              <div className="p-10 sm:p-16 text-center space-y-2.5">
+                <Calendar className="w-10 h-10 text-[#6a7f84]/50 mx-auto" />
+                <h5 className="font-bold text-[#1f2a2e] text-sm uppercase">Timetable Is Empty</h5>
+                <p className="text-xs text-[#6a7f84] max-w-sm mx-auto font-medium">Configure recurring lesson blocks and classes to fill school records.</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 overflow-x-auto">
-                <table className="w-full text-left text-xs font-semibold text-slate-700 min-w-[700px]">
-                  <thead>
-                    <tr className="bg-slate-55 bg-slate-50/40 text-[9px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-100">
-                      <th className="p-3">Class/Grade</th>
-                      <th className="p-3">Subject</th>
-                      <th className="p-3">Teacher Roster</th>
-                      <th className="p-3">Schedule Time</th>
-                      <th className="p-3">Assigned Room</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {slots.map(slot => (
-                      <tr key={slot.id} className="hover:bg-slate-50/40 border-b border-slate-100/50">
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md text-[10px] font-black">
-                            {slot.classId}
-                          </span>
-                        </td>
-                        <td className="p-3 font-extrabold text-slate-900">{slot.subjectName}</td>
-                        <td className="p-3 text-slate-500 flex items-center gap-1.5 py-4">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center font-bold text-[10px] text-slate-500">
-                            {slot.teacherName.charAt(0)}
-                          </div>
-                          {slot.teacherName}
-                        </td>
-                        <td className="p-3">
-                          <span className="text-indigo-600 font-extrabold text-[11px] font-mono tabular-nums block">
-                            {slot.day}s, {slot.startTime} - {slot.endTime}
-                          </span>
-                          {(() => {
-                            const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
-                            return (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 font-semibold mt-0.5">
-                                <Bell className="w-2.5 h-2.5 text-[#faae57]" />
-                                {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Disarmed'})` : 'Auto Period Bell'}
+              <>
+                {/* Mobile Slot Cards (< 768px) */}
+                <div className="md:hidden divide-y divide-[#bac4c6]/50">
+                  {slots.map(slot => {
+                    const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                    return (
+                      <div key={slot.id} className="p-3.5 space-y-2 hover:bg-[#f6f8f7]/50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2 py-0.5 bg-[#1c4a59] text-white rounded-md text-[10px] font-bold">
+                                {slot.classId}
                               </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="p-3 text-slate-500">{slot.room}</td>
-                        <td className="p-3">
-                          <div className="flex items-center justify-end gap-2">
+                              <span className="text-xs font-bold text-[#1f2a2e] truncate">
+                                {slot.subjectName}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#6a7f84] font-medium mt-1 truncate">
+                              {slot.teacherName} · <span className="text-[#1c4a59] font-semibold">{slot.room}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
+                              type="button"
                               onClick={() => handleEditClick(slot)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600 hover:text-indigo-600 transition-colors"
+                              className="p-2 bg-[#f6f8f7] hover:bg-[#faae57] border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:text-[#1f2a2e] transition-colors cursor-pointer"
                               title="Edit Block"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
-                              className="p-1.5 bg-slate-100 hover:bg-red-50 hover:border-red-200 rounded text-slate-400 hover:text-red-500 transition-colors"
+                              className="p-2 bg-[#f6f8f7] hover:bg-[#fef2f2] border border-[#bac4c6] rounded-lg text-[#ef476f] transition-colors cursor-pointer"
                               title="Delete Block"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                        </td>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+                          <span className="font-mono tabular-nums font-bold text-[#1c4a59]">
+                            {slot.day.slice(0, 3)} · {slot.startTime} - {slot.endTime}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-[#6a7f84] font-semibold">
+                            <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                            {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Off'})` : 'Auto Period Bell'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop Table (>= 768px) */}
+                <div className="hidden md:block divide-y divide-[#bac4c6]/40 overflow-x-auto">
+                  <table className="w-full text-left text-xs font-semibold text-[#1f2a2e] min-w-[700px]">
+                    <thead>
+                      <tr className="bg-[#f6f8f7]/60 text-[10px] uppercase tracking-wider font-bold text-[#6a7f84] border-b border-[#bac4c6]/50">
+                        <th className="p-3.5">Class/Grade</th>
+                        <th className="p-3.5">Subject</th>
+                        <th className="p-3.5">Teacher Roster</th>
+                        <th className="p-3.5">Schedule Time</th>
+                        <th className="p-3.5">Assigned Room</th>
+                        <th className="p-3.5 text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#bac4c6]/40">
+                      {slots.map(slot => (
+                        <tr key={slot.id} className="hover:bg-[#f6f8f7]/50">
+                          <td className="p-3.5">
+                            <span className="px-2.5 py-1 bg-[#1c4a59] text-white rounded-lg text-[10px] font-bold">
+                              {slot.classId}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-bold text-[#1f2a2e]">{slot.subjectName}</td>
+                          <td className="p-3.5 text-[#6a7f84] flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#1c4a59] flex items-center justify-center font-bold text-[10px] text-white shrink-0">
+                              {slot.teacherName.charAt(0)}
+                            </div>
+                            <span className="truncate">{slot.teacherName}</span>
+                          </td>
+                          <td className="p-3.5">
+                            <span className="text-[#1c4a59] font-bold text-[11px] font-mono tabular-nums block">
+                              {slot.day}s, {slot.startTime} - {slot.endTime}
+                            </span>
+                            {(() => {
+                              const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-[#6a7f84] font-semibold mt-0.5">
+                                  <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                                  {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Disarmed'})` : 'Auto Period Bell'}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="p-3.5 text-[#1c4a59] font-semibold">{slot.room}</td>
+                          <td className="p-3.5">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleEditClick(slot)}
+                                className="p-1.5 bg-[#f6f8f7] hover:bg-[#faae57] border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:text-[#1f2a2e] transition-colors cursor-pointer"
+                                title="Edit Block"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
+                                className="p-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] border border-[#bac4c6] rounded-lg text-[#ef476f] transition-colors cursor-pointer"
+                                title="Delete Block"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         )}
 
         {/* Tab: Period Suggestions */}
         {activeTab === 'suggestions' && (
-          <div className="space-y-6">
-            <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-1 text-center md:text-left">
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center justify-center md:justify-start gap-2">
-                  <Clock className="w-5 h-5 text-[#1c4a59]" />
+          <div className="space-y-4 sm:space-y-5">
+            <div className="p-4 sm:p-5 bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+              <div className="space-y-1">
+                <h4 className="text-xs sm:text-sm font-bold text-[#1f2a2e] uppercase tracking-wider flex items-center gap-2">
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-[#1c4a59] shrink-0" />
                   Lesson Period Suggestions
                 </h4>
-                <p className="text-xs text-slate-500 font-semibold max-w-[550px]">
+                <p className="text-xs text-[#6a7f84] font-medium max-w-[550px]">
                   {isAdmin 
-                    ? "Review period requests submitted by teachers. Approved slots will automatically be merged into the active timetable if no collision occurs."
-                    : "Suggest recurring period slots directly. Suggestions are verified against existing active slots to avoid scheduling clashes."
+                    ? "Review period requests submitted by teachers. Approved slots automatically merge into the active timetable when conflict-free."
+                    : "Suggest recurring period slots directly. Suggestions are verified against existing active slots to prevent scheduling clashes."
                   }
                 </p>
               </div>
 
               {isTeacher && (
                 <button
+                  type="button"
                   onClick={() => {
                     resetForm();
                     setIsFormOpen(true);
                   }}
-                  className="px-4 py-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md shrink-0 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-xs shrink-0 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   Suggest New Period
@@ -2927,28 +3223,131 @@ export default function TimetableManagement() {
             </div>
 
             {suggestions.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center space-y-3 shadow-sm">
-                <Clock className="w-12 h-12 text-slate-300 mx-auto" />
-                <h5 className="font-black text-slate-800 text-sm uppercase">No Suggestions Logged</h5>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
-                  {isAdmin ? "No teacher has submitted any lesson block suggestions yet." : "You haven't submitted any slot suggestions yet. Click the button above to suggest one!"}
+              <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-10 sm:p-16 text-center space-y-2.5 shadow-xs">
+                <Clock className="w-10 h-10 text-[#6a7f84]/50 mx-auto" />
+                <h5 className="font-bold text-[#1f2a2e] text-sm uppercase">No Suggestions Logged</h5>
+                <p className="text-xs text-[#6a7f84] max-w-sm mx-auto font-medium">
+                  {isAdmin ? "No teacher has submitted any lesson block suggestions yet." : "You haven't submitted any slot suggestions yet. Tap the button above to suggest one!"}
                 </p>
               </div>
             ) : (
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                  <h4 className="text-xs font-black text-indigo-950 uppercase tracking-widest">
+              <div className="bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden">
+                <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border-b border-[#bac4c6]/60 flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider">
                     {isAdmin ? "All Staff Requests" : "My Suggestion Log"}
                   </h4>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                    {isAdmin ? `${suggestions.filter(s => s.status === 'pending').length} pending` : `${suggestions.length} total suggestions`}
+                  <span className="text-[11px] font-bold text-[#807654] font-mono tabular-nums">
+                    {isAdmin ? `${suggestions.filter(s => s.status === 'pending').length} pending` : `${suggestions.length} total`}
                   </span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs font-semibold text-slate-700 min-w-[800px]">
+                {/* Mobile Suggestion Cards (< 768px) */}
+                <div className="md:hidden divide-y divide-[#bac4c6]/50">
+                  {suggestions
+                    .filter(sug => isAdmin || sug.suggestedBy === user?.fullName)
+                    .map(sug => {
+                      const tempSlot = { id: sug.id, ...sug };
+                      const currentConflicts = getCollisions([...slots, tempSlot]);
+                      const hasClash = currentConflicts.some(c => c.slotA.id === sug.id || c.slotB.id === sug.id);
+                      const clashInfo = currentConflicts.find(c => c.slotA.id === sug.id || c.slotB.id === sug.id);
+
+                      return (
+                        <div key={sug.id} className="p-3.5 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 bg-[#1c4a59] text-white rounded-md text-[10px] font-bold uppercase">
+                                  {sug.classId}
+                                </span>
+                                <span className="text-xs font-bold text-[#1f2a2e] truncate">
+                                  {sug.subjectName}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#6a7f84] font-medium mt-1">
+                                By <span className="font-bold text-[#1f2a2e]">{sug.suggestedBy}</span> · {sug.room}
+                              </p>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border shrink-0 ${
+                              sug.status === 'approved'
+                                ? 'bg-[#ecfdf5] text-[#065f46] border-[#a7f3d0]'
+                                : sug.status === 'rejected'
+                                ? 'bg-[#fef2f2] text-[#ef476f] border-[#fecdd3]'
+                                : 'bg-[#faae57]/20 text-[#807654] border-[#e1c594]'
+                            }`}>
+                              {sug.status}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 text-xs bg-[#f6f8f7] px-2.5 py-1.5 rounded-lg border border-[#bac4c6]/50">
+                            <span className="font-mono tabular-nums font-bold text-[#1c4a59]">
+                              {sug.day.slice(0, 3)} · {sug.startTime} - {sug.endTime}
+                            </span>
+                            {sug.status === 'pending' && (
+                              hasClash ? (
+                                <span className="text-[#ef476f] text-[10px] font-bold flex items-center gap-1 truncate">
+                                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                                  Clash Detected
+                                </span>
+                              ) : (
+                                <span className="text-[#065f46] text-[10px] font-bold flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3 shrink-0" />
+                                  Conflict-Free
+                                </span>
+                              )
+                            )}
+                          </div>
+
+                          {sug.status === 'pending' && hasClash && clashInfo?.message && (
+                            <p className="text-[11px] text-[#ef476f] font-medium leading-snug">
+                              {clashInfo.message}
+                            </p>
+                          )}
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            {isAdmin && sug.status === 'pending' ? (
+                              <div className="grid grid-cols-2 gap-2 w-full">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveSuggestion(sug.id)}
+                                  disabled={hasClash}
+                                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                    hasClash
+                                      ? 'bg-[#f6f8f7] text-[#6a7f84] border-[#bac4c6] cursor-not-allowed'
+                                      : 'bg-[#1c4a59] hover:bg-[#163b47] text-white border-[#1c4a59]'
+                                  }`}
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5 text-[#06d6a0]" />
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectSuggestion(sug.id)}
+                                  className="px-3 py-1.5 bg-white border border-[#bac4c6] hover:bg-[#fef2f2] rounded-lg text-xs font-bold text-[#ef476f] transition-all cursor-pointer"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSuggestion(sug.id)}
+                                className="px-3 py-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] rounded-lg text-xs font-bold text-[#ef476f] border border-[#bac4c6] flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Desktop Suggestions Table (>= 768px) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs font-semibold text-[#1f2a2e] min-w-[800px]">
                     <thead>
-                      <tr className="bg-slate-50/30 text-[9px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-100">
+                      <tr className="bg-[#f6f8f7]/60 text-[10px] uppercase tracking-wider font-bold text-[#6a7f84] border-b border-[#bac4c6]/50">
                         <th className="p-4">Suggested By</th>
                         <th className="p-4">Target Class</th>
                         <th className="p-4">Subject & Room</th>
@@ -2959,7 +3358,7 @@ export default function TimetableManagement() {
                         {!isAdmin && <th className="p-4 text-right">Options</th>}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-[#bac4c6]/40">
                       {suggestions
                         .filter(sug => isAdmin || sug.suggestedBy === user?.fullName)
                         .map(sug => {
@@ -2969,45 +3368,45 @@ export default function TimetableManagement() {
                           const clashInfo = currentConflicts.find(c => c.slotA.id === sug.id || c.slotB.id === sug.id);
 
                           return (
-                            <tr key={sug.id} className="hover:bg-slate-50/20 align-middle">
-                              <td className="p-4 font-bold text-slate-900">{sug.suggestedBy}</td>
+                            <tr key={sug.id} className="hover:bg-[#f6f8f7]/50 align-middle">
+                              <td className="p-4 font-bold text-[#1f2a2e]">{sug.suggestedBy}</td>
                               <td className="p-4">
-                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md text-[10px] font-black uppercase">
+                                <span className="px-2.5 py-1 bg-[#1c4a59] text-white rounded-lg text-[10px] font-bold uppercase">
                                   {sug.classId}
                                 </span>
                               </td>
                               <td className="p-4">
-                                <div className="font-extrabold text-slate-800">{sug.subjectName}</div>
-                                <div className="text-[10px] text-indigo-600 font-bold mt-0.5"> {sug.room}</div>
+                                <div className="font-bold text-[#1f2a2e]">{sug.subjectName}</div>
+                                <div className="text-[10px] text-[#1c4a59] font-bold mt-0.5">{sug.room}</div>
                               </td>
                               <td className="p-4">
-                                <span className="text-slate-900 font-extrabold">
+                                <span className="text-[#1f2a2e] font-bold">
                                   {sug.day}
                                 </span>
-                                <div className="text-[10px] text-slate-500 font-bold mt-0.5">{sug.startTime} - {sug.endTime}</div>
+                                <div className="text-[10px] text-[#6a7f84] font-mono tabular-nums font-bold mt-0.5">{sug.startTime} - {sug.endTime}</div>
                               </td>
                               <td className="p-4">
                                 {sug.status !== 'pending' ? (
-                                  <span className="text-slate-400 italic text-[11px]">-</span>
+                                  <span className="text-[#6a7f84] italic text-[11px]">-</span>
                                 ) : hasClash ? (
-                                  <div className="text-red-600 text-[10px] max-w-[200px] leading-relaxed flex items-start gap-1">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-500 mt-0.5" />
+                                  <div className="text-[#ef476f] text-[10px] max-w-[200px] leading-relaxed flex items-start gap-1">
+                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-[#ef476f] mt-0.5" />
                                     <span>{clashInfo?.message || 'Collision Overlap Detected'}</span>
                                   </div>
                                 ) : (
-                                  <div className="text-emerald-600 text-[10px] flex items-center gap-1">
-                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                    <span> No collisions found</span>
+                                  <div className="text-[#065f46] text-[10px] flex items-center gap-1 font-bold">
+                                    <CheckCircle className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+                                    <span>No collisions found</span>
                                   </div>
                                 )}
                               </td>
                               <td className="p-4">
-                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide border ${
+                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border ${
                                   sug.status === 'approved'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    ? 'bg-[#ecfdf5] text-[#065f46] border-[#a7f3d0]'
                                     : sug.status === 'rejected'
-                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    ? 'bg-[#fef2f2] text-[#ef476f] border-[#fecdd3]'
+                                    : 'bg-[#faae57]/20 text-[#807654] border-[#e1c594]'
                                 }`}>
                                   {sug.status}
                                 </span>
@@ -3015,30 +3414,33 @@ export default function TimetableManagement() {
                               {isAdmin && (
                                 <td className="p-4 text-right">
                                   {sug.status === 'pending' ? (
-                                    <div className="flex items-center justify-end gap-1.5 uppercase text-[9px] font-black tracking-wider">
+                                    <div className="flex items-center justify-end gap-1.5 uppercase text-[10px] font-bold tracking-wider">
                                       <button
+                                        type="button"
                                         onClick={() => handleApproveSuggestion(sug.id)}
                                         disabled={hasClash}
-                                        className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1 shadow-xs transition-all ${
+                                        className={`px-2.5 py-1.5 rounded-lg border flex items-center gap-1 transition-all cursor-pointer ${
                                           hasClash
-                                            ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'
-                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 hover:shadow-emerald-600/10'
+                                            ? 'bg-[#f6f8f7] text-[#6a7f84] border-[#bac4c6] cursor-not-allowed'
+                                            : 'bg-[#1c4a59] hover:bg-[#163b47] text-white border-[#1c4a59]'
                                         }`}
                                       >
-                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        <CheckCircle className="w-3.5 h-3.5 text-[#06d6a0]" />
                                         Approve
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleRejectSuggestion(sug.id)}
-                                        className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-rose-50 hover:border-rose-150 rounded-lg text-slate-500 hover:text-rose-600 transition-all"
+                                        className="px-2.5 py-1.5 bg-white border border-[#bac4c6] hover:bg-[#fef2f2] rounded-lg text-[#ef476f] transition-all cursor-pointer"
                                       >
                                         Reject
                                       </button>
                                     </div>
                                   ) : (
                                     <button
+                                      type="button"
                                       onClick={() => handleDeleteSuggestion(sug.id)}
-                                      className="p-1.5 bg-slate-50 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-all border border-transparent hover:border-rose-100"
+                                      className="p-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] rounded-lg text-[#ef476f] transition-all border border-[#bac4c6] cursor-pointer"
                                       title="Delete Suggestion Record"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -3049,8 +3451,9 @@ export default function TimetableManagement() {
                               {!isAdmin && (
                                 <td className="p-4 text-right">
                                   <button
+                                    type="button"
                                     onClick={() => handleDeleteSuggestion(sug.id)}
-                                    className="p-1.5 bg-slate-50 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-all border border-transparent hover:border-rose-100"
+                                    className="p-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] rounded-lg text-[#ef476f] transition-all border border-[#bac4c6] cursor-pointer"
                                     title="Delete My Suggestion"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -3070,35 +3473,35 @@ export default function TimetableManagement() {
 
         {/* Tab 3: Interactive Double Booking / Collision Checker */}
         {activeTab === 'diagnose' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-5">
             {/* Quick overview metric */}
-            <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-1 text-center md:text-left">
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center justify-center md:justify-start gap-2">
-                  <UserCheck className="w-5 h-5 text-indigo-600" />
+            <div className="p-4 sm:p-5 bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-xs sm:text-sm font-bold text-[#1f2a2e] uppercase tracking-wider flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 sm:w-5 sm:h-5 text-[#1c4a59] shrink-0" />
                   School Schedule Diagnostics
                 </h4>
-                <p className="text-xs text-slate-500 font-semibold max-w-[550px]">
-                  The schedule engine analyses overlapping times. No teacher, class, or room should be in two places at once.
+                <p className="text-xs text-[#6a7f84] font-medium max-w-[550px]">
+                  The schedule engine analyzes overlapping times so no teacher, class, or room is double-booked.
                 </p>
               </div>
 
-              <div className="bg-slate-50/50 border border-slate-200 rounded-xl p-3 px-6 text-center shrink-0">
-                <span className="block text-2xl font-black text-slate-900">
-                  {detectedConflicts.length}
-                </span>
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+              <div className="bg-[#f6f8f7] border border-[#bac4c6] rounded-xl px-5 py-2.5 text-center shrink-0 flex sm:block items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-[#6a7f84] tracking-wider sm:block">
                   Conflicts Found
+                </span>
+                <span className="text-lg sm:text-2xl font-extrabold text-[#1c4a59] font-mono tabular-nums">
+                  {detectedConflicts.length}
                 </span>
               </div>
             </div>
 
             {detectedConflicts.length === 0 ? (
-              <div className="bg-emerald-50/30 border border-emerald-100 rounded-2xl p-12 text-center space-y-3 shadow-sm">
-                <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto" />
-                <h4 className="text-md font-black text-emerald-800 uppercase tracking-wider">Perfect Alignment!</h4>
-                <p className="text-xs text-slate-600 font-semibold max-w-[420px] mx-auto">
-                  Your timetable structure is 100% collision free. There are no overlapping hours for teachers, classes, or rooms.
+              <div className="bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl p-8 sm:p-12 text-center space-y-2.5 shadow-xs">
+                <CheckCircle className="w-10 h-10 text-[#06d6a0] mx-auto" />
+                <h4 className="text-sm font-bold text-[#065f46] uppercase tracking-wider">Perfect Alignment!</h4>
+                <p className="text-xs text-[#065f46]/80 font-medium max-w-[420px] mx-auto">
+                  Your timetable structure is 100% collision-free. There are no overlapping hours for teachers, classes, or rooms.
                 </p>
               </div>
             ) : (
@@ -3106,42 +3509,42 @@ export default function TimetableManagement() {
                 {detectedConflicts.map((c, idx) => (
                   <div 
                     key={idx}
-                    className="p-4 bg-red-50/50 border border-red-100 rounded-2xl hover:shadow-sm transition-all flex flex-col sm:flex-row items-start gap-4"
+                    className="p-3.5 sm:p-4 bg-[#fef2f2] border border-[#fecdd3] rounded-2xl transition-all flex flex-col sm:flex-row items-start gap-3"
                   >
-                    <div className="p-2.5 bg-red-100 text-red-700 rounded-xl shrink-0 mt-0.5">
-                      <AlertTriangle className="w-5 h-5" />
+                    <div className="p-2 bg-white border border-[#fecdd3] text-[#ef476f] rounded-xl shrink-0">
+                      <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded text-[9px] font-black uppercase">
+                    <div className="space-y-1.5 flex-1 min-w-0 w-full">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 bg-[#ef476f] text-white rounded text-[9px] font-bold uppercase">
                           {c.type}
                         </span>
-                        <span className="text-[11px] font-black text-slate-600">
+                        <span className="text-[11px] font-bold text-[#1f2a2e]">
                           Overlapping {c.slotA.day} Schedule
                         </span>
                       </div>
                       
-                      <p className="text-xs text-slate-900 font-extrabold leading-relaxed">
+                      <p className="text-xs text-[#1f2a2e] font-bold leading-relaxed">
                         {c.message}
                       </p>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 bg-white p-3 border border-red-100/50 rounded-xl">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2.5 bg-white p-3 border border-[#fecdd3] rounded-xl">
                         {/* Slot A details */}
                         <div className="text-[11px] space-y-0.5">
-                          <span className="text-slate-400 font-bold block uppercase text-[9px]">Class Period A</span>
-                          <span className="font-extrabold text-slate-800">{c.slotA.subjectName} ({c.slotA.classId})</span>
-                          <span className="block text-slate-500">Teacher: {c.slotA.teacherName}</span>
-                          <span className="block text-indigo-600 font-bold">Time: {c.slotA.startTime} - {c.slotA.endTime}</span>
-                          <span className="block text-slate-500">Room: {c.slotA.room}</span>
+                          <span className="text-[#6a7f84] font-bold block uppercase text-[9px]">Class Period A</span>
+                          <span className="font-bold text-[#1f2a2e] block">{c.slotA.subjectName} ({c.slotA.classId})</span>
+                          <span className="block text-[#6a7f84]">Teacher: {c.slotA.teacherName}</span>
+                          <span className="block text-[#1c4a59] font-mono tabular-nums font-bold">Time: {c.slotA.startTime} - {c.slotA.endTime}</span>
+                          <span className="block text-[#6a7f84]">Room: {c.slotA.room}</span>
                         </div>
 
                         {/* Slot B details */}
-                        <div className="text-[11px] space-y-0.5 border-t sm:border-t-0 sm:border-l sm:pl-4 border-slate-100 pt-2 sm:pt-0">
-                          <span className="text-slate-400 font-bold block uppercase text-[9px]">Class Period B</span>
-                          <span className="font-extrabold text-slate-800">{c.slotB.subjectName} ({c.slotB.classId})</span>
-                          <span className="block text-slate-500">Teacher: {c.slotB.teacherName}</span>
-                          <span className="block text-indigo-600 font-bold">Time: {c.slotB.startTime} - {c.slotB.endTime}</span>
-                          <span className="block text-slate-500">Room: {c.slotB.room}</span>
+                        <div className="text-[11px] space-y-0.5 border-t sm:border-t-0 sm:border-l sm:pl-3 border-[#bac4c6]/50 pt-2 sm:pt-0">
+                          <span className="text-[#6a7f84] font-bold block uppercase text-[9px]">Class Period B</span>
+                          <span className="font-bold text-[#1f2a2e] block">{c.slotB.subjectName} ({c.slotB.classId})</span>
+                          <span className="block text-[#6a7f84]">Teacher: {c.slotB.teacherName}</span>
+                          <span className="block text-[#1c4a59] font-mono tabular-nums font-bold">Time: {c.slotB.startTime} - {c.slotB.endTime}</span>
+                          <span className="block text-[#6a7f84]">Room: {c.slotB.room}</span>
                         </div>
                       </div>
                     </div>
@@ -3154,37 +3557,39 @@ export default function TimetableManagement() {
 
       </div>
 
-      {/* Edit Form Modal Box */}
+      {/* Add / Edit Time Block Modal (Scrollable on Small Screens) */}
       <AnimatePresence>
         {isFormOpen && (
-          <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 print:hidden">
+          <div className="fixed inset-0 bg-[#1f2a2e]/55 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 z-50 print:hidden">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-[#bac4c6] rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-xl overflow-hidden"
             >
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5">
-                  <Calendar className="w-5 h-5 text-indigo-600" />
-                  {isTeacher ? 'Suggest New Period' : (editingSlotId ? 'Edit Scheduled Period' : 'Add Timetable Block')}
+              <div className="px-4 sm:px-5 py-3.5 sm:py-4 bg-[#1c4a59] text-white flex items-center justify-between shrink-0">
+                <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center gap-2 truncate">
+                  <Calendar className="w-4 h-4 text-[#faae57] shrink-0" />
+                  <span className="truncate">
+                    {isTeacher ? 'Suggest New Period' : (editingSlotId ? 'Edit Scheduled Period' : 'Add Timetable Block')}
+                  </span>
                 </h3>
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="p-1 bg-slate-200/60 hover:bg-slate-200 rounded-full text-slate-600 transition-colors"
+                  className="w-7 h-7 bg-white/10 hover:bg-white/20 rounded-lg text-white flex items-center justify-center text-xs font-bold transition-colors cursor-pointer shrink-0"
                 >
                   <span className="sr-only">Close</span>
-                  X
+                  ✕
                 </button>
               </div>
 
-              <form onSubmit={handleSaveSlot} className="p-6 space-y-4">
+              <form onSubmit={handleSaveSlot} className="p-3.5 sm:p-5 space-y-3.5 overflow-y-auto flex-1">
                 
-                {/* Class and Subject */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                {/* Class and Subject (Stacked on Mobile, 2-Col on Tablet+) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider flex items-center justify-between gap-1">
                       <span>Target Class</span>
                       {formClass && (
                         <span className="text-[9px] font-bold text-[#1c4a59] bg-[#1c4a59]/10 px-1.5 py-0.5 rounded normal-case tracking-normal">
@@ -3195,7 +3600,7 @@ export default function TimetableManagement() {
                     <select
                       value={formClass}
                       onChange={(e) => handleFormClassChange(e.target.value)}
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white transition-colors"
                       required
                     >
                       <option value="" disabled>Select Class</option>
@@ -3205,11 +3610,11 @@ export default function TimetableManagement() {
                     </select>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider flex items-center justify-between gap-1">
                       <span>Subject</span>
                       {formClass && (
-                        <span className="text-[9px] font-bold text-[#1c4a59] bg-[#e1c594]/40 px-1.5 py-0.5 rounded normal-case tracking-normal truncate max-w-[110px]">
+                        <span className="text-[9px] font-bold text-[#1c4a59] bg-[#e1c594]/40 px-1.5 py-0.5 rounded normal-case tracking-normal truncate max-w-[120px]">
                           For {formClass} ({formSubjectGroups.matched.length})
                         </span>
                       )}
@@ -3217,7 +3622,7 @@ export default function TimetableManagement() {
                     <select
                       value={formSubject}
                       onChange={(e) => handleFormSubjectChange(e.target.value)}
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white transition-colors"
                       required
                     >
                       <option value="" disabled>Select Subject</option>
@@ -3246,27 +3651,27 @@ export default function TimetableManagement() {
                 </div>
 
                 {/* Teacher input */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider flex items-center justify-between gap-1">
                     <span>Assigned Teacher</span>
                     {(formClass || formSubject) && (
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal truncate ${
                         formTeacherGroups.exactMatch.length > 0
-                          ? 'text-[#1c4a59] bg-[#06d6a0]/20'
+                          ? 'text-[#065f46] bg-[#ecfdf5]'
                           : 'text-[#6a7f84] bg-[#f6f8f7]'
                       }`}>
                         {formTeacherGroups.exactMatch.length > 0
-                          ? `${formTeacherGroups.exactMatch.length} matched for ${formClass || 'Class'} • ${formSubject || 'Subject'}`
+                          ? `${formTeacherGroups.exactMatch.length} matched for ${formClass || 'Class'}`
                           : formTeacherGroups.subjectOrClassMatch.length > 0
                           ? `${formTeacherGroups.subjectOrClassMatch.length} related teacher(s)`
-                          : 'Showing all teachers'}
+                          : 'All teachers'}
                       </span>
                     )}
                   </label>
                   <select
                     value={formTeacher}
                     onChange={(e) => handleFormTeacherChange(e.target.value)}
-                    className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white transition-colors"
+                    className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white transition-colors"
                     required
                   >
                     <option value="" disabled>Select Teacher</option>
@@ -3305,16 +3710,16 @@ export default function TimetableManagement() {
 
                 {/* Quick Course Combos for Selected Class */}
                 {modalCourseQuickCombos.length > 0 && (
-                  <div className="space-y-1.5 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-3">
-                    <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-1.5 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-2.5 sm:p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
                       <span className="text-[11px] font-bold text-[#1c4a59]">
                         Quick Course Suggestions {formClass ? `for ${formClass}` : ''}
                       </span>
-                      <span className="text-[11px] text-[#6a7f84]">
-                        Click to auto-fill Subject, Teacher & next free time
+                      <span className="text-[10px] text-[#6a7f84]">
+                        Tap to auto-fill
                       </span>
                     </div>
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    <div className="flex flex-wrap gap-1.5 pt-0.5 max-h-24 overflow-y-auto">
                       {modalCourseQuickCombos.map(combo => {
                         const isActiveCombo =
                           formSubject.toLowerCase() === combo.subjectName.toLowerCase() &&
@@ -3342,7 +3747,7 @@ export default function TimetableManagement() {
                               setFormEndTime(freeWin.endTime);
                               setFormRoom(freeWin.room);
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer active:scale-[0.97] border flex items-center gap-1.5 ${
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer active:scale-[0.97] border flex items-center gap-1 ${
                               isActiveCombo
                                 ? 'bg-[#1c4a59] text-white border-[#1c4a59]'
                                 : 'bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border-[#bac4c6]'
@@ -3361,16 +3766,16 @@ export default function TimetableManagement() {
                   </div>
                 )}
 
-                {/* Day selector */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                {/* Day selector & Room */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider">
                       Weekday
                     </label>
                     <select
                       value={formDay}
                       onChange={(e) => setFormDay(e.target.value as any)}
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-white"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white"
                     >
                       {WEEKDAYS.map(day => (
                         <option key={day} value={day}>{day}</option>
@@ -3378,8 +3783,8 @@ export default function TimetableManagement() {
                     </select>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider">
                       Room / Building Location
                     </label>
                     <input
@@ -3388,7 +3793,7 @@ export default function TimetableManagement() {
                       value={formRoom}
                       onChange={(e) => setFormRoom(e.target.value)}
                       placeholder="e.g. Room A"
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
+                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white"
                     />
                     <datalist id="rooms-autocomplete">
                       {roomsList.map(r => <option key={r} value={r} />)}
@@ -3397,18 +3802,18 @@ export default function TimetableManagement() {
                 </div>
 
                 {/* Quick Time Period Suggestions & Auto-Find Conflict-Free Slot */}
-                <div className="space-y-2 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-2 bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-xl p-2.5 sm:p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
                     <span className="text-[11px] font-bold text-[#1c4a59] flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-[#faae57]" />
-                      Quick Time Period Suggestions ({formDay})
+                      <Clock className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                      <span>Quick Time Presets ({formDay.slice(0, 3)})</span>
                     </span>
                     <button
                       type="button"
                       onClick={handleJumpToNextFreeSlot}
-                      className="px-2.5 py-1 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-[11px] font-bold transition-all cursor-pointer active:scale-[0.97]"
+                      className="px-2.5 py-1 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-full text-[10px] font-bold transition-all cursor-pointer active:scale-[0.97]"
                     >
-                      Auto-Pick Next Free Slot
+                      Auto-Pick Free Slot
                     </button>
                   </div>
 
@@ -3440,7 +3845,7 @@ export default function TimetableManagement() {
                             }`}
                           />
                         </div>
-                        <div className={`text-[11px] font-mono tabular-nums font-bold mt-0.5 ${
+                        <div className={`text-[10px] font-mono tabular-nums font-bold mt-0.5 ${
                           preset.isSelected ? 'text-white' : 'text-[#1f2a2e]'
                         }`}>
                           {preset.startTime}-{preset.endTime}
@@ -3451,39 +3856,39 @@ export default function TimetableManagement() {
                 </div>
 
                 {/* Time picker */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-[#1c4a59]" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#1c4a59]" />
                       Start Time
                     </label>
                     <input
                       type="time"
                       value={formStartTime}
                       onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
+                      className="w-full border border-[#bac4c6] rounded-xl px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white"
                       required
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-[#1c4a59]" />
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#1c4a59]" />
                       End Time
                     </label>
                     <input
                       type="time"
                       value={formEndTime}
                       onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e]"
+                      className="w-full border border-[#bac4c6] rounded-xl px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white"
                       required
                     />
                   </div>
                 </div>
 
                 {/* Additional notes */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider">
                     Notes / Lesson Objectives (Optional)
                   </label>
                   <textarea
@@ -3491,26 +3896,26 @@ export default function TimetableManagement() {
                     onChange={(e) => setFormNotes(e.target.value)}
                     placeholder="e.g. Double period for algebra exercises"
                     rows={2}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                    className="w-full border border-[#bac4c6] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1c4a59]/20 focus:border-[#1c4a59] font-semibold text-[#1f2a2e] bg-[#f6f8f7] focus:bg-white"
                   />
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2 text-xs uppercase font-extrabold tracking-wider">
+                <div className="pt-3 border-t border-[#bac4c6]/60 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 text-xs font-bold">
                   <button
                     type="button"
                     onClick={() => setIsFormOpen(false)}
                     disabled={syncState === 'saving'}
-                    className="px-4 py-2 hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors disabled:opacity-50"
+                    className="px-4 py-2.5 bg-[#f6f8f7] hover:bg-[#e1c594]/30 border border-[#bac4c6] rounded-xl text-[#1f2a2e] transition-colors disabled:opacity-50 cursor-pointer text-center"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={syncState === 'saving'}
-                    className="px-4 py-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                    className="px-4 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl transition-all shadow-xs disabled:opacity-50 cursor-pointer text-center"
                   >
                     {syncState === 'saving'
-                      ? 'Saving to Supabase…'
+                      ? 'Saving…'
                       : isTeacher
                       ? 'Submit Suggestion'
                       : editingSlotId
