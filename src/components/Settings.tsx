@@ -1347,7 +1347,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-500 font-mono tabular-nums shrink-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs text-slate-500 font-mono tabular-nums min-w-0">
             <span>public.schools ({cloudSettingsStatus.tableStatus.schools?.count ?? 1})</span>
             <span>·</span>
             <span>public.school_settings ({cloudSettingsStatus.tableStatus.school_settings?.count ?? 1})</span>
@@ -1357,37 +1357,37 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
-        {/* Sidebar Nav / Mobile Tab Bar */}
-        <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 flex md:flex-col overflow-x-auto gap-1 md:space-y-1 no-scrollbar shrink-0">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row min-w-0">
+        {/* Sidebar Nav / 2-Column Mobile Tab Grid */}
+        <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 sm:p-2.5 grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-col gap-1.5 md:space-y-1 shrink-0 min-w-0">
           <button
             onClick={() => setActiveTab('personal')}
             className={cn(
-              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
               activeTab === 'personal'
                 ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-2 min-w-0">
               <UserCheck className="w-4 h-4 shrink-0" />
-              <span className="text-xs sm:text-sm">My Account & Role</span>
+              <span className="text-xs sm:text-sm truncate">My Account</span>
             </span>
-            <span className="text-[10px] font-semibold text-emerald-600">Edit</span>
+            <span className="text-[10px] font-semibold text-emerald-600 shrink-0 hidden sm:inline">Edit</span>
           </button>
 
           <button
             onClick={() => setActiveTab('profile')}
             className={cn(
-              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
               activeTab === 'profile'
                 ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-2 min-w-0">
               <Building2 className="w-4 h-4 shrink-0" />
-              <span className="text-xs sm:text-sm">School Profile</span>
+              <span className="text-xs sm:text-sm truncate">School Profile</span>
             </span>
             {!canEditProfile && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
           </button>
@@ -1395,15 +1395,15 @@ export default function Settings() {
           <button
             onClick={() => setActiveTab('academic')}
             className={cn(
-              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
               activeTab === 'academic'
                 ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-2 min-w-0">
               <Calendar className="w-4 h-4 shrink-0" />
-              <span className="text-xs sm:text-sm">Academic & Grading</span>
+              <span className="text-xs sm:text-sm truncate">Academic</span>
             </span>
             {!canEditAcademic && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
           </button>
@@ -1412,15 +1412,15 @@ export default function Settings() {
             <button
               onClick={() => setActiveTab('fees')}
               className={cn(
-                "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+                "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
                 activeTab === 'fees'
                   ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                   : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              <span className="flex items-center gap-2.5">
+              <span className="flex items-center gap-2 min-w-0">
                 <CreditCard className="w-4 h-4 shrink-0" />
-                <span className="text-xs sm:text-sm">Fees Configuration</span>
+                <span className="text-xs sm:text-sm truncate">Fees Config</span>
               </span>
               {!canEditFees && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
             </button>
@@ -1429,15 +1429,15 @@ export default function Settings() {
           <button
             onClick={() => setActiveTab('theme')}
             className={cn(
-              "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+              "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
               activeTab === 'theme'
                 ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-2 min-w-0">
               <Palette className="w-4 h-4 shrink-0" />
-              <span className="text-xs sm:text-sm">Branding & Themes</span>
+              <span className="text-xs sm:text-sm truncate">Branding</span>
             </span>
           </button>
 
@@ -1445,23 +1445,23 @@ export default function Settings() {
             <button
               onClick={() => setActiveTab('database')}
               className={cn(
-                "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl transition-all text-left whitespace-nowrap shrink-0 md:w-full cursor-pointer",
+                "flex items-center justify-between gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-xl transition-all text-left min-w-0 md:w-full cursor-pointer",
                 activeTab === 'database'
                   ? "bg-white text-indigo-600 shadow-sm font-bold border border-slate-200"
                   : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              <span className="flex items-center gap-2.5">
+              <span className="flex items-center gap-2 min-w-0">
                 <Database className="w-4 h-4 shrink-0" />
-                <span className="text-xs sm:text-sm">Data & Backup</span>
+                <span className="text-xs sm:text-sm truncate">Data & Backup</span>
               </span>
-              <span className="text-[10px] font-semibold text-indigo-600">Admin</span>
+              <span className="text-[10px] font-semibold text-indigo-600 shrink-0 hidden sm:inline">Admin</span>
             </button>
           )}
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 sm:p-8">
+        <div className="flex-1 p-3.5 sm:p-6 lg:p-8 min-w-0 overflow-x-hidden">
           {activeTab === 'profile' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -1751,18 +1751,83 @@ export default function Settings() {
               </div>
 
               {/* Grade Boundaries Table synced to public.school_settings.grade_boundaries */}
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <Award className="w-4 h-4 text-indigo-600" />
-                      Grading Scale & Boundaries (`public.school_settings.grade_boundaries`)
+              <div className="pt-4 border-t border-slate-100 space-y-3 min-w-0">
+                <div className="flex items-center justify-between min-w-0">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2 break-words">
+                      <Award className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>Grading Scale & Boundaries</span>
                     </h4>
                     <p className="text-xs text-slate-500">Used when computing terminal report grades and BECE/WASSCE aggregates.</p>
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                {/* Stacked Mobile Grade Cards (< 768px) */}
+                <div className="md:hidden space-y-2.5 min-w-0">
+                  {gradeBoundaries.map((row, idx) => (
+                    <div key={row.grade} className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold font-mono">
+                          Grade {row.grade}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-indigo-600">
+                          {row.points} {row.points === 1 ? 'Point' : 'Points'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1 min-w-0">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Min Score (%)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            disabled={!canEditAcademic}
+                            value={row.minScore}
+                            onChange={(e) => {
+                              const next = [...gradeBoundaries];
+                              next[idx] = { ...next[idx], minScore: Number(e.target.value) || 0 };
+                              setGradeBoundaries(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono tabular-nums disabled:bg-slate-50"
+                          />
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Max Score (%)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            disabled={!canEditAcademic}
+                            value={row.maxScore}
+                            onChange={(e) => {
+                              const next = [...gradeBoundaries];
+                              next[idx] = { ...next[idx], maxScore: Number(e.target.value) || 0 };
+                              setGradeBoundaries(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono tabular-nums disabled:bg-slate-50"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block">Official Remark</label>
+                        <input
+                          type="text"
+                          disabled={!canEditAcademic}
+                          value={row.remark}
+                          onChange={(e) => {
+                            const next = [...gradeBoundaries];
+                            next[idx] = { ...next[idx], remark: e.target.value };
+                            setGradeBoundaries(next);
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs disabled:bg-slate-50"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table (>= 768px) */}
+                <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-xl">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
@@ -2227,18 +2292,18 @@ export default function Settings() {
                       <p className="text-[11px] text-slate-500">
                         Find this in your Supabase Dashboard (<span className="font-mono text-emerald-700">niavmonyfwqlryppgksy</span>) under <strong>Project Settings &gt; API &gt; service_role (secret)</strong>.
                       </p>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col sm:flex-row gap-2 min-w-0">
                         <input
                           type="password"
                           placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                           value={serviceRoleKeyInput}
                           onChange={(e) => setServiceRoleKeyInput(e.target.value)}
-                          className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
+                          className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
                         />
                         <button
                           onClick={handleUpdateServiceRoleKey}
                           disabled={isUpdatingKey || !serviceRoleKeyInput.trim()}
-                          className="px-4 py-2 bg-[#1c4a59] text-white rounded-lg text-xs font-bold hover:bg-[#1c4a59]/90 transition disabled:opacity-50 cursor-pointer shrink-0"
+                          className="w-full sm:w-auto px-4 py-2 bg-[#1c4a59] text-white rounded-lg text-xs font-bold hover:bg-[#1c4a59]/90 transition disabled:opacity-50 cursor-pointer shrink-0"
                         >
                           {isUpdatingKey ? 'Verifying...' : 'Link & Route Key'}
                         </button>

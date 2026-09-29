@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast, Toaster } from 'sonner';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
 export type NotificationType = 'success' | 'error' | 'info';
 
@@ -14,6 +14,12 @@ export interface ConfirmOptions {
   onCancel?: () => void;
 }
 
+interface SwipeToastItem {
+  id: string;
+  message: string;
+  type: NotificationType;
+}
+
 interface NotificationContextType {
   showToast: (message: string, type?: NotificationType) => void;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
@@ -23,8 +29,23 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [confirmState, setConfirmState] = useState<(ConfirmOptions & { resolve: (val: boolean) => void }) | null>(null);
+  const [mobileToasts, setMobileToasts] = useState<SwipeToastItem[]>([]);
+
+  const dismissMobileToast = useCallback((id: string) => {
+    setMobileToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   const showToast = useCallback((message: string, type: NotificationType = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setMobileToasts(prev => [...prev.slice(-2), { id, message, type }]);
+      setTimeout(() => {
+        setMobileToasts(prev => prev.filter(t => t.id !== id));
+      }, 4200);
+      return;
+    }
+
     if (type === 'success') {
       toast.success(message);
     } else if (type === 'error') {
@@ -67,11 +88,62 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     <NotificationContext.Provider value={{ showToast, confirm: triggerConfirm }}>
       {children}
 
-      {/* Emil Kowalski's Sonner Toast Stack */}
+      {/* Swipe-to-Dismiss Mobile Notification Toasts */}
+      <div className="fixed top-3 inset-x-3 z-[110] flex flex-col gap-2 pointer-events-none md:hidden print:hidden">
+        <AnimatePresence>
+          {mobileToasts.map((item) => (
+            <motion.div
+              key={item.id}
+              layout
+              initial={{ opacity: 0, y: -16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 140, scale: 0.92 }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.85}
+              onDragEnd={(_, info) => {
+                if (Math.abs(info.offset.x) > 65 || Math.abs(info.velocity.x) > 350) {
+                  dismissMobileToast(item.id);
+                }
+              }}
+              className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-3 rounded-2xl shadow-xl border text-xs font-bold touch-pan-y select-none ${
+                item.type === 'success'
+                  ? 'bg-[#1c4a59] text-white border-[#06d6a0]/50'
+                  : item.type === 'error'
+                  ? 'bg-[#ef476f] text-white border-white/25'
+                  : 'bg-[#1f2a2e] text-white border-white/15'
+              }`}
+            >
+              {item.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-[#06d6a0] shrink-0" />
+              ) : item.type === 'error' ? (
+                <AlertCircle className="w-4 h-4 text-white shrink-0" />
+              ) : (
+                <Info className="w-4 h-4 text-[#faae57] shrink-0" />
+              )}
+              <span className="flex-1 leading-snug break-words">{item.message}</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider opacity-65 shrink-0">
+                Swipe
+              </span>
+              <button
+                type="button"
+                onClick={() => dismissMobileToast(item.id)}
+                className="p-1 rounded-lg hover:bg-white/15 transition-colors shrink-0 cursor-pointer"
+                aria-label="Dismiss notification"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
+      {/* Emil Kowalski's Sonner Toast Stack with Multi-Directional Swipe */}
       <Toaster 
         position="bottom-right"
         richColors
         closeButton
+        swipeDirections={['left', 'right', 'bottom', 'top']}
         toastOptions={{
           className: 'font-sans text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 shadow-lg',
           duration: 4000

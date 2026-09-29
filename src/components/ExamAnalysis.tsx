@@ -649,29 +649,29 @@ export default function ExamAnalysis() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 border-b border-slate-100 gap-4 print:hidden">
-        <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full uppercase tracking-wider mb-2">
-            <Award className="w-3.5 h-3.5" />
-            WAEC Performance Console
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between pb-4 border-b border-slate-100 gap-4 print:hidden min-w-0">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[10px] sm:text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full uppercase tracking-wider mb-2 max-w-full">
+            <Award className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">WAEC Performance Console</span>
           </span>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">BECE & WASSCE Analysis</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight break-words">BECE & WASSCE Analysis</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 leading-relaxed">
             Predict high school placement, track university admission suitability, map grade aggregates, and generate WAEC reports.
           </p>
         </div>
 
         {!isStudent ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full md:w-auto shrink-0">
             <button
               onClick={handleProvisionSampleData}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm active:scale-95 cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl font-bold text-[11px] sm:text-xs uppercase tracking-wide transition-all shadow-sm active:scale-95 cursor-pointer min-h-[40px]"
               title="Populate the database with demo results for examination grades"
             >
-              <Database className="w-4 h-4 text-emerald-600" />
-              <span>Generate Demo Grades</span>
+              <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
+              <span className="truncate">Demo Grades</span>
             </button>
             
             <button
@@ -679,45 +679,47 @@ export default function ExamAnalysis() {
                 resetForm();
                 setIsModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-md hover:shadow-indigo-500/10 active:scale-95 cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[11px] sm:text-xs uppercase tracking-wide transition-all shadow-md hover:shadow-indigo-500/10 active:scale-95 cursor-pointer min-h-[40px]"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Exam Record</span>
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Add Record</span>
             </button>
           </div>
         ) : studentRecord ? (
-          <div className="flex items-center gap-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 pr-4">
-            <div className="w-9 h-9 bg-indigo-600 text-white rounded-lg flex items-center justify-center font-black text-sm uppercase">
+          <div className="flex items-center gap-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 pr-4 min-w-0">
+            <div className="w-9 h-9 bg-indigo-600 text-white rounded-lg flex items-center justify-center font-black text-sm uppercase shrink-0">
               {(studentRecord.firstName?.[0] || '')}{(studentRecord.lastName?.[0] || '') || 'S'}
             </div>
-            <div>
-              <p className="text-xs font-black text-indigo-950">{studentRecord.firstName} {studentRecord.lastName}</p>
-              <p className="text-[10px] text-slate-400 font-mono mt-0.5">{studentRecord.studentId} • {studentRecord.class}</p>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-indigo-950 truncate">{studentRecord.firstName} {studentRecord.lastName}</p>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{studentRecord.studentId} • {studentRecord.class}</p>
             </div>
           </div>
         ) : null}
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-100 gap-1 sm:gap-2 print:hidden">
+      {/* Tabs - 2-column grid on mobile with 3rd tab full width */}
+      <div className="grid grid-cols-2 sm:flex border-b border-slate-100 gap-1.5 sm:gap-2 pb-2 sm:pb-0 print:hidden">
         {[
-          { id: 'overview', label: 'Dashboard & Insights', icon: TrendingUp },
-          { id: 'ledger', label: 'Examinations Ledger', icon: GraduationCap },
-          { id: 'predictor', label: 'Interactive Grade Calculator', icon: Calculator },
+          { id: 'overview', label: 'Dashboard & Insights', icon: TrendingUp, spanFullOnMobile: false },
+          { id: 'ledger', label: 'Examinations Ledger', icon: GraduationCap, spanFullOnMobile: false },
+          { id: 'predictor', label: 'Interactive Grade Calculator', icon: Calculator, spanFullOnMobile: true },
         ].map(t => {
           const ActiveIcon = t.icon;
           return (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id as any)}
-              className={`flex items-center gap-2 px-4 py-3 border-b-2 font-bold text-sm tracking-wide transition-all cursor-pointer ${
+              className={`flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-none border sm:border-0 sm:border-b-2 font-bold text-xs sm:text-sm tracking-wide transition-all cursor-pointer min-w-0 ${
+                t.spanFullOnMobile ? 'col-span-2 sm:col-span-1' : ''
+              } ${
                 activeTab === t.id 
-                  ? 'border-indigo-600 text-indigo-600 font-extrabold bg-indigo-50/20' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-200'
+                  ? 'border-indigo-600 text-indigo-600 font-extrabold bg-indigo-50/60 sm:bg-indigo-50/20' 
+                  : 'border-slate-200 sm:border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-200 bg-white sm:bg-transparent'
               }`}
             >
-              <ActiveIcon className="w-4 h-4" />
-              <span>{t.label}</span>
+              <ActiveIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">{t.label}</span>
             </button>
           );
         })}
@@ -725,9 +727,9 @@ export default function ExamAnalysis() {
 
       {/* OVERVIEW TAB */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6 min-w-0">
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Graded Candidates</span>

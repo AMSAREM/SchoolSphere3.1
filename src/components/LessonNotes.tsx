@@ -787,62 +787,64 @@ export default function LessonNotes({ showToast, currentUser }: LessonNotesProps
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 sm:space-y-6 pb-12 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Top Institutional Header */}
-      <div className="bg-[#1C4A59] text-white rounded-xl p-6 shadow-sm border border-slate-800/20">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2.5 mb-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-white/15 text-amber-300 border border-white/15">
-                <BookOpen className="w-3.5 h-3.5" />
-                Curriculum & Vetting Portal
+      <div className="bg-[#1C4A59] text-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-800/20 min-w-0 overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 min-w-0">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-white/15 text-amber-300 border border-white/15">
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Curriculum & Vetting Portal</span>
               </span>
-              <span className="text-xs text-slate-200 font-mono">
+              <span className="text-[11px] sm:text-xs text-slate-200 font-mono">
                 {currentAcademicYear} · {selectedTerm}
               </span>
               {/* Live Supabase Sync Status */}
               <button
                 onClick={() => syncWithSupabase(false)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 hover:bg-emerald-500/30 transition-colors cursor-pointer"
                 title="Click to synchronize lesson notes with Supabase"
               >
-                <RefreshCw className={`w-3 h-3 ${syncState === 'syncing' ? 'animate-spin' : ''}`} />
-                {syncState === 'syncing'
-                  ? 'Syncing with Supabase...'
-                  : syncState === 'error'
-                  ? 'Supabase Retry Sync'
-                  : 'Synced to Supabase'}
+                <RefreshCw className={`w-3 h-3 shrink-0 ${syncState === 'syncing' ? 'animate-spin' : ''}`} />
+                <span className="truncate">
+                  {syncState === 'syncing'
+                    ? 'Syncing...'
+                    : syncState === 'error'
+                    ? 'Retry Sync'
+                    : 'Synced'}
+                </span>
               </button>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+            <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight break-words">
               Teacher Lesson Notes & HOD / Headmaster Review
             </h1>
-            <p className="text-sm text-slate-200 mt-1 max-w-3xl">
+            <p className="text-xs sm:text-sm text-slate-200 mt-1 max-w-3xl leading-relaxed">
               Prepare structured weekly lesson plans or upload PDF lesson notes (Weeks 1–14) for supervisory vetting and official approval by Heads of Department, Headmasters, and Administrators.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full lg:w-auto shrink-0">
             <button
               onClick={() => handleOpenNewNote('pdf')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-[11px] sm:text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer min-h-[42px]"
             >
-              <FileUp className="w-4 h-4 text-amber-300" />
-              Upload PDF Lesson Note
+              <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
+              <span className="truncate">Upload PDF</span>
             </button>
             <button
               onClick={() => handleOpenNewNote('hybrid')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-xs uppercase tracking-wider bg-[#FAAE57] hover:bg-[#f59e3d] text-slate-950 shadow-sm transition-all cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-[11px] sm:text-xs uppercase tracking-wider bg-[#FAAE57] hover:bg-[#f59e3d] text-slate-950 shadow-sm transition-all cursor-pointer min-h-[42px]"
             >
-              <Plus className="w-4 h-4" />
-              New Lesson Note
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">New Note</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* KPI Summary Strip (Max 4 cards in row) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Summary Strip (2x2 on mobile, 4 cards on desktop) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">

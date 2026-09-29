@@ -621,6 +621,13 @@ function AppContent() {
     };
   }, []);
 
+  const viewContainerRef = useRef<HTMLDivElement | null>(null);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullStartXRef = useRef<number | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [dismissedAlertTimestamp, setDismissedAlertTimestamp] = useState<number | null>(null);
+  const PULL_THRESHOLD = 58;
+
   const handleSync = async () => {
     setIsSyncing(true);
     try {
@@ -637,6 +644,54 @@ function AppContent() {
       showToast("Sync completed locally.", "info");
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleTouchStartPull = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (activeView === 'creator' || isSyncing) return;
+    const container = viewContainerRef.current;
+    if (!container || container.scrollTop > 2) {
+      pullStartYRef.current = null;
+      return;
+    }
+    const touch = e.touches[0];
+    if (touch) {
+      pullStartYRef.current = touch.clientY;
+      pullStartXRef.current = touch.clientX;
+    }
+  };
+
+  const handleTouchMovePull = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pullStartYRef.current === null || isSyncing) return;
+    const container = viewContainerRef.current;
+    if (!container || container.scrollTop > 2) {
+      pullStartYRef.current = null;
+      if (pullDistance !== 0) setPullDistance(0);
+      return;
+    }
+    const touch = e.touches[0];
+    if (!touch) return;
+    const deltaY = touch.clientY - pullStartYRef.current;
+    const deltaX = Math.abs(touch.clientX - (pullStartXRef.current ?? touch.clientX));
+
+    // Only engage pull-to-refresh on predominantly vertical downward drags
+    if (deltaY > 6 && deltaY > deltaX * 1.2) {
+      const damped = Math.min(Math.round(deltaY * 0.45), 92);
+      setPullDistance(damped);
+    } else if (deltaY <= 0 && pullDistance > 0) {
+      setPullDistance(0);
+    }
+  };
+
+  const handleTouchEndPull = async () => {
+    if (pullStartYRef.current === null) return;
+    pullStartYRef.current = null;
+    pullStartXRef.current = null;
+    const finalPull = pullDistance;
+    setPullDistance(0);
+    if (finalPull >= PULL_THRESHOLD && !isSyncing) {
+      await handleSync();
+      checkSupabaseConnection();
     }
   };
 
@@ -1048,18 +1103,28 @@ function AppContent() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden w-full print:block print:h-auto print:overflow-visible">
-        {/* Global Emergency Alert Marquee Indicator */}
-        {activeSirenBroadcast && (
-          <div className={cn(
-            "h-10 text-white font-extrabold flex items-center justify-between px-4 sm:px-6 lg:px-8 select-none animate-pulse shrink-0 text-xs sm:text-sm tracking-wide shadow-sm uppercase overflow-hidden z-40 relative",
-            activeSirenBroadcast.type === 'lockdown' ? 'bg-red-600' :
-            activeSirenBroadcast.type === 'fire' ? 'bg-orange-600' :
-            activeSirenBroadcast.type === 'weather' ? 'bg-amber-600' :
-            activeSirenBroadcast.type === 'allclear' ? 'bg-emerald-600' :
-            'bg-indigo-600'
-          )}>
-            <div className="flex items-center gap-2 truncate">
+      <main className="flex-1 flex flex-col h-full min-w-0 max-w-full overflow-hidden w-full print:block print:h-auto print:overflow-visible">
+        {/* Global Emergency Alert Marquee Indicator (Swipeable to dismiss on touch screens) */}
+        {activeSirenBroadcast && dismissedAlertTimestamp !== activeSirenBroadcast.timestamp && (
+          <motion.div
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.7}
+            onDragEnd={(_, info) => {
+              if (Math.abs(info.offset.x) > 85 || Math.abs(info.velocity.x) > 420) {
+                setDismissedAlertTimestamp(activeSirenBroadcast.timestamp || Date.now());
+              }
+            }}
+            className={cn(
+              "min-h-10 py-1.5 sm:py-0 text-white font-extrabold flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 px-3 sm:px-6 lg:px-8 select-none animate-pulse shrink-0 text-xs sm:text-sm tracking-wide shadow-sm uppercase overflow-hidden z-40 relative touch-pan-y",
+              activeSirenBroadcast.type === 'lockdown' ? 'bg-red-600' :
+              activeSirenBroadcast.type === 'fire' ? 'bg-orange-600' :
+              activeSirenBroadcast.type === 'weather' ? 'bg-amber-600' :
+              activeSirenBroadcast.type === 'allclear' ? 'bg-emerald-600' :
+              'bg-indigo-600'
+            )}
+          >
+            <div className="flex items-center gap-2 truncate min-w-0 flex-1">
               <span className="flex h-2 w-2 relative shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
@@ -1072,10 +1137,10 @@ function AppContent() {
               </span>
             </div>
             
-            <div className="flex items-center gap-2 shrink-0 ml-3">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 onClick={() => setIsGloballyMuted(!isGloballyMuted)}
-                className="text-[9px] font-black tracking-widest bg-white/20 hover:bg-white text-white hover:text-slate-900 px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm flex items-center gap-1"
+                className="text-[9px] font-black tracking-widest bg-white/20 hover:bg-white text-white hover:text-slate-900 px-2 sm:px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm flex items-center gap-1"
                 title={isGloballyMuted ? "Unmute campus speaker locally" : "Mute campus speaker locally"}
               >
                 {isGloballyMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
@@ -1095,24 +1160,24 @@ function AppContent() {
                     }
                   });
                 }}
-                className="text-[9px] font-black tracking-widest bg-red-900/60 hover:bg-white text-white hover:text-red-700 px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm border border-white/30"
+                className="text-[9px] font-black tracking-widest bg-red-900/60 hover:bg-white text-white hover:text-red-700 px-2 sm:px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm border border-white/30"
               >
                 Squelch All
               </button>
 
               <button 
                 onClick={() => setActiveView('siren')}
-                className="text-[9px] font-black tracking-widest bg-white/20 hover:bg-white text-white hover:text-slate-900 px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm animate-pulse-subtle"
+                className="text-[9px] font-black tracking-widest bg-white/20 hover:bg-white text-white hover:text-slate-900 px-2 sm:px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm animate-pulse-subtle"
               >
                 Open Siren
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/70 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs">
+          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/70 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs min-w-0 max-w-full">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
@@ -1278,11 +1343,48 @@ function AppContent() {
           </header>
         )}
 
-        {/* View Container */}
-        <div className={cn(
-          "flex-1 relative print:p-0 print:overflow-visible print:h-auto print:block",
-          activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-4 sm:p-6 lg:p-8 pb-mobile-safe-content lg:pb-8"
-        )}>
+        {/* View Container with Touch Pull-to-Refresh */}
+        <div
+          ref={viewContainerRef}
+          onTouchStart={handleTouchStartPull}
+          onTouchMove={handleTouchMovePull}
+          onTouchEnd={handleTouchEndPull}
+          onTouchCancel={handleTouchEndPull}
+          className={cn(
+            "flex-1 relative w-full min-w-0 max-w-full overflow-x-hidden print:p-0 print:overflow-visible print:h-auto print:block",
+            activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-2.5 sm:p-6 lg:p-8 pb-mobile-safe-content lg:pb-8"
+          )}
+        >
+          {/* Pull-to-Refresh Visual Indicator */}
+          {(pullDistance > 0 || isSyncing) && activeView !== 'creator' && (
+            <div
+              className="flex items-center justify-center overflow-hidden transition-all duration-150 print:hidden"
+              style={{ height: isSyncing ? 46 : pullDistance, marginBottom: (pullDistance > 8 || isSyncing) ? 10 : 0 }}
+            >
+              <div className={cn(
+                "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-md border transition-all max-w-full",
+                isSyncing || pullDistance >= PULL_THRESHOLD
+                  ? "bg-[#1c4a59] text-white border-[#faae57]/50"
+                  : "bg-white text-[#1c4a59] border-[#bac4c6]"
+              )}>
+                <RefreshCcw
+                  className={cn(
+                    "w-3.5 h-3.5 text-[#faae57] shrink-0 transition-transform",
+                    isSyncing && "animate-spin"
+                  )}
+                  style={!isSyncing ? { transform: `rotate(${Math.min(pullDistance * 4, 360)}deg)` } : undefined}
+                />
+                <span className="truncate">
+                  {isSyncing
+                    ? "Synchronizing cloud database..."
+                    : pullDistance >= PULL_THRESHOLD
+                    ? "Release to sync cloud"
+                    : "Pull down to sync"}
+                </span>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             <motion.div
               key={activeView}
@@ -1291,7 +1393,7 @@ function AppContent() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
               className={cn(
-                "print:h-auto print:block",
+                "w-full min-w-0 max-w-full overflow-x-hidden print:h-auto print:block",
                 activeView === 'creator' ? "h-full w-full" : "min-h-full max-w-7xl mx-auto w-full pb-4 lg:pb-0"
               )}
             >

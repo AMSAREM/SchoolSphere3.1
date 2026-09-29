@@ -19,8 +19,14 @@ import {
   BookOpen,
   Info,
   RefreshCw,
-  Bell
+  Bell,
+  Download,
+  Upload,
+  CheckSquare,
+  Square,
+  X
 } from 'lucide-react';
+import Papa from 'papaparse';
 import { motion, AnimatePresence } from 'motion/react';
 import { triggerPrint } from '../lib/utils';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -2102,8 +2108,244 @@ export default function TimetableManagement() {
     }
   };
 
+  const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
+  const [bulkRoomInput, setBulkRoomInput] = useState<string>('');
+  const [bulkTeacherInput, setBulkTeacherInput] = useState<string>('');
+  const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([]);
+
+  const visibleSmartSuggestions = useMemo(
+    () => smartQuickSuggestions.filter(s => !dismissedSuggestionKeys.includes(s.key)),
+    [smartQuickSuggestions, dismissedSuggestionKeys]
+  );
+
+  const toggleSelectSlot = (slotId: string) => {
+    setSelectedSlotIds(prev =>
+      prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]
+    );
+  };
+
+  const toggleSelectAllSlots = (targetList: TimetableSlot[]) => {
+    const allIds = targetList.map(s => s.id);
+    if (allIds.length > 0 && allIds.every(id => selectedSlotIds.includes(id))) {
+      setSelectedSlotIds(prev => prev.filter(id => !allIds.includes(id)));
+    } else {
+      setSelectedSlotIds(Array.from(new Set([...selectedSlotIds, ...allIds])));
+    }
+  };
+
+  const exportTimetableCsv = () => {
+    const targetSlots = selectedSlotIds.length > 0
+      ? slots.filter(s => selectedSlotIds.includes(s.id))
+      : filteredSlots.length > 0
+      ? filteredSlots
+      : slots;
+
+    if (targetSlots.length === 0) {
+      showToast('No timetable slots available to export.', 'error');
+      return;
+    }
+
+    const rows = targetSlots.map(s => ({
+      id: s.id,
+      classId: s.classId,
+      subjectName: s.subjectName,
+      teacherName: s.teacherName,
+      day: s.day,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      room: s.room,
+      notes: s.notes || ''
+    }));
+
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `timetable_schedule_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${rows.length} timetable period(s) to CSV.`, 'success');
+  };
+
+  const downloadTimetableTemplateCsv = () => {
+    const sampleRows = [
+      {
+        classId: classesList[0] || 'Basic 7',
+        subjectName: 'Mathematics',
+        teacherName: teachersList[0] || 'Academic Staff',
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '09:00',
+        room: 'Room A',
+        notes: 'Core lesson block'
+      },
+      {
+        classId: classesList[0] || 'Basic 7',
+        subjectName: 'English Language',
+        teacherName: teachersList[1] || teachersList[0] || 'Academic Staff',
+        day: 'Tuesday',
+        startTime: '09:00',
+        endTime: '10:00',
+        room: 'Room B',
+        notes: ''
+      }
+    ];
+    const csv = Papa.unparse(sampleRows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'timetable_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportTimetableCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = Array.isArray(results.data) ? results.data : [];
+        const validSlots: TimetableSlot[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r: any = rows[idx];
+          const classId = String(r.classId || r.class_id || r.Class || r.class || '').trim();
+          const subjectName = String(r.subjectName || r.subject_name || r.Subject || r.subject || '').trim();
+          const teacherName = String(r.teacherName || r.teacher_name || r.Teacher || r.teacher || 'Assigned Staff').trim();
+          const rawDay = String(r.day || r.Day || 'Monday').trim();
+          const matchedDay = (WEEKDAYS.find(d => d.toLowerCase() === rawDay.toLowerCase()) || 'Monday') as TimetableSlot['day'];
+          const startTime = String(r.startTime || r.start_time || r.Start || '08:00').trim().slice(0, 5);
+          const endTime = String(r.endTime || r.end_time || r.End || '09:00').trim().slice(0, 5);
+          const room = String(r.room || r.Room || 'Room A').trim();
+          const notes = String(r.notes || r.Notes || '').trim();
+
+          if (!classId || !subjectName) continue;
+          validSlots.push({
+            id: String(r.id || `csv-slot-${Date.now()}-${idx}`),
+            classId,
+            subjectName,
+            teacherName,
+            day: matchedDay,
+            startTime,
+            endTime,
+            room,
+            notes
+          });
+        }
+
+        if (validSlots.length === 0) {
+          showToast('No valid timetable rows found. Ensure columns include classId, subjectName, teacherName, day, startTime, endTime, room.', 'error');
+          return;
+        }
+
+        setSyncState('saving');
+        let currentList = [...slots];
+        try {
+          for (const slotItem of validSlots) {
+            migratedIdsRef.current.add(slotItem.id);
+            migratedIdsRef.current.add(getSlotSignature(slotItem));
+            const res = await fetch('/api/timetable/slots', {
+              method: 'POST',
+              headers: getApiHeaders(activeSchoolId),
+              body: JSON.stringify({
+                ...slotItem,
+                school_id: activeSchoolId
+              })
+            }).catch(() => null);
+            const json = res ? await res.json().catch(() => null) : null;
+            const savedSlot = json?.slot ? normalizeSlotFromRow(json.slot) : slotItem;
+            currentList = [...currentList.filter(s => s.id !== savedSlot.id), savedSlot];
+          }
+          setRemoteSlots(currentList);
+          setRemotePeriods(currentList);
+          await persistLocalTimetableCache(currentList, suggestions);
+          setSyncState('synced');
+          showToast(`Successfully imported ${validSlots.length} timetable period(s) from CSV!`, 'success');
+        } catch (err: any) {
+          setSyncState('error');
+          showToast(err?.message || 'Error importing timetable CSV.', 'error');
+        }
+      }
+    });
+    e.target.value = '';
+  };
+
+  const handleBulkUpdateSlots = async (field: 'room' | 'teacherName', value: string) => {
+    const cleanValue = value.trim();
+    if (!cleanValue || selectedSlotIds.length === 0) return;
+
+    setSyncState('saving');
+    const updatedList = slots.map(s =>
+      selectedSlotIds.includes(s.id) ? { ...s, [field]: cleanValue } : s
+    );
+
+    try {
+      for (const slotId of selectedSlotIds) {
+        const target = updatedList.find(s => s.id === slotId);
+        if (!target) continue;
+        await fetch('/api/timetable/slots', {
+          method: 'POST',
+          headers: getApiHeaders(activeSchoolId),
+          body: JSON.stringify({
+            ...target,
+            school_id: activeSchoolId
+          })
+        }).catch(() => null);
+      }
+      setRemoteSlots(updatedList);
+      setRemotePeriods(updatedList);
+      await persistLocalTimetableCache(updatedList, suggestions);
+      setSyncState('synced');
+      showToast(
+        `Updated ${field === 'room' ? 'room' : 'teacher'} to "${cleanValue}" for ${selectedSlotIds.length} slot(s).`,
+        'success'
+      );
+      if (field === 'room') setBulkRoomInput('');
+      if (field === 'teacherName') setBulkTeacherInput('');
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || 'Failed to bulk update timetable slots.', 'error');
+    }
+  };
+
+  const handleBulkDeleteSlots = async () => {
+    if (selectedSlotIds.length === 0) return;
+    const isOk = await confirm({
+      title: `Delete ${selectedSlotIds.length} Selected Slot(s)?`,
+      message: `Are you sure you want to remove ${selectedSlotIds.length} selected period slot(s) from the school timetable?`,
+      confirmLabel: 'Delete Selected'
+    });
+    if (!isOk) return;
+
+    setSyncState('saving');
+    try {
+      for (const id of selectedSlotIds) {
+        migratedIdsRef.current.add(id);
+        await fetch(`/api/timetable/slots/${encodeURIComponent(id)}?school_id=${encodeURIComponent(activeSchoolId)}`, {
+          method: 'DELETE',
+          headers: getApiHeaders(activeSchoolId)
+        }).catch(() => null);
+      }
+      const remaining = slots.filter(s => !selectedSlotIds.includes(s.id));
+      setRemoteSlots(remaining);
+      setRemotePeriods(remaining);
+      await persistLocalTimetableCache(remaining, suggestions);
+      setSelectedSlotIds([]);
+      setSyncState('synced');
+      showToast(`Deleted ${selectedSlotIds.length} timetable period(s).`, 'info');
+    } catch (err: any) {
+      setSyncState('error');
+      showToast(err?.message || 'Failed to bulk delete slots.', 'error');
+    }
+  };
+
   return (
-    <div className="space-y-4 sm:space-y-6 text-[#1f2a2e] min-w-0">
+    <div className="space-y-4 sm:space-y-6 text-[#1f2a2e] w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Printable Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -2127,7 +2369,7 @@ export default function TimetableManagement() {
       </div>
 
       {/* Primary Deep Teal Header Card */}
-      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_24px_rgba(28,74,89,0.18)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden relative overflow-hidden">
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_24px_rgba(28,74,89,0.18)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden relative min-w-0 overflow-hidden">
         <div className="absolute -right-8 -bottom-8 w-40 h-40 rounded-full border-8 border-white/5 pointer-events-none" />
         <div className="absolute -right-16 -bottom-16 w-60 h-60 rounded-full border-8 border-white/5 pointer-events-none" />
 
@@ -2176,13 +2418,46 @@ export default function TimetableManagement() {
         </div>
 
         {(isAdmin || isTeacher) && (
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto relative z-10">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto relative z-10 min-w-0">
+            <input
+              type="file"
+              id="import-timetable-csv"
+              className="hidden"
+              accept=".csv"
+              onChange={handleImportTimetableCsv}
+            />
+            <button
+              type="button"
+              onClick={downloadTimetableTemplateCsv}
+              title="Download CSV Template for Timetable Import"
+              className="px-3 sm:px-3.5 py-2.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25"
+            >
+              <Download className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+              <span className="truncate">CSV Template</span>
+            </button>
+            <label
+              htmlFor="import-timetable-csv"
+              title="Import Timetable Periods from CSV"
+              className="px-3 sm:px-3.5 py-2.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25"
+            >
+              <Upload className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+              <span className="truncate">Import CSV</span>
+            </label>
+            <button
+              type="button"
+              onClick={exportTimetableCsv}
+              title="Export Timetable Periods to CSV"
+              className="px-3 sm:px-3.5 py-2.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25"
+            >
+              <Download className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+              <span className="truncate">Export CSV</span>
+            </button>
             <button
               type="button"
               onClick={handleSyncPeriodBells}
               disabled={isSyncingBells || syncState === 'saving'}
               title="Two-way sync School Timetable slots with the Siren Console Period Bell Timetable"
-              className="px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25 disabled:opacity-60 whitespace-nowrap"
+              className="px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25 disabled:opacity-60"
             >
               <Bell className={`w-3.5 h-3.5 text-[#faae57] shrink-0 ${isSyncingBells ? 'animate-bounce' : ''}`} />
               <span className="truncate">{isSyncingBells ? 'Syncing…' : 'Sync Bells'}</span>
@@ -2190,7 +2465,7 @@ export default function TimetableManagement() {
             <button
               type="button"
               onClick={() => setIsQuickPanelOpen(prev => !prev)}
-              className={`px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border whitespace-nowrap ${
+              className={`px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border ${
                 isQuickPanelOpen
                   ? 'bg-white/15 text-white border-white/30'
                   : 'bg-white/5 text-white/85 border-white/15 hover:bg-white/10'
@@ -2205,7 +2480,7 @@ export default function TimetableManagement() {
                 resetForm();
                 setIsFormOpen(true);
               }}
-              className="col-span-2 sm:col-span-1 px-4 sm:px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px] whitespace-nowrap"
+              className="col-span-2 sm:col-span-1 px-4 sm:px-5 py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl sm:rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shrink-0 cursor-pointer active:scale-[0.97] min-h-[40px]"
             >
               <Plus className="w-4 h-4 shrink-0" />
               <span>{isTeacher ? 'Suggest Period' : 'Add Time Block'}</span>
@@ -2215,7 +2490,7 @@ export default function TimetableManagement() {
       </div>
 
       {/* Selected Element (div:nth-of-type(3)): On-Page Smart Quick Suggestion Panel */}
-      {(isAdmin || isTeacher) && isQuickPanelOpen && smartQuickSuggestions.length > 0 && (
+      {(isAdmin || isTeacher) && isQuickPanelOpen && visibleSmartSuggestions.length > 0 && (
         <div className="bg-white border border-[#bac4c6] rounded-2xl p-3 sm:p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] space-y-3 print:hidden min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-[#bac4c6]/50 pb-2.5 sm:pb-3">
             <div className="space-y-0.5 min-w-0">
@@ -2229,134 +2504,169 @@ export default function TimetableManagement() {
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-[#6a7f84] font-medium leading-snug">
-                Tap <span className="font-bold text-[#1f2a2e]">Pre-fill</span> to customize or <span className="font-bold text-[#1c4a59]">{isTeacher ? 'Suggest Now' : 'Schedule Now'}</span> to save directly.
+                Tap <span className="font-bold text-[#1f2a2e]">Pre-fill</span> to customize, <span className="font-bold text-[#1c4a59]">{isTeacher ? 'Suggest Now' : 'Schedule Now'}</span> to save directly, or swipe card horizontally to dismiss.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (smartQuickSuggestions[0]) {
-                  handleApplyQuickSuggestion(smartQuickSuggestions[0], 'prefill');
-                }
-              }}
-              className="w-full sm:w-auto px-3 py-2 sm:py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/40 text-[#1c4a59] border border-[#bac4c6] rounded-xl sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] text-center whitespace-nowrap shrink-0"
-            >
-              Open Next Free Slot
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {dismissedSuggestionKeys.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDismissedSuggestionKeys([])}
+                  className="px-2.5 py-2 sm:py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/30 text-[#6a7f84] hover:text-[#1f2a2e] border border-[#bac4c6] rounded-xl sm:rounded-full text-[11px] font-bold transition-all cursor-pointer"
+                >
+                  Restore ({dismissedSuggestionKeys.length})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (visibleSmartSuggestions[0]) {
+                    handleApplyQuickSuggestion(visibleSmartSuggestions[0], 'prefill');
+                  }
+                }}
+                className="w-full sm:w-auto px-3 py-2 sm:py-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/40 text-[#1c4a59] border border-[#bac4c6] rounded-xl sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] text-center whitespace-nowrap shrink-0"
+              >
+                Open Next Free Slot
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-            {smartQuickSuggestions.map((rec) => {
-              const isSavingThis = savingQuickId === rec.key;
-              return (
-                <div
-                  key={rec.key}
-                  className="p-3 sm:p-3.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl sm:rounded-2xl flex flex-col justify-between gap-2.5 hover:border-[#1c4a59] transition-colors min-w-0"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-bold text-[#1c4a59] truncate">
-                        {rec.classId} · {rec.subjectName}
-                      </span>
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-[#807654] font-mono tabular-nums shrink-0">
-                        {rec.scheduledCount === 0 ? 'Unscheduled' : `${rec.scheduledCount}x/wk`}
-                      </span>
+            <AnimatePresence initial={false}>
+              {visibleSmartSuggestions.map((rec) => {
+                const isSavingThis = savingQuickId === rec.key;
+                return (
+                  <motion.div
+                    key={rec.key}
+                    layout
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 140, scale: 0.94 }}
+                    drag="x"
+                    dragConstraints={{ left: 0, right: 0 }}
+                    dragElastic={0.65}
+                    onDragEnd={(_, info) => {
+                      if (Math.abs(info.offset.x) > 65 || Math.abs(info.velocity.x) > 350) {
+                        setDismissedSuggestionKeys(prev => [...prev, rec.key]);
+                      }
+                    }}
+                    className="p-3 sm:p-3.5 bg-[#f6f8f7] border border-[#bac4c6] rounded-xl sm:rounded-2xl flex flex-col justify-between gap-2.5 hover:border-[#1c4a59] transition-colors min-w-0 touch-pan-y select-none relative"
+                  >
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-bold text-[#1c4a59] truncate">
+                          {rec.classId} · {rec.subjectName}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] sm:text-[11px] font-semibold text-[#807654] font-mono tabular-nums">
+                            {rec.scheduledCount === 0 ? 'Unscheduled' : `${rec.scheduledCount}x/wk`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDismissedSuggestionKeys(prev => [...prev, rec.key])}
+                            title="Dismiss suggestion"
+                            className="p-0.5 rounded-md text-[#6a7f84] hover:text-[#1f2a2e] hover:bg-[#bac4c6]/40 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-xs text-[#1f2a2e] font-medium flex items-center justify-between gap-2">
+                        <span className="truncate" title={rec.teacherName}>
+                          {rec.teacherName}
+                        </span>
+                        <span className="text-[11px] font-semibold text-[#6a7f84] shrink-0">
+                          {rec.room}
+                        </span>
+                      </div>
+
+                      <div className="pt-0.5 flex items-center justify-between gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1.5 font-mono tabular-nums font-bold text-[#1f2a2e] text-[11px] sm:text-xs">
+                          <span className="w-2 h-2 rounded-full bg-[#06d6a0] shrink-0" />
+                          {rec.day.slice(0, 3)} {rec.startTime} - {rec.endTime}
+                        </span>
+                        <span className="text-[10px] sm:text-[11px] text-[#6a7f84] shrink-0">
+                          {rec.fromDatabase ? 'DB Period' : 'Standard'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="text-xs text-[#1f2a2e] font-medium flex items-center justify-between gap-2">
-                      <span className="truncate" title={rec.teacherName}>
-                        {rec.teacherName}
-                      </span>
-                      <span className="text-[11px] font-semibold text-[#6a7f84] shrink-0">
-                        {rec.room}
-                      </span>
+                    <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2 pt-2 border-t border-[#bac4c6]/60">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyQuickSuggestion(rec, 'prefill')}
+                        disabled={syncState === 'saving'}
+                        className="px-2.5 sm:px-3 py-1.5 bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border border-[#bac4c6] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 text-center whitespace-nowrap"
+                      >
+                        Pre-fill
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyQuickSuggestion(rec, 'instant')}
+                        disabled={syncState === 'saving'}
+                        className="px-2.5 sm:px-3.5 py-1.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap"
+                      >
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {isSavingThis
+                            ? 'Saving…'
+                            : isTeacher
+                            ? 'Suggest'
+                            : 'Schedule'}
+                        </span>
+                      </button>
                     </div>
-
-                    <div className="pt-0.5 flex items-center justify-between gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-mono tabular-nums font-bold text-[#1f2a2e] text-[11px] sm:text-xs">
-                        <span className="w-2 h-2 rounded-full bg-[#06d6a0] shrink-0" />
-                        {rec.day.slice(0, 3)} {rec.startTime} - {rec.endTime}
-                      </span>
-                      <span className="text-[10px] sm:text-[11px] text-[#6a7f84] shrink-0">
-                        {rec.fromDatabase ? 'DB Period' : 'Standard'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2 pt-2 border-t border-[#bac4c6]/60">
-                    <button
-                      type="button"
-                      onClick={() => handleApplyQuickSuggestion(rec, 'prefill')}
-                      disabled={syncState === 'saving'}
-                      className="px-2.5 sm:px-3 py-1.5 bg-white hover:bg-[#e1c594]/30 text-[#1f2a2e] border border-[#bac4c6] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 text-center whitespace-nowrap"
-                    >
-                      Pre-fill
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyQuickSuggestion(rec, 'instant')}
-                      disabled={syncState === 'saving'}
-                      className="px-2.5 sm:px-3.5 py-1.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-lg sm:rounded-full text-xs font-bold transition-all cursor-pointer active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap"
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {isSavingThis
-                          ? 'Saving…'
-                          : isTeacher
-                          ? 'Suggest'
-                          : 'Schedule'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
         </div>
       )}
 
-      {/* Tabs navigation & Print Action row */}
-      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-2 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)] min-w-0">
-        <div className="flex items-center gap-1 sm:gap-4 overflow-x-auto no-scrollbar min-w-0 flex-1">
+      {/* Tabs navigation & Print Action row - 2-column grid on mobile, horizontal strip on desktop */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-[#bac4c6]/80 sm:border-x-0 sm:border-t-0 sm:border-b bg-white rounded-2xl sm:rounded-t-2xl sm:rounded-b-none p-2 sm:px-3 sm:py-0 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)] min-w-0">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 min-w-0 flex-1">
           <button
             type="button"
             onClick={() => setActiveTab('view')}
-            className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-2 sm:py-3 rounded-xl sm:rounded-none text-[11px] sm:text-sm font-bold tracking-wide sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[38px] ${
               activeTab === 'view' 
-                ? 'border-[#1c4a59] text-[#1c4a59]' 
-                : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
+                ? 'bg-[#1c4a59] text-white sm:bg-transparent sm:border-[#1c4a59] sm:text-[#1c4a59]' 
+                : 'bg-[#f6f8f7] text-[#6a7f84] sm:bg-transparent sm:border-transparent hover:text-[#1f2a2e]'
             }`}
           >
             <Calendar className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
-            <span>Weekly Outlook</span>
+            <span className="truncate">Weekly Outlook</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('class_view')}
-            className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-2 sm:py-3 rounded-xl sm:rounded-none text-[11px] sm:text-sm font-bold tracking-wide sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[38px] ${
               activeTab === 'class_view' 
-                ? 'border-[#1c4a59] text-[#1c4a59]' 
-                : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
+                ? 'bg-[#1c4a59] text-white sm:bg-transparent sm:border-[#1c4a59] sm:text-[#1c4a59]' 
+                : 'bg-[#f6f8f7] text-[#6a7f84] sm:bg-transparent sm:border-transparent hover:text-[#1f2a2e]'
             }`}
           >
             <Building className="w-3.5 h-3.5 shrink-0" />
-            <span>Class Grid</span>
+            <span className="truncate">Class Grid</span>
           </button>
           {/* Suggestions tab for Teachers and Admins */}
           {(isTeacher || isAdmin) && (
             <button
               type="button"
               onClick={() => setActiveTab('suggestions')}
-              className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 relative cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-2 sm:py-3 rounded-xl sm:rounded-none text-[11px] sm:text-sm font-bold tracking-wide sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 relative cursor-pointer min-h-[38px] ${
                 activeTab === 'suggestions' 
-                  ? 'border-[#1c4a59] text-[#1c4a59]' 
-                  : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
+                  ? 'bg-[#1c4a59] text-white sm:bg-transparent sm:border-[#1c4a59] sm:text-[#1c4a59]' 
+                  : 'bg-[#f6f8f7] text-[#6a7f84] sm:bg-transparent sm:border-transparent hover:text-[#1f2a2e]'
               }`}
             >
               <Clock className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
-              <span>Suggestions</span>
+              <span className="truncate">Suggestions</span>
               {isAdmin && suggestions.filter(s => s.status === 'pending').length > 0 && (
-                <span className="px-1.5 py-0.5 bg-[#faae57] text-[#1f2a2e] font-bold text-[10px] rounded-full font-mono tabular-nums">
+                <span className="px-1.5 py-0.5 bg-[#faae57] text-[#1f2a2e] font-bold text-[10px] rounded-full font-mono tabular-nums shrink-0">
                   {suggestions.filter(s => s.status === 'pending').length}
                 </span>
               )}
@@ -2368,28 +2678,28 @@ export default function TimetableManagement() {
               <button
                 type="button"
                 onClick={() => setActiveTab('manage')}
-                className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-2 sm:py-3 rounded-xl sm:rounded-none text-[11px] sm:text-sm font-bold tracking-wide sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[38px] ${
                   activeTab === 'manage' 
-                    ? 'border-[#1c4a59] text-[#1c4a59]' 
-                    : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
+                    ? 'bg-[#1c4a59] text-white sm:bg-transparent sm:border-[#1c4a59] sm:text-[#1c4a59]' 
+                    : 'bg-[#f6f8f7] text-[#6a7f84] sm:bg-transparent sm:border-transparent hover:text-[#1f2a2e]'
                 }`}
               >
                 <Edit2 className="w-3.5 h-3.5 shrink-0" />
-                <span>All Slots ({slots.length})</span>
+                <span className="truncate">All Slots ({slots.length})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('diagnose')}
-                className={`px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-bold tracking-wide border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 relative cursor-pointer ${
+                className={`col-span-2 sm:col-span-1 px-2.5 sm:px-3 py-2 sm:py-3 rounded-xl sm:rounded-none text-[11px] sm:text-sm font-bold tracking-wide sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 relative cursor-pointer min-h-[38px] ${
                   activeTab === 'diagnose' 
-                    ? 'border-[#1c4a59] text-[#1c4a59]' 
-                    : 'border-transparent text-[#6a7f84] hover:text-[#1f2a2e]'
+                    ? 'bg-[#1c4a59] text-white sm:bg-transparent sm:border-[#1c4a59] sm:text-[#1c4a59]' 
+                    : 'bg-[#f6f8f7] text-[#6a7f84] sm:bg-transparent sm:border-transparent hover:text-[#1f2a2e]'
                 }`}
               >
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Collisions</span>
+                <span className="truncate">Collisions</span>
                 {detectedConflicts.length > 0 && (
-                  <span className="px-1.5 py-0.5 bg-[#ef476f] text-white font-bold text-[10px] rounded-full font-mono tabular-nums">
+                  <span className="px-1.5 py-0.5 bg-[#ef476f] text-white font-bold text-[10px] rounded-full font-mono tabular-nums shrink-0">
                     {detectedConflicts.length}
                   </span>
                 )}
@@ -2402,11 +2712,10 @@ export default function TimetableManagement() {
           type="button"
           onClick={triggerPrint}
           title="Print Timetable"
-          className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] text-[#1c4a59] rounded-xl text-xs font-bold transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 sm:my-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] text-[#1c4a59] rounded-xl text-xs font-bold transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer min-h-[38px]"
         >
           <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
-          <span className="hidden sm:inline">Print Timetable</span>
-          <span className="sm:hidden">Print</span>
+          <span>Print Timetable</span>
         </button>
       </div>
 
@@ -3051,9 +3360,99 @@ export default function TimetableManagement() {
         {activeTab === 'manage' && (
           <div className="bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden">
             <div className="p-3.5 sm:p-4 bg-[#f6f8f7] border-b border-[#bac4c6]/60 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider">School-Wide Time Slots Directory</h4>
+              <div className="flex items-center gap-2.5">
+                {slots.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAllSlots(slots)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-[#bac4c6] text-[11px] font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 transition-colors cursor-pointer"
+                  >
+                    {slots.length > 0 && slots.every(s => selectedSlotIds.includes(s.id)) ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-[#1c4a59]" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5 text-[#6a7f84]" />
+                    )}
+                    <span>
+                      {slots.length > 0 && slots.every(s => selectedSlotIds.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                    </span>
+                  </button>
+                )}
+                <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider">School-Wide Time Slots Directory</h4>
+              </div>
               <p className="text-[11px] text-[#807654] font-bold font-mono tabular-nums">{slots.length} Registered Slots</p>
             </div>
+
+            {/* Bulk Action Bar when slots are selected */}
+            {selectedSlotIds.length > 0 && (
+              <div className="p-3 sm:p-4 bg-[#1c4a59] text-white border-b border-[#bac4c6]/60 flex flex-col lg:flex-row lg:items-center justify-between gap-3 min-w-0">
+                <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#faae57] text-[#1f2a2e] text-xs font-extrabold font-mono tabular-nums shrink-0">
+                    {selectedSlotIds.length} Selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSlotIds([])}
+                    className="text-[11px] font-bold text-[#e1c594] hover:text-white underline cursor-pointer shrink-0"
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto min-w-0">
+                  <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-2.5 py-1.5 min-w-0 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      value={bulkRoomInput}
+                      onChange={e => setBulkRoomInput(e.target.value)}
+                      placeholder="New Room (e.g. Lab 2)"
+                      className="flex-1 min-w-0 sm:w-32 bg-transparent text-white placeholder:text-white/60 text-xs font-bold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleBulkUpdateSlots('room', bulkRoomInput)}
+                      className="px-2.5 py-1 rounded-lg bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-[11px] font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      Set Room
+                    </button>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-2.5 py-1.5 min-w-0 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      value={bulkTeacherInput}
+                      onChange={e => setBulkTeacherInput(e.target.value)}
+                      placeholder="New Teacher Name"
+                      className="flex-1 min-w-0 sm:w-36 bg-transparent text-white placeholder:text-white/60 text-xs font-bold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleBulkUpdateSlots('teacherName', bulkTeacherInput)}
+                      className="px-2.5 py-1 rounded-lg bg-[#06d6a0] hover:bg-[#05b888] text-[#1f2a2e] text-[11px] font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      Set Teacher
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={exportTimetableCsv}
+                    className="min-w-0 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+                    <span className="truncate">Export Selected</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleBulkDeleteSlots}
+                    className="min-w-0 px-3 py-2 rounded-xl bg-[#ef476f] hover:bg-[#d93860] text-white text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Delete Selected</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {slots.length === 0 ? (
               <div className="p-10 sm:p-16 text-center space-y-2.5">
@@ -3067,21 +3466,30 @@ export default function TimetableManagement() {
                 <div className="md:hidden divide-y divide-[#bac4c6]/50">
                   {slots.map(slot => {
                     const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                    const isSelected = selectedSlotIds.includes(slot.id);
                     return (
-                      <div key={slot.id} className="p-3.5 space-y-2 hover:bg-[#f6f8f7]/50">
+                      <div key={slot.id} className={`p-3.5 space-y-2 transition-colors ${isSelected ? 'bg-[#e1c594]/25' : 'hover:bg-[#f6f8f7]/50'}`}>
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-2 py-0.5 bg-[#1c4a59] text-white rounded-md text-[10px] font-bold">
-                                {slot.classId}
-                              </span>
-                              <span className="text-xs font-bold text-[#1f2a2e] truncate">
-                                {slot.subjectName}
-                              </span>
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectSlot(slot.id)}
+                              className="mt-0.5 w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 bg-[#1c4a59] text-white rounded-md text-[10px] font-bold">
+                                  {slot.classId}
+                                </span>
+                                <span className="text-xs font-bold text-[#1f2a2e] truncate">
+                                  {slot.subjectName}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#6a7f84] font-medium mt-1 truncate">
+                                {slot.teacherName} · <span className="text-[#1c4a59] font-semibold">{slot.room}</span>
+                              </p>
                             </div>
-                            <p className="text-[11px] text-[#6a7f84] font-medium mt-1 truncate">
-                              {slot.teacherName} · <span className="text-[#1c4a59] font-semibold">{slot.room}</span>
-                            </p>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button
@@ -3122,6 +3530,14 @@ export default function TimetableManagement() {
                   <table className="w-full text-left text-xs font-semibold text-[#1f2a2e] min-w-[700px]">
                     <thead>
                       <tr className="bg-[#f6f8f7]/60 text-[10px] uppercase tracking-wider font-bold text-[#6a7f84] border-b border-[#bac4c6]/50">
+                        <th className="p-3.5 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={slots.length > 0 && slots.every(s => selectedSlotIds.includes(s.id))}
+                            onChange={() => toggleSelectAllSlots(slots)}
+                            className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer"
+                          />
+                        </th>
                         <th className="p-3.5">Class/Grade</th>
                         <th className="p-3.5">Subject</th>
                         <th className="p-3.5">Teacher Roster</th>
@@ -3131,57 +3547,68 @@ export default function TimetableManagement() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#bac4c6]/40">
-                      {slots.map(slot => (
-                        <tr key={slot.id} className="hover:bg-[#f6f8f7]/50">
-                          <td className="p-3.5">
-                            <span className="px-2.5 py-1 bg-[#1c4a59] text-white rounded-lg text-[10px] font-bold">
-                              {slot.classId}
-                            </span>
-                          </td>
-                          <td className="p-3.5 font-bold text-[#1f2a2e]">{slot.subjectName}</td>
-                          <td className="p-3.5 text-[#6a7f84] flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-[#1c4a59] flex items-center justify-center font-bold text-[10px] text-white shrink-0">
-                              {slot.teacherName.charAt(0)}
-                            </div>
-                            <span className="truncate">{slot.teacherName}</span>
-                          </td>
-                          <td className="p-3.5">
-                            <span className="text-[#1c4a59] font-bold text-[11px] font-mono tabular-nums block">
-                              {slot.day}s, {slot.startTime} - {slot.endTime}
-                            </span>
-                            {(() => {
-                              const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
-                              return (
-                                <span className="inline-flex items-center gap-1 text-[10px] text-[#6a7f84] font-semibold mt-0.5">
-                                  <Bell className="w-2.5 h-2.5 text-[#faae57]" />
-                                  {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Disarmed'})` : 'Auto Period Bell'}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-3.5 text-[#1c4a59] font-semibold">{slot.room}</td>
-                          <td className="p-3.5">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleEditClick(slot)}
-                                className="p-1.5 bg-[#f6f8f7] hover:bg-[#faae57] border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:text-[#1f2a2e] transition-colors cursor-pointer"
-                                title="Edit Block"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
-                                className="p-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] border border-[#bac4c6] rounded-lg text-[#ef476f] transition-colors cursor-pointer"
-                                title="Delete Block"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {slots.map(slot => {
+                        const isSelected = selectedSlotIds.includes(slot.id);
+                        return (
+                          <tr key={slot.id} className={`transition-colors ${isSelected ? 'bg-[#e1c594]/25' : 'hover:bg-[#f6f8f7]/50'}`}>
+                            <td className="p-3.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectSlot(slot.id)}
+                                className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-3.5">
+                              <span className="px-2.5 py-1 bg-[#1c4a59] text-white rounded-lg text-[10px] font-bold">
+                                {slot.classId}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-bold text-[#1f2a2e]">{slot.subjectName}</td>
+                            <td className="p-3.5 text-[#6a7f84] flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-[#1c4a59] flex items-center justify-center font-bold text-[10px] text-white shrink-0">
+                                {slot.teacherName.charAt(0)}
+                              </div>
+                              <span className="truncate">{slot.teacherName}</span>
+                            </td>
+                            <td className="p-3.5">
+                              <span className="text-[#1c4a59] font-bold text-[11px] font-mono tabular-nums block">
+                                {slot.day}s, {slot.startTime} - {slot.endTime}
+                              </span>
+                              {(() => {
+                                const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-[#6a7f84] font-semibold mt-0.5">
+                                    <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                                    {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Disarmed'})` : 'Auto Period Bell'}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-3.5 text-[#1c4a59] font-semibold">{slot.room}</td>
+                            <td className="p-3.5">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditClick(slot)}
+                                  className="p-1.5 bg-[#f6f8f7] hover:bg-[#faae57] border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:text-[#1f2a2e] transition-colors cursor-pointer"
+                                  title="Edit Block"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSlot(slot.id, `${slot.subjectName} (${slot.classId})`)}
+                                  className="p-1.5 bg-[#f6f8f7] hover:bg-[#fef2f2] border border-[#bac4c6] rounded-lg text-[#ef476f] transition-colors cursor-pointer"
+                                  title="Delete Block"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

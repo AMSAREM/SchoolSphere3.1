@@ -1122,7 +1122,7 @@ export default function SirenTerminal() {
   };
 
   return (
-    <div className="space-y-6 select-none relative pb-12">
+    <div className="space-y-4 sm:space-y-6 select-none relative pb-12 w-full max-w-full overflow-x-hidden">
       {/* Full layout ambient strobe border for active alerts */}
       {activeAlarm && (
         <div 
@@ -1135,46 +1135,48 @@ export default function SirenTerminal() {
       )}
 
       {/* Header section with live animation */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 md:p-8 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 relative overflow-hidden w-full max-w-full">
         {activeAlarm && (
           <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-red-500/10 to-transparent flex items-center justify-end pr-8 pointer-events-none">
             <Radio className="w-12 h-12 text-rose-500 animate-ping absolute" />
             <Radio className="w-12 h-12 text-rose-600/70" />
           </div>
         )}
-        <div className="space-y-1 relative z-10">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-indigo-50 border border-indigo-100/80 text-indigo-600 block">
-              <Megaphone className="w-6 h-6" />
+        <div className="space-y-1 relative z-10 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="p-2 rounded-xl bg-indigo-50 border border-indigo-100/80 text-indigo-600 block shrink-0">
+              <Megaphone className="w-5 h-5 sm:w-6 sm:h-6" />
             </span>
-            <span className="text-xs font-black tracking-widest text-indigo-600 uppercase">Emergency Alert Console</span>
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+            <span className="text-[11px] sm:text-xs font-black tracking-widest text-indigo-600 uppercase">Emergency Alert Console</span>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border max-w-full ${
               cloudSyncStatus === 'synced' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
               cloudSyncStatus === 'syncing' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
               cloudSyncStatus === 'queued' ? 'bg-amber-50 text-amber-700 border-amber-200' :
               'bg-slate-100 text-slate-600 border-slate-200'
             }`}>
-              <Database className={`w-3 h-3 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-              {cloudSyncStatus === 'synced' ? 'Supabase Cloud Synced' :
-               cloudSyncStatus === 'syncing' ? 'Syncing with Supabase...' :
-               cloudSyncStatus === 'queued' ? 'Queued for Supabase Sync' :
-               'Local Cache Mode'}
+              <Database className={`w-3 h-3 shrink-0 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              <span className="truncate">
+                {cloudSyncStatus === 'synced' ? 'Supabase Cloud Synced' :
+                 cloudSyncStatus === 'syncing' ? 'Syncing with Supabase...' :
+                 cloudSyncStatus === 'queued' ? 'Queued for Supabase Sync' :
+                 'Local Cache Mode'}
+              </span>
             </span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight pt-1">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight pt-1 break-words leading-tight">
             CAMPUS-WIDE SIREN & BROADCAST
           </h2>
-          <p className="text-slate-500 text-sm max-w-2xl font-medium pt-1">
+          <p className="text-slate-500 text-xs sm:text-sm max-w-2xl font-medium pt-1 leading-relaxed">
             Emergency warning & PA intercom console backed by Supabase Database & Cloud Storage. Sound lockdowns, automate timetable period bells, record voice broadcasts, and synchronize logs across all school devices.
           </p>
           {lastSyncedAt && (
-            <p className="text-[11px] font-bold text-slate-400 pt-0.5">
+            <p className="text-[11px] font-bold text-slate-400 pt-0.5 font-mono tabular-nums">
               Last synced with Supabase server: {new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </p>
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+        <div className="grid grid-cols-2 sm:flex sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 w-full lg:w-auto">
           <button
             type="button"
             onClick={async () => {
@@ -1186,37 +1188,37 @@ export default function SirenTerminal() {
                 } catch {}
               }
             }}
-            className="px-3.5 py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-2xs"
+            className="col-span-1 px-3 py-2.5 sm:px-3.5 sm:py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 sm:gap-2 shadow-2xs min-w-0"
             title="Inspect connected Supabase tables for the Siren Console"
           >
-            <Database className="w-4 h-4 text-emerald-600" />
-            Supabase Tables
+            <Database className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="truncate">Supabase Tables</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleCloudSync(false)}
             disabled={cloudSyncStatus === 'syncing'}
-            className="px-3.5 py-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-2xs disabled:opacity-60"
+            className="col-span-1 px-3 py-2.5 sm:px-3.5 sm:py-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 sm:gap-2 shadow-2xs disabled:opacity-60 min-w-0"
             title="Synchronize all triggers, bell schedules, recordings, and logs with Supabase"
           >
-            <RefreshCcw className={`w-4 h-4 text-indigo-600 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            Sync Cloud
+            <RefreshCcw className={`w-4 h-4 text-indigo-600 shrink-0 ${cloudSyncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <span className="truncate">Sync Cloud</span>
           </button>
 
           {activeAlarm ? (
             <button
               id="deactivate-siren"
               onClick={handleStopAlarm}
-              className="px-6 py-4 bg-red-600 hover:bg-red-700 text-white font-extrabold text-sm rounded-xl transition-all shadow-lg shadow-red-600/20 active:scale-95 flex items-center justify-center gap-2 group animate-pulse"
+              className="col-span-2 sm:col-span-1 px-4 sm:px-6 py-3.5 sm:py-4 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-red-600/20 active:scale-95 flex items-center justify-center gap-2 group animate-pulse"
             >
-              <VolumeX className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              SQUELCH ALL SIRENS [STOP]
+              <VolumeX className="w-5 h-5 shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="truncate">SQUELCH ALL SIRENS [STOP]</span>
             </button>
           ) : (
-            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl">
-              <span className="h-3 w-3 rounded-full bg-emerald-500 border border-emerald-300 animate-pulse" />
-              <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Campus Secure & Safe</span>
+            <div className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-2.5 bg-slate-50 border border-slate-200 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl">
+              <span className="h-3 w-3 rounded-full bg-emerald-500 border border-emerald-300 animate-pulse shrink-0" />
+              <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider truncate">Campus Secure & Safe</span>
             </div>
           )}
         </div>
@@ -1422,60 +1424,63 @@ export default function SirenTerminal() {
         )}
       </AnimatePresence>
 
-      {/* Tab Switcher - Manual Emergency vs Scheduled Timetable Bells */}
-      <div className="flex border-b border-slate-250 gap-6 overflow-x-auto pb-1">
+      {/* Tab Switcher - 2-Column Mobile Button Grid & Desktop Bottom-Bordered Tab Strip */}
+      <div className="grid grid-cols-2 sm:flex sm:border-b sm:border-slate-200 gap-2 sm:gap-6 pb-1 w-full max-w-full">
         <button
+          type="button"
           onClick={() => setActiveSubTab('triggers')}
-          className={`pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 shrink-0 ${
+          className={`col-span-2 sm:col-span-1 px-3 py-2.5 sm:px-0 sm:py-0 sm:pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase rounded-xl sm:rounded-none border sm:border-0 sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-2 min-w-0 ${
             activeSubTab === 'triggers' 
-              ? 'border-indigo-600 text-indigo-600' 
-              : 'border-transparent text-slate-400 hover:text-slate-600'
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs sm:bg-transparent sm:text-indigo-600 sm:border-indigo-600 sm:shadow-none' 
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 sm:bg-transparent sm:border-transparent sm:text-slate-400 sm:hover:text-slate-600'
           }`}
         >
-          <Radio className="w-4 h-4" />
-          Active Sirens & Broadcast
+          <Radio className="w-4 h-4 shrink-0" />
+          <span className="truncate">Active Sirens & Broadcast</span>
         </button>
         <button
+          type="button"
           onClick={() => setActiveSubTab('timetable')}
-          className={`pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 shrink-0 ${
+          className={`col-span-1 px-2.5 py-2.5 sm:px-0 sm:py-0 sm:pb-3 text-[11px] sm:text-sm font-extrabold tracking-wider uppercase rounded-xl sm:rounded-none border sm:border-0 sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 min-w-0 ${
             activeSubTab === 'timetable' 
-              ? 'border-indigo-600 text-indigo-600' 
-              : 'border-transparent text-slate-400 hover:text-slate-600'
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs sm:bg-transparent sm:text-indigo-600 sm:border-indigo-600 sm:shadow-none' 
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 sm:bg-transparent sm:border-transparent sm:text-slate-400 sm:hover:text-slate-600'
           }`}
           id="tab-timetable-bell"
         >
-          <Calendar className="w-4 h-4" />
-          Period Bell Timetable ({bellSchedule.length})
+          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span className="truncate">Period Bells ({bellSchedule.length})</span>
         </button>
         <button
+          type="button"
           onClick={() => setActiveSubTab('recordings')}
-          className={`pb-3 text-xs sm:text-sm font-extrabold tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 shrink-0 ${
+          className={`col-span-1 px-2.5 py-2.5 sm:px-0 sm:py-0 sm:pb-3 text-[11px] sm:text-sm font-extrabold tracking-wider uppercase rounded-xl sm:rounded-none border sm:border-0 sm:border-b-2 transition-all flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 min-w-0 ${
             activeSubTab === 'recordings' 
-              ? 'border-indigo-600 text-indigo-600' 
-              : 'border-transparent text-slate-400 hover:text-slate-600'
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs sm:bg-transparent sm:text-indigo-600 sm:border-indigo-600 sm:shadow-none' 
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 sm:bg-transparent sm:border-transparent sm:text-slate-400 sm:hover:text-slate-600'
           }`}
           id="tab-recordings"
         >
-          <Mic className="w-4 h-4" />
-          Recorded Announcements ({recordedAudios.length})
+          <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span className="truncate">Recordings ({recordedAudios.length})</span>
         </button>
       </div>
 
       {/* Control Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 w-full max-w-full">
         
         {/* Left 2 cols: Dynamic Tab content (Trigger alarms or Timetable bell schedule) */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0 w-full max-w-full">
           {activeSubTab === 'triggers' && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-              <h3 className="text-md font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-                <Radio className="w-5 h-5 text-indigo-600" />
-                1. Construct Alarm Settings & Announcements
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-5 sm:space-y-6 w-full max-w-full overflow-hidden">
+              <h3 className="text-sm sm:text-base font-black text-slate-950 uppercase tracking-wider flex items-center gap-2 leading-snug">
+                <Radio className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>1. Construct Alarm Settings & Announcements</span>
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">
+                <div className="space-y-2 min-w-0">
+                  <label className="text-xs font-extrabold text-slate-500 uppercase tracking-widest block">
                     Custom Broadcast Message (Appears visual everywhere)
                   </label>
                   <textarea
@@ -1486,14 +1491,14 @@ export default function SirenTerminal() {
                   />
                 </div>
 
-                <div className="flex flex-col justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl gap-4">
+                <div className="flex flex-col justify-between p-3.5 sm:p-4 bg-slate-50 border border-slate-100 rounded-2xl gap-4 min-w-0">
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">Acoustic Audio Settings</span>
-                      <span className="text-xs font-mono font-bold text-slate-600">{Math.round(acousticVolume * 100)}% volume</span>
+                      <span className="text-xs font-mono tabular-nums font-bold text-slate-600 shrink-0">{Math.round(acousticVolume * 100)}% volume</span>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <Volume2 className="w-4 h-4 text-slate-400" />
+                      <Volume2 className="w-4 h-4 text-slate-400 shrink-0" />
                       <input 
                         type="range"
                         min="0"
@@ -1506,12 +1511,12 @@ export default function SirenTerminal() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-slate-200/60 pt-3">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-extrabold text-slate-800">Trigger as Drill/Simulation</span>
-                      <p className="text-[10px] text-slate-500">Will mark the alarm header clearly as a school safety drill.</p>
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-200/60 pt-3">
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="text-xs font-extrabold text-slate-800 block">Trigger as Drill/Simulation</span>
+                      <p className="text-[10px] text-slate-500 leading-snug">Will mark the alarm header clearly as a school safety drill.</p>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
                       <input 
                         type="checkbox" 
                         className="sr-only peer"
@@ -1529,7 +1534,7 @@ export default function SirenTerminal() {
                   2. Tap Trigger to broadcast & Play sound
                 </span>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
                   {ALARM_TYPES.map((alarm) => {
                     const Icon = alarm.icon;
                     const isCurrentlyActive = activeAlarm === alarm.id;
@@ -1537,7 +1542,7 @@ export default function SirenTerminal() {
                     return (
                       <div 
                         key={alarm.id}
-                        className={`border rounded-2xl p-4 flex flex-col justify-between transition-all group ${
+                        className={`border rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between transition-all group min-w-0 ${
                           isCurrentlyActive 
                             ? 'border-red-500 bg-red-50/20 shadow-sm' 
                             : 'border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50'
@@ -1606,15 +1611,15 @@ export default function SirenTerminal() {
           )}
 
           {activeSubTab === 'timetable' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0">
               {/* Timetable Header & Two-Way School Timetable Sync Bar */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-md font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-indigo-600" />
-                        Automated Period Bell Timetable
+                      <h3 className="text-sm sm:text-base font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-indigo-600 shrink-0" />
+                        <span>Automated Period Bell Timetable</span>
                       </h3>
                       <span className="text-xs font-semibold text-emerald-700">
                         · Connected to School Timetable ({schoolTimetableSlots.length} class slots)
@@ -1625,25 +1630,25 @@ export default function SirenTerminal() {
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
                     <button
                       onClick={() => handleSyncSchoolTimetable(false)}
                       disabled={isSyncingTimetable}
-                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+                      className="col-span-2 sm:col-span-1 px-3.5 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-60"
                       title="Two-way sync period start bells, break chimes, and dismissal bell with the School Timetable"
                       type="button"
                     >
-                      <RefreshCcw className={`w-3.5 h-3.5 ${isSyncingTimetable ? 'animate-spin' : ''}`} />
-                      {isSyncingTimetable ? 'Syncing Timetable...' : 'Sync School Timetable'}
+                      <RefreshCcw className={`w-3.5 h-3.5 shrink-0 ${isSyncingTimetable ? 'animate-spin' : ''}`} />
+                      <span className="truncate">{isSyncingTimetable ? 'Syncing Timetable...' : 'Sync School Timetable'}</span>
                     </button>
 
                     <button
                       onClick={handleSeedDefaults}
-                      className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all whitespace-nowrap"
+                      className="col-span-1 px-3 py-2.5 sm:px-3.5 sm:py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center whitespace-nowrap min-w-0"
                       title="Reset timetable bells back to standard Ghanaian period templates"
                       type="button"
                     >
-                      Use Templates
+                      <span className="truncate">Use Templates</span>
                     </button>
 
                     <button
@@ -1657,11 +1662,11 @@ export default function SirenTerminal() {
                         setBellTone('bell');
                         setIsFormOpen(!isFormOpen);
                       }}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-600/15 flex items-center gap-1.5 whitespace-nowrap"
+                      className="col-span-1 px-3 py-2.5 sm:px-4 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-600/15 flex items-center justify-center gap-1.5 whitespace-nowrap min-w-0"
                       type="button"
                     >
-                      <Plus className="w-4 h-4" />
-                      {isFormOpen ? 'Minimize Form' : 'Add Chime'}
+                      <Plus className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{isFormOpen ? 'Minimize Form' : 'Add Chime'}</span>
                     </button>
                   </div>
                 </div>
@@ -1872,27 +1877,27 @@ export default function SirenTerminal() {
 
               {/* Empty State Seed prompt */}
               {bellSchedule.length === 0 && (
-                <div className="text-center py-12 bg-white border border-slate-100 rounded-2xl p-8">
+                <div className="text-center py-8 sm:py-12 bg-white border border-slate-100 rounded-2xl p-5 sm:p-8 w-full max-w-full overflow-hidden">
                   <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">No scheduled timetabled rings configured</h3>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto mt-2 leading-relaxed">
                     Sync directly with your School Timetable to generate period start bells, break chimes, and dismissal bells automatically, or load standard templates.
                   </p>
-                  <div className="mt-4 flex items-center justify-center gap-3">
+                  <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 sm:gap-3">
                     <button
                       onClick={() => handleSyncSchoolTimetable(false)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all inline-flex items-center gap-1.5"
+                      className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all inline-flex items-center justify-center gap-1.5"
                       type="button"
                     >
-                      <RefreshCcw className="w-4 h-4" />
+                      <RefreshCcw className="w-4 h-4 shrink-0" />
                       Sync School Timetable
                     </button>
                     <button
                       onClick={handleSeedDefaults}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-600/10 inline-flex items-center gap-1.5"
+                      className="px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-600/10 inline-flex items-center justify-center gap-1.5"
                       type="button"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-4 h-4 shrink-0" />
                       Pre-load Standard Period Bells
                     </button>
                   </div>
@@ -1901,9 +1906,9 @@ export default function SirenTerminal() {
 
               {/* Scheduled Bells List */}
               {bellSchedule.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div className="space-y-0.5">
+                    <div className="space-y-0.5 min-w-0">
                       <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">
                         Registered Time Schedule Run ({bellSchedule.length} bells)
                       </h4>
@@ -1912,7 +1917,7 @@ export default function SirenTerminal() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
                       <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                         <button
                           type="button"
@@ -1939,7 +1944,7 @@ export default function SirenTerminal() {
                       </div>
 
                       <div className="text-[10px] font-bold text-slate-500 flex items-center gap-1 whitespace-nowrap">
-                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-ping" />
+                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-ping shrink-0" />
                         Active & Armed
                       </div>
                     </div>
@@ -1968,7 +1973,7 @@ export default function SirenTerminal() {
                       return (
                         <div 
                           key={b.id}
-                          className={`py-4 px-3 -mx-3 rounded-xl flex flex-col gap-3 transition-colors ${
+                          className={`py-3.5 sm:py-4 px-2.5 sm:px-3 mx-0 sm:-mx-3 rounded-xl flex flex-col gap-3 transition-colors w-full sm:w-auto ${
                             isActiveNow
                               ? 'bg-emerald-50/60 border border-emerald-200/80'
                               : isNextBell
@@ -1978,10 +1983,10 @@ export default function SirenTerminal() {
                               : 'opacity-60 bg-slate-50/20'
                           }`}
                         >
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+                            <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0">
                               {/* Clock Block */}
-                              <div className={`px-3.5 py-2 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-2xs border ${
+                              <div className={`px-3 sm:px-3.5 py-2 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-2xs border ${
                                 isActiveNow
                                   ? 'bg-emerald-700 text-white border-emerald-600'
                                   : b.category === 'break'
@@ -1998,9 +2003,9 @@ export default function SirenTerminal() {
                                 )}
                               </div>
 
-                              <div className="space-y-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <h5 className="text-sm font-black text-slate-900 truncate">
+                              <div className="space-y-1 min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <h5 className="text-sm font-black text-slate-900 break-words leading-snug">
                                     {b.label}
                                   </h5>
                                   {isActiveNow && (
@@ -2045,8 +2050,8 @@ export default function SirenTerminal() {
                             </div>
 
                             {/* Actions bar for each row */}
-                            <div className="flex items-center justify-end gap-2.5 self-end md:self-auto shrink-0">
-                              <div className="flex items-center gap-1.5 mr-2">
+                            <div className="flex flex-wrap items-center justify-between md:justify-end gap-2 w-full md:w-auto pt-2.5 md:pt-0 border-t border-slate-100 md:border-t-0 shrink-0">
+                              <div className="flex items-center gap-1.5 mr-1">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                   {b.enabled ? 'Armed' : 'Disarmed'}
                                 </span>
@@ -2061,33 +2066,35 @@ export default function SirenTerminal() {
                                 </label>
                               </div>
 
-                              <button
-                                onClick={() => handleTestRing(b.alarmType, b.label)}
-                                className="p-1 px-2 text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg transition-all inline-flex items-center gap-1 text-[11px] whitespace-nowrap"
-                                title="Strike this chime now over active intercom speakers for testing"
-                                type="button"
-                              >
-                                <Volume2 className="w-3.5 h-3.5" />
-                                Test Ring
-                              </button>
+                              <div className="flex items-center gap-1.5 sm:gap-2">
+                                <button
+                                  onClick={() => handleTestRing(b.alarmType, b.label)}
+                                  className="py-1.5 px-2.5 text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg transition-all inline-flex items-center gap-1 text-[11px] whitespace-nowrap"
+                                  title="Strike this chime now over active intercom speakers for testing"
+                                  type="button"
+                                >
+                                  <Volume2 className="w-3.5 h-3.5 shrink-0" />
+                                  Test Ring
+                                </button>
 
-                              <button 
-                                onClick={() => handleStartEditBell(b)}
-                                className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 border border-slate-200 rounded-lg transition-all"
-                                title="Edit Bell Chime Details"
-                                type="button"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                                <button 
+                                  onClick={() => handleStartEditBell(b)}
+                                  className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 border border-slate-200 rounded-lg transition-all"
+                                  title="Edit Bell Chime Details"
+                                  type="button"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
 
-                              <button 
-                                onClick={() => handleDeleteBell(b.id)}
-                                className="p-1.5 bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-650 border border-slate-200 hover:border-red-200 rounded-lg transition-all"
-                                title="Remove Period from Timetable"
-                                type="button"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                <button 
+                                  onClick={() => handleDeleteBell(b.id)}
+                                  className="p-1.5 bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-650 border border-slate-200 hover:border-red-200 rounded-lg transition-all"
+                                  title="Remove Period from Timetable"
+                                  type="button"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           </div>
 
@@ -2133,14 +2140,14 @@ export default function SirenTerminal() {
           )}
 
           {activeSubTab === 'recordings' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0">
               {/* Header Box */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-md font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-                      <Mic className="w-5 h-5 text-indigo-600" />
-                      Recorded Audio Intercom & Playback
+                  <div className="space-y-1 min-w-0">
+                    <h3 className="text-sm sm:text-base font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
+                      <Mic className="w-5 h-5 text-indigo-600 shrink-0" />
+                      <span>Recorded Audio Intercom & Playback</span>
                     </h3>
                     <p className="text-xs text-slate-500 font-semibold leading-relaxed">
                       Record live vocal announcements or upload pre-recorded chimes for campus-wide alerts or scheduled bells.
@@ -2150,7 +2157,6 @@ export default function SirenTerminal() {
 
                 {/* Practical info banner */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2 text-[11px] text-slate-800 leading-relaxed font-semibold">
-                  <span className="text-indigo-600 text-sm"></span>
                   <span>
                     <strong>Voice Intercom Broadcast:</strong> You can record announcements directly from your browser microphone or upload any standard classroom audio message. These custom sounds can then be played live across all client computers instantly or automated through the bell scheduler!
                   </span>
@@ -2158,12 +2164,12 @@ export default function SirenTerminal() {
               </div>
 
               {/* Grid: Recorder Panel vs File Uploader */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 {/* 1. Microphone Recorder */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4 flex flex-col justify-between">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 flex flex-col justify-between min-w-0">
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                      <Mic className="text-indigo-600 w-4.5 h-4.5" />
+                      <Mic className="text-indigo-600 w-4.5 h-4.5 shrink-0" />
                       <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Direct Microphone Recorder</h4>
                     </div>
 
@@ -2206,7 +2212,7 @@ export default function SirenTerminal() {
                           ))}
                         </div>
 
-                        <span className="font-mono text-lg font-black text-red-900">
+                        <span className="font-mono tabular-nums text-lg font-black text-red-900">
                           {String(Math.floor(recordDuration / 60)).padStart(2, '0')}:
                           {String(recordDuration % 60).padStart(2, '0')} / 01:00
                         </span>
@@ -2216,7 +2222,7 @@ export default function SirenTerminal() {
                         </p>
                       </div>
                     ) : (
-                      <div className="p-6 bg-slate-50 border border-slate-100 border-dashed rounded-xl flex flex-col items-center justify-center text-center space-y-2">
+                      <div className="p-5 sm:p-6 bg-slate-50 border border-slate-100 border-dashed rounded-xl flex flex-col items-center justify-center text-center space-y-2">
                         <div className="bg-slate-200 text-slate-600 p-2 rounded-full">
                           <Mic className="w-5 h-5" />
                         </div>
@@ -2235,7 +2241,7 @@ export default function SirenTerminal() {
                         onClick={stopMicRecording}
                         className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/10 flex items-center justify-center gap-1.5"
                       >
-                        <Square className="w-4 h-4 fill-current" />
+                        <Square className="w-4 h-4 fill-current shrink-0" />
                         Stop and Save Announcement
                       </button>
                     ) : (
@@ -2244,7 +2250,7 @@ export default function SirenTerminal() {
                         onClick={startMicRecording}
                         className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-600/15 flex items-center justify-center gap-1.5"
                       >
-                        <Play className="w-4 h-4 fill-current" />
+                        <Play className="w-4 h-4 fill-current shrink-0" />
                         Start Voice Recording
                       </button>
                     )}
@@ -2252,10 +2258,10 @@ export default function SirenTerminal() {
                 </div>
 
                 {/* 2. File Uploader */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4 flex flex-col justify-between">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 flex flex-col justify-between min-w-0">
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                      <Upload className="text-indigo-600 w-4.5 h-4.5" />
+                      <Upload className="text-indigo-600 w-4.5 h-4.5 shrink-0" />
                       <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Upload Pre-recorded File</h4>
                     </div>
 
@@ -2263,7 +2269,7 @@ export default function SirenTerminal() {
                       Don't want to record right now? Select an existing audio chime (MP3, WAV, OGG, or M4A format) from your local computer storage instead.
                     </p>
 
-                    <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl p-6 transition-all text-center relative group">
+                    <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl p-5 sm:p-6 transition-all text-center relative group">
                       <input
                         type="file"
                         accept="audio/*"
@@ -2287,11 +2293,11 @@ export default function SirenTerminal() {
               </div>
 
               {/* 3. Audio Records List */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                    <Megaphone className="w-4 h-4 text-slate-600" />
-                    Custom Recorded & Uploaded Libraries ({recordedAudios.length})
+                    <Megaphone className="w-4 h-4 text-slate-600 shrink-0" />
+                    <span>Custom Recorded & Uploaded Libraries ({recordedAudios.length})</span>
                   </h4>
                 </div>
 
@@ -2310,18 +2316,18 @@ export default function SirenTerminal() {
                       return (
                         <div 
                           key={item.id}
-                          className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors hover:bg-slate-50/30 px-1"
+                          className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 transition-colors hover:bg-slate-50/30 px-1 min-w-0"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start sm:items-center gap-3 min-w-0">
                             <span className="p-2 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-700 shrink-0">
                               <Mic className="w-4 h-4" />
                             </span>
-                            <div>
+                            <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <h5 className="text-sm font-black text-slate-900 leading-snug">
+                                <h5 className="text-sm font-black text-slate-900 leading-snug break-words">
                                   {item.name || item.title}
                                 </h5>
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase shrink-0 ${
                                   item.audioUrl
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                     : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
@@ -2330,19 +2336,19 @@ export default function SirenTerminal() {
                                   {item.audioUrl ? 'Supabase Storage' : 'Supabase DB'}
                                 </span>
                               </div>
-                              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                              <p className="text-[10px] text-slate-400 font-semibold mt-0.5 font-mono tabular-nums">
                                 Created: {new Date(item.timestamp || Date.now()).toLocaleDateString()} {new Date(item.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 {item.duration ? ` • ${item.duration}s` : ''}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t border-slate-100 sm:border-t-0 shrink-0">
                             {/* Play Preview button */}
                             <button
                               type="button"
                               onClick={() => handlePreviewPlay(item)}
-                              className={`p-1.5 px-3 text-xs font-extrabold rounded-lg border transition-all inline-flex items-center gap-1 ${
+                              className={`flex-1 sm:flex-initial justify-center py-2 sm:py-1.5 px-3 text-xs font-extrabold rounded-lg border transition-all inline-flex items-center gap-1 ${
                                 isPreviewing 
                                   ? 'bg-red-50 hover:bg-red-100 border-red-200 text-red-700 font-black' 
                                   : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
@@ -2351,13 +2357,13 @@ export default function SirenTerminal() {
                             >
                               {isPreviewing ? (
                                 <>
-                                  <Square className="w-3.5 h-3.5 fill-current" />
-                                  Stop Preview
+                                  <Square className="w-3.5 h-3.5 fill-current shrink-0" />
+                                  <span className="truncate">Stop Preview</span>
                                 </>
                               ) : (
                                 <>
-                                  <Play className="w-3.5 h-3.5 fill-current" />
-                                  Listen Preview
+                                  <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                                  <span className="truncate">Listen Preview</span>
                                 </>
                               )}
                             </button>
@@ -2366,18 +2372,18 @@ export default function SirenTerminal() {
                             <button
                               type="button"
                               onClick={() => handleBroadcastRecordedAudio(item)}
-                              className="p-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 border border-transparent text-white text-xs font-black uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center gap-1"
+                              className="flex-1 sm:flex-initial justify-center py-2 sm:py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 border border-transparent text-white text-xs font-black uppercase tracking-wider rounded-lg transition-all shadow-sm flex items-center gap-1"
                               title="Broadcast this recorded voice over all active teacher monitors & classroom intercom systems immediately"
                             >
-                              <Megaphone className="w-3.5 h-3.5 fill-current" />
-                              Broadcast Intercom
+                              <Megaphone className="w-3.5 h-3.5 fill-current shrink-0" />
+                              <span className="truncate">Broadcast Intercom</span>
                             </button>
 
                             {/* Delete button */}
                             <button
                               type="button"
                               onClick={() => handleDeleteRecording(item.id, item.name || item.title || 'Recording')}
-                              className="p-1.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-200 hover:border-red-200 rounded-lg transition-all"
+                              className="p-2 sm:p-1.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-200 hover:border-red-200 rounded-lg transition-all shrink-0"
                               title="Remove custom audio recording from system"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -2394,11 +2400,11 @@ export default function SirenTerminal() {
         </div>
 
         {/* Right 1 col: Alarm Logs and Drills metadata */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6 min-w-0 w-full max-w-full">
           
           {/* Quick Guide */}
-          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white border-0 rounded-2xl p-6 shadow-md relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 opacity-15 transform translate-y-12 translate-x-4">
+          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white border-0 rounded-2xl p-4 sm:p-6 shadow-md relative overflow-hidden">
+            <div className="absolute right-0 bottom-0 opacity-15 transform translate-y-12 translate-x-4 pointer-events-none">
               <ShieldCheck className="w-48 h-48" />
             </div>
             
@@ -2425,7 +2431,7 @@ export default function SirenTerminal() {
           </div>
 
           {/* Alarm History Log */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
             <div className="flex items-center justify-between">
               <h3 className="text-md font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-600" />

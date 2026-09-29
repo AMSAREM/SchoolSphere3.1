@@ -2,10 +2,12 @@ import { useState } from 'react';
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Teacher, type Subject, type ClassInfo } from '../db/schema';
-import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X } from 'lucide-react';
+import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X, Download, Upload, CheckSquare, Square } from 'lucide-react';
+import Papa from 'papaparse';
 import { motion } from 'motion/react';
 import { cn, triggerPrint } from '../lib/utils';
 import { teachersApi, classesApi, subjectsApi } from '../lib/api';
+import { useNotifications } from '../contexts/NotificationContext';
 
 export default function AcademicManagement() {
   const [activeTab, setActiveTab] = useState<'teachers' | 'classes' | 'subjects'>('teachers');
@@ -105,6 +107,7 @@ export default function AcademicManagement() {
 }
 
 function TeacherList() {
+  const { showToast, confirm } = useNotifications();
   const [searchTerm, setSearchTerm] = useState('');
   const teachers = useLiveQuery(() => 
     db.teachers.filter(t => 
@@ -120,6 +123,164 @@ function TeacherList() {
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<number[]>([]);
+  const [bulkClassValue, setBulkClassValue] = useState<string>('');
+  const [bulkSubjectValue, setBulkSubjectValue] = useState<string>('');
+
+  const toggleSelectTeacher = (id?: number) => {
+    if (typeof id !== 'number') return;
+    setSelectedTeacherIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllTeachers = () => {
+    const validIds = (teachers || []).map(t => t.id).filter((id): id is number => typeof id === 'number');
+    if (validIds.length > 0 && validIds.every(id => selectedTeacherIds.includes(id))) {
+      setSelectedTeacherIds([]);
+    } else {
+      setSelectedTeacherIds(validIds);
+    }
+  };
+
+  const exportTeachersCsv = () => {
+    const list = selectedTeacherIds.length > 0
+      ? (teachers || []).filter(t => typeof t.id === 'number' && selectedTeacherIds.includes(t.id))
+      : (teachers || []);
+
+    if (list.length === 0) {
+      showToast('No staff records to export.', 'error');
+      return;
+    }
+
+    const rows = list.map(t => ({
+      staffId: t.staffId,
+      firstName: t.firstName,
+      lastName: t.lastName,
+      email: t.email || '',
+      phone: t.phone || '',
+      assignedClasses: (t.assignedClasses || []).join('; '),
+      subjects: (t.subjects || []).join('; ')
+    }));
+
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `staff_directory_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${rows.length} staff record(s) to CSV.`, 'success');
+  };
+
+  const downloadTeachersTemplateCsv = () => {
+    const sample = [
+      {
+        staffId: 'TEA-1001',
+        firstName: 'Kwame',
+        lastName: 'Mensah',
+        email: 'kwame.mensah@school.edu',
+        phone: '0240000001',
+        assignedClasses: 'Basic 7; Basic 8',
+        subjects: 'Mathematics; Integrated Science'
+      }
+    ];
+    const csv = Papa.unparse(sample);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'staff_directory_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportTeachersCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = Array.isArray(results.data) ? results.data : [];
+        let importedCount = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const r: any = rows[i];
+          const firstName = String(r.firstName || r.first_name || r.FirstName || '').trim();
+          const lastName = String(r.lastName || r.last_name || r.LastName || '').trim();
+          if (!firstName && !lastName) continue;
+          const staffId = String(r.staffId || r.staff_id || `TEA-${Date.now().toString().slice(-4)}-${i}`).trim();
+          const email = String(r.email || r.Email || '').trim();
+          const phone = String(r.phone || r.Phone || '').trim();
+          const assignedClasses = String(r.assignedClasses || r.classes || '')
+            .split(/[;,]/)
+            .map(s => s.trim())
+            .filter(Boolean);
+          const subjs = String(r.subjects || r.Subjects || '')
+            .split(/[;,]/)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+          await teachersApi.create({
+            staffId,
+            firstName: firstName || 'Staff',
+            lastName: lastName || 'Member',
+            email,
+            phone,
+            assignedClasses,
+            subjects: subjs
+          });
+          importedCount++;
+        }
+
+        if (importedCount > 0) {
+          showToast(`Imported ${importedCount} staff member(s) from CSV!`, 'success');
+        } else {
+          showToast('No valid staff rows found in CSV.', 'error');
+        }
+      }
+    });
+    e.target.value = '';
+  };
+
+  const handleBulkAssign = async (type: 'class' | 'subject', value: string) => {
+    const cleanVal = value.trim();
+    if (!cleanVal || selectedTeacherIds.length === 0) return;
+
+    const selectedList = (teachers || []).filter(t => typeof t.id === 'number' && selectedTeacherIds.includes(t.id));
+    for (const t of selectedList) {
+      if (!t.id) continue;
+      if (type === 'class') {
+        const nextClasses = Array.from(new Set([...(t.assignedClasses || []), cleanVal]));
+        await teachersApi.update(t.id, { ...t, assignedClasses: nextClasses });
+      } else {
+        const nextSubjects = Array.from(new Set([...(t.subjects || []), cleanVal]));
+        await teachersApi.update(t.id, { ...t, subjects: nextSubjects });
+      }
+    }
+    showToast(`Assigned ${type} "${cleanVal}" to ${selectedList.length} staff member(s).`, 'success');
+    if (type === 'class') setBulkClassValue('');
+    if (type === 'subject') setBulkSubjectValue('');
+  };
+
+  const handleBulkDeleteTeachers = async () => {
+    if (selectedTeacherIds.length === 0) return;
+    const isOk = await confirm({
+      title: `Delete ${selectedTeacherIds.length} Staff Record(s)?`,
+      message: `Are you sure you want to delete ${selectedTeacherIds.length} selected teacher record(s)?`,
+      confirmLabel: 'Delete Selected'
+    });
+    if (!isOk) return;
+
+    for (const id of selectedTeacherIds) {
+      await teachersApi.delete(id);
+    }
+    setSelectedTeacherIds([]);
+    showToast(`Deleted ${selectedTeacherIds.length} staff record(s).`, 'info');
+  };
 
   const toggleClass = (className: string) => {
     setSelectedClasses(prev => 
@@ -171,44 +332,171 @@ function TeacherList() {
     setSelectedSubjects([]);
   };
 
+  const allTeacherIds = (teachers || []).map(t => t.id).filter((id): id is number => typeof id === 'number');
+  const allSelected = allTeacherIds.length > 0 && allTeacherIds.every(id => selectedTeacherIds.includes(id));
+
   return (
     <div className="space-y-3 sm:space-y-4 min-w-0">
-      {/* Compact Single-Row Search & Add Toolbar */}
-      <div className="flex items-center justify-between gap-2 sm:gap-3 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
-        <div className="relative flex-1 min-w-0 sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
-          <input 
-            type="text"
-            placeholder="Search teachers by name or ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
-          />
-          {searchTerm && (
+      {/* Search, CSV Import/Export & Add Teacher Toolbar */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 bg-white p-3 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {allTeacherIds.length > 0 && (
             <button
               type="button"
-              onClick={() => setSearchTerm('')}
-              title="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+              onClick={toggleSelectAllTeachers}
+              className="shrink-0 h-9 sm:h-10 px-2.5 rounded-xl bg-[#f6f8f7] border border-[#bac4c6] text-xs font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 flex items-center gap-1.5 cursor-pointer"
+              title="Select or Deselect All Staff"
             >
-              <X className="w-3.5 h-3.5" />
+              {allSelected ? <CheckSquare className="w-4 h-4 text-[#1c4a59]" /> : <Square className="w-4 h-4 text-[#6a7f84]" />}
+              <span className="hidden sm:inline">{allSelected ? 'Deselect' : 'Select All'}</span>
             </button>
           )}
+          <div className="relative flex-1 min-w-0 sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
+            <input 
+              type="text"
+              placeholder="Search teachers by name or ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                title="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
-        <button 
-          type="button"
-          onClick={() => {
-            setEditingTeacher(null);
-            setIsModalOpen(true);
-            setSelectedClasses([]);
-            setSelectedSubjects([]);
-          }}
-          className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
-          <span>Add Teacher</span>
-        </button>
+
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto min-w-0">
+          <input
+            type="file"
+            id="import-teachers-csv"
+            className="hidden"
+            accept=".csv"
+            onChange={handleImportTeachersCsv}
+          />
+          <button
+            type="button"
+            onClick={downloadTeachersTemplateCsv}
+            className="w-full sm:w-auto min-w-0 h-9 sm:h-10 px-3 rounded-xl bg-[#f6f8f7] hover:bg-[#e1c594]/30 border border-[#bac4c6] text-[#1c4a59] font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+            <span className="truncate">CSV Template</span>
+          </button>
+          <label
+            htmlFor="import-teachers-csv"
+            className="w-full sm:w-auto min-w-0 h-9 sm:h-10 px-3 rounded-xl bg-[#f6f8f7] hover:bg-[#e1c594]/30 border border-[#bac4c6] text-[#1c4a59] font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+            <span className="truncate">Import CSV</span>
+          </label>
+          <button
+            type="button"
+            onClick={exportTeachersCsv}
+            className="w-full sm:w-auto min-w-0 h-9 sm:h-10 px-3 rounded-xl bg-[#f6f8f7] hover:bg-[#e1c594]/30 border border-[#bac4c6] text-[#1c4a59] font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+            <span className="truncate">Export CSV</span>
+          </button>
+          <button 
+            type="button"
+            onClick={() => {
+              setEditingTeacher(null);
+              setIsModalOpen(true);
+              setSelectedClasses([]);
+              setSelectedSubjects([]);
+            }}
+            className="w-full sm:w-auto min-w-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+            <span className="truncate">Add Teacher</span>
+          </button>
+        </div>
       </div>
+
+      {/* Bulk Action Bar for Selected Teachers */}
+      {selectedTeacherIds.length > 0 && (
+        <div className="p-3 sm:p-4 bg-[#1c4a59] text-white rounded-2xl border border-[#bac4c6] flex flex-col lg:flex-row lg:items-center justify-between gap-3 print:hidden min-w-0">
+          <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
+            <span className="px-2.5 py-1 rounded-lg bg-[#faae57] text-[#1f2a2e] text-xs font-extrabold font-mono tabular-nums shrink-0">
+              {selectedTeacherIds.length} Staff Selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedTeacherIds([])}
+              className="text-xs font-bold text-[#e1c594] hover:text-white underline cursor-pointer shrink-0"
+            >
+              Clear Selection
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto min-w-0">
+            <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-2.5 py-1.5 min-w-0 w-full sm:w-auto">
+              <select
+                value={bulkClassValue}
+                onChange={e => setBulkClassValue(e.target.value)}
+                className="flex-1 min-w-0 sm:w-32 bg-transparent text-white text-xs font-bold focus:outline-none truncate"
+              >
+                <option value="" className="text-slate-900">Assign Class…</option>
+                {classes?.map(c => (
+                  <option key={c.id} value={c.name} className="text-slate-900">{c.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleBulkAssign('class', bulkClassValue)}
+                className="px-2.5 py-1 rounded-lg bg-[#faae57] text-[#1f2a2e] text-[11px] font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Apply Class
+              </button>
+            </div>
+
+            <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-xl px-2.5 py-1.5 min-w-0 w-full sm:w-auto">
+              <select
+                value={bulkSubjectValue}
+                onChange={e => setBulkSubjectValue(e.target.value)}
+                className="flex-1 min-w-0 sm:w-36 bg-transparent text-white text-xs font-bold focus:outline-none truncate"
+              >
+                <option value="" className="text-slate-900">Assign Subject…</option>
+                {subjects?.map(s => (
+                  <option key={s.id} value={s.name} className="text-slate-900">{s.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => handleBulkAssign('subject', bulkSubjectValue)}
+                className="px-2.5 py-1 rounded-lg bg-[#06d6a0] text-[#1f2a2e] text-[11px] font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Apply Subject
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={exportTeachersCsv}
+              className="min-w-0 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-[#06d6a0] shrink-0" />
+              <span className="truncate">Export Selected</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBulkDeleteTeachers}
+              className="min-w-0 px-3 py-2 rounded-xl bg-[#ef476f] hover:bg-[#d93860] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Delete Selected</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* High-Density Teachers List-Card Grid */}
       {teachers && teachers.length === 0 ? (
@@ -221,11 +509,19 @@ function TeacherList() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
-          {teachers?.map(teacher => (
-            <div key={teacher.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-[#bac4c6]/80 hover:border-[#1c4a59]/60 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col justify-between text-[#1f2a2e] transition-colors min-w-0">
+          {teachers?.map(teacher => {
+            const isSelected = typeof teacher.id === 'number' && selectedTeacherIds.includes(teacher.id);
+            return (
+            <div key={teacher.id} className={cn("bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col justify-between text-[#1f2a2e] transition-colors min-w-0", isSelected ? "border-[#1c4a59] bg-[#e1c594]/15" : "border-[#bac4c6]/80 hover:border-[#1c4a59]/60")}>
               <div className="min-w-0">
                 <div className="flex justify-between items-start gap-2.5 mb-2">
                   <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectTeacher(teacher.id)}
+                      className="w-4 h-4 rounded border-[#bac4c6] text-[#1c4a59] focus:ring-[#1c4a59] cursor-pointer shrink-0 print:hidden"
+                    />
                     <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 rounded-xl flex items-center justify-center font-bold uppercase text-xs sm:text-sm shrink-0">
                       {(teacher.firstName?.[0] || '')}{(teacher.lastName?.[0] || '') || 'T'}
                     </div>
@@ -299,7 +595,8 @@ function TeacherList() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

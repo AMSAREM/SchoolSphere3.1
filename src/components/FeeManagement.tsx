@@ -346,78 +346,78 @@ export default function FeeManagement() {
   const renderLedgerStatement = () => {
     if (!selectedStudent) return null;
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 sm:p-8 space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 w-full max-w-full min-w-0">
         {/* Statement Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-6 gap-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black text-base shadow-sm">
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center border-b border-slate-200 pb-4 sm:pb-6 gap-4 min-w-0">
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black text-sm sm:text-base shadow-sm shrink-0">
                 {schoolName.charAt(0)}
               </div>
-              <div>
-                <h1 className="text-xl font-extrabold text-slate-900 leading-tight uppercase tracking-tight">{schoolName}</h1>
-                <p className="text-[10px] uppercase font-black text-indigo-600 tracking-wider">Statement of Account Ledger</p>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-extrabold text-slate-900 leading-tight uppercase tracking-tight break-words">{schoolName}</h1>
+                <p className="text-[10px] uppercase font-black text-indigo-600 tracking-wider truncate">Statement of Account Ledger</p>
               </div>
             </div>
-            <p className="text-xs text-slate-400 font-medium">Official financial record statement generated on {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+            <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Official financial record statement generated on {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
           </div>
 
           {/* Quick Export Actions */}
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <div className={cn("grid gap-2 print:hidden w-full md:w-auto min-w-0", isStaff ? "grid-cols-2 sm:flex" : "grid-cols-1 sm:flex")}>
             {isStaff && (
               <button
                 type="button"
                 onClick={() => openStudentBreakdownModal(selectedStudent)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs hover:bg-indigo-100 transition-all cursor-pointer outline-none shadow-sm"
+                className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs hover:bg-indigo-100 transition-all cursor-pointer outline-none shadow-sm min-w-0"
               >
-                <Edit2 className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Adjust Student Bill</span>
+                <Edit2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="truncate">Adjust Bill</span>
               </button>
             )}
             <button
               onClick={() => triggerPrint()}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-100 transition-all cursor-pointer outline-none shadow-sm"
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-100 transition-all cursor-pointer outline-none shadow-sm min-w-0"
             >
-              <Printer className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Print Statement</span>
+              <Printer className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="truncate">Print Statement</span>
             </button>
           </div>
         </div>
 
         {/* Student Metadata Card */}
-        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-1.5">
+        <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3.5 sm:p-5 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 min-w-0">
+          <div className="space-y-1 min-w-0">
             <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Account Holder</p>
-            <p className="text-base font-black text-slate-950 uppercase">{selectedStudent.firstName} {selectedStudent.lastName}</p>
-            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+            <p className="text-sm sm:text-base font-black text-slate-950 uppercase break-words">{selectedStudent.firstName} {selectedStudent.lastName}</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium">
               <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-[10px] font-bold">{selectedStudent.studentId}</span>
               <span>•</span>
               <span className="font-semibold">{selectedStudent.class}</span>
             </div>
           </div>
           
-          <div className="space-y-1.5">
+          <div className="space-y-1 min-w-0">
             <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Billing Guardian Contacts</p>
-            <p className="text-sm font-bold text-slate-800">{selectedStudent.guardianName || 'N/A'}</p>
-            <p className="text-xs font-mono text-slate-500">{selectedStudent.guardianPhone || 'N/A'}</p>
+            <p className="text-xs sm:text-sm font-bold text-slate-800 truncate">{selectedStudent.guardianName || 'N/A'}</p>
+            <p className="text-xs font-mono text-slate-500 truncate">{selectedStudent.guardianPhone || 'N/A'}</p>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Statement Summary</p>
-            <div className="flex gap-4">
-              <div>
-                <p className="text-[9px] text-slate-400 font-semibold uppercase">Total Billed</p>
-                <p className="text-sm font-black text-slate-900 font-mono">{formatCurrency(selectedStudent.totalFees)}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="bg-white border border-slate-200/80 rounded-xl p-2 min-w-0">
+                <p className="text-[9px] text-slate-400 font-semibold uppercase truncate">Total Billed</p>
+                <p className="text-xs sm:text-sm font-black text-slate-900 font-mono tabular-nums truncate">{formatCurrency(selectedStudent.totalFees)}</p>
               </div>
-              <div>
-                <p className="text-[9px] text-slate-400 font-semibold uppercase">Total Paid</p>
-                <p className="text-sm font-black text-emerald-600 font-mono">{formatCurrency(selectedStudent.feesPaid)}</p>
+              <div className="bg-white border border-emerald-200/80 rounded-xl p-2 min-w-0">
+                <p className="text-[9px] text-slate-400 font-semibold uppercase truncate">Total Paid</p>
+                <p className="text-xs sm:text-sm font-black text-emerald-600 font-mono tabular-nums truncate">{formatCurrency(selectedStudent.feesPaid)}</p>
               </div>
-              <div>
-                <p className="text-[9px] text-slate-400 font-semibold uppercase font-bold">Outstanding</p>
+              <div className="col-span-2 sm:col-span-1 bg-white border border-rose-200/80 rounded-xl p-2 min-w-0">
+                <p className="text-[9px] text-slate-400 font-semibold uppercase font-bold truncate">Outstanding</p>
                 <p className={cn(
-                  "text-sm font-black font-mono",
-                  selectedStudent.totalFees - selectedStudent.feesPaid > 0 ? "text-rose-600 animate-pulse" : "text-emerald-600"
+                  "text-xs sm:text-sm font-black font-mono tabular-nums truncate",
+                  selectedStudent.totalFees - selectedStudent.feesPaid > 0 ? "text-rose-600" : "text-emerald-600"
                 )}>
                   {formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}
                 </p>
@@ -427,16 +427,16 @@ export default function FeeManagement() {
         </div>
 
         {/* Table Filters (Print Hidden) */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100 print:hidden">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-2">Filter Type:</span>
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-slate-50/50 p-3 sm:p-4 rounded-xl border border-slate-100 print:hidden min-w-0">
+          <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+            <span className="col-span-3 sm:col-span-1 text-[10px] font-black uppercase text-slate-400 tracking-wider sm:mr-1">Filter Type:</span>
             {(['all', 'debit', 'credit'] as const).map(type => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setLedgerTypeFilter(type)}
                 className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer outline-none border",
+                  "px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer outline-none border text-center truncate",
                   ledgerTypeFilter === type
                     ? "bg-slate-900 text-white border-slate-950 shadow-sm"
                     : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
@@ -449,8 +449,8 @@ export default function FeeManagement() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Sorting:</span>
+          <div className="flex items-center justify-between sm:justify-end gap-2 min-w-0">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider shrink-0">Sorting:</span>
             <select
               value={ledgerSortOrder}
               onChange={(e) => setLedgerSortOrder(e.target.value as 'asc' | 'desc')}
@@ -462,9 +462,86 @@ export default function FeeManagement() {
           </div>
         </div>
 
-        {/* Ledger Statement Table */}
-        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
-          <div className="overflow-x-auto">
+        {/* Ledger Statement: Stacked Mobile Cards (< 768px) & Table (>= 768px / Print) */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white min-w-0">
+          {/* Mobile Stacked Ledger Cards */}
+          <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+            {filteredLedger.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 space-y-2">
+                <AlertCircle className="w-9 h-9 text-slate-300 mx-auto" />
+                <p className="font-bold text-xs text-slate-600">No matching ledger records found</p>
+              </div>
+            ) : (
+              filteredLedger.map((entry) => (
+                <div key={entry.id} className="p-3.5 space-y-2.5 hover:bg-slate-50/50 transition-colors min-w-0">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shrink-0",
+                          entry.type === 'debit'
+                            ? "bg-rose-50 border-rose-100 text-rose-700"
+                            : "bg-emerald-50 border-emerald-100 text-emerald-700"
+                        )}>
+                          {entry.type === 'debit' ? 'Debit' : 'Credit'}
+                        </span>
+                        <span className="font-bold text-xs text-slate-900 truncate">{entry.description}</span>
+                      </div>
+                      <p className="text-[10px] font-mono text-slate-400 mt-1 truncate">
+                        {entry.reference} • {new Date(entry.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                    {entry.type === 'credit' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLastPayment({
+                            amount: entry.amount,
+                            date: entry.date,
+                            method: entry.method || 'Online Payment',
+                            phone: entry.recipientPhone,
+                            ref: entry.reference
+                          });
+                          setIsReceiptModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-lg text-slate-600 font-bold text-[10px] transition-all cursor-pointer inline-flex items-center gap-1 shrink-0"
+                      >
+                        <FileText className="w-3 h-3 text-indigo-500 shrink-0" />
+                        <span>Receipt</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 2-Column Metric Pills */}
+                  <div className="grid grid-cols-2 gap-2 pt-0.5 min-w-0">
+                    <div className={cn(
+                      "p-2 rounded-xl border min-w-0",
+                      entry.type === 'debit' ? "bg-rose-50/40 border-rose-100" : "bg-emerald-50/40 border-emerald-100"
+                    )}>
+                      <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">
+                        {entry.type === 'debit' ? 'Debit (Charged)' : 'Credit (Paid)'}
+                      </span>
+                      <span className={cn(
+                        "font-mono font-bold text-xs tabular-nums block truncate mt-0.5",
+                        entry.type === 'debit' ? "text-rose-600" : "text-emerald-600"
+                      )}>
+                        {formatCurrency(entry.amount)}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 min-w-0">
+                      <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Running Balance</span>
+                      <span className="font-mono font-bold text-xs text-slate-900 tabular-nums block truncate mt-0.5">
+                        {formatCurrency(entry.runningBalance)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop & Print Table */}
+          <div className="hidden md:block print:block overflow-x-auto">
             <table className="w-full text-left min-w-[700px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider">
@@ -550,9 +627,9 @@ export default function FeeManagement() {
         </div>
 
         {/* Ledger Footer Certification Statement */}
-        <div className="border-t border-slate-200 pt-6 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-400 text-[10px] font-semibold uppercase tracking-wider">
-          <p>© {new Date().getFullYear()} School Treasury Audit System • All logs are cryptographically sealed</p>
-          <div className="flex items-center gap-2">
+        <div className="border-t border-slate-200 pt-4 sm:pt-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 text-slate-400 text-[10px] font-semibold uppercase tracking-wider">
+          <p className="break-words">© {new Date().getFullYear()} School Treasury Audit System • All logs are cryptographically sealed</p>
+          <div className="flex items-center gap-2 shrink-0">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
             <span className="text-slate-500">Live Accounts Sync Status: Verified</span>
           </div>
@@ -1322,64 +1399,105 @@ export default function FeeManagement() {
           ) : (
             <>
               {/* Profile Card & Stats Bento-Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 text-slate-100 rounded-xl p-5 flex flex-col justify-between border border-slate-800 shadow-xs relative overflow-hidden">
-              <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 min-w-0">
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-4 sm:p-5 flex flex-col justify-between border border-slate-800 shadow-xs relative overflow-hidden min-w-0">
+              <div className="min-w-0">
                 <p className="text-[10px] uppercase font-bold tracking-widest text-indigo-400">Student Profile</p>
-                <h3 className="text-base font-bold mt-1 text-white">{selectedStudent.firstName} {selectedStudent.lastName}</h3>
-                <p className="text-[11px] font-mono mt-0.5 text-slate-400">{selectedStudent.studentId} • {selectedStudent.class}</p>
+                <h3 className="text-base font-bold mt-1 text-white truncate">{selectedStudent.firstName} {selectedStudent.lastName}</h3>
+                <p className="text-[11px] font-mono mt-0.5 text-slate-400 truncate">{selectedStudent.studentId} • {selectedStudent.class}</p>
               </div>
-              <div className="border-t border-slate-800 pt-3 mt-4 space-y-1 text-xs">
+              <div className="border-t border-slate-800 pt-3 mt-4 space-y-1 text-xs min-w-0">
                 <p className="text-slate-400 truncate"><span className="font-semibold text-slate-300">Guardian:</span> {selectedStudent.guardianName}</p>
-                <p className="text-slate-400 font-mono"><span className="font-semibold text-slate-300 font-sans">Phone:</span> {selectedStudent.guardianPhone}</p>
+                <p className="text-slate-400 font-mono truncate"><span className="font-semibold text-slate-300 font-sans">Phone:</span> {selectedStudent.guardianPhone}</p>
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 flex flex-col justify-between shadow-sm">
-              <div>
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 flex flex-col justify-between shadow-sm min-w-0">
+              <div className="min-w-0">
                 <p className="text-[10px] uppercase font-black tracking-widest text-slate-400">Total Billed Fees</p>
-                <h3 className="text-3xl font-black mt-3 text-slate-900 font-mono">{formatCurrency(selectedStudent.totalFees)}</h3>
+                <h3 className="text-2xl sm:text-3xl font-black mt-2 sm:mt-3 text-slate-900 font-mono tabular-nums truncate">{formatCurrency(selectedStudent.totalFees)}</h3>
               </div>
-              <p className="text-[10px] text-slate-400 mt-2 font-medium">Billed term aggregates for {selectedStudent.class}</p>
+              <p className="text-[10px] text-slate-400 mt-2 font-medium truncate">Billed term aggregates for {selectedStudent.class}</p>
             </div>
 
-            <div className="bg-emerald-50/50 rounded-2xl p-6 border border-emerald-100 flex flex-col justify-between shadow-sm">
-              <div>
+            <div className="bg-emerald-50/50 rounded-2xl p-4 sm:p-6 border border-emerald-100 flex flex-col justify-between shadow-sm min-w-0">
+              <div className="min-w-0">
                 <p className="text-[10px] uppercase font-black tracking-widest text-emerald-600">Total Paid to Date</p>
-                <h3 className="text-3xl font-black mt-3 text-emerald-700 font-mono">{formatCurrency(selectedStudent.feesPaid)}</h3>
+                <h3 className="text-2xl sm:text-3xl font-black mt-2 sm:mt-3 text-emerald-700 font-mono tabular-nums truncate">{formatCurrency(selectedStudent.feesPaid)}</h3>
               </div>
-              <p className="text-[10px] text-emerald-600/80 mt-2 font-semibold">GHS {(selectedStudent.totalFees > 0 ? (selectedStudent.feesPaid / selectedStudent.totalFees * 100) : 0).toFixed(0)}% overall completion rate</p>
+              <p className="text-[10px] text-emerald-600/80 mt-2 font-semibold truncate">GHS {(selectedStudent.totalFees > 0 ? (selectedStudent.feesPaid / selectedStudent.totalFees * 100) : 0).toFixed(0)}% overall completion rate</p>
             </div>
 
-            <div className="bg-rose-50/50 rounded-2xl p-6 border border-rose-100 flex flex-col justify-between shadow-sm">
-              <div>
+            <div className="bg-rose-50/50 rounded-2xl p-4 sm:p-6 border border-rose-100 flex flex-col justify-between shadow-sm min-w-0">
+              <div className="min-w-0">
                 <p className="text-[10px] uppercase font-black tracking-widest text-rose-600">Outstanding Balance</p>
-                <h3 className="text-3xl font-black mt-3 text-rose-700 font-mono">
+                <h3 className="text-2xl sm:text-3xl font-black mt-2 sm:mt-3 text-rose-700 font-mono tabular-nums truncate">
                   {formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}
                 </h3>
               </div>
-              <p className="text-[10px] text-rose-600/80 mt-2 font-semibold">Please settle outstanding to clear record entries</p>
+              <p className="text-[10px] text-rose-600/80 mt-2 font-semibold truncate">Please settle outstanding to clear record entries</p>
             </div>
           </div>
 
           {/* Content Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 min-w-0">
             
             {/* Left Column: Itemized Bills & Receipt history */}
-            <div className="space-y-6 lg:col-span-2">
+            <div className="space-y-4 sm:space-y-6 lg:col-span-2 min-w-0">
               
-              {/* Itemized breakdown table */}
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                  <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-indigo-600" />
-                    Itemized Statement of Accounts
+              {/* Itemized breakdown table & stacked mobile cards */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden min-w-0">
+                <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center gap-2 min-w-0">
+                  <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm flex items-center gap-2 min-w-0">
+                    <CreditCard className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span className="truncate">Itemized Statement of Accounts</span>
                   </h3>
-                  <span className="text-[10px] font-black uppercase text-slate-400 font-mono bg-white border px-2.5 py-1 rounded-lg">
+                  <span className="text-[10px] font-black uppercase text-slate-400 font-mono bg-white border px-2.5 py-1 rounded-lg shrink-0">
                     Current Term
                   </span>
                 </div>
-                <div className="overflow-x-auto">
+
+                {/* Stacked Mobile Fee Component Cards (< 768px) */}
+                <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+                  {feeTypes.map(ft => {
+                    const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
+                    const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
+                    const outstanding = Math.max(0, billed - paid);
+                    if (billed === 0) return null;
+                    return (
+                      <div key={ft.id} className="p-3.5 space-y-2.5 hover:bg-slate-50/40 transition-colors min-w-0">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="font-bold text-slate-900 text-xs truncate">{ft.label}</span>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold tabular-nums shrink-0",
+                            outstanding > 0
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          )}>
+                            {outstanding > 0 ? `Due: ${formatCurrency(outstanding)}` : 'Cleared'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 min-w-0">
+                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 min-w-0">
+                            <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Amount Billed</span>
+                            <span className="font-mono font-bold text-xs text-slate-700 tabular-nums block truncate mt-0.5">
+                              {formatCurrency(billed)}
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-emerald-50/50 border border-emerald-100 min-w-0">
+                            <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Amount Paid</span>
+                            <span className="font-mono font-bold text-xs text-emerald-700 tabular-nums block truncate mt-0.5">
+                              {formatCurrency(paid)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop & Print Table (>= 768px) */}
+                <div className="hidden md:block print:block overflow-x-auto">
                   <table className="w-full text-left min-w-[500px]">
                     <thead>
                       <tr className="bg-slate-50/30 border-b border-slate-100">
@@ -1770,7 +1888,7 @@ export default function FeeManagement() {
 
   return (
     <>
-      <div className={cn("space-y-6", isReceiptModalOpen && "print:hidden receipt-modal-hidden-on-print")}>
+      <div className={cn("space-y-4 sm:space-y-6 w-full max-w-full min-w-0 overflow-x-hidden", isReceiptModalOpen && "print:hidden receipt-modal-hidden-on-print")}>
         {/* Print Only Header */}
         <div className="only-print">
           <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -1782,43 +1900,43 @@ export default function FeeManagement() {
         </div>
 
         {/* Deep Teal Hero Header Card */}
-        <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
-                <Wallet className="w-3.5 h-3.5 text-[#faae57]" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+        <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5 print:hidden min-w-0 overflow-hidden">
+          <div className="space-y-1.5 sm:space-y-2 min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-full">
+                <Wallet className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#e1c594] truncate">
                   Bursary & Accounts Office
                 </span>
               </div>
               {offlineQueueCount > 0 ? (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-200 text-[11px] font-bold">
-                  <CloudOff className="w-3.5 h-3.5 text-amber-300" />
+                <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-200 text-[10px] sm:text-[11px] font-bold">
+                  <CloudOff className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                   <span>{offlineQueueCount} Queued Offline</span>
                 </div>
               ) : (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-[11px] font-bold">
-                  <Cloud className="w-3.5 h-3.5 text-emerald-300" />
+                <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-[10px] sm:text-[11px] font-bold">
+                  <Cloud className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
                   <span>Supabase Connected</span>
                 </div>
               )}
             </div>
-            <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+            <h2 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold tracking-tight text-white leading-tight break-words">
               Financial & Fee Management
             </h2>
-            <p className="text-sm text-[#e1c594]/90 font-medium">
+            <p className="text-xs sm:text-sm text-[#e1c594]/90 font-medium leading-relaxed">
               Configure fee structures, bill classes, monitor live Supabase transaction ledgers, and issue official receipts.
             </p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* View Switcher Tabs */}
-            <div className="flex flex-wrap items-center bg-white/10 p-1 rounded-2xl sm:rounded-full border border-white/15 print:hidden">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 w-full lg:w-auto min-w-0">
+            {/* View Switcher Tabs - 2-column grid on mobile with 3rd tab full width */}
+            <div className="grid grid-cols-2 sm:flex items-center bg-white/10 p-1 rounded-2xl sm:rounded-full border border-white/15 gap-1 w-full sm:w-auto print:hidden">
               <button
                 type="button"
                 onClick={() => setActiveTab('dashboard')}
                 className={cn(
-                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
+                  "px-2.5 sm:px-4 py-2 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[38px] text-center truncate",
                   activeTab === 'dashboard'
                     ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
                     : "text-white/85 hover:text-white"
@@ -1830,7 +1948,7 @@ export default function FeeManagement() {
                 type="button"
                 onClick={() => setActiveTab('ledger')}
                 className={cn(
-                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
+                  "px-2.5 sm:px-4 py-2 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[38px] text-center truncate",
                   activeTab === 'ledger'
                     ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
                     : "text-white/85 hover:text-white"
@@ -1842,57 +1960,62 @@ export default function FeeManagement() {
                 type="button"
                 onClick={() => setActiveTab('billing')}
                 className={cn(
-                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px] flex items-center gap-1.5",
+                  "col-span-2 sm:col-span-1 px-3 sm:px-4 py-2 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold transition-all cursor-pointer min-h-[38px] flex items-center justify-center gap-1.5",
                   activeTab === 'billing'
                     ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
                     : "text-white/85 hover:text-white"
                 )}
               >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Fee Structure & Billing</span>
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Fee Structure & Billing</span>
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleManualSyncLedger}
-              disabled={isSyncingLedger}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-full text-white font-bold transition-all text-xs min-h-[44px] cursor-pointer disabled:opacity-60"
-            >
-              <RefreshCw className={cn("w-4 h-4 text-[#faae57]", isSyncingLedger && "animate-spin")} />
-              <span>{isSyncingLedger ? 'Syncing...' : 'Sync Supabase'}</span>
-            </button>
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleManualSyncLedger}
+                disabled={isSyncingLedger}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl sm:rounded-full text-white font-bold transition-all text-[11px] sm:text-xs min-h-[40px] sm:min-h-[44px] cursor-pointer disabled:opacity-60",
+                  activeTab !== 'dashboard' && "col-span-2 sm:col-span-1"
+                )}
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5 text-[#faae57] shrink-0", isSyncingLedger && "animate-spin")} />
+                <span className="truncate">{isSyncingLedger ? 'Syncing...' : 'Sync Supabase'}</span>
+              </button>
 
-            {activeTab === 'dashboard' && (
-              <>
-                <button 
-                  onClick={triggerPrint}
-                  className="flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-full text-white font-bold transition-all text-xs min-h-[44px] cursor-pointer"
-                >
-                  <Printer className="w-4 h-4 text-[#faae57]" />
-                  <span>Print Report</span>
-                </button>
-                <button 
-                  onClick={exportFees}
-                  className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-[#1c4a59] rounded-full font-bold hover:bg-[#f6f8f7] transition-all shadow-xs text-xs min-h-[44px] cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Export CSV</span>
-                </button>
-              </>
-            )}
+              {activeTab === 'dashboard' && (
+                <>
+                  <button 
+                    onClick={triggerPrint}
+                    className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl sm:rounded-full text-white font-bold transition-all text-[11px] sm:text-xs min-h-[40px] sm:min-h-[44px] cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                    <span className="truncate">Print Report</span>
+                  </button>
+                  <button 
+                    onClick={exportFees}
+                    className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-white text-[#1c4a59] rounded-xl sm:rounded-full font-bold hover:bg-[#f6f8f7] transition-all shadow-xs text-[11px] sm:text-xs min-h-[40px] sm:min-h-[44px] cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Export CSV</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
         {activeTab === 'billing' ? (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8 print:hidden">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-8 print:hidden w-full max-w-full min-w-0">
             {/* Left Column: School Fee Structure Config */}
-            <div className="xl:col-span-5 space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
-                  <div>
+            <div className="xl:col-span-5 space-y-5 sm:space-y-6 min-w-0">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4 sm:space-y-5 w-full max-w-full min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div className="min-w-0">
                     <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Supabase school_settings</span>
-                    <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">School Fee Components</h3>
+                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5">School Fee Components</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Define standard term fee items and default amounts synced across all bursary stations.
                     </p>
@@ -1901,17 +2024,17 @@ export default function FeeManagement() {
                     type="button"
                     onClick={handleSaveFeeStructure}
                     disabled={isSavingFeeStructure}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                    className="w-full sm:w-auto px-3.5 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
                   >
                     {isSavingFeeStructure ? 'Saving...' : 'Save Structure'}
                   </button>
                 </div>
 
-                <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 sm:space-y-3 max-h-[380px] overflow-y-auto pr-1">
                   {editableFeeTypes.map((ft, idx) => (
                     <div
                       key={ft.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80"
+                      className="flex items-center justify-between gap-2.5 sm:gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80 min-w-0"
                     >
                       <div className="min-w-0 flex-1">
                         <input
@@ -1921,12 +2044,12 @@ export default function FeeManagement() {
                             const val = e.target.value;
                             setEditableFeeTypes(prev => prev.map((item, i) => i === idx ? { ...item, label: val } : item));
                           }}
-                          className="w-full bg-transparent font-bold text-xs text-slate-900 outline-none focus:underline"
+                          className="w-full bg-transparent font-bold text-xs text-slate-900 outline-none focus:underline truncate"
                         />
-                        <p className="text-[10px] font-mono text-slate-400 uppercase">Code: {ft.id}</p>
+                        <p className="text-[10px] font-mono text-slate-400 uppercase truncate">Code: {ft.id}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="relative w-28">
+                      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                        <div className="relative w-24 sm:w-28">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
                           <input
                             type="number"
@@ -1936,14 +2059,14 @@ export default function FeeManagement() {
                               const num = Math.max(0, Number(e.target.value) || 0);
                               setEditableFeeTypes(prev => prev.map((item, i) => i === idx ? { ...item, defaultAmount: num } : item));
                             }}
-                            className="w-full pl-9 pr-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full pl-8 sm:pl-9 pr-2 sm:pr-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 text-right outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
                         {ft.id !== 'tuition' && (
                           <button
                             type="button"
                             onClick={() => handleRemoveFeeComponent(ft.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
                             title="Remove fee component"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1957,13 +2080,13 @@ export default function FeeManagement() {
                 {/* Add New Fee Component */}
                 <div className="pt-3 border-t border-slate-100 space-y-3">
                   <p className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Add Custom Fee Item</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-12 gap-2.5">
                     <input
                       type="text"
                       placeholder="e.g. PTA Levy, Science Practical..."
                       value={newFeeLabel}
                       onChange={(e) => setNewFeeLabel(e.target.value)}
-                      className="sm:col-span-6 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="col-span-2 sm:col-span-6 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 min-w-0"
                     />
                     <input
                       type="number"
@@ -1971,16 +2094,16 @@ export default function FeeManagement() {
                       placeholder="Default GHS"
                       value={newFeeAmount}
                       onChange={(e) => setNewFeeAmount(e.target.value)}
-                      className="sm:col-span-3 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="col-span-1 sm:col-span-3 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 min-w-0"
                     />
                     <button
                       type="button"
                       onClick={handleAddFeeComponent}
                       disabled={isSavingFeeStructure}
-                      className="sm:col-span-3 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                      className="col-span-1 sm:col-span-3 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Item</span>
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Add Item</span>
                     </button>
                   </div>
                 </div>
@@ -1988,28 +2111,28 @@ export default function FeeManagement() {
             </div>
 
             {/* Right Column: Batch Class Billing Engine */}
-            <div className="xl:col-span-7 space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="xl:col-span-7 space-y-5 sm:space-y-6 min-w-0">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-5 sm:space-y-6 w-full max-w-full min-w-0">
                 <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Batch Class Billing Engine</span>
-                    <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">Bill Students by Class or Whole School</h3>
+                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5">Bill Students by Class or Whole School</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Apply selected fee components to all students in a class and persist updated balances directly to Supabase.
                     </p>
                   </div>
-                  <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200 self-start">
+                  <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200 self-start shrink-0">
                     {currentAcademicYear} • {currentTerm}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                  <div className="space-y-1.5 min-w-0">
                     <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Target Class</label>
                     <select
                       value={billingTargetClass}
                       onChange={(e) => setBillingTargetClass(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      className="w-full px-3.5 sm:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-0"
                     >
                       <option value="ALL">All Active Classes ({allStudents.length} Students)</option>
                       {availableClassNames.map(clsName => {
@@ -2023,12 +2146,12 @@ export default function FeeManagement() {
                     </select>
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Billing Application Mode</label>
                     <select
                       value={billingMode}
                       onChange={(e) => setBillingMode(e.target.value as 'merge' | 'replace')}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      className="w-full px-3.5 sm:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-0"
                     >
                       <option value="merge">Merge / Update Selected Components on Existing Bill</option>
                       <option value="replace">Replace Entire Student Bill with Selected Structure</option>
@@ -2037,9 +2160,9 @@ export default function FeeManagement() {
                 </div>
 
                 {/* Component Selector Table */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Select Fee Components to Apply</span>
+                <div className="border border-slate-200 rounded-2xl overflow-hidden w-full max-w-full min-w-0">
+                  <div className="bg-slate-50 px-3.5 sm:px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider truncate">Select Fee Components to Apply</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -2048,7 +2171,7 @@ export default function FeeManagement() {
                         editableFeeTypes.forEach(ft => { next[ft.id] = !allChecked; });
                         setSelectedBillingComponents(next);
                       }}
-                      className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                      className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer shrink-0"
                     >
                       Toggle All
                     </button>
@@ -2061,24 +2184,24 @@ export default function FeeManagement() {
                         <div
                           key={ft.id}
                           className={cn(
-                            "px-4 py-3 flex items-center justify-between gap-4 transition-colors",
+                            "px-3 sm:px-4 py-3 flex items-center justify-between gap-2.5 sm:gap-4 transition-colors min-w-0",
                             isChecked ? "bg-indigo-50/30" : "bg-white opacity-65"
                           )}
                         >
-                          <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <label className="flex items-center gap-2.5 sm:gap-3 cursor-pointer flex-1 min-w-0">
                             <input
                               type="checkbox"
                               checked={isChecked}
                               onChange={(e) => setSelectedBillingComponents(prev => ({ ...prev, [ft.id]: e.target.checked }))}
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
                             />
-                            <div>
-                              <p className="text-xs font-bold text-slate-900">{ft.label}</p>
-                              <p className="text-[10px] font-mono text-slate-400">Default: {formatCurrency(ft.defaultAmount)}</p>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{ft.label}</p>
+                              <p className="text-[10px] font-mono text-slate-400 truncate">Default: {formatCurrency(ft.defaultAmount)}</p>
                             </div>
                           </label>
-                          <div className="relative w-32">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
+                          <div className="relative w-28 sm:w-32 shrink-0">
+                            <span className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
                             <input
                               type="number"
                               min={0}
@@ -2090,7 +2213,7 @@ export default function FeeManagement() {
                                   setSelectedBillingComponents(prev => ({ ...prev, [ft.id]: true }));
                                 }
                               }}
-                              className="w-full pl-10 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-full pl-9 sm:pl-10 pr-2.5 sm:pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           </div>
                         </div>
@@ -2100,21 +2223,21 @@ export default function FeeManagement() {
                 </div>
 
                 {/* Live Billing Impact Preview Banner */}
-                <div className="bg-slate-900 text-white rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-                  <div>
+                <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 items-center min-w-0">
+                  <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Matched Students</p>
-                    <p className="text-2xl font-black font-mono mt-0.5">{batchBillingPreview.studentCount}</p>
-                    <p className="text-[10px] text-slate-400">{billingTargetClass === 'ALL' ? 'Across all classes' : `In ${billingTargetClass}`}</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono mt-0.5 truncate">{batchBillingPreview.studentCount}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{billingTargetClass === 'ALL' ? 'Across all classes' : `In ${billingTargetClass}`}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selected Bill / Student</p>
-                    <p className="text-2xl font-black font-mono text-[#faae57] mt-0.5">{formatCurrency(batchBillingPreview.perStudentSelectedSum)}</p>
-                    <p className="text-[10px] text-slate-400">{Object.keys(batchBillingPreview.activeStructure).length} component(s) active</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-[#faae57] mt-0.5 truncate">{formatCurrency(batchBillingPreview.perStudentSelectedSum)}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{Object.keys(batchBillingPreview.activeStructure).length} component(s) active</p>
                   </div>
-                  <div>
+                  <div className="col-span-2 sm:col-span-1 pt-2 sm:pt-0 border-t border-white/10 sm:border-0 min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aggregate Class Billing</p>
-                    <p className="text-2xl font-black font-mono text-emerald-400 mt-0.5">{formatCurrency(batchBillingPreview.totalAggregateImpact)}</p>
-                    <p className="text-[10px] text-slate-400">{billingMode === 'replace' ? 'Replaces previous bill' : 'Updates selected items'}</p>
+                    <p className="text-xl sm:text-2xl font-black font-mono text-emerald-400 mt-0.5 truncate">{formatCurrency(batchBillingPreview.totalAggregateImpact)}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{billingMode === 'replace' ? 'Replaces previous bill' : 'Updates selected items'}</p>
                   </div>
                 </div>
 
@@ -2123,26 +2246,26 @@ export default function FeeManagement() {
                     type="button"
                     onClick={handleSaveClassStructureTemplate}
                     disabled={isSavingFeeStructure}
-                    className="sm:col-span-5 py-4 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    className="sm:col-span-5 py-3.5 sm:py-4 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 min-w-0"
                   >
-                    <Layers className="w-4 h-4 text-indigo-600" />
-                    <span>Save to `fee_structures` Table</span>
+                    <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span className="truncate">Save to `fee_structures` Table</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleExecuteBatchBill}
                     disabled={isExecutingBatchBill || batchBillingPreview.studentCount === 0}
-                    className="sm:col-span-7 py-4 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100 cursor-pointer disabled:opacity-50"
+                    className="sm:col-span-7 py-3.5 sm:py-4 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100 cursor-pointer disabled:opacity-50 min-w-0"
                   >
                     {isExecutingBatchBill ? (
                       <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Applying Batch Billing to Supabase...</span>
+                        <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                        <span className="truncate">Applying Batch Billing to Supabase...</span>
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <span className="truncate">
                           Bill {batchBillingPreview.studentCount} Student{batchBillingPreview.studentCount === 1 ? '' : 's'} ({formatCurrency(batchBillingPreview.perStudentSelectedSum)} each)
                         </span>
                       </>
@@ -2152,9 +2275,9 @@ export default function FeeManagement() {
               </div>
 
               {/* Live Supabase public.fee_structures & public.invoices Registry Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
-                  <div>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden w-full max-w-full min-w-0">
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
                       Supabase `public.fee_structures` & `public.invoices`
                     </span>
@@ -2168,7 +2291,7 @@ export default function FeeManagement() {
                 </div>
 
                 {savedFeeStructures.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                  <div className="p-5 sm:p-6 text-center text-slate-400 text-xs font-medium">
                     No class fee structures found in `public.fee_structures` yet. Click "Save to `fee_structures` Table" or "Bill Students" above to create one.
                   </div>
                 ) : (
@@ -2181,11 +2304,11 @@ export default function FeeManagement() {
                       return (
                         <div
                           key={fsRow.id || fsRow.name}
-                          className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors"
+                          className="p-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors min-w-0"
                         >
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-extrabold text-slate-900">{fsRow.name}</span>
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                              <span className="text-xs font-extrabold text-slate-900 break-words">{fsRow.name}</span>
                               <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-mono font-bold">
                                 Class: {fsRow.class_name || 'All'}
                               </span>
@@ -2198,30 +2321,32 @@ export default function FeeManagement() {
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-3 self-end sm:self-center">
-                            <div className="text-right">
+                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t border-slate-100 sm:border-0">
+                            <div className="text-left sm:text-right">
                               <p className="text-[10px] uppercase font-bold text-slate-400">Rate Total</p>
                               <p className="text-sm font-black font-mono text-slate-900">
                                 {formatCurrency(Number(fsRow.total) || 0)}
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleLoadSavedFeeStructure(fsRow)}
-                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-                            >
-                              Load
-                            </button>
-                            {fsRow.id && (
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteSavedFeeStructure(Number(fsRow.id), fsRow.name)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Delete structure from public.fee_structures"
+                                onClick={() => handleLoadSavedFeeStructure(fsRow)}
+                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                Load
                               </button>
-                            )}
+                              {fsRow.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSavedFeeStructure(Number(fsRow.id), fsRow.name)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Delete structure from public.fee_structures"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -2232,20 +2357,20 @@ export default function FeeManagement() {
             </div>
           </div>
         ) : activeTab === 'ledger' ? (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0">
             {!selectedStudentId ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-xl mx-auto space-y-6 print:hidden">
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-sm max-w-xl mx-auto space-y-5 sm:space-y-6 print:hidden w-full min-w-0">
                 <div className="text-center space-y-2">
                   <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mx-auto border border-indigo-100">
                     <Users className="w-6 h-6" />
                   </div>
-                  <h3 className="text-lg font-black text-slate-900">Select Student to View Ledger</h3>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">Select Student to View Ledger</h3>
                   <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
                     Search for any active student below to render their fully itemized ledger, transaction history, and downloadable statements of account.
                   </p>
                 </div>
 
-                <div className="relative">
+                <div className="relative min-w-0">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
@@ -2256,7 +2381,7 @@ export default function FeeManagement() {
                   />
                 </div>
 
-                <div className="max-h-[280px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                <div className="max-h-[280px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50 min-w-0">
                   {filteredLedgerStudents.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 text-xs font-semibold">
                       No students match "{ledgerSearchTerm}"
@@ -2267,14 +2392,14 @@ export default function FeeManagement() {
                         type="button"
                         key={s.id || s.studentId}
                         onClick={() => setSelectedStudentId(s.studentId)}
-                        className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-50 transition-all font-semibold cursor-pointer"
+                        className="w-full p-3.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-all font-semibold cursor-pointer min-w-0"
                       >
-                        <div>
-                          <p className="text-xs font-bold text-slate-900 uppercase">{s.firstName} {s.lastName}</p>
-                          <p className="text-[10px] text-slate-400 font-mono tracking-tight">{s.studentId} • {s.class}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 uppercase truncate">{s.firstName} {s.lastName}</p>
+                          <p className="text-[10px] text-slate-400 font-mono tracking-tight truncate">{s.studentId} • {s.class}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs font-bold text-slate-600">Balance: {formatCurrency(s.totalFees - s.feesPaid)}</p>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-bold text-slate-600 font-mono tabular-nums">Balance: {formatCurrency(s.totalFees - s.feesPaid)}</p>
                           <p className="text-[8px] uppercase font-black text-indigo-600 mt-0.5 flex items-center gap-0.5 justify-end">
                             View Ledger <ArrowUpRight className="w-3 h-3" />
                           </p>
@@ -2285,8 +2410,8 @@ export default function FeeManagement() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center print:hidden">
+              <div className="space-y-4 min-w-0">
+                <div className="flex flex-wrap justify-between items-center gap-2 print:hidden min-w-0">
                   <button
                     type="button"
                     onClick={() => setSelectedStudentId(null)}
@@ -2305,24 +2430,101 @@ export default function FeeManagement() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 w-full max-w-full min-w-0">
           {/* Search & List */}
-          <div className="xl:col-span-2 space-y-6">
-            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm print:hidden">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <div className="xl:col-span-2 space-y-4 sm:space-y-6 min-w-0">
+            <div className="bg-white p-3.5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm print:hidden min-w-0">
+              <div className="relative min-w-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-slate-400 pointer-events-none" />
                 <input 
                   type="text"
-                  placeholder="Search student by name, ID, or class for payment or bill adjustment..."
+                  placeholder="Search student by name, ID, or class..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  className="w-full pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-xs sm:text-sm"
                 />
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm min-w-0">
+              {/* Stacked Mobile Student Fee Balance Cards (< 768px) */}
+              <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+                {students?.map(student => {
+                  const balance = (student.totalFees || 0) - (student.feesPaid || 0);
+                  const isSelected = selectedStudentId === student.studentId;
+                  return (
+                    <div
+                      key={student.id || student.studentId}
+                      className={cn(
+                        "p-3.5 space-y-3 transition-colors min-w-0",
+                        isSelected ? "bg-indigo-50/40" : "hover:bg-slate-50/70"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                            {student.firstName} {student.lastName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono tracking-wider truncate mt-0.5">
+                            {student.studentId} • {student.class}
+                          </div>
+                        </div>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold tabular-nums shrink-0",
+                          balance > 0
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        )}>
+                          {balance > 0 ? `Bal: ${formatCurrency(balance)}` : 'Cleared'}
+                        </span>
+                      </div>
+
+                      {/* 2-Column Metric Pills */}
+                      <div className="grid grid-cols-2 gap-2 min-w-0">
+                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 min-w-0">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Total Billed</span>
+                          <span className="text-xs font-mono font-bold text-slate-700 tabular-nums block truncate mt-0.5">
+                            {formatCurrency(student.totalFees)}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-emerald-50/50 border border-emerald-100 min-w-0">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Total Paid</span>
+                          <span className="text-xs font-mono font-bold text-emerald-600 tabular-nums block truncate mt-0.5">
+                            {formatCurrency(student.feesPaid)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 2-Column Action Buttons */}
+                      <div className="grid grid-cols-2 gap-2 pt-0.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => openStudentBreakdownModal(student)}
+                          className="w-full min-w-0 py-2 px-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-all cursor-pointer truncate text-center"
+                          title="Customize student fee breakdown"
+                        >
+                          Adjust Bill
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStudentId(student.studentId)}
+                          className="w-full min-w-0 py-2 px-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-xs cursor-pointer truncate text-center"
+                        >
+                          Receive Payment
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {(!students || students.length === 0) && (
+                  <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                    No matching student fee records found.
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop & Print Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto">
                 <table className="w-full text-left min-w-[640px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
@@ -2379,13 +2581,13 @@ export default function FeeManagement() {
             </div>
 
             {/* Live Supabase Fee Transactions Register */}
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm print:hidden">
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-indigo-600" />
-                  <h3 className="text-sm font-extrabold text-slate-800">Recent Supabase Fee Transactions (`fee_transactions`)</h3>
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm print:hidden min-w-0">
+              <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <History className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 truncate">Recent Supabase Fee Transactions (`fee_transactions`)</h3>
                 </div>
-                <span className="text-[11px] font-mono font-bold text-slate-500">
+                <span className="text-[10px] sm:text-[11px] font-mono font-bold text-slate-500 shrink-0">
                   {allFeeTransactions.length} Record{allFeeTransactions.length === 1 ? '' : 's'}
                 </span>
               </div>
@@ -2394,115 +2596,196 @@ export default function FeeManagement() {
                   No fee transactions recorded yet. Select a student above and click "Receive Payment" to log a transaction to Supabase.
                 </div>
               ) : (
-                <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
-                  <table className="w-full text-left min-w-[640px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        <th className="px-5 py-3">Receipt No.</th>
-                        <th className="px-5 py-3">Student</th>
-                        <th className="px-5 py-3">Method</th>
-                        <th className="px-5 py-3 text-right">Amount</th>
-                        <th className="px-5 py-3">Sync Status</th>
-                        <th className="px-5 py-3 text-right">Receipt</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
-                      {[...allFeeTransactions]
-                        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-                        .slice(0, 25)
-                        .map(tx => {
-                          const matchedStu = allStudents.find(
-                            s =>
-                              (s.id !== undefined && String(s.id) === String(tx.studentId)) ||
-                              (tx.studentCode && s.studentId.toLowerCase() === tx.studentCode.toLowerCase()) ||
-                              (tx.studentName && `${s.firstName} ${s.lastName}`.trim().toLowerCase() === tx.studentName.trim().toLowerCase())
-                          );
-                          return (
-                            <tr key={tx.id || tx.receiptNumber} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="px-5 py-3 font-mono font-bold text-slate-700">
-                                {tx.receiptNumber}
-                                <div className="text-[10px] font-sans font-normal text-slate-400">
-                                  {new Date(tx.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                </div>
-                              </td>
-                              <td className="px-5 py-3">
-                                <div className="font-bold text-slate-900">
+                <>
+                  {/* Stacked Mobile Fee Transaction Cards (< 768px) */}
+                  <div className="md:hidden divide-y divide-slate-100 max-h-[380px] overflow-y-auto min-w-0">
+                    {[...allFeeTransactions]
+                      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                      .slice(0, 25)
+                      .map(tx => {
+                        const matchedStu = allStudents.find(
+                          s =>
+                            (s.id !== undefined && String(s.id) === String(tx.studentId)) ||
+                            (tx.studentCode && s.studentId.toLowerCase() === tx.studentCode.toLowerCase()) ||
+                            (tx.studentName && `${s.firstName} ${s.lastName}`.trim().toLowerCase() === tx.studentName.trim().toLowerCase())
+                        );
+                        return (
+                          <div key={tx.id || tx.receiptNumber} className="p-3.5 space-y-2.5 hover:bg-slate-50/70 transition-colors min-w-0">
+                            <div className="flex items-start justify-between gap-2 min-w-0">
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-slate-900 text-xs truncate">
                                   {matchedStu ? `${matchedStu.firstName} ${matchedStu.lastName}` : (tx.studentName || `Student #${tx.studentId}`)}
                                 </div>
-                                <div className="text-[10px] font-mono text-slate-400">
-                                  {matchedStu?.studentId || tx.studentCode || ''} {matchedStu?.class ? `• ${matchedStu.class}` : ''}
+                                <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                                  {tx.receiptNumber} • {new Date(tx.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                                 </div>
-                              </td>
-                              <td className="px-5 py-3">
-                                <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase">
+                              </div>
+                              {tx.syncStatus === 'pending' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold shrink-0">
+                                  <CloudOff className="w-3 h-3 shrink-0" />
+                                  <span>Queued</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold shrink-0">
+                                  <Check className="w-3 h-3 shrink-0" />
+                                  <span>Synced</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 2-Column Metric Pills */}
+                            <div className="grid grid-cols-2 gap-2 min-w-0">
+                              <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/70 min-w-0">
+                                <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Method</span>
+                                <span className="text-[11px] font-bold text-slate-700 uppercase block truncate mt-0.5">
                                   {tx.paymentChannelLabel || tx.paymentMethod}
                                 </span>
-                              </td>
-                              <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600">
-                                {formatCurrency(tx.amount)}
-                              </td>
-                              <td className="px-5 py-3">
-                                {tx.syncStatus === 'pending' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold">
-                                    <CloudOff className="w-3 h-3" />
-                                    Queued Offline
+                              </div>
+                              <div className="p-2 rounded-xl bg-emerald-50/50 border border-emerald-100 min-w-0">
+                                <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Amount Paid</span>
+                                <span className="text-xs font-mono font-bold text-emerald-600 tabular-nums block truncate mt-0.5">
+                                  {formatCurrency(tx.amount)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {matchedStu && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStudentId(matchedStu.studentId);
+                                  setLastPayment({
+                                    amount: tx.amount,
+                                    date: tx.createdAt || Date.now(),
+                                    method: tx.paymentChannelLabel || tx.paymentMethod,
+                                    phone: tx.guardianPhone || matchedStu.guardianPhone,
+                                    ref: tx.receiptNumber,
+                                    studentOverride: matchedStu,
+                                  });
+                                  setIsReceiptModalOpen(true);
+                                }}
+                                className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                <span>View Official Receipt</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Desktop Table (>= 768px) */}
+                  <div className="hidden md:block overflow-x-auto max-h-[320px] overflow-y-auto">
+                    <table className="w-full text-left min-w-[640px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                          <th className="px-5 py-3">Receipt No.</th>
+                          <th className="px-5 py-3">Student</th>
+                          <th className="px-5 py-3">Method</th>
+                          <th className="px-5 py-3 text-right">Amount</th>
+                          <th className="px-5 py-3">Sync Status</th>
+                          <th className="px-5 py-3 text-right">Receipt</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {[...allFeeTransactions]
+                          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                          .slice(0, 25)
+                          .map(tx => {
+                            const matchedStu = allStudents.find(
+                              s =>
+                                (s.id !== undefined && String(s.id) === String(tx.studentId)) ||
+                                (tx.studentCode && s.studentId.toLowerCase() === tx.studentCode.toLowerCase()) ||
+                                (tx.studentName && `${s.firstName} ${s.lastName}`.trim().toLowerCase() === tx.studentName.trim().toLowerCase())
+                            );
+                            return (
+                              <tr key={tx.id || tx.receiptNumber} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="px-5 py-3 font-mono font-bold text-slate-700">
+                                  {tx.receiptNumber}
+                                  <div className="text-[10px] font-sans font-normal text-slate-400">
+                                    {new Date(tx.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <div className="font-bold text-slate-900">
+                                    {matchedStu ? `${matchedStu.firstName} ${matchedStu.lastName}` : (tx.studentName || `Student #${tx.studentId}`)}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-slate-400">
+                                    {matchedStu?.studentId || tx.studentCode || ''} {matchedStu?.class ? `• ${matchedStu.class}` : ''}
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase">
+                                    {tx.paymentChannelLabel || tx.paymentMethod}
                                   </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
-                                    <Check className="w-3 h-3" />
-                                    Synced
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-5 py-3 text-right">
-                                {matchedStu && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedStudentId(matchedStu.studentId);
-                                      setLastPayment({
-                                        amount: tx.amount,
-                                        date: tx.createdAt || Date.now(),
-                                        method: tx.paymentChannelLabel || tx.paymentMethod,
-                                        phone: tx.guardianPhone || matchedStu.guardianPhone,
-                                        ref: tx.receiptNumber,
-                                        studentOverride: matchedStu,
-                                      });
-                                      setIsReceiptModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-lg text-slate-600 font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <FileText className="w-3 h-3 text-indigo-500" />
-                                    <span>Receipt</span>
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
+                                </td>
+                                <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600">
+                                  {formatCurrency(tx.amount)}
+                                </td>
+                                <td className="px-5 py-3">
+                                  {tx.syncStatus === 'pending' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold">
+                                      <CloudOff className="w-3 h-3" />
+                                      Queued Offline
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                                      <Check className="w-3 h-3" />
+                                      Synced
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-5 py-3 text-right">
+                                  {matchedStu && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedStudentId(matchedStu.studentId);
+                                        setLastPayment({
+                                          amount: tx.amount,
+                                          date: tx.createdAt || Date.now(),
+                                          method: tx.paymentChannelLabel || tx.paymentMethod,
+                                          phone: tx.guardianPhone || matchedStu.guardianPhone,
+                                          ref: tx.receiptNumber,
+                                          studentOverride: matchedStu,
+                                        });
+                                        setIsReceiptModalOpen(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-lg text-slate-600 font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <FileText className="w-3 h-3 text-indigo-500" />
+                                      <span>Receipt</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
 
           {/* Payment Side Panel */}
-          <div className="space-y-6 print:hidden">
-            <div className="bg-indigo-600 rounded-3xl p-8 text-white shadow-xl shadow-indigo-100 relative overflow-hidden">
-              <Wallet className="absolute -right-4 -bottom-4 w-32 h-32 text-indigo-500 opacity-20" />
-              <p className="text-indigo-200 text-sm font-medium mb-2 uppercase tracking-widest">School Treasury</p>
-              <h2 className="text-4xl font-bold mb-8">
+          <div className="print:hidden min-w-0">
+            <div className="bg-indigo-600 rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-white shadow-xl shadow-indigo-100 relative overflow-hidden min-w-0">
+              <Wallet className="absolute -right-4 -bottom-4 w-32 h-32 text-indigo-500 opacity-20 pointer-events-none" />
+              <p className="text-indigo-200 text-xs sm:text-sm font-medium mb-1.5 sm:mb-2 uppercase tracking-widest">School Treasury</p>
+              <h2 className="text-2xl sm:text-4xl font-bold mb-5 sm:mb-8 font-mono tabular-nums break-words">
                 {formatCurrency(students?.reduce((acc, s) => acc + s.feesPaid, 0) || 0)}
               </h2>
-              <div className="flex gap-4">
-                <div className="flex-1 bg-indigo-500/30 p-3 rounded-2xl backdrop-blur-sm">
-                  <p className="text-[10px] uppercase font-bold text-indigo-200">Active Students</p>
-                  <p className="text-lg font-bold">{students?.length || 0}</p>
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 min-w-0">
+                <div className="bg-indigo-500/30 p-3 rounded-2xl backdrop-blur-sm min-w-0">
+                  <p className="text-[10px] uppercase font-bold text-indigo-200 truncate">Active Students</p>
+                  <p className="text-base sm:text-lg font-bold font-mono tabular-nums">{students?.length || 0}</p>
                 </div>
-                <div className="flex-1 bg-indigo-500/30 p-3 rounded-2xl backdrop-blur-sm">
-                  <p className="text-[10px] uppercase font-bold text-indigo-200">Total Outstanding</p>
-                  <p className="text-sm font-bold truncate">
+                <div className="bg-indigo-500/30 p-3 rounded-2xl backdrop-blur-sm min-w-0">
+                  <p className="text-[10px] uppercase font-bold text-indigo-200 truncate">Total Outstanding</p>
+                  <p className="text-xs sm:text-sm font-bold font-mono tabular-nums truncate">
                     {formatCurrency(students?.reduce((acc, s) => acc + (s.totalFees - s.feesPaid), 0) || 0)}
                   </p>
                 </div>
@@ -2510,386 +2793,419 @@ export default function FeeManagement() {
             </div>
 
             {selectedStudent && (
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="bg-white rounded-2xl border-2 border-indigo-500 p-6 shadow-xl relative"
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="process-payment-modal-title"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setSelectedStudentId(null);
+                    setMomoStep('idle');
+                  }
+                }}
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto xl:static xl:inset-auto xl:z-auto xl:block xl:bg-transparent xl:backdrop-blur-none xl:p-0 xl:overflow-visible xl:mt-6 print:hidden"
               >
-                <button 
-                  onClick={() => setSelectedStudentId(null)}
-                  className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="bg-white rounded-2xl sm:rounded-3xl xl:rounded-2xl border-2 border-indigo-500 p-4 sm:p-6 shadow-2xl xl:shadow-xl relative w-full max-w-lg xl:max-w-none max-h-[90dvh] xl:max-h-none overflow-y-auto xl:overflow-visible my-auto min-w-0"
                 >
-                  <X className="w-5 h-5" />
-                </button>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">Process Payment</h3>
-                <p className="text-sm text-slate-500 mb-6">For {selectedStudent.firstName} {selectedStudent.lastName} ({selectedStudent.class})</p>
-                
-                {momoStep !== 'idle' ? (
-                  /* MoMo interactive simulations step rendering */
-                  <div className="space-y-5 py-4 text-center">
-                    <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center bg-indigo-55 border border-indigo-100 relative">
-                      <div className="absolute inset-x-0 inset-y-0 rounded-full bg-indigo-500/15 animate-ping" />
-                      <Smartphone className="w-8 h-8 text-indigo-600 relative z-10" />
-                    </div>
-
-                    <div className="space-y-1 px-1">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">MoMo Authorization</h4>
-                      <p className="text-[11px] text-slate-500 font-bold">
-                        A secure GHS {Number(paymentAmount).toFixed(2)} push query has been prompted to subscriber <span className="text-indigo-600 font-mono font-black">{momoNumber}</span>.
+                  <div className="flex items-start justify-between gap-3 pb-3.5 mb-4 border-b border-slate-100">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 block">
+                        Fee Collection Terminal
+                      </span>
+                      <h3 id="process-payment-modal-title" className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5">
+                        Process Payment
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 truncate mt-0.5">
+                        For <span className="font-bold text-slate-700">{selectedStudent.firstName} {selectedStudent.lastName}</span> ({selectedStudent.class})
                       </p>
                     </div>
-
-                    {momoStep === 'sending' && (
-                      <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-black bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 shadow-sm">
-                        <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
-                        <span>INITIATING PUSH REQUEST...</span>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedStudentId(null);
+                        setMomoStep('idle');
+                      }}
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors shrink-0 cursor-pointer"
+                      aria-label="Close payment modal"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  {momoStep !== 'idle' ? (
+                    /* MoMo interactive simulations step rendering */
+                    <div className="space-y-5 py-4 text-center">
+                      <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center bg-indigo-55 border border-indigo-100 relative">
+                        <div className="absolute inset-x-0 inset-y-0 rounded-full bg-indigo-500/15 animate-ping" />
+                        <Smartphone className="w-8 h-8 text-indigo-600 relative z-10" />
                       </div>
-                    )}
 
-                    {momoStep === 'pending' && (
-                      <div className="space-y-4">
-                        <div className="bg-amber-50/80 border border-amber-200 p-3.5 rounded-2xl space-y-2 text-left">
-                          <p className="text-[9px] font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
-                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                            Simulated Mobile Overlay Prompt
-                          </p>
-                          <div className="bg-slate-950 text-slate-100 font-mono text-[10px] p-3 rounded-xl border border-slate-900 shadow-inner tracking-tight leading-relaxed">
-                            <p className="text-yellow-400 font-black uppercase tracking-wider">{momoProvider.toUpperCase()} MOBILE DEBIT</p>
-                            <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to Esepa School Treasury Account?</p>
-                            <p className="mt-2.5 text-right text-[9px] text-slate-500 font-bold border-t border-slate-900 pt-1.5">1. Enter MoMo PIN to Pay | 2. Decline</p>
+                      <div className="space-y-1 px-1">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">MoMo Authorization</h4>
+                        <p className="text-[11px] text-slate-500 font-bold">
+                          A secure GHS {Number(paymentAmount).toFixed(2)} push query has been prompted to subscriber <span className="text-indigo-600 font-mono font-black">{momoNumber}</span>.
+                        </p>
+                      </div>
+
+                      {momoStep === 'sending' && (
+                        <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-black bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 shadow-sm">
+                          <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
+                          <span>INITIATING PUSH REQUEST...</span>
+                        </div>
+                      )}
+
+                      {momoStep === 'pending' && (
+                        <div className="space-y-4">
+                          <div className="bg-amber-50/80 border border-amber-200 p-3.5 rounded-2xl space-y-2 text-left">
+                            <p className="text-[9px] font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                              Simulated Mobile Overlay Prompt
+                            </p>
+                            <div className="bg-slate-950 text-slate-100 font-mono text-[10px] p-3 rounded-xl border border-slate-900 shadow-inner tracking-tight leading-relaxed">
+                              <p className="text-yellow-400 font-black uppercase tracking-wider">{momoProvider.toUpperCase()} MOBILE DEBIT</p>
+                              <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to Esepa School Treasury Account?</p>
+                              <p className="mt-2.5 text-right text-[9px] text-slate-500 font-bold border-t border-slate-900 pt-1.5">1. Enter MoMo PIN to Pay | 2. Decline</p>
+                            </div>
+                          </div>
+
+                          {/* Handset approval controls */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const refNum = 'MM-' + Math.floor(100000 + Math.random() * 900000);
+                                submitPayment(refNum);
+                                setMomoStep('idle');
+                                showToast('Payment successfully approved from mobile!', 'success');
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm cursor-pointer"
+                            >
+                               Enter PIN & Pay
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMomoStep('failed');
+                                showToast('MoMo payment request declined on handset.', 'error');
+                              }}
+                              className="bg-rose-600 hover:bg-rose-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm cursor-pointer"
+                            >
+                               Decline Payment
+                            </button>
                           </div>
                         </div>
+                      )}
 
-                        {/* Handset approval controls */}
-                        <div className="grid grid-cols-2 gap-2">
+                      {momoStep === 'failed' && (
+                        <div className="space-y-3">
+                          <div className="p-3 bg-red-50 border border-red-100 text-rose-850 rounded-xl text-xs font-bold font-semibold">
+                            Transaction Failed. Decline response received.
+                          </div>
                           <button
-                            onClick={() => {
-                              const refNum = 'MM-' + Math.floor(100000 + Math.random() * 900000);
-                              submitPayment(refNum);
-                              setMomoStep('idle');
-                              showToast('Payment successfully approved from mobile!', 'success');
-                            }}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm"
+                            type="button"
+                            onClick={() => setMomoStep('idle')}
+                            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl text-xs font-extrabold uppercase transition-all cursor-pointer"
                           >
-                             Enter PIN & Pay
-                          </button>
-                          <button
-                            onClick={() => {
-                              setMomoStep('failed');
-                              showToast('MoMo payment request declined on handset.', 'error');
-                            }}
-                            className="bg-rose-600 hover:bg-rose-700 text-white py-3 px-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-wider shadow-sm"
-                          >
-                             Decline Payment
+                            Retry / Change Mode
                           </button>
                         </div>
-                      </div>
-                    )}
-
-                    {momoStep === 'failed' && (
-                      <div className="space-y-3">
-                        <div className="p-3 bg-red-50 border border-red-100 text-rose-850 rounded-xl text-xs font-bold font-semibold">
-                          Transaction Failed. Decline response received.
-                        </div>
-                        <button
-                          onClick={() => setMomoStep('idle')}
-                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl text-xs font-extrabold uppercase transition-all"
-                        >
-                          Retry / Change Mode
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-105 dark:border-rose-900/40 rounded-xl flex justify-between items-center text-slate-800 dark:text-slate-200">
-                      <div>
-                        <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase mb-0.5">Outstanding Balance</p>
-                        <p className="text-xl font-bold text-rose-700 dark:text-rose-300 font-mono tabular-nums">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
-                      </div>
-                      <span className="text-[10px] bg-rose-100/80 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Due Now</span>
+                      )}
                     </div>
-
-                    {/* List out itemized balances for the student */}
-                    <div className="p-4 bg-slate-50 border border-slate-200/50 rounded-xl space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Itemized Outstanding Balances</p>
-                        <button
-                          type="button"
-                          onClick={() => openStudentBreakdownModal(selectedStudent)}
-                          className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                        >
-                          Edit Bill
-                        </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="p-3.5 sm:p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-105 dark:border-rose-900/40 rounded-xl flex justify-between items-center gap-2 text-slate-800 dark:text-slate-200 min-w-0">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase mb-0.5">Outstanding Balance</p>
+                          <p className="text-lg sm:text-xl font-bold text-rose-700 dark:text-rose-300 font-mono tabular-nums truncate">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
+                        </div>
+                        <span className="text-[10px] bg-rose-100/80 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider shrink-0">Due Now</span>
                       </div>
-                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                        {feeTypes.map(ft => {
-                          const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
-                          const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
-                          const outstanding = Math.max(0, billed - paid);
-                          if (billed === 0) return null;
-                          return (
-                            <div key={ft.id} className="flex justify-between items-center text-xs pb-1 border-b border-slate-100 last:border-0 font-medium">
-                              <span className="text-slate-600 font-medium">{ft.label}</span>
-                              <div className="text-right font-bold">
-                                <span className={cn("font-bold font-mono", outstanding > 0 ? "text-rose-600" : "text-emerald-600")}>
-                                  {formatCurrency(outstanding)}
-                                </span>
-                                <span className="text-[9px] text-slate-400 font-mono"> / {formatCurrency(billed)}</span>
+
+                      {/* List out itemized balances for the student */}
+                      <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200/50 rounded-xl space-y-2 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider truncate">Itemized Outstanding Balances</p>
+                          <button
+                            type="button"
+                            onClick={() => openStudentBreakdownModal(selectedStudent)}
+                            className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer shrink-0"
+                          >
+                            Edit Bill
+                          </button>
+                        </div>
+                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                          {feeTypes.map(ft => {
+                            const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
+                            const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
+                            const outstanding = Math.max(0, billed - paid);
+                            if (billed === 0) return null;
+                            return (
+                              <div key={ft.id} className="flex justify-between items-center gap-2 text-xs pb-1 border-b border-slate-100 last:border-0 font-medium min-w-0">
+                                <span className="text-slate-600 font-medium truncate">{ft.label}</span>
+                                <div className="text-right font-bold shrink-0">
+                                  <span className={cn("font-bold font-mono", outstanding > 0 ? "text-rose-600" : "text-emerald-600")}>
+                                    {formatCurrency(outstanding)}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-mono"> / {formatCurrency(billed)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Allocation Target Select Box */}
+                      <div className="space-y-1 font-semibold min-w-0">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Allocation Target Option</label>
+                        <select 
+                          value={allocationType}
+                          onChange={(e) => setAllocationType(e.target.value)}
+                          className="w-full px-3.5 sm:px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer min-w-0"
+                        >
+                          <option value="automatic">Automatic Allocation (First outstanding, then rest)</option>
+                          {feeTypes.map(ft => {
+                            const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
+                            const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
+                            const outstanding = Math.max(0, billed - paid);
+                            if (billed === 0) return null;
+                            return (
+                              <option key={ft.id} value={ft.id} disabled={outstanding <= 0}>
+                                Allocate to {ft.label} Only (Outstanding: {formatCurrency(outstanding)})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      {/* Payment Method Selector */}
+                      <div className="space-y-1.5 font-semibold min-w-0">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Payment Channel (`fee_transactions`)</label>
+                        <div className="grid grid-cols-3 gap-1.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('cash_bank')}
+                            className={cn(
+                              "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                              paymentMethod === 'cash_bank'
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            Cash
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('bank_transfer')}
+                            className={cn(
+                              "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                              paymentMethod === 'bank_transfer'
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            Bank Slip
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('cheque')}
+                            className={cn(
+                              "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                              paymentMethod === 'cheque'
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            Cheque
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('momo')}
+                            className={cn(
+                              "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                              paymentMethod === 'momo'
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            MoMo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('paystack')}
+                            className={cn(
+                              "col-span-2 py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                              paymentMethod === 'paystack'
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            Card / Paystack
+                          </button>
+                        </div>
+                      </div>
+
+                      {(paymentMethod === 'bank_transfer' || paymentMethod === 'cheque') && (
+                        <div className="space-y-1 font-semibold min-w-0">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                            {paymentMethod === 'cheque' ? 'Cheque Number / Bank Reference' : 'Bank Deposit Slip / Reference No.'}
+                          </label>
+                          <input
+                            type="text"
+                            value={bankOrChequeRef}
+                            onChange={(e) => setBankOrChequeRef(e.target.value)}
+                            placeholder={paymentMethod === 'cheque' ? 'e.g. CHQ-0049281' : 'e.g. GCB-SLIP-88392'}
+                            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      )}
+
+                      {paymentMethod === 'momo' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="space-y-3.5 p-3.5 sm:p-4 bg-slate-50 rounded-2xl border border-slate-200/60 min-w-0"
+                        >
+                          {/* Operator selection with nice colors */}
+                          <div className="space-y-1 font-semibold min-w-0">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">MoMo Network Operator</label>
+                            <div className="grid grid-cols-3 gap-1.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setMomoProvider('mtn')}
+                                className={cn(
+                                  "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5 cursor-pointer",
+                                  momoProvider === 'mtn'
+                                    ? "bg-amber-100/60 border-amber-400 text-amber-850 shadow-sm"
+                                    : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                )}
+                              >
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                                MTN MoMo
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMomoProvider('telecel')}
+                                className={cn(
+                                  "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5 cursor-pointer",
+                                  momoProvider === 'telecel'
+                                    ? "bg-red-100/60 border-red-400 text-red-800 shadow-sm"
+                                    : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                )}
+                              >
+                                <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                                Telecel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMomoProvider('at')}
+                                className={cn(
+                                  "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5 cursor-pointer",
+                                  momoProvider === 'at'
+                                    ? "bg-indigo-100/65 border-indigo-400 text-indigo-900 shadow-sm"
+                                    : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                )}
+                              >
+                                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                                AT Money
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Phone number & Validation */}
+                          <div className="space-y-1 font-semibold min-w-0">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Subscriber Number</label>
+                            <div className="flex gap-1.5 min-w-0">
+                              <div className="relative flex-1 min-w-0">
+                                <Smartphone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                  type="text"
+                                  maxLength={10}
+                                  value={momoNumber}
+                                  onChange={(e) => {
+                                    setMomoNumber(e.target.value.replace(/[^0-9]/g, ''));
+                                    setMomoVerified(false);
+                                  }}
+                                  placeholder="e.g. 0241234567"
+                                  className="w-full pl-8 pr-2 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs text-slate-800 outline-none"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={verifyMomoSubscriber}
+                                disabled={isVerifyingMomo}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shrink-0 cursor-pointer"
+                              >
+                                {isVerifyingMomo ? "..." : "Verify"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Verified Account Name Alert */}
+                          {momoVerified && (
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 flex items-start gap-2 text-emerald-800 text-[10px] leading-tight font-medium">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-[11px] text-emerald-950 uppercase">Verified Subscriber</p>
+                                <p className="mt-0.5 truncate">Name: <span className="font-bold">{selectedStudent.guardianName || 'Authorized Payer'}</span></p>
+                                <p className="text-[8px] text-emerald-600 uppercase tracking-wider font-bold">Auto-resolved Account Successful</p>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          )}
+                        </motion.div>
+                      )}
 
-                    {/* Allocation Target Select Box */}
-                    <div className="space-y-1 font-semibold">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Allocation Target Option</label>
-                      <select 
-                        value={allocationType}
-                        onChange={(e) => setAllocationType(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer"
-                      >
-                        <option value="automatic">Automatic Allocation (First outstanding, then rest)</option>
-                        {feeTypes.map(ft => {
-                          const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
-                          const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
-                          const outstanding = Math.max(0, billed - paid);
-                          if (billed === 0) return null;
-                          return (
-                            <option key={ft.id} value={ft.id} disabled={outstanding <= 0}>
-                              Allocate to {ft.label} Only (Outstanding: {formatCurrency(outstanding)})
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-
-                    {/* Payment Method Selector */}
-                    <div className="space-y-1.5 font-semibold">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Payment Channel (`fee_transactions`)</label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('cash_bank')}
-                          className={cn(
-                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
-                            paymentMethod === 'cash_bank'
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          Cash
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('bank_transfer')}
-                          className={cn(
-                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
-                            paymentMethod === 'bank_transfer'
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          Bank Slip
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('cheque')}
-                          className={cn(
-                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
-                            paymentMethod === 'cheque'
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          Cheque
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('momo')}
-                          className={cn(
-                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
-                            paymentMethod === 'momo'
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          MoMo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('paystack')}
-                          className={cn(
-                            "col-span-2 py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
-                            paymentMethod === 'paystack'
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          Card / Paystack
-                        </button>
-                      </div>
-                    </div>
-
-                    {(paymentMethod === 'bank_transfer' || paymentMethod === 'cheque') && (
-                      <div className="space-y-1 font-semibold">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
-                          {paymentMethod === 'cheque' ? 'Cheque Number / Bank Reference' : 'Bank Deposit Slip / Reference No.'}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankOrChequeRef}
-                          onChange={(e) => setBankOrChequeRef(e.target.value)}
-                          placeholder={paymentMethod === 'cheque' ? 'e.g. CHQ-0049281' : 'e.g. GCB-SLIP-88392'}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-                    )}
-
-                    {paymentMethod === 'momo' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="space-y-3.5 p-4 bg-slate-50 rounded-2xl border border-slate-200/60"
-                      >
-                        {/* Operator selection with nice colors */}
-                        <div className="space-y-1 font-semibold">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">MoMo Network Operator</label>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setMomoProvider('mtn')}
-                              className={cn(
-                                "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5",
-                                momoProvider === 'mtn'
-                                  ? "bg-amber-100/60 border-amber-400 text-amber-850 shadow-sm"
-                                  : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                              )}
-                            >
-                              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
-                              MTN MoMo
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setMomoProvider('telecel')}
-                              className={cn(
-                                "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5",
-                                momoProvider === 'telecel'
-                                  ? "bg-red-100/60 border-red-400 text-red-800 shadow-sm"
-                                  : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                              )}
-                            >
-                              <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-                              Telecel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setMomoProvider('at')}
-                              className={cn(
-                                "py-2 rounded-lg text-[10px] font-black transition-all border text-center uppercase flex flex-col items-center gap-0.5",
-                                momoProvider === 'at'
-                                  ? "bg-indigo-100/65 border-indigo-400 text-indigo-900 shadow-sm"
-                                  : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                              )}
-                            >
-                              <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
-                              AT Money
-                            </button>
-                          </div>
+                      <div className="space-y-2 font-semibold min-w-0">
+                        <label className="text-xs sm:text-sm font-bold text-slate-700">Payment Amount (GHS)</label>
+                        <div className="relative font-bold">
+                          <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input 
+                            type="number"
+                            value={paymentAmount}
+                            onChange={(e) => setPaymentAmount(e.target.value)}
+                            placeholder="Enter amount..."
+                            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold font-mono text-sm"
+                          />
                         </div>
-
-                        {/* Phone number & Validation */}
-                        <div className="space-y-1 font-semibold">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Subscriber Number</label>
-                          <div className="flex gap-1.5">
-                            <div className="relative flex-1">
-                              <Smartphone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                              <input
-                                type="text"
-                                maxLength={10}
-                                value={momoNumber}
-                                onChange={(e) => {
-                                  setMomoNumber(e.target.value.replace(/[^0-9]/g, ''));
-                                  setMomoVerified(false);
-                                }}
-                                placeholder="e.g. 0241234567"
-                                className="w-full pl-8 pr-2 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs text-slate-800 outline-none"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={verifyMomoSubscriber}
-                              disabled={isVerifyingMomo}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shrink-0"
-                            >
-                              {isVerifyingMomo ? "..." : "Verify"}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Verified Account Name Alert */}
-                        {momoVerified && (
-                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 flex items-start gap-2 text-emerald-800 text-[10px] leading-tight font-medium">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-extrabold text-[11px] text-emerald-950 uppercase">Verified Subscriber</p>
-                              <p className="mt-0.5">Name: <span className="font-bold">{selectedStudent.guardianName || 'Authorized Payer'}</span></p>
-                              <p className="text-[8px] text-emerald-600 uppercase tracking-wider font-bold">Auto-resolved Account Successful</p>
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    <div className="space-y-2 font-semibold">
-                      <label className="text-sm font-bold text-slate-700">Payment Amount (GHS)</label>
-                      <div className="relative font-bold">
-                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input 
-                          type="number"
-                          value={paymentAmount}
-                          onChange={(e) => setPaymentAmount(e.target.value)}
-                          placeholder="Enter amount..."
-                          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold font-mono"
-                        />
                       </div>
-                    </div>
 
-                    {paymentMethod === 'paystack' ? (
-                      <PaystackPaymentButton
-                        amount={Number(paymentAmount)}
-                        email="admin@esepa.school"
-                        onSuccess={(ref: any) => {
-                          submitPayment(ref.reference);
-                        }}
-                        onClose={() => showToast('Paystack payment canceled', 'info')}
-                        className="w-full justify-center text-lg py-4 rounded-2xl shadow-lg shadow-indigo-100"
-                        label="Confirm Payment"
-                      />
-                    ) : (
-                      <button 
-                        onClick={handlePayment}
-                        disabled={isSubmittingPayment}
-                        className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-60 cursor-pointer"
-                      >
-                        {isSubmittingPayment ? (
-                          <>
-                            <RefreshCw className="w-5 h-5 animate-spin" />
-                            <span>Recording to Supabase...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>Confirm Payment</span>
-                            <ArrowUpRight className="w-5 h-5" />
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </motion.div>
+                      {paymentMethod === 'paystack' ? (
+                        <PaystackPaymentButton
+                          amount={Number(paymentAmount)}
+                          email="admin@esepa.school"
+                          onSuccess={(ref: any) => {
+                            submitPayment(ref.reference);
+                          }}
+                          onClose={() => showToast('Paystack payment canceled', 'info')}
+                          className="w-full justify-center text-base sm:text-lg py-3.5 sm:py-4 rounded-2xl shadow-lg shadow-indigo-100"
+                          label="Confirm Payment"
+                        />
+                      ) : (
+                        <button 
+                          type="button"
+                          onClick={handlePayment}
+                          disabled={isSubmittingPayment}
+                          className="w-full bg-indigo-600 text-white py-3.5 sm:py-4 rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-60 cursor-pointer"
+                        >
+                          {isSubmittingPayment ? (
+                            <>
+                              <RefreshCw className="w-5 h-5 animate-spin shrink-0" />
+                              <span>Recording to Supabase...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Confirm Payment</span>
+                              <ArrowUpRight className="w-5 h-5 shrink-0" />
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              </div>
             )}
           </div>
         </div>

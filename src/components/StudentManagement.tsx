@@ -852,7 +852,7 @@ export default function StudentManagement() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Print Only Header */}
       <div className="only-print">
         <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -866,15 +866,15 @@ export default function StudentManagement() {
       </div>
 
       {/* Deep Teal Hero Header Card */}
-      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5 print:hidden">
+      <div className="bg-[#1c4a59] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5 print:hidden min-w-0 overflow-hidden">
         <div className="space-y-1.5 sm:space-y-2 min-w-0">
-          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-white/10 border border-white/15">
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-full">
             <Users className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
             <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#e1c594] truncate">
               Student Enrollment & Records
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold tracking-tight text-white leading-tight">
+          <h2 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold tracking-tight text-white leading-tight break-words">
             Students Directory & Class Registry
           </h2>
           <p className="text-xs sm:text-sm text-[#e1c594]/90 font-medium leading-relaxed">
@@ -882,36 +882,36 @@ export default function StudentManagement() {
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto min-w-0">
           {/* Tab Switcher Pills inside Teal Header */}
           <div className="grid grid-cols-2 sm:flex items-center bg-white/10 p-1 rounded-2xl sm:rounded-full border border-white/15 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setActiveTab('registry')}
               className={cn(
-                "px-3 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] whitespace-nowrap",
+                "px-2.5 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] truncate",
                 activeTab === 'registry' 
                   ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
                   : "text-white/85 hover:text-white"
               )}
             >
               <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>Active Registry</span>
+              <span className="truncate">Active Registry</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('promotions')}
               className={cn(
-                "px-3 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] whitespace-nowrap",
+                "px-2.5 sm:px-4 py-2 rounded-xl sm:rounded-full font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer min-h-[38px] truncate",
                 activeTab === 'promotions' 
                   ? "bg-[#faae57] text-[#1f2a2e] shadow-xs" 
                   : "text-white/85 hover:text-white"
               )}
             >
               <History className="w-3.5 h-3.5 shrink-0" />
-              <span>Promotions</span>
+              <span className="truncate">Promotions</span>
               {promotionHistory.length > 0 && (
-                <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#1c4a59] text-[#faae57] rounded-full">
+                <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#1c4a59] text-[#faae57] rounded-full shrink-0">
                   {promotionHistory.length}
                 </span>
               )}
@@ -937,7 +937,7 @@ export default function StudentManagement() {
 
       {activeTab === 'registry' && (
         <>
-          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 print:hidden bg-white p-3.5 sm:p-4 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)]">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 print:hidden bg-white p-3.5 sm:p-4 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.05)] min-w-0">
             <div className="relative w-full xl:flex-1 xl:max-w-lg min-w-0">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
               <input 
@@ -959,9 +959,9 @@ export default function StudentManagement() {
               )}
             </div>
             
-            <div className="flex flex-wrap items-center justify-start xl:justify-end gap-2 w-full xl:w-auto">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-start xl:justify-end gap-2 w-full xl:w-auto min-w-0">
               {/* Filter Class Dropdown */}
-              <div className="relative shrink-0">
+              <div className="relative min-w-0 w-full sm:w-auto">
                 <button 
                   type="button"
                   onClick={() => {
@@ -969,13 +969,13 @@ export default function StudentManagement() {
                     setIsActionsMenuOpen(false);
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-1.5 h-10 px-3.5 border rounded-xl font-bold transition-all text-xs whitespace-nowrap cursor-pointer",
+                    "w-full sm:w-auto flex items-center justify-center gap-1.5 h-10 px-3 sm:px-3.5 border rounded-xl font-bold transition-all text-[11px] sm:text-xs cursor-pointer",
                     activeFilter ? "bg-[#1c4a59] border-[#1c4a59] text-white" : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
                   )}
                   title="Filter by class"
                 >
-                  <span className="truncate max-w-[130px]">{activeFilter ? `Class: ${activeFilter}` : 'Filter Class'}</span>
-                  <span className="text-[10px] opacity-70">▾</span>
+                  <span className="truncate">{activeFilter ? `Class: ${activeFilter}` : 'Filter Class'}</span>
+                  <span className="text-[10px] opacity-70 shrink-0">▾</span>
                 </button>
                 
                 <AnimatePresence>
@@ -1026,7 +1026,7 @@ export default function StudentManagement() {
               </div>
 
               {/* Consolidated Template / Import / Export / Print Dropdown */}
-              <div className="relative shrink-0">
+              <div className="relative min-w-0 w-full sm:w-auto">
                 {isAdmin && (
                   <input 
                     type="file" 
@@ -1043,15 +1043,15 @@ export default function StudentManagement() {
                     setIsFilterOpen(false);
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-1.5 h-10 px-3.5 border rounded-xl font-bold transition-all text-xs whitespace-nowrap cursor-pointer",
+                    "w-full sm:w-auto flex items-center justify-center gap-1.5 h-10 px-3 sm:px-3.5 border rounded-xl font-bold transition-all text-[11px] sm:text-xs cursor-pointer",
                     isActionsMenuOpen
                       ? "bg-[#1c4a59] border-[#1c4a59] text-white"
                       : "bg-white border-[#bac4c6] text-[#1f2a2e] hover:bg-[#f6f8f7]"
                   )}
                   title="CSV Template, Import, Export & Print Options"
                 >
-                  <span>{isImporting ? 'Importing CSV...' : 'Import / Export'}</span>
-                  <span className="text-[10px] opacity-70">▾</span>
+                  <span className="truncate">{isImporting ? 'Importing CSV...' : 'Import / Export'}</span>
+                  <span className="text-[10px] opacity-70 shrink-0">▾</span>
                 </button>
 
                 <AnimatePresence>
@@ -1062,7 +1062,7 @@ export default function StudentManagement() {
                         initial={{ opacity: 0, y: 8, scale: 0.96 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                        className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
+                        className="absolute right-0 mt-2 w-48 bg-white border border-[#bac4c6] rounded-2xl shadow-xl z-30 overflow-hidden"
                       >
                         <div className="p-1.5 space-y-0.5">
                           {isAdmin && (
@@ -1123,7 +1123,7 @@ export default function StudentManagement() {
                 <button 
                   type="button"
                   onClick={() => setIsPromotionModalOpen(true)}
-                  className="flex items-center justify-center h-10 px-4 bg-[#06d6a0] text-[#1f2a2e] rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-xs text-xs whitespace-nowrap cursor-pointer shrink-0"
+                  className="col-span-2 sm:col-span-1 flex items-center justify-center h-10 px-4 bg-[#06d6a0] text-[#1f2a2e] rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-xs text-xs whitespace-nowrap cursor-pointer w-full sm:w-auto"
                   title="Promote Class"
                 >
                   <span>Promote Class</span>

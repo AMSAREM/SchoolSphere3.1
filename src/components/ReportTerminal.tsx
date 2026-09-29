@@ -403,7 +403,7 @@ export default function ReportTerminal() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full min-w-0 overflow-x-hidden py-2 sm:py-4">
       {/* Print Only Header (hidden for A4 Report Cards which include their own official transcript header) */}
       {activeReport !== 'batch-reports' && activeReport !== 'terminal-report' && (
         <div className="only-print">
@@ -418,39 +418,39 @@ export default function ReportTerminal() {
         </div>
       )}
 
-      {/* Navigation Tabs Header */}
-      <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto scrollbar-hide no-scrollbar print:hidden">
+      {/* Navigation Tabs Header - 2-column grid on mobile with 3rd tab full width */}
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-1 bg-white p-1.5 sm:p-1 rounded-2xl border border-slate-200 shadow-sm print:hidden w-full max-w-full min-w-0 overflow-hidden">
         {isAccountant ? (
           <>
             <button 
               onClick={() => setActiveReport('fee-collection')}
               className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap text-xs sm:text-sm cursor-pointer",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 py-2.5 rounded-xl font-bold transition-all text-[11px] sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'fee-collection' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <BarChart3 className="w-4 h-4 shrink-0 text-indigo-500" />
-              <span>Fees Collection KPI</span>
+              <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-indigo-500" />
+              <span className="truncate">Fees Collection KPI</span>
             </button>
             <button 
               onClick={() => setActiveReport('debtor-list')}
               className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap text-xs sm:text-sm cursor-pointer",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 py-2.5 rounded-xl font-bold transition-all text-[11px] sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'debtor-list' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <Users className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Registry of Debtors</span>
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-amber-500" />
+              <span className="truncate">Registry of Debtors</span>
             </button>
             <button 
               onClick={() => setActiveReport('class-financials')}
               className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap text-xs sm:text-sm cursor-pointer",
+                "col-span-2 sm:col-span-1 w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-5 py-2.5 rounded-xl font-bold transition-all text-[11px] sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'class-financials' ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <FileText className="w-4 h-4 shrink-0 text-indigo-500" />
-              <span>Class Financials Broadsheet</span>
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-indigo-500" />
+              <span className="truncate">Class Financials Broadsheet</span>
             </button>
           </>
         ) : (
@@ -458,32 +458,32 @@ export default function ReportTerminal() {
             <button 
               onClick={() => setActiveReport('class-summary')}
               className={cn(
-                "flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer",
+                "col-span-2 sm:col-span-1 w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-2.5 rounded-xl font-bold transition-all text-xs sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'class-summary' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <BarChart3 className="w-4 h-4 shrink-0" />
-              <span>Class Summary Broadsheet</span>
+              <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Class Summary Broadsheet</span>
             </button>
             <button 
               onClick={() => setActiveReport('batch-reports')}
               className={cn(
-                "flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-2.5 rounded-xl font-bold transition-all text-xs sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'batch-reports' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <Layers className="w-4 h-4 shrink-0" />
-              <span>Batch Reports (A4)</span>
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Batch Reports (A4)</span>
             </button>
             <button 
               onClick={() => setActiveReport('terminal-report')}
               className={cn(
-                "flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer",
+                "w-full sm:w-auto flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-2.5 rounded-xl font-bold transition-all text-xs sm:text-sm cursor-pointer min-w-0",
                 activeReport === 'terminal-report' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               )}
             >
-              <FileText className="w-4 h-4 shrink-0" />
-              <span>Individual Report</span>
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Individual Report</span>
             </button>
           </>
         )}
@@ -497,52 +497,52 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6 min-w-0"
           >
             {/* Quick Action Block */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between print:hidden">
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 print:hidden">
               <span className="font-bold text-slate-800 text-xs sm:text-sm">Fee Collection performance metrics visualization</span>
               <button 
                 onClick={triggerPrint}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer"
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer w-full sm:w-auto"
               >
-                <Printer className="w-4 h-4 text-indigo-500" />
+                <Printer className="w-4 h-4 text-indigo-500 shrink-0" />
                 <span>Print statement report</span>
               </button>
             </div>
 
             {/* Financial Overview Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-r from-indigo-50 to-indigo-50/50 p-5 rounded-2xl border border-indigo-100">
-                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400">Total Billed</p>
-                <p className="text-xl font-bold text-slate-900 mt-1">{formatCurrency(totalFinancials.totalBilled)}</p>
-                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <Coins className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Gross revenue</span>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 min-w-0">
+              <div className="bg-gradient-to-r from-indigo-50 to-indigo-50/50 p-3.5 sm:p-5 rounded-2xl border border-indigo-100 min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400 truncate">Total Billed</p>
+                <p className="text-base sm:text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums truncate">{formatCurrency(totalFinancials.totalBilled)}</p>
+                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                  <Coins className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <span className="truncate">Gross revenue</span>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-emerald-50 to-emerald-50/50 p-5 rounded-2xl border border-emerald-100">
-                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400">Total Received</p>
-                <p className="text-xl font-bold text-emerald-800 mt-1">{formatCurrency(totalFinancials.totalPaid)}</p>
-                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Collected</span>
+              <div className="bg-gradient-to-r from-emerald-50 to-emerald-50/50 p-3.5 sm:p-5 rounded-2xl border border-emerald-100 min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400 truncate">Total Received</p>
+                <p className="text-base sm:text-xl font-bold text-emerald-800 mt-1 font-mono tabular-nums truncate">{formatCurrency(totalFinancials.totalPaid)}</p>
+                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest truncate">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">Collected</span>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-rose-50 to-rose-50/50 p-5 rounded-2xl border border-rose-100">
-                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400">OVERDUE ARREARS</p>
-                <p className="text-xl font-bold text-rose-800 mt-1">{formatCurrency(totalFinancials.totalRemaining)}</p>
-                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-rose-600 uppercase tracking-widest">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Debt outstanding</span>
+              <div className="bg-gradient-to-r from-rose-50 to-rose-50/50 p-3.5 sm:p-5 rounded-2xl border border-rose-100 min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-slate-400 truncate">OVERDUE ARREARS</p>
+                <p className="text-base sm:text-xl font-bold text-rose-800 mt-1 font-mono tabular-nums truncate">{formatCurrency(totalFinancials.totalRemaining)}</p>
+                <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-rose-600 uppercase tracking-widest truncate">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="truncate">Debt outstanding</span>
                 </div>
               </div>
 
-              <div className="bg-slate-900 p-5 rounded-2xl text-white">
-                <p className="text-[10px] font-black tracking-widest uppercase text-indigo-400">COLLECTION PERCENTAGE</p>
-                <p className="text-2xl font-black text-indigo-200 mt-1">{totalFinancials.collectionProgress.toFixed(1)}%</p>
+              <div className="bg-slate-900 p-3.5 sm:p-5 rounded-2xl text-white min-w-0">
+                <p className="text-[10px] font-black tracking-widest uppercase text-indigo-400 truncate">COLLECTION %</p>
+                <p className="text-lg sm:text-2xl font-black text-indigo-200 mt-1 font-mono tabular-nums">{totalFinancials.collectionProgress.toFixed(1)}%</p>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
                   <div className="bg-indigo-400 h-full rounded-full" style={{ width: `${totalFinancials.collectionProgress}%` }} />
                 </div>
@@ -550,11 +550,11 @@ export default function ReportTerminal() {
             </div>
 
             {/* Visual Charts & Stats details */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 min-w-0">
               {/* Collection Graph by Class */}
-              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider">Fee Collections Comparison by Class</h3>
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 min-w-0">
+                  <h3 className="font-black text-slate-800 text-xs sm:text-sm uppercase tracking-wider">Fee Collections Comparison by Class</h3>
                   <div className="flex items-center gap-4 text-xs font-bold text-slate-500">
                     <div className="flex items-center gap-1.5">
                       <div className="w-2.5 h-2.5 bg-slate-300 rounded" />
@@ -581,19 +581,19 @@ export default function ReportTerminal() {
               </div>
 
               {/* Class ranking outstanding arrears list */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col">
-                <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider mb-4">Under-performing Class Arrears</h3>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 flex flex-col min-w-0">
+                <h3 className="font-black text-slate-800 text-xs sm:text-sm uppercase tracking-wider mb-4">Under-performing Class Arrears</h3>
                 <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-72">
                   {classFinancials.map(cf => {
                     const statusPerc = cf.billed > 0 ? (cf.paid / cf.billed) * 100 : 0;
                     return (
-                      <div key={cf.className} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-800 text-sm">{cf.className}</p>
+                      <div key={cf.className} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between gap-2 min-w-0">
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 text-sm truncate">{cf.className}</p>
                           <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{cf.studentsCount} Students Registry</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-rose-600 text-sm">{formatCurrency(cf.remaining)}</p>
+                        <div className="text-right shrink-0">
+                          <p className="font-bold text-rose-600 text-sm font-mono tabular-nums">{formatCurrency(cf.remaining)}</p>
                           <p className={cn(
                             "text-[10px] font-mono font-bold mt-0.5",
                             statusPerc >= 80 ? "text-emerald-600" : statusPerc >= 50 ? "text-amber-600" : "text-rose-500"
@@ -608,42 +608,95 @@ export default function ReportTerminal() {
           </motion.div>
         )}
 
-        {/* --- ACCOUNTANT REPORT 2: REGISTRY OF DEBTERS --- */}
+        {/* --- ACCOUNTANT REPORT 2: REGISTRY OF DEBTORS --- */}
         {isAccountant && activeReport === 'debtor-list' && (
           <motion.div 
             key="debtor-list"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6 min-w-0"
           >
             {/* Filters / Search Debtors */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-4 justify-between print:hidden">
-              <div className="relative w-full sm:max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 justify-between print:hidden min-w-0">
+              <div className="relative w-full sm:max-w-md min-w-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <input 
                   type="text" 
-                  placeholder="Query debtor by Name or ID number..."
+                  placeholder="Query debtor by Name or ID..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono"
                 />
               </div>
 
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
                 <button 
                   onClick={exportDebtorList}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer min-w-0"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Excel Sheet</span>
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Excel Sheet</span>
                 </button>
               </div>
             </div>
 
-            {/* Overdue List Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
-              <div className="overflow-x-auto">
+            {/* Overdue List: Stacked Mobile Cards (< 768px) + Desktop/Print Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden min-w-0">
+              {/* Mobile Stacked Debtor Cards */}
+              <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+                {debtorList.map((debtor) => {
+                  const arrears = (debtor.totalFees || 0) - (debtor.feesPaid || 0);
+                  return (
+                    <div key={debtor.id} className="p-3.5 space-y-2.5 min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 uppercase text-xs truncate">
+                            {debtor.firstName} {debtor.lastName}
+                          </p>
+                          <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                            {debtor.studentId} • <span className="font-bold text-slate-600">{debtor.class}</span>
+                          </p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-mono font-black text-xs shrink-0">
+                          {formatCurrency(arrears)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] font-mono">
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Billed Fee</span>
+                          <span className="font-bold text-slate-700">{formatCurrency(debtor.totalFees)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[9px] uppercase font-sans font-bold">Paid to Date</span>
+                          <span className="font-bold text-emerald-700">{formatCurrency(debtor.feesPaid)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pt-0.5 min-w-0">
+                        <div className="min-w-0 text-[11px]">
+                          <p className="font-bold text-slate-700 truncate">{debtor.guardianName}</p>
+                          <p className="text-[10px] font-mono text-indigo-600 truncate">{debtor.guardianPhone}</p>
+                        </div>
+                        <button
+                          onClick={() => setSelectedBillStudent(debtor)}
+                          className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-[10px] font-black uppercase tracking-wider text-indigo-700 border border-indigo-100 cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                        >
+                          <Printer className="w-3.5 h-3.5 shrink-0" />
+                          <span>Bill Reminder</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {debtorList.length === 0 && (
+                  <div className="p-10 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
+                    No overdue fee accounts found matching queries.
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop / Print Table */}
+              <div className="hidden md:block print:block overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
@@ -706,43 +759,103 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6 min-w-0"
           >
             {/* Filters */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between print:hidden">
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden min-w-0">
               <span className="font-bold text-slate-800 text-xs sm:text-sm">Class-by-Class Revenue Billings & Receivables Broadsheet</span>
-              <div className="flex items-center gap-3">
+              <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto min-w-0">
                 <button 
                   onClick={triggerPrint}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer min-w-0"
                 >
-                  <Printer className="w-4 h-4 text-indigo-500" />
-                  <span>Print broadsheet</span>
+                  <Printer className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="truncate">Print broadsheet</span>
                 </button>
                 <button 
                   onClick={exportClassFinancials}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer min-w-0"
                 >
-                  <Download className="w-4 h-4 text-indigo-500" />
-                  <span>Excel broadsheet</span>
+                  <Download className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="truncate">Excel broadsheet</span>
                 </button>
               </div>
             </div>
 
             {/* Financial Broadsheet Sheet Area */}
-            <div id="class-financials-print-area" className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
-              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Class Revenue Billings & Collection Summary</h2>
+            <div id="class-financials-print-area" className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden min-w-0">
+              <div className="p-4 sm:p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50 min-w-0">
+                <div className="min-w-0">
+                  <h2 className="text-base sm:text-xl font-black text-slate-900 uppercase tracking-tight break-words">Class Revenue Billings & Collection Summary</h2>
                   <p className="text-slate-500 font-semibold text-xs mt-0.5">Aggregate Financial Overview of Student Ledgers grouped by Class Room</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-950">{schoolProfile.schoolName}</p>
+                <div className="text-left sm:text-right shrink-0">
+                  <p className="text-xs sm:text-sm font-bold text-slate-950">{schoolProfile.schoolName}</p>
                   <p className="text-[10px] text-slate-400 font-mono">Statement Date: {new Date().toLocaleDateString()}</p>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Stacked Mobile Class Financial Cards (< 768px) */}
+              <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+                {classFinancials.map(cf => {
+                  const perc = cf.billed > 0 ? (cf.paid / cf.billed) * 100 : 0;
+                  return (
+                    <div key={cf.className} className="p-3.5 space-y-2.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span className="font-black text-slate-900 text-sm uppercase">{cf.className}</span>
+                          <span className="ml-2 text-[11px] font-bold text-slate-500 font-mono">({cf.studentsCount} Students)</span>
+                        </div>
+                        <span className={cn(
+                          "px-2.5 py-0.5 rounded-full font-mono text-[10px] font-black",
+                          perc >= 90 ? "bg-emerald-50 text-emerald-700" : perc >= 70 ? "bg-indigo-50 text-indigo-700" : "bg-amber-50 text-amber-700"
+                        )}>
+                          {perc.toFixed(1)}% Cleared
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] font-mono tabular-nums">
+                        <div className="min-w-0">
+                          <span className="text-[9px] font-sans font-bold uppercase text-slate-400 block truncate">Billed</span>
+                          <span className="font-bold text-slate-700 truncate block">{formatCurrency(cf.billed)}</span>
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[9px] font-sans font-bold uppercase text-emerald-600 block truncate">Collected</span>
+                          <span className="font-bold text-emerald-700 truncate block">{formatCurrency(cf.paid)}</span>
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[9px] font-sans font-bold uppercase text-rose-500 block truncate">Arrears</span>
+                          <span className="font-bold text-rose-700 truncate block">{formatCurrency(cf.remaining)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="p-4 bg-slate-950 text-white space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black uppercase">
+                    <span>Grand Consolidated Totals</span>
+                    <span className="font-mono text-indigo-300">
+                      {totalFinancials.totalBilled > 0 ? ((totalFinancials.totalPaid / totalFinancials.totalBilled) * 100).toFixed(1) : 0}%
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-[11px] font-mono tabular-nums pt-1">
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block font-sans">Total Billed</span>
+                      <span className="font-bold text-indigo-200">{formatCurrency(totalFinancials.totalBilled)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block font-sans">Total Paid</span>
+                      <span className="font-bold text-emerald-400">{formatCurrency(totalFinancials.totalPaid)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block font-sans">Arrears</span>
+                      <span className="font-bold text-rose-400">{formatCurrency(totalFinancials.totalRemaining)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Desktop / Print Table */}
+              <div className="hidden md:block print:block overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-indigo-900 text-white">
@@ -800,73 +913,139 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6 min-w-0"
           >
-            {/* Filters */}
-            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm print:hidden">
-              <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-4 sm:gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Class</label>
+            {/* Filters & 2-Column Mobile Action Grid (Selector 2) */}
+            <div className="bg-white p-3.5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm print:hidden w-full max-w-full min-w-0 overflow-hidden">
+              <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-3 sm:gap-6 min-w-0">
+                <div className="space-y-1.5 min-w-0">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block truncate">Select Class</label>
                   <select 
                     value={selectedClass}
                     onChange={(e) => setSelectedClass(e.target.value)}
-                    className="block w-full lg:w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="block w-full lg:w-40 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none truncate"
                   >
                     {classes?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Term</label>
+                <div className="space-y-1.5 min-w-0">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block truncate">Select Term</label>
                   <select 
                     value={selectedTerm}
                     onChange={(e) => setSelectedTerm(e.target.value)}
-                    className="block w-full lg:w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="block w-full lg:w-40 bg-slate-50 border border-slate-200 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none truncate"
                   >
                     {['Term 1', 'Term 2', 'Term 3'].map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="hidden lg:block lg:flex-1" />
-                <div className="col-span-2 lg:w-auto flex items-center gap-3">
+                <div className="col-span-2 lg:w-auto grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full min-w-0">
                   <button 
                     onClick={triggerPrint}
-                    className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 active:scale-95 cursor-pointer"
+                    className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm h-10 sm:h-11 active:scale-95 cursor-pointer"
                   >
-                    <Printer className="w-4 h-4 text-indigo-600" />
-                    <span>Print Broadsheet</span>
+                    <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span className="truncate">Print Broadsheet</span>
+                  </button>
+                  <button 
+                    onClick={exportClassSummary}
+                    className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm h-10 sm:h-11 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="truncate">Export Excel</span>
                   </button>
                   <button 
                     onClick={() => handleExportPDF('broadsheet-content', `${selectedClass}_${selectedTerm}_Broadsheet`)}
                     disabled={isExportingPDF}
-                    className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-sm h-11"
+                    className="col-span-2 sm:col-span-1 w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs sm:text-sm h-10 sm:h-11 cursor-pointer"
                   >
-                    <FileText className="w-4 h-4" />
-                    <span>{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
-                  </button>
-                  <button 
-                    onClick={exportClassSummary}
-                    className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Export Excel</span>
+                    <FileText className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{isExportingPDF ? 'Exporting PDF...' : 'Download Broadsheet PDF'}</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Broadsheet Rendering */}
-            <div id="broadsheet-content" className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
-              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Examination Broadsheet</h2>
-                  <p className="text-slate-500 font-medium">Class Summary for {selectedClass} — {selectedTerm}</p>
+            {/* Broadsheet Rendering (Selector 3) */}
+            <div id="broadsheet-content" className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden w-full max-w-full min-w-0">
+              <div className="p-4 sm:p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50 min-w-0">
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-2xl font-black text-slate-900 uppercase tracking-tight break-words">Examination Broadsheet</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium">Class Summary for {selectedClass} — {selectedTerm}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-900">{schoolProfile.schoolName}</p>
-                  <p className="text-xs text-slate-400 font-mono">Run Date: {new Date().toLocaleDateString()}</p>
+                <div className="text-left sm:text-right shrink-0">
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 break-words">{schoolProfile.schoolName}</p>
+                  <p className="text-[11px] sm:text-xs text-slate-400 font-mono">Run Date: {new Date().toLocaleDateString()}</p>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Stacked Mobile Student Broadsheet Cards (< 768px) */}
+              <div className="md:hidden print:hidden divide-y divide-slate-100 min-w-0">
+                {classStudents.map((student) => {
+                  const stats = studentRankings[student.studentId];
+                  return (
+                    <div key={student.id} className="p-3.5 space-y-2.5 hover:bg-slate-50/60 transition-colors min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-900 uppercase text-xs truncate">
+                            {student.firstName} {student.lastName}
+                          </p>
+                          <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                            {student.studentId}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums">
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-900 text-[11px] font-black">
+                            Total: {stats?.total || 0}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-black">
+                            Pos: {stats?.position || '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Subject Score Pills */}
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 pt-0.5 min-w-0">
+                        {subjects?.map((sub) => {
+                          const result = classResults?.find(
+                            (r) => r.studentId === student.studentId && r.subject === sub.name
+                          );
+                          const hasResult = Boolean(result);
+                          const isPass = result && result.totalScore >= 50;
+                          return (
+                            <div
+                              key={sub.id}
+                              className={cn(
+                                "px-2 py-1 rounded-lg border text-[10px] flex items-center justify-between gap-1 min-w-0 font-mono tabular-nums",
+                                !hasResult
+                                  ? "bg-slate-50 border-slate-100 text-slate-400"
+                                  : isPass
+                                  ? "bg-emerald-50/50 border-emerald-200/70 text-slate-800"
+                                  : "bg-rose-50/60 border-rose-200 text-rose-700"
+                              )}
+                            >
+                              <span className="font-sans font-bold uppercase text-[9px] text-slate-500 truncate">
+                                {sub.code || sub.name.slice(0, 4)}
+                              </span>
+                              <span className="font-extrabold shrink-0">
+                                {result ? result.totalScore : '-'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {classStudents.length === 0 && (
+                  <div className="p-8 text-center text-slate-400 text-xs font-bold uppercase tracking-wider">
+                    No students enrolled in {selectedClass}
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop & Print Broadsheet Table (>= 768px or Print) */}
+              <div className="hidden md:block print:block overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-indigo-900 text-white">
@@ -924,37 +1103,37 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            className="space-y-6 w-full"
+            className="space-y-4 sm:space-y-6 w-full min-w-0"
           >
-            <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-4 sm:gap-6 print:hidden">
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-600 uppercase tracking-wider">Select Class</label>
+            <div className="bg-white p-3.5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-3 sm:gap-6 print:hidden min-w-0">
+              <div className="space-y-1.5 min-w-0">
+                <label className="text-[10px] sm:text-xs font-black text-slate-600 uppercase tracking-wider block truncate">Select Class</label>
                 <select 
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="block w-full sm:w-44 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="block w-full sm:w-44 bg-slate-50 border border-slate-300 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none truncate"
                 >
                   {classes?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-600 uppercase tracking-wider">Term</label>
+              <div className="space-y-1.5 min-w-0">
+                <label className="text-[10px] sm:text-xs font-black text-slate-600 uppercase tracking-wider block truncate">Term</label>
                 <select 
                   value={selectedTerm}
                   onChange={(e) => setSelectedTerm(e.target.value)}
-                  className="block w-full sm:w-40 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="block w-full sm:w-40 bg-slate-50 border border-slate-300 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none truncate"
                 >
                   {['Term 1', 'Term 2', 'Term 3'].map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div className="hidden sm:block sm:flex-1" />
-              <div className="col-span-2 sm:w-auto flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-11">
+              <div className="col-span-2 sm:w-auto grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full min-w-0">
+                <div className="col-span-2 sm:col-span-1 grid grid-cols-2 sm:flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-10 sm:h-11 min-w-0">
                   <button
                     type="button"
                     onClick={() => setReportViewMode('responsive')}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer truncate",
                       reportViewMode === 'responsive'
                         ? "bg-white text-slate-900 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
@@ -966,7 +1145,7 @@ export default function ReportTerminal() {
                     type="button"
                     onClick={() => setReportViewMode('a4')}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer truncate",
                       reportViewMode === 'a4'
                         ? "bg-white text-slate-900 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
@@ -977,18 +1156,18 @@ export default function ReportTerminal() {
                 </div>
                 <button 
                   onClick={triggerPrint}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-sm h-11 active:scale-95 cursor-pointer"
+                  className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm h-10 sm:h-11 active:scale-95 cursor-pointer"
                 >
                   <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span>Print All Reports</span>
+                  <span className="truncate">Print All</span>
                 </button>
                 <button 
                   onClick={handleBatchPDF}
                   disabled={isExportingPDF}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-sm h-11 cursor-pointer"
+                  className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs sm:text-sm h-10 sm:h-11 cursor-pointer"
                 >
                   <Layers className="w-4 h-4 shrink-0" />
-                  <span>{isExportingPDF ? 'Generating...' : 'Batch PDF'}</span>
+                  <span className="truncate">{isExportingPDF ? 'Generating...' : 'Batch PDF'}</span>
                 </button>
               </div>
             </div>
@@ -996,7 +1175,7 @@ export default function ReportTerminal() {
             <div
               id="batch-reports-content"
               className={cn(
-                "w-full space-y-6 sm:space-y-10 lg:space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full",
+                "w-full space-y-6 sm:space-y-10 lg:space-y-12 flex flex-col items-center print:space-y-0 print:block print:w-full min-w-0",
                 reportViewMode === 'a4' && "overflow-x-auto pb-4 items-start md:items-center"
               )}
             >
@@ -1006,7 +1185,7 @@ export default function ReportTerminal() {
                   id={`report-${student.studentId}`}
                   className={cn(
                     "mx-auto",
-                    reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm]"
+                    reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm] min-w-0"
                   )}
                 >
                   <ReportCard
@@ -1034,7 +1213,7 @@ export default function ReportTerminal() {
                 </div>
               ))}
               {!classStudents.length && (
-                <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-10 sm:p-20 text-center text-slate-600 font-bold uppercase tracking-widest w-full">
+                <div className="bg-white rounded-3xl border-2 border-dashed border-slate-300 p-8 sm:p-20 text-center text-slate-600 font-bold uppercase tracking-widest w-full text-xs sm:text-sm">
                   No students found in {selectedClass}
                 </div>
               )}
@@ -1048,23 +1227,23 @@ export default function ReportTerminal() {
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+            className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8 min-w-0"
           >
             {/* Student Selector */}
-            <div className="lg:col-span-4 space-y-4 print:hidden">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <div className="lg:col-span-4 space-y-4 print:hidden min-w-0">
+              <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 min-w-0">
+                <div className="relative min-w-0">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <input 
                     type="text"
                     placeholder="Search for a student..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
                   />
                 </div>
 
-                <div className="space-y-1 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-1 max-h-[360px] lg:max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
                   {students?.filter(s => {
                     if (!s) return false;
                     const search = (searchTerm || '').toLowerCase().trim();
@@ -1077,25 +1256,25 @@ export default function ReportTerminal() {
                       key={s.id}
                       onClick={() => setSelectedStudentId(s.studentId)}
                       className={cn(
-                        "w-full flex items-center justify-between p-4 rounded-xl transition-all border cursor-pointer",
+                        "w-full flex items-center justify-between p-3 sm:p-4 rounded-xl transition-all border cursor-pointer min-w-0",
                         selectedStudentId === s.studentId 
                           ? "bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm" 
                           : "bg-white border-transparent hover:border-slate-200 hover:bg-slate-50 text-slate-600"
                       )}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className={cn(
-                          "w-10 h-10 rounded-full flex items-center justify-center font-black text-sm uppercase",
+                          "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-black text-xs sm:text-sm uppercase shrink-0",
                           selectedStudentId === s.studentId ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-400"
                         )}>
                           {(s.firstName?.[0] || '')}{(s.lastName?.[0] || '') || 'S'}
                         </div>
-                        <div className="text-left leading-tight">
-                          <p className="font-bold text-sm leading-none">{s.firstName} {s.lastName}</p>
-                          <p className="text-[10px] font-mono opacity-60 uppercase mt-1">{s.studentId}</p>
+                        <div className="text-left leading-tight min-w-0">
+                          <p className="font-bold text-xs sm:text-sm leading-none truncate">{s.firstName} {s.lastName}</p>
+                          <p className="text-[10px] font-mono opacity-60 uppercase mt-1 truncate">{s.studentId}</p>
                         </div>
                       </div>
-                      <ChevronRight className={cn("w-4 h-4 transition-transform", selectedStudentId === s.studentId && "translate-x-1")} />
+                      <ChevronRight className={cn("w-4 h-4 transition-transform shrink-0", selectedStudentId === s.studentId && "translate-x-1")} />
                     </button>
                   ))}
                 </div>
@@ -1103,22 +1282,22 @@ export default function ReportTerminal() {
             </div>
 
             {/* Report Viewer */}
-            <div className="lg:col-span-8 print:col-span-12 space-y-6 w-full">
+            <div className="lg:col-span-8 print:col-span-12 space-y-4 sm:space-y-6 w-full min-w-0">
               {selectedStudent ? (
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6 min-w-0">
                   {/* Actions Bar */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 print:hidden">
-                    <div className="flex items-center gap-2">
+                  <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
                        <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
-                       <span className="font-bold text-slate-900 text-sm">Previewing Report Card</span>
+                       <span className="font-bold text-slate-900 text-xs sm:text-sm truncate">Previewing Report Card</span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-10">
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto min-w-0">
+                      <div className="col-span-2 sm:col-span-1 grid grid-cols-2 sm:flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl h-10 min-w-0">
                         <button
                           type="button"
                           onClick={() => setReportViewMode('responsive')}
                           className={cn(
-                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer truncate",
                             reportViewMode === 'responsive'
                               ? "bg-white text-slate-900 shadow-xs"
                               : "text-slate-600 hover:text-slate-900"
@@ -1130,7 +1309,7 @@ export default function ReportTerminal() {
                           type="button"
                           onClick={() => setReportViewMode('a4')}
                           className={cn(
-                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+                            "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer truncate",
                             reportViewMode === 'a4'
                               ? "bg-white text-slate-900 shadow-xs"
                               : "text-slate-600 hover:text-slate-900"
@@ -1141,18 +1320,18 @@ export default function ReportTerminal() {
                       </div>
                       <button 
                         onClick={triggerPrint}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs h-10 cursor-pointer"
+                        className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs h-10 cursor-pointer"
                       >
-                         <Printer className="w-4 h-4 text-indigo-600" />
-                         <span>Print Card</span>
+                         <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
+                         <span className="truncate">Print Card</span>
                       </button>
                       <button 
                         onClick={() => handleExportPDF(`report-${selectedStudent.studentId}`, `${selectedStudent.firstName}_Report`)}
                         disabled={isExportingPDF}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs h-10 cursor-pointer"
+                        className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900 transition-all shadow-sm disabled:opacity-50 text-xs h-10 cursor-pointer"
                       >
-                         <FileText className="w-4 h-4" />
-                         <span>{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
+                         <FileText className="w-4 h-4 shrink-0" />
+                         <span className="truncate">{isExportingPDF ? 'Exporting...' : 'PDF'}</span>
                       </button>
                     </div>
                   </div>
@@ -1160,7 +1339,7 @@ export default function ReportTerminal() {
                   <div
                     id="terminal-report-print-wrapper"
                     className={cn(
-                      "w-full",
+                      "w-full min-w-0",
                       reportViewMode === 'a4' && "overflow-x-auto pb-4"
                     )}
                   >
@@ -1168,7 +1347,7 @@ export default function ReportTerminal() {
                       id={`report-${selectedStudent.studentId}`}
                       className={cn(
                         "mx-auto",
-                        reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm]"
+                        reportViewMode === 'a4' ? "w-[210mm] shrink-0" : "w-full max-w-[210mm] min-w-0"
                       )}
                     >
                       <ReportCard
@@ -1197,13 +1376,13 @@ export default function ReportTerminal() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-3xl border border-slate-200 border-dashed p-40 text-center flex flex-col items-center justify-center space-y-4">
-                  <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
-                    <Users className="w-10 h-10 text-slate-200" />
+                <div className="bg-white rounded-3xl border border-slate-200 border-dashed p-8 sm:p-20 lg:p-32 text-center flex flex-col items-center justify-center space-y-4 min-w-0">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-50 rounded-full flex items-center justify-center">
+                    <Users className="w-8 h-8 sm:w-10 sm:h-10 text-slate-200" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-xl font-black text-slate-900 uppercase">Select a Student</h3>
-                    <p className="text-slate-400 max-w-xs font-medium">Choose a student from the sidebar to view and generate their professional terminal report card.</p>
+                    <h3 className="text-base sm:text-xl font-black text-slate-900 uppercase">Select a Student</h3>
+                    <p className="text-xs sm:text-sm text-slate-400 max-w-xs font-medium">Choose a student from the sidebar to view and generate their professional terminal report card.</p>
                   </div>
                 </div>
               )}
