@@ -18,13 +18,14 @@ import {
   FileText,
   BookOpen,
   Info,
-  RefreshCw
+  RefreshCw,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { triggerPrint } from '../lib/utils';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
-import { getApiHeaders } from '../lib/api';
+import { getApiHeaders, sirenApi } from '../lib/api';
 import { supabase } from '../lib/supabase/client';
 
 // Standard timetable slot structure
@@ -91,14 +92,28 @@ export default function TimetableManagement() {
   const [remoteClasses, setRemoteClasses] = useState<Array<{ name: string; level?: string }>>([]);
   const [remoteSubjects, setRemoteSubjects] = useState<Array<{ name: string; code?: string; applicableClasses: string[] }>>([]);
   const [remoteTeachers, setRemoteTeachers] = useState<Array<{ fullName: string; firstName: string; lastName: string; assignedClasses: string[]; subjects: string[] }>>([]);
+  const [remoteBells, setRemoteBells] = useState<any[] | null>(null);
+  const [isSyncingBells, setIsSyncingBells] = useState(false);
+  const [liveNow, setLiveNow] = useState<Date>(() => new Date());
   const [syncState, setSyncState] = useState<'loading' | 'saving' | 'synced' | 'error'>('loading');
   const [isQuickPanelOpen, setIsQuickPanelOpen] = useState(true);
   const [savingQuickId, setSavingQuickId] = useState<string | null>(null);
   const migratedIdsRef = useRef<Set<string>>(new Set());
 
+  useEffect(() => {
+    const timer = setInterval(() => setLiveNow(new Date()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Settings & DB queries
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const bellScheduleSetting = settings.find(s => s.key === 'bellSchedule');
+  const periodBells: any[] = useMemo(() => {
+    if (Array.isArray(remoteBells) && remoteBells.length > 0) return remoteBells;
+    if (Array.isArray(bellScheduleSetting?.value)) return bellScheduleSetting.value;
+    return [];
+  }, [remoteBells, bellScheduleSetting?.value]);
   
   // Query all database records for select tags
   const teachersInDB = useLiveQuery(() => db.teachers.toArray()) || [];
@@ -303,6 +318,19 @@ export default function TimetableManagement() {
           })
           .filter((t: any) => Boolean(t.fullName))
       );
+    }
+    if (Array.isArray(payload.bellSchedule)) {
+      setRemoteBells(payload.bellSchedule);
+      (async () => {
+        try {
+          const existingBellSetting = await db.settings.where('key').equals('bellSchedule').first();
+          if (existingBellSetting && existingBellSetting.id !== undefined) {
+            await db.settings.update(existingBellSetting.id, { value: payload.bellSchedule });
+          } else {
+            await db.settings.add({ key: 'bellSchedule', value: payload.bellSchedule });
+          }
+        } catch {}
+      })();
     }
   }, []);
 
@@ -2025,6 +2053,55 @@ export default function TimetableManagement() {
 
   const currentClass = selectedClassForGrid || classesList[0] || '';
 
+  const currentWeekdayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][liveNow.getDay()];
+  const currentHHMM = `${String(liveNow.getHours()).padStart(2, '0')}:${String(liveNow.getMinutes()).padStart(2, '0')}`;
+
+  const getBellForSlotTime = useCallback((startTime: string, endTime?: string, day?: string) => {
+    const cleanStart = String(startTime || '').trim().slice(0, 5);
+    const cleanEnd = String(endTime || '').trim().slice(0, 5);
+    const matchedBell = periodBells.find((b: any) => String(b?.time || '').trim().slice(0, 5) === cleanStart);
+    const isActiveNow =
+      Boolean(day ? day === currentWeekdayName : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(currentWeekdayName)) &&
+      cleanStart &&
+      cleanEnd &&
+      currentHHMM >= cleanStart &&
+      currentHHMM < cleanEnd;
+    return {
+      bell: matchedBell || null,
+      isArmed: Boolean(matchedBell && matchedBell.enabled !== false),
+      isActiveNow
+    };
+  }, [periodBells, currentWeekdayName, currentHHMM]);
+
+  const handleSyncPeriodBells = async () => {
+    setIsSyncingBells(true);
+    try {
+      const res = await sirenApi.syncWithTimetable(
+        {
+          bellSchedule: periodBells.length > 0 ? periodBells : undefined,
+          forceFromTimetable: true
+        },
+        activeSchoolId || undefined
+      );
+      if (Array.isArray(res?.bellSchedule)) {
+        setRemoteBells(res.bellSchedule);
+      }
+      const stats = res?.timetableStats;
+      if (stats) {
+        showToast(
+          `Synced ${stats.periodStartBells} period start bells, ${stats.breakBells} break chimes & dismissal bell with Siren Console!`,
+          'success'
+        );
+      } else {
+        showToast('School Timetable synchronized with Siren Console Period Bell Timetable!', 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to sync Period Bell Timetable.', 'error');
+    } finally {
+      setIsSyncingBells(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Printable Only Header */}
@@ -2081,18 +2158,33 @@ export default function TimetableManagement() {
                 ? 'Sync Error — Retry'
                 : `Entries & Periods Synced (${slots.length})`}
             </button>
+
+            <span className="text-[11px] font-semibold text-white/85 flex items-center gap-1 font-mono tabular-nums">
+              <Bell className="w-3 h-3 text-[#faae57]" />
+              {periodBells.filter((b: any) => b?.enabled !== false).length} Period Bells Armed
+            </span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
             <Calendar className="w-6 h-6 text-[#faae57]" />
             Timetable & Course Scheduler
           </h2>
           <p className="text-xs sm:text-sm text-white/80 font-medium leading-relaxed max-w-2xl">
-            Configure school lesson blocks, prevent classroom overlap collisions, and export crisp student timetables.
+            Configure school lesson blocks, prevent classroom overlap collisions, and automatically synchronize campus period bells.
           </p>
         </div>
 
         {(isAdmin || isTeacher) && (
           <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto relative z-10">
+            <button
+              type="button"
+              onClick={handleSyncPeriodBells}
+              disabled={isSyncingBells || syncState === 'saving'}
+              title="Two-way sync School Timetable slots with the Siren Console Period Bell Timetable"
+              className="px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] min-h-[40px] border bg-white/10 hover:bg-white/20 text-white border-white/25 disabled:opacity-60"
+            >
+              <Bell className={`w-3.5 h-3.5 text-[#faae57] ${isSyncingBells ? 'animate-bounce' : ''}`} />
+              {isSyncingBells ? 'Syncing Period Bells…' : 'Sync Period Bells'}
+            </button>
             <button
               type="button"
               onClick={() => setIsQuickPanelOpen(prev => !prev)}
@@ -2422,54 +2514,70 @@ export default function TimetableManagement() {
                               </span>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 print:grid-cols-2">
-                                  {daySlots.map(slot => (
-                                    <div 
-                                      key={slot.id} 
-                                      className="p-3.5 bg-[#f6f8f7] rounded-2xl border border-[#e1c594] hover:shadow-sm transition-all relative flex flex-col justify-between group"
-                                    >
-                                      <div>
-                                        <div className="flex items-center justify-between gap-1 mb-1.5">
-                                          <div className="inline-flex items-center gap-1 bg-white border border-[#bac4c6]/60 rounded-lg px-2 py-0.5 text-[10px] font-bold text-[#1f2a2e] font-mono tabular-nums">
-                                            <Clock className="w-3 h-3 text-[#faae57]" />
-                                            {slot.startTime} - {slot.endTime}
+                                  {daySlots.map(slot => {
+                                    const bellInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                                    return (
+                                      <div 
+                                        key={slot.id} 
+                                        className={`p-3.5 rounded-2xl border hover:shadow-sm transition-all relative flex flex-col justify-between group ${
+                                          bellInfo.isActiveNow
+                                            ? 'bg-emerald-50/70 border-emerald-300'
+                                            : 'bg-[#f6f8f7] border-[#e1c594]'
+                                        }`}
+                                      >
+                                        <div>
+                                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                                            <div className="inline-flex items-center gap-1 bg-white border border-[#bac4c6]/60 rounded-lg px-2 py-0.5 text-[10px] font-bold text-[#1f2a2e] font-mono tabular-nums">
+                                              <Clock className="w-3 h-3 text-[#faae57]" />
+                                              {slot.startTime} - {slot.endTime}
+                                            </div>
+                                            <span className="text-[10px] font-bold px-2 py-0.5 bg-[#1c4a59] text-white rounded-lg">
+                                              {slot.classId}
+                                            </span>
                                           </div>
-                                          <span className="text-[10px] font-bold px-2 py-0.5 bg-[#1c4a59] text-white rounded-lg">
-                                            {slot.classId}
-                                          </span>
+
+                                          <h5 className="font-bold text-[#1f2a2e] text-sm leading-tight mt-1">
+                                            {slot.subjectName}
+                                          </h5>
+                                          <p className="text-xs text-[#6a7f84] font-medium mt-1 flex items-center gap-1">
+                                            {slot.teacherName}
+                                          </p>
                                         </div>
 
-                                        <h5 className="font-bold text-[#1f2a2e] text-sm leading-tight mt-1">
-                                          {slot.subjectName}
-                                        </h5>
-                                        <p className="text-xs text-[#6a7f84] font-medium mt-1 flex items-center gap-1">
-                                          {slot.teacherName}
-                                        </p>
-                                      </div>
-
-                                      <div className="mt-3 pt-2 border-t border-[#bac4c6]/50 flex items-center justify-between text-[10px] font-bold text-[#6a7f84]">
-                                        <span className="flex items-center gap-0.5 bg-white border border-[#bac4c6]/60 text-[#1c4a59] px-2 py-0.5 rounded-md">
-                                          {slot.room}
-                                        </span>
-                                        {slot.notes && (
-                                          <span className="truncate max-w-[90px]" title={slot.notes}>
-                                            {slot.notes}
+                                        <div className="mt-3 pt-2 border-t border-[#bac4c6]/50 flex items-center justify-between text-[10px] font-bold text-[#6a7f84]">
+                                          <span className="flex items-center gap-0.5 bg-white border border-[#bac4c6]/60 text-[#1c4a59] px-2 py-0.5 rounded-md">
+                                            {slot.room}
                                           </span>
+                                          <span className={`inline-flex items-center gap-1 font-semibold ${
+                                            bellInfo.isActiveNow
+                                              ? 'text-emerald-700 font-bold'
+                                              : bellInfo.isArmed
+                                              ? 'text-[#1c4a59]'
+                                              : 'text-slate-400'
+                                          }`} title={bellInfo.bell ? `Linked Siren Bell: ${bellInfo.bell.label}` : 'Period Bell Chime'}>
+                                            <Bell className="w-3 h-3 text-[#faae57]" />
+                                            {bellInfo.isActiveNow
+                                              ? 'Active Now'
+                                              : bellInfo.isArmed
+                                              ? 'Bell Armed'
+                                              : 'Bell Linked'}
+                                          </span>
+                                        </div>
+                                        
+                                        {/* Action button triggers inside grid */}
+                                        {!isStudent && (
+                                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                                            <button
+                                              onClick={() => handleEditClick(slot)}
+                                              className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] shadow-2xs cursor-pointer"
+                                            >
+                                              <Edit2 className="w-3 h-3" />
+                                            </button>
+                                          </div>
                                         )}
                                       </div>
-                                      
-                                      {/* Action button triggers inside grid */}
-                                      {!isStudent && (
-                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
-                                          <button
-                                            onClick={() => handleEditClick(slot)}
-                                            className="p-1.5 bg-white border border-[#bac4c6] rounded-lg text-[#1c4a59] hover:bg-[#faae57] hover:text-[#1f2a2e] shadow-2xs cursor-pointer"
-                                          >
-                                            <Edit2 className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                             )}
                           </td>
@@ -2589,12 +2697,25 @@ export default function TimetableManagement() {
                       <tbody className="divide-y divide-slate-100">
                         {getTimeSlotsSorted().map(timeRange => {
                           const [startTime, endTime] = timeRange.split(' - ');
+                          const rowBellInfo = getBellForSlotTime(startTime, endTime);
                           return (
                             <tr key={timeRange} className="hover:bg-slate-50/10 align-top">
                               {/* Left-most Time Block Identifier */}
                               <td className="p-4 font-black uppercase text-slate-800 border-r border-slate-100 bg-slate-50/40">
-                                <span className="block text-indigo-600 font-black text-[12px] tracking-tight">{startTime}</span>
-                                <span className="block text-slate-400 text-[9px] font-bold tracking-wider mt-0.5">to {endTime}</span>
+                                <span className="block text-indigo-600 font-black text-[12px] tracking-tight font-mono tabular-nums">{startTime}</span>
+                                <span className="block text-slate-400 text-[9px] font-bold tracking-wider mt-0.5 font-mono tabular-nums">to {endTime}</span>
+                                <span className={`mt-1.5 inline-flex items-center gap-1 text-[9px] font-bold normal-case ${
+                                  rowBellInfo.isActiveNow
+                                    ? 'text-emerald-700'
+                                    : rowBellInfo.isArmed
+                                    ? 'text-indigo-700'
+                                    : 'text-slate-400'
+                                }`}>
+                                  <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                                  {rowBellInfo.isActiveNow
+                                    ? 'Active Period'
+                                    : rowBellInfo.bell?.label || 'Period Bell'}
+                                </span>
                               </td>
 
                               {/* Weekdays Grid Slots */}
@@ -2733,9 +2854,18 @@ export default function TimetableManagement() {
                           {slot.teacherName}
                         </td>
                         <td className="p-3">
-                          <span className="text-indigo-600 font-extrabold text-[11px]">
+                          <span className="text-indigo-600 font-extrabold text-[11px] font-mono tabular-nums block">
                             {slot.day}s, {slot.startTime} - {slot.endTime}
                           </span>
+                          {(() => {
+                            const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 font-semibold mt-0.5">
+                                <Bell className="w-2.5 h-2.5 text-[#faae57]" />
+                                {bInfo.bell ? `${bInfo.bell.label} (${bInfo.isArmed ? 'Armed' : 'Disarmed'})` : 'Auto Period Bell'}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="p-3 text-slate-500">{slot.room}</td>
                         <td className="p-3">

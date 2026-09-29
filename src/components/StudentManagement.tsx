@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { formatCurrency, cn, triggerPrint, exportToPDF } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
-import { studentsApi, promotionsApi } from '../lib/api';
+import { studentsApi, promotionsApi, feesApi } from '../lib/api';
 import { getCurrentSchoolId } from '../lib/supabase';
 import { calculateFileHash, calculateContentFingerprint, checkIsFileDuplicate, recordImportedFile, filterDuplicateStudentRows, validateCsvFile } from '../lib/fileSecurity';
 import { checkRateLimit, useDebounce } from '../lib/rateLimit';
@@ -119,18 +119,27 @@ export default function StudentManagement() {
     if (isNaN(amount) || amount <= 0 || !selectedPaymentStudent || !selectedPaymentStudent.id) return;
     
     const targetSchoolId = activeSchool?.id || currentUser?.schoolId;
-    const newPaidAmount = (selectedPaymentStudent.feesPaid || 0) + amount;
 
     try {
-      await studentsApi.update(selectedPaymentStudent.id, {
-        feesPaid: newPaidAmount
+      const result = await feesApi.recordPayment({
+        studentId: selectedPaymentStudent.id,
+        studentCode: selectedPaymentStudent.studentId,
+        studentName: `${selectedPaymentStudent.firstName} ${selectedPaymentStudent.lastName}`.trim(),
+        amount,
+        paymentMethod: 'Cash',
+        receivedBy: currentUser?.fullName || currentUser?.email || 'Bursar',
+        description: `Quick Fee Payment for ${selectedPaymentStudent.firstName} ${selectedPaymentStudent.lastName}`,
       }, targetSchoolId);
       
       setLastPayment({ amount, date: Date.now() });
       setPaymentAmount('');
       setSelectedPaymentStudent(null);
       setIsReceiptModalOpen(true);
-      showToast(`Payment of GHS ${amount.toLocaleString()} processed and synced to Supabase database!`, "success");
+      if (result.queuedOffline) {
+        showToast(`Payment of GHS ${amount.toLocaleString()} recorded locally and queued for Supabase sync.`, "info");
+      } else {
+        showToast(`Payment of GHS ${amount.toLocaleString()} processed and synced to Supabase database!`, "success");
+      }
     } catch (err: any) {
       console.error("Payment submission error:", err);
       showToast(err?.message || "Failed to record payment in database.", "error");

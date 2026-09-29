@@ -1013,6 +1013,89 @@ export function normalizeServerSubjectRecord(s: any): any {
   };
 }
 
+export function normalizeServerFeePaymentMethod(rawMethod: any): 'Cash' | 'Bank Transfer' | 'Mobile Money' | 'Cheque' | 'Card' {
+  const s = String(rawMethod || 'Cash').trim().toLowerCase();
+  if (s.includes('momo') || s.includes('mobile') || s.includes('mtn') || s.includes('telecel') || s.includes('at money')) {
+    return 'Mobile Money';
+  }
+  if (s.includes('card') || s.includes('paystack') || s.includes('online')) {
+    return 'Card';
+  }
+  if (s.includes('bank') || s.includes('transfer')) {
+    return 'Bank Transfer';
+  }
+  if (s.includes('cheque') || s.includes('check')) {
+    return 'Cheque';
+  }
+  return 'Cash';
+}
+
+export function normalizeServerFeeTransactionRecord(raw: any, fallbackSchoolId?: string | null): any {
+  if (!raw || typeof raw !== 'object') return raw;
+  const receiptNumber = String(
+    raw.receiptNumber || raw.receipt_number || raw.ref || raw.transactionReference || raw.transaction_reference || `RCP-${Date.now().toString().slice(-6)}`
+  ).trim();
+  const studentId = String(raw.studentId || raw.student_id || '').trim();
+  const schoolId = String(raw.schoolId || raw.school_id || fallbackSchoolId || '').trim();
+  const feeType = String(raw.feeType || raw.fee_type || 'Automatic Allocation').trim();
+  const amount = Math.max(0, Number(raw.amount ?? 0) || 0);
+  const paymentMethod = normalizeServerFeePaymentMethod(raw.paymentMethod || raw.payment_method || raw.method);
+
+  let parsedNotes: any = null;
+  if (typeof raw.notes === 'string' && raw.notes.trim().startsWith('{')) {
+    try { parsedNotes = JSON.parse(raw.notes); } catch {}
+  } else if (raw.notes && typeof raw.notes === 'object') {
+    parsedNotes = raw.notes;
+  }
+
+  const transactionReference = String(
+    raw.transactionReference || raw.transaction_reference || parsedNotes?.transactionReference || receiptNumber
+  ).trim();
+  const receivedBy = String(raw.receivedBy || raw.received_by || parsedNotes?.receivedBy || 'Bursary Office').trim();
+  const recipientPhone = String(raw.recipientPhone || raw.recipient_phone || parsedNotes?.phone || '').trim() || undefined;
+  const channelLabel = String(raw.channelLabel || parsedNotes?.channelLabel || raw.paymentMethod || raw.payment_method || paymentMethod).trim();
+  const studentName = String(raw.studentName || raw.student_name || parsedNotes?.studentName || '').trim() || undefined;
+  const className = String(raw.className || raw.class_name || parsedNotes?.className || '').trim() || undefined;
+  const allocationBreakdown = raw.allocationBreakdown || parsedNotes?.allocationBreakdown || undefined;
+  const date = Number(raw.date ?? raw.createdAt ?? raw.created_at ?? Date.now()) || Date.now();
+  const notesStr = typeof raw.notes === 'string'
+    ? raw.notes
+    : JSON.stringify({
+        channelLabel,
+        phone: recipientPhone,
+        studentName,
+        className,
+        allocationBreakdown
+      });
+
+  return {
+    ...raw,
+    id: raw.id,
+    schoolId,
+    school_id: schoolId,
+    receiptNumber,
+    receipt_number: receiptNumber,
+    studentId,
+    student_id: studentId,
+    studentName,
+    className,
+    feeType,
+    fee_type: feeType,
+    amount,
+    paymentMethod,
+    payment_method: paymentMethod,
+    channelLabel,
+    transactionReference,
+    transaction_reference: transactionReference,
+    receivedBy,
+    received_by: receivedBy,
+    notes: notesStr,
+    recipientPhone,
+    allocationBreakdown,
+    date
+  };
+}
+
 // Sync Pull helpers with in-memory caching and tenant scoping
 async function pullData(forceFresh = false, targetSchoolId?: string | null) {
   if (!forceFresh && dbCacheStore && !targetSchoolId && (Date.now() - dbCacheStore.timestamp < DB_CACHE_TTL_MS)) {
@@ -1028,14 +1111,15 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
         "promotionHistory", "inventory", "expenses", "licenses", "schools",
-        "lessonNotes"
+        "lessonNotes", "feeTransactions"
       ];
       
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings",
         "examAnalysis", "promotionHistory", "inventory", "expenses",
-        "users", "polls", "candidates", "votes", "lessonNotes"
+        "users", "polls", "candidates", "votes", "lessonNotes",
+        "feeTransactions", "smsLogs"
       ]);
 
       const tableMap: Record<string, string> = {
@@ -1043,7 +1127,8 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         examAnalysis: 'exam_analysis',
         smsLogs: 'sms_logs',
         promotionHistory: 'promotion_history',
-        lessonNotes: 'lesson_notes'
+        lessonNotes: 'lesson_notes',
+        feeTransactions: 'fee_transactions'
       };
 
       const data: any = {};
@@ -1110,6 +1195,8 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
             item = normalizeServerClassRecord(item);
           } else if (table === 'subjects') {
             item = normalizeServerSubjectRecord(item);
+          } else if (table === 'feeTransactions') {
+            item = normalizeServerFeeTransactionRecord(item, targetSchoolId);
           } else if (table === 'results') {
             const rawExScores = item.exerciseScores ?? item.exercise_scores;
             const rawExCols = item.exerciseColumns ?? item.exercise_columns;
@@ -1175,7 +1262,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         });
       }
 
-      // Enrich pulled results and settings with continuous_assessment ledger from public.school_settings
+      // Enrich pulled results, lessonNotes, and feeTransactions from public.school_settings
       if (targetSchoolId) {
         try {
           const { data: schSet } = await adminClient
@@ -1230,6 +1317,63 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
             }
             data.lessonNotes = Array.from(noteMap.values());
           }
+
+          // Reconcile fee_transactions from school_settings.streams.fee_transactions alongside public.fee_transactions
+          const streamFeeTx = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
+            ? (schSet.streams as any).fee_transactions
+            : null;
+          if (Array.isArray(streamFeeTx) && streamFeeTx.length > 0) {
+            const existingTx = Array.isArray(data.feeTransactions) ? [...data.feeTransactions] : [];
+            const txMap = new Map<string, any>();
+            for (const tx of existingTx) {
+              const rcp = String(tx.receiptNumber || tx.receipt_number || tx.id || '').trim().toUpperCase();
+              if (rcp) txMap.set(rcp, normalizeServerFeeTransactionRecord(tx, targetSchoolId));
+            }
+            for (const stx of streamFeeTx) {
+              const norm = normalizeServerFeeTransactionRecord(stx, targetSchoolId);
+              const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+              if (!rcp) continue;
+              if (!txMap.has(rcp)) {
+                txMap.set(rcp, norm);
+              } else {
+                txMap.set(rcp, { ...norm, ...txMap.get(rcp) });
+              }
+            }
+            data.feeTransactions = Array.from(txMap.values()).sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
+          }
+
+          // Reconcile Siren Console state from school_settings.streams.siren_console into data.settings
+          const streamSiren = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
+            ? (schSet.streams as any).siren_console
+            : null;
+          if (streamSiren && typeof streamSiren === 'object') {
+            const existingSettings = Array.isArray(data.settings) ? [...data.settings] : [];
+            const upsertSettingEntry = (key: string, value: any) => {
+              if (value === undefined) return;
+              const idx = existingSettings.findIndex((s: any) => s && s.key === key);
+              if (idx >= 0) {
+                existingSettings[idx] = { ...existingSettings[idx], key, value, school_id: targetSchoolId };
+              } else {
+                existingSettings.push({ key, value, school_id: targetSchoolId });
+              }
+            };
+            if (streamSiren.activeSirenBroadcast !== undefined) {
+              upsertSettingEntry('activeSirenBroadcast', streamSiren.activeSirenBroadcast);
+            }
+            if (Array.isArray(streamSiren.bellSchedule)) {
+              upsertSettingEntry('bellSchedule', streamSiren.bellSchedule);
+            }
+            if (Array.isArray(streamSiren.recordedAudioList)) {
+              upsertSettingEntry('recordedAudioList', streamSiren.recordedAudioList);
+            }
+            if (streamSiren.acousticVolume !== undefined) {
+              upsertSettingEntry('acousticVolume', Number(streamSiren.acousticVolume));
+            }
+            if (Array.isArray(streamSiren.sirenLogs)) {
+              upsertSettingEntry('sirenLogs', streamSiren.sirenLogs);
+            }
+            data.settings = existingSettings;
+          }
         } catch {}
       }
 
@@ -1265,14 +1409,14 @@ async function pushData(data: any, targetSchoolId?: string | null) {
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
         "promotionHistory", "inventory", "expenses", "licenses", "schools",
-        "lessonNotes"
+        "lessonNotes", "feeTransactions"
       ];
 
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings",
         "examAnalysis", "promotionHistory", "inventory", "expenses",
-        "lessonNotes"
+        "lessonNotes", "feeTransactions", "smsLogs"
       ]);
 
       const tableMap: Record<string, string> = {
@@ -1280,7 +1424,8 @@ async function pushData(data: any, targetSchoolId?: string | null) {
         examAnalysis: 'exam_analysis',
         smsLogs: 'sms_logs',
         promotionHistory: 'promotion_history',
-        lessonNotes: 'lesson_notes'
+        lessonNotes: 'lesson_notes',
+        feeTransactions: 'fee_transactions'
       };
 
       for (const table of tableKeys) {
@@ -1403,6 +1548,101 @@ async function pushData(data: any, targetSchoolId?: string | null) {
                 .upsert(coreResults, { onConflict: 'school_id,student_id,subject,term' });
             }
           } catch (e) {}
+        } else if (table === 'feeTransactions') {
+          const formattedTx = records
+            .map((r: any) => {
+              const norm = normalizeServerFeeTransactionRecord(r, resolvedSchoolId);
+              if (!norm.studentId || !(norm.amount > 0)) return null;
+              return {
+                school_id: resolvedSchoolId,
+                receipt_number: norm.receiptNumber,
+                student_id: norm.studentId,
+                fee_type: norm.feeType || 'Automatic Allocation',
+                amount: norm.amount,
+                payment_method: norm.paymentMethod,
+                transaction_reference: norm.transactionReference || norm.receiptNumber,
+                received_by: norm.receivedBy || 'Bursary Office',
+                notes: norm.notes || null,
+                date: norm.date
+              };
+            })
+            .filter(Boolean);
+          if (formattedTx.length > 0) {
+            try {
+              await adminClient.from('fee_transactions').upsert(formattedTx, { onConflict: 'school_id,receipt_number' });
+            } catch (e) {}
+          }
+        } else if (table === 'smsLogs') {
+          const formattedLogs = records
+            .map((r: any) => ({
+              school_id: resolvedSchoolId,
+              recipient_name: r.recipientName || r.recipient_name || 'Parent',
+              recipient_phone: String(r.recipientPhone || r.recipient_phone || '0000000000').trim(),
+              recipient_type: r.recipientType || r.recipient_type || 'Parent',
+              message: String(r.message || '').trim(),
+              type: r.type || 'Fee Reminder',
+              status: r.status || 'Sent',
+              created_at: Number(r.createdAt ?? r.created_at ?? Date.now()) || Date.now()
+            }))
+            .filter((r: any) => r.message && r.recipient_phone);
+          if (formattedLogs.length > 0) {
+            try {
+              await adminClient.from('sms_logs').insert(formattedLogs);
+            } catch (e) {}
+          }
+        } else if (table === 'settings') {
+          // Persist Siren Console settings into public.school_settings.streams.siren_console as well
+          if (resolvedSchoolId && Array.isArray(records) && records.length > 0) {
+            try {
+              const sirenKeys = new Set(['activeSirenBroadcast', 'bellSchedule', 'recordedAudioList', 'acousticVolume', 'sirenLogs', 'isGloballyMuted']);
+              const sirenPatch: Record<string, any> = {};
+              for (const rec of records) {
+                if (rec && sirenKeys.has(String(rec.key))) {
+                  sirenPatch[String(rec.key)] = rec.value;
+                }
+              }
+              if (Object.keys(sirenPatch).length > 0) {
+                const { data: existingSet } = await adminClient
+                  .from('school_settings')
+                  .select('*')
+                  .eq('school_id', resolvedSchoolId)
+                  .limit(1)
+                  .maybeSingle();
+                const prevStreams = (existingSet?.streams && typeof existingSet.streams === 'object' && !Array.isArray(existingSet.streams))
+                  ? existingSet.streams
+                  : {};
+                const prevSiren = (prevStreams as any).siren_console && typeof (prevStreams as any).siren_console === 'object'
+                  ? (prevStreams as any).siren_console
+                  : {};
+                const nextStreams = {
+                  ...prevStreams,
+                  siren_console: {
+                    ...prevSiren,
+                    ...sirenPatch,
+                    updatedAt: Date.now()
+                  }
+                };
+                await adminClient.from('school_settings').upsert([{
+                  school_id: resolvedSchoolId,
+                  grade_boundaries: existingSet?.grade_boundaries || [],
+                  terms: existingSet?.terms || [],
+                  streams: nextStreams,
+                  updated_at: Date.now()
+                }], { onConflict: 'school_id' });
+              }
+            } catch {}
+          }
+          // Generic settings upsert fallback
+          const genericRecords = records.map((r: any) => {
+            const item = { ...r };
+            if (resolvedSchoolId) item.school_id = item.school_id || resolvedSchoolId;
+            delete item.schoolId;
+            return item;
+          });
+          for (let i = 0; i < genericRecords.length; i += 100) {
+            const chunk = genericRecords.slice(i, i + 100);
+            try { await adminClient.from(targetTable).upsert(chunk); } catch {}
+          }
         } else {
           // Generic batch upsert
           const genericRecords = records.map((r: any) => {
@@ -14429,7 +14669,9 @@ async function doStartServer() {
     }
 
     // Remove any orphaned timetable_periods rows that are not linked to an active timetable_entries row
+    // while preserving break/recess/bell periods (is_break = true or name starting with 'BELL:')
     const orphanPeriodIds = (periodsRes.data || [])
+      .filter((p: any) => !p?.is_break && !String(p?.name || '').startsWith('BELL:'))
       .map((p: any) => Number(p.id))
       .filter((pid: number) => !claimedPeriodIds.has(pid));
 
@@ -14754,11 +14996,14 @@ async function doStartServer() {
     await writeTimetableMetadataToSchoolSettings(schoolId, { suggestions: remaining });
   }
 
-  // GET /api/timetable - Fetch all timetable slots, suggestions, periods, classes, subjects, and teachers from Supabase
+  // GET /api/timetable - Fetch all timetable slots, suggestions, periods, classes, subjects, teachers, and linked period bells from Supabase
   app.get("/api/timetable", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveTimetableSchoolId(req);
-      const { slots, suggestions, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [{ slots, suggestions, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.json({
         success: true,
         schoolId,
@@ -14767,14 +15012,15 @@ async function doStartServer() {
         periods,
         classes,
         subjects,
-        teachers
+        teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  // POST /api/timetable/sync - Auto-migrate existing local slots & suggestions to Supabase and return merged list
+  // POST /api/timetable/sync - Auto-migrate existing local slots & suggestions to Supabase and return merged list + synced period bells
   app.post("/api/timetable/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
@@ -14794,7 +15040,10 @@ async function doStartServer() {
         }
       }
 
-      const { slots, suggestions, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [{ slots, suggestions, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.json({
         success: true,
         schoolId,
@@ -14803,14 +15052,15 @@ async function doStartServer() {
         periods,
         classes,
         subjects,
-        teachers
+        teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  // POST /api/timetable/slots - Create a new timetable slot in Supabase (timetable_periods + timetable_entries)
+  // POST /api/timetable/slots - Create a new timetable slot in Supabase and auto-sync Period Bell Timetable
   app.post("/api/timetable/slots", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
@@ -14827,7 +15077,10 @@ async function doStartServer() {
       }
 
       const savedSlot = await upsertTimetableSlotInSupabase(schoolId, raw);
-      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [{ slots, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.status(201).json({
         success: true,
         schoolId,
@@ -14837,14 +15090,15 @@ async function doStartServer() {
         periods,
         classes,
         subjects,
-        teachers
+        teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  // PUT /api/timetable/slots/:id - Update an existing timetable slot in Supabase
+  // PUT /api/timetable/slots/:id - Update an existing timetable slot in Supabase and auto-sync Period Bell Timetable
   app.put("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
@@ -14853,7 +15107,10 @@ async function doStartServer() {
       const raw = { ...req.body, id: slotId, slotId };
 
       const updatedSlot = await upsertTimetableSlotInSupabase(schoolId, raw);
-      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [{ slots, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.json({
         success: true,
         schoolId,
@@ -14863,14 +15120,15 @@ async function doStartServer() {
         periods,
         classes,
         subjects,
-        teachers
+        teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  // DELETE /api/timetable/slots/:id - Delete a timetable slot from Supabase
+  // DELETE /api/timetable/slots/:id - Delete a timetable slot from Supabase and auto-sync Period Bell Timetable
   app.delete("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
@@ -14878,7 +15136,10 @@ async function doStartServer() {
       const slotId = String(req.params.id || '').trim();
 
       await deleteTimetableSlotFromSupabase(schoolId, slotId);
-      const { slots, periods, classes, subjects, teachers } = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [{ slots, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.json({
         success: true,
         schoolId,
@@ -14887,7 +15148,8 @@ async function doStartServer() {
         periods,
         classes,
         subjects,
-        teachers
+        teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -14963,7 +15225,10 @@ async function doStartServer() {
         });
       }
 
-      const refreshed = await fetchSchoolTimetableFromSupabase(schoolId);
+      const [refreshed, bellReconciled] = await Promise.all([
+        fetchSchoolTimetableFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }).catch(() => ({ bellSchedule: [] }))
+      ]);
       return res.json({
         success: true,
         schoolId,
@@ -14976,7 +15241,8 @@ async function doStartServer() {
         periods: refreshed.periods,
         classes: refreshed.classes,
         subjects: refreshed.subjects,
-        teachers: refreshed.teachers
+        teachers: refreshed.teachers,
+        bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -17445,6 +17711,855 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
+  // ============================================================================
+  // FEES & PAYMENT LEDGER SUPABASE ENDPOINTS (/api/fees/*)
+  // ============================================================================
+  async function readFeeTransactionsFromSchoolSettings(schoolId: string): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data } = await adminClient
+        .from('school_settings')
+        .select('streams')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+      if (data?.streams && typeof data.streams === 'object' && !Array.isArray(data.streams)) {
+        const list = (data.streams as any).fee_transactions;
+        if (Array.isArray(list)) {
+          return list.map(item => normalizeServerFeeTransactionRecord(item, schoolId));
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  async function writeFeeTransactionsToSchoolSettings(schoolId: string, incomingTx: any[]): Promise<void> {
+    if (!schoolId || !Array.isArray(incomingTx) || incomingTx.length === 0) return;
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams = existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams)
+        ? existing.streams
+        : {};
+      const prevTx: any[] = Array.isArray((existingStreams as any).fee_transactions)
+        ? (existingStreams as any).fee_transactions
+        : [];
+
+      const txMap = new Map<string, any>();
+      for (const tx of prevTx) {
+        const norm = normalizeServerFeeTransactionRecord(tx, schoolId);
+        const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+        if (rcp) txMap.set(rcp, norm);
+      }
+      for (const tx of incomingTx) {
+        const norm = normalizeServerFeeTransactionRecord(tx, schoolId);
+        const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+        if (rcp) txMap.set(rcp, norm);
+      }
+
+      const mergedList = Array.from(txMap.values())
+        .sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
+        .slice(0, 1000);
+
+      const nextStreams = {
+        ...existingStreams,
+        fee_transactions: mergedList
+      };
+
+      await adminClient
+        .from('school_settings')
+        .upsert([{
+          school_id: schoolId,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: nextStreams,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
+    } catch (err) {
+      console.warn('Notice saving fee_transactions to school_settings in Supabase:', err);
+    }
+  }
+
+  async function fetchSchoolFeeTransactionsFromSupabase(schoolId: string, studentIdFilter?: string): Promise<any[]> {
+    if (!schoolId) return [];
+    const adminClient = getSupabaseAdmin();
+    const [tableQuery, streamTx, fallbackTx] = await Promise.all([
+      (async () => {
+        try {
+          let q = adminClient.from('fee_transactions').select('*').eq('school_id', schoolId);
+          if (studentIdFilter) q = q.eq('student_id', studentIdFilter);
+          const { data, error } = await q.order('date', { ascending: false });
+          if (!error && Array.isArray(data)) return data;
+        } catch {}
+        return [];
+      })(),
+      readFeeTransactionsFromSchoolSettings(schoolId),
+      Promise.resolve(getFromFallback('feeTransactions', schoolId))
+    ]);
+
+    const txMap = new Map<string, any>();
+    for (const item of [...fallbackTx, ...streamTx, ...tableQuery]) {
+      if (!item) continue;
+      const norm = normalizeServerFeeTransactionRecord(item, schoolId);
+      if (!norm.studentId || !(norm.amount > 0)) continue;
+      if (studentIdFilter && String(norm.studentId).toLowerCase() !== String(studentIdFilter).toLowerCase()) continue;
+      const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+      if (!rcp) continue;
+      const prev = txMap.get(rcp);
+      txMap.set(rcp, prev ? { ...prev, ...norm, id: norm.id ?? prev.id } : norm);
+    }
+
+    return Array.from(txMap.values()).sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
+  }
+
+  async function upsertFeeStructureInSupabase(
+    schoolId: string,
+    params: {
+      name?: string;
+      className?: string;
+      term?: string;
+      academicYear?: string;
+      items: Array<{ id: string; label: string; amount: number }>;
+      total?: number;
+    }
+  ): Promise<any | null> {
+    if (!schoolId) return null;
+    const adminClient = getSupabaseAdmin();
+    const className = String(params.className || 'All').trim() || 'All';
+    const term = String(params.term || 'Term 1').trim() || 'Term 1';
+    const academicYear = String(params.academicYear || '2025/2026').trim() || '2025/2026';
+    const items = Array.isArray(params.items) ? params.items : [];
+    const total = params.total !== undefined
+      ? Number(params.total)
+      : items.reduce((acc, item) => acc + (Number(item.amount) || 0), 0);
+    const name = String(
+      params.name || `${className === 'All' ? 'All Classes' : className} - ${term} (${academicYear})`
+    ).trim();
+
+    try {
+      const { data: existing } = await adminClient
+        .from('fee_structures')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('class_name', className)
+        .eq('term', term)
+        .eq('academic_year', academicYear)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        const { data: updated, error } = await adminClient
+          .from('fee_structures')
+          .update({
+            name,
+            items,
+            total
+          })
+          .eq('id', existing.id)
+          .select()
+          .maybeSingle();
+        if (!error && updated) return updated;
+        return existing;
+      }
+
+      const { data: inserted, error } = await adminClient
+        .from('fee_structures')
+        .insert([{
+          school_id: schoolId,
+          name,
+          class_name: className,
+          term,
+          academic_year: academicYear,
+          items,
+          total,
+          created_at: Date.now()
+        }])
+        .select()
+        .maybeSingle();
+      if (!error && inserted) return inserted;
+    } catch (err) {
+      console.warn('Notice upserting fee_structures in Supabase:', err);
+    }
+    return null;
+  }
+
+  async function upsertStudentInvoiceInSupabase(
+    schoolId: string,
+    params: {
+      studentId: string;
+      feeStructureId?: number | null;
+      term?: string;
+      academicYear?: string;
+      amountDue: number;
+      amountPaid: number;
+      dueDate?: number | null;
+    }
+  ): Promise<any | null> {
+    if (!schoolId || !params.studentId) return null;
+    const adminClient = getSupabaseAdmin();
+    const term = String(params.term || 'Term 1').trim() || 'Term 1';
+    const academicYear = String(params.academicYear || '2025/2026').trim() || '2025/2026';
+    const amountDue = Math.max(0, Number(params.amountDue) || 0);
+    const amountPaid = Math.max(0, Number(params.amountPaid) || 0);
+    const status = amountDue > 0 && amountPaid >= amountDue
+      ? 'paid'
+      : amountPaid > 0
+      ? 'partial'
+      : 'unpaid';
+
+    try {
+      const { data: existing } = await adminClient
+        .from('invoices')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('student_id', params.studentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        const updatePayload: any = {
+          amount_due: amountDue,
+          amount_paid: amountPaid,
+          status,
+          term,
+          academic_year: academicYear
+        };
+        if (params.feeStructureId) {
+          updatePayload.fee_structure_id = params.feeStructureId;
+        }
+        const { data: updated, error } = await adminClient
+          .from('invoices')
+          .update(updatePayload)
+          .eq('id', existing.id)
+          .select()
+          .maybeSingle();
+        if (!error && updated) return updated;
+        return existing;
+      }
+
+      const cleanStuCode = params.studentId.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const cleanTerm = term.replace(/[^A-Z0-9]/gi, '').toUpperCase() || 'T1';
+      const invoiceNumber = `INV-${cleanStuCode}-${cleanTerm}-${Math.floor(100 + Math.random() * 900)}`;
+
+      const { data: inserted, error } = await adminClient
+        .from('invoices')
+        .insert([{
+          school_id: schoolId,
+          invoice_number: invoiceNumber,
+          student_id: params.studentId,
+          fee_structure_id: params.feeStructureId || null,
+          term,
+          academic_year: academicYear,
+          amount_due: amountDue,
+          amount_paid: amountPaid,
+          status,
+          due_date: params.dueDate || (Date.now() + 30 * 24 * 60 * 60 * 1000),
+          created_at: Date.now()
+        }])
+        .select()
+        .maybeSingle();
+      if (!error && inserted) return inserted;
+    } catch (err) {
+      console.warn('Notice upserting student invoice in Supabase:', err);
+    }
+    return null;
+  }
+
+  // GET /api/fees/structures - Fetch fee_structures and invoices from Supabase (auto-initializing from active students if empty)
+  app.get("/api/fees/structures", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.json({ success: true, schoolId: null, feeStructures: [], invoices: [] });
+      }
+      const adminClient = getSupabaseAdmin();
+      let [structuresRes, invoicesRes] = await Promise.all([
+        adminClient.from('fee_structures').select('*').eq('school_id', schoolId).order('created_at', { ascending: false }),
+        adminClient.from('invoices').select('*').eq('school_id', schoolId).order('created_at', { ascending: false })
+      ]);
+
+      let feeStructures = Array.isArray(structuresRes.data) ? structuresRes.data : [];
+      let invoices = Array.isArray(invoicesRes.data) ? invoicesRes.data : [];
+
+      // Auto-bootstrap fee_structures and invoices from existing students if empty
+      if (feeStructures.length === 0) {
+        const { data: existingStudents } = await adminClient
+          .from('students')
+          .select('*')
+          .eq('school_id', schoolId);
+
+        if (Array.isArray(existingStudents) && existingStudents.length > 0) {
+          const classGroups = new Map<string, any[]>();
+          for (const stu of existingStudents) {
+            const cls = String(stu.class || 'All').trim() || 'All';
+            if (!classGroups.has(cls)) classGroups.set(cls, []);
+            classGroups.get(cls)!.push(stu);
+          }
+
+          const labelLookup: Record<string, string> = {
+            tuition: 'Tuition Fee',
+            admission: 'Admission Fee',
+            ict: 'ICT & Lab Fee',
+            library: 'Library Fee',
+            pta: 'PTA Levy',
+            exam: 'Examination Fee',
+            sports: 'Sports & Games',
+            canteen: 'Canteen / Dining',
+            transportation: 'Transportation / Bus',
+            utility: 'Utility & Maintenance'
+          };
+
+          for (const [clsName, stuList] of classGroups.entries()) {
+            const sampleBreakdown = stuList[0]?.fee_breakdown && typeof stuList[0].fee_breakdown === 'object'
+              ? stuList[0].fee_breakdown
+              : { tuition: Number(stuList[0]?.total_fees || 1000) };
+            const items = Object.entries(sampleBreakdown).map(([id, amt]) => ({
+              id,
+              label: labelLookup[id] || id.toUpperCase(),
+              amount: Number(amt) || 0
+            }));
+            const total = items.reduce((acc, i) => acc + i.amount, 0);
+            const createdFs = await upsertFeeStructureInSupabase(schoolId, {
+              name: `${clsName} Standard Fee Structure`,
+              className: clsName,
+              term: 'Term 1',
+              academicYear: '2025/2026',
+              items,
+              total
+            });
+            if (createdFs) {
+              feeStructures.push(createdFs);
+              for (const stu of stuList) {
+                if (!stu.student_id) continue;
+                const inv = await upsertStudentInvoiceInSupabase(schoolId, {
+                  studentId: stu.student_id,
+                  feeStructureId: createdFs.id,
+                  term: 'Term 1',
+                  academicYear: '2025/2026',
+                  amountDue: Number(stu.total_fees || total),
+                  amountPaid: Number(stu.fees_paid || 0)
+                });
+                if (inv) {
+                  invoices.push(inv);
+                  // Link any existing unlinked fee_transactions for this student to this invoice
+                  await adminClient
+                    .from('fee_transactions')
+                    .update({ invoice_id: inv.id })
+                    .eq('school_id', schoolId)
+                    .eq('student_id', stu.student_id)
+                    .is('invoice_id', null);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        schoolId,
+        feeStructures,
+        invoices,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/fees/structures - Save or update a fee structure in Supabase public.fee_structures
+  app.post("/api/fees/structures", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id." });
+      }
+      const body = req.body || {};
+      const rawItems = Array.isArray(body.items) ? body.items : (Array.isArray(body.feeTypes) ? body.feeTypes : []);
+      const normalizedItems = rawItems.map((item: any) => ({
+        id: String(item.id || item.label || 'fee').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        label: String(item.label || item.name || item.id || 'Fee Component').trim(),
+        amount: Math.max(0, Number(item.amount ?? item.defaultAmount ?? 0) || 0)
+      }));
+      const total = normalizedItems.reduce((acc: number, item: any) => acc + item.amount, 0);
+
+      const savedStructure = await upsertFeeStructureInSupabase(schoolId, {
+        name: body.name,
+        className: body.className || body.class_name || 'All',
+        term: body.term || 'Term 1',
+        academicYear: body.academicYear || body.academic_year || '2025/2026',
+        items: normalizedItems,
+        total
+      });
+
+      const adminClient = getSupabaseAdmin();
+      const { data: allStructures } = await adminClient
+        .from('fee_structures')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        feeStructure: savedStructure,
+        feeStructures: allStructures || (savedStructure ? [savedStructure] : []),
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/fees/structures/:id - Delete a fee structure from public.fee_structures
+  app.delete("/api/fees/structures/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveResultsSchoolId(req);
+      const id = Number(req.params.id);
+      if (!schoolId || isNaN(id)) {
+        return res.status(400).json({ success: false, error: "Valid school_id and structure id are required." });
+      }
+      const adminClient = getSupabaseAdmin();
+      await adminClient.from('invoices').update({ fee_structure_id: null }).eq('school_id', schoolId).eq('fee_structure_id', id);
+      await adminClient.from('fee_structures').delete().eq('school_id', schoolId).eq('id', id);
+      const { data: remaining } = await adminClient
+        .from('fee_structures')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+      return res.json({
+        success: true,
+        feeStructures: remaining || []
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/fees/transactions - Fetch verified fee transactions from Supabase
+  app.get("/api/fees/transactions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveResultsSchoolId(req);
+      const studentId = (req.query.student_id || req.query.studentId)
+        ? String(req.query.student_id || req.query.studentId).trim()
+        : undefined;
+      const transactions = await fetchSchoolFeeTransactionsFromSupabase(schoolId, studentId);
+      return res.json({
+        success: true,
+        schoolId,
+        transactions,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/fees/pay - Atomically record a fee payment in Supabase (public.fee_transactions + public.students + public.invoices + public.sms_logs)
+  app.post("/api/fees/pay", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const adminClient = getSupabaseAdmin();
+      const body = req.body || {};
+      const studentId = String(body.studentId || body.student_id || '').trim();
+      const numericId = body.studentNumericId ?? body.id;
+      const amount = Number(body.amount);
+
+      if (!studentId && (numericId === undefined || numericId === null)) {
+        return res.status(400).json({ success: false, error: "Student identifier is required to record payment." });
+      }
+      if (isNaN(amount) || amount <= 0) {
+        return res.status(400).json({ success: false, error: "Payment amount must be greater than zero." });
+      }
+
+      let schoolId = await resolveResultsSchoolId(req);
+
+      // 1. Locate the student record in Supabase by (school_id, student_id) or numeric id
+      let existingStudent: any = null;
+      if (studentId) {
+        try {
+          let q = adminClient.from('students').select('*').eq('student_id', studentId);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data } = await q.limit(1).maybeSingle();
+          if (data) existingStudent = data;
+        } catch {}
+      }
+      if (!existingStudent && numericId != null && !isNaN(Number(numericId))) {
+        try {
+          const { data } = await adminClient.from('students').select('*').eq('id', Number(numericId)).limit(1).maybeSingle();
+          if (data) existingStudent = data;
+        } catch {}
+      }
+      if (!existingStudent && studentId) {
+        try {
+          const { data } = await adminClient.from('students').select('*').eq('student_id', studentId).limit(1).maybeSingle();
+          if (data) existingStudent = data;
+        } catch {}
+      }
+
+      if (existingStudent?.school_id && !schoolId) {
+        schoolId = String(existingStudent.school_id);
+      }
+
+      const normStudent = normalizeServerStudentRecord(existingStudent || {
+        id: numericId,
+        studentId: studentId || `STU-${Date.now().toString().slice(-6)}`,
+        firstName: body.studentFirstName || body.studentName?.split(' ')[0] || 'Student',
+        lastName: body.studentLastName || body.studentName?.split(' ').slice(1).join(' ') || '',
+        class: body.className || body.class || 'P1',
+        feesPaid: Number(body.previousFeesPaid ?? 0),
+        totalFees: Number(body.totalFees ?? 0),
+        feeBreakdown: body.feeBreakdown || {},
+        feePaidBreakdown: body.previousFeePaidBreakdown || {},
+        school_id: schoolId
+      });
+
+      const canonicalStudentId = normStudent.studentId;
+      const newFeesPaid = body.newFeesPaid !== undefined
+        ? Number(body.newFeesPaid)
+        : Number(normStudent.feesPaid || 0) + amount;
+      const updatedPaidBreakdown = (body.feePaidBreakdown && typeof body.feePaidBreakdown === 'object')
+        ? body.feePaidBreakdown
+        : { ...(normStudent.feePaidBreakdown || {}), tuition: newFeesPaid };
+      const updatedFeeBreakdown = (body.feeBreakdown && typeof body.feeBreakdown === 'object' && Object.keys(body.feeBreakdown).length > 0)
+        ? body.feeBreakdown
+        : (normStudent.feeBreakdown || {});
+      const updatedTotalFees = body.totalFees !== undefined
+        ? Number(body.totalFees)
+        : Number(normStudent.totalFees || 0);
+
+      // 2. Update student balances in Supabase public.students
+      let updatedStudentRow: any = null;
+      const studentUpdatePayload: any = {
+        fees_paid: newFeesPaid,
+        fee_paid_breakdown: updatedPaidBreakdown,
+        updated_at: Date.now()
+      };
+      if (Object.keys(updatedFeeBreakdown).length > 0) {
+        studentUpdatePayload.fee_breakdown = updatedFeeBreakdown;
+      }
+      if (updatedTotalFees > 0) {
+        studentUpdatePayload.total_fees = updatedTotalFees;
+      }
+
+      if (existingStudent?.id != null) {
+        try {
+          const { data, error } = await adminClient
+            .from('students')
+            .update(studentUpdatePayload)
+            .eq('id', existingStudent.id)
+            .select()
+            .maybeSingle();
+          if (!error && data) updatedStudentRow = data;
+        } catch {}
+      }
+
+      if (!updatedStudentRow && canonicalStudentId) {
+        try {
+          let q = adminClient.from('students').update(studentUpdatePayload).eq('student_id', canonicalStudentId);
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
+          if (!error && data) updatedStudentRow = data;
+        } catch {}
+      }
+
+      const finalStudent = normalizeServerStudentRecord(updatedStudentRow || {
+        ...normStudent,
+        feesPaid: newFeesPaid,
+        fees_paid: newFeesPaid,
+        totalFees: updatedTotalFees,
+        total_fees: updatedTotalFees,
+        feeBreakdown: updatedFeeBreakdown,
+        fee_breakdown: updatedFeeBreakdown,
+        feePaidBreakdown: updatedPaidBreakdown,
+        fee_paid_breakdown: updatedPaidBreakdown,
+        school_id: schoolId
+      });
+      saveToFallback('students', finalStudent);
+
+      // 2b. Sync or create student's invoice in public.invoices so fee_transactions.invoice_id is linked
+      const term = String(body.term || 'Term 1').trim() || 'Term 1';
+      const academicYear = String(body.academicYear || body.academic_year || '2025/2026').trim() || '2025/2026';
+      let linkedInvoice: any = null;
+      if (schoolId && canonicalStudentId) {
+        linkedInvoice = await upsertStudentInvoiceInSupabase(schoolId, {
+          studentId: canonicalStudentId,
+          term,
+          academicYear,
+          amountDue: Number(finalStudent.totalFees || 0),
+          amountPaid: Number(finalStudent.feesPaid || 0)
+        });
+      }
+
+      // 3. Prepare and insert canonical transaction in public.fee_transactions
+      const now = Number(body.date) || Date.now();
+      let baseReceipt = String(body.receiptNumber || body.receipt_number || body.ref || `RCP-${Math.floor(100000 + Math.random() * 900000)}`).trim();
+      const normalizedMethod = normalizeServerFeePaymentMethod(body.paymentMethod || body.payment_method || body.method || body.channelLabel);
+      const feeTypeLabel = String(body.feeType || body.fee_type || 'Automatic Allocation').trim();
+      const channelLabel = String(body.channelLabel || body.method || normalizedMethod).trim();
+      const recipientPhone = String(body.recipientPhone || body.phone || finalStudent.guardianPhone || '').trim();
+      const receivedBy = String(body.receivedBy || body.received_by || req.user?.username || 'Bursary Office').trim();
+      const studentFullName = `${finalStudent.firstName} ${finalStudent.lastName}`.trim();
+
+      const notesPayload = JSON.stringify({
+        channelLabel,
+        phone: recipientPhone,
+        studentName: studentFullName,
+        className: finalStudent.class,
+        academicYear,
+        term,
+        invoiceId: linkedInvoice?.id || null,
+        allocationBreakdown: updatedPaidBreakdown
+      });
+
+      let insertedTx: any = null;
+      let finalReceiptNumber = baseReceipt;
+
+      if (schoolId) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const candidateReceipt = attempt === 0
+            ? baseReceipt
+            : `${baseReceipt}-${Math.floor(10 + Math.random() * 89)}`;
+          try {
+            const dbRow: any = {
+              school_id: schoolId,
+              receipt_number: candidateReceipt,
+              student_id: canonicalStudentId,
+              fee_type: feeTypeLabel,
+              amount,
+              payment_method: normalizedMethod,
+              transaction_reference: String(body.transactionReference || body.transaction_reference || candidateReceipt).trim(),
+              received_by: receivedBy,
+              notes: notesPayload,
+              date: now
+            };
+            if (linkedInvoice?.id) {
+              dbRow.invoice_id = linkedInvoice.id;
+            }
+            const { data, error } = await adminClient
+              .from('fee_transactions')
+              .upsert([dbRow], { onConflict: 'school_id,receipt_number' })
+              .select()
+              .maybeSingle();
+            if (!error && data) {
+              insertedTx = data;
+              finalReceiptNumber = candidateReceipt;
+              break;
+            } else if (error && !String(error.message || '').toLowerCase().includes('duplicate')) {
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      const normalizedTx = normalizeServerFeeTransactionRecord(
+        insertedTx || {
+          id: Date.now(),
+          school_id: schoolId,
+          receipt_number: finalReceiptNumber,
+          student_id: canonicalStudentId,
+          studentName: studentFullName,
+          className: finalStudent.class,
+          fee_type: feeTypeLabel,
+          amount,
+          payment_method: normalizedMethod,
+          channelLabel,
+          transaction_reference: String(body.transactionReference || finalReceiptNumber).trim(),
+          received_by: receivedBy,
+          recipientPhone,
+          allocationBreakdown: updatedPaidBreakdown,
+          notes: notesPayload,
+          date: now,
+          invoice_id: linkedInvoice?.id || null
+        },
+        schoolId
+      );
+
+      saveToFallback('feeTransactions', normalizedTx);
+      if (schoolId) {
+        await writeFeeTransactionsToSchoolSettings(schoolId, [normalizedTx]);
+      }
+
+      // 4. Also record payment notification in public.sms_logs for audit & parent SMS history
+      const outstandingBalance = Math.max(0, finalStudent.totalFees - finalStudent.feesPaid);
+      const smsMessage = `School Fees Payment Alert: GHS ${amount.toFixed(2)} received via ${channelLabel} for ${studentFullName}. Ref: ${finalReceiptNumber}. New Outstanding Balance: GHS ${outstandingBalance.toFixed(2)}. Thank you!`;
+      const smsRecord = {
+        school_id: schoolId || null,
+        recipient_name: finalStudent.guardianName || studentFullName,
+        recipient_phone: recipientPhone || '0240000000',
+        recipient_type: 'Parent',
+        message: smsMessage,
+        type: 'Fee Reminder',
+        status: 'Sent',
+        created_at: now
+      };
+      try {
+        if (schoolId) {
+          await adminClient.from('sms_logs').insert([smsRecord]);
+        }
+      } catch {}
+      saveToFallback('smsLogs', smsRecord);
+
+      invalidateDbCache();
+      const allTransactions = schoolId ? await fetchSchoolFeeTransactionsFromSupabase(schoolId) : [normalizedTx];
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        receiptNumber: finalReceiptNumber,
+        transaction: normalizedTx,
+        invoice: linkedInvoice,
+        student: finalStudent,
+        smsLog: smsRecord,
+        transactions: allTransactions,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/fees/batch-bill - Save fee_structure in public.fee_structures and bill students + public.invoices in Supabase
+  app.post("/api/fees/batch-bill", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (userRole === 'student' || userRole === 'parent') {
+        return res.status(403).json({ success: false, error: "Only school administrators or accountants can execute batch class billing." });
+      }
+
+      const schoolId = await resolveResultsSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for batch billing." });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const body = req.body || {};
+      const targetClass = String(body.targetClass || body.class || 'All').trim();
+      const term = String(body.term || 'Term 1').trim() || 'Term 1';
+      const academicYear = String(body.academicYear || body.academic_year || '2025/2026').trim() || '2025/2026';
+      const mode: 'replace' | 'merge' = body.mode === 'merge' ? 'merge' : 'replace';
+      const rawBreakdown = body.feeBreakdown || body.fee_breakdown || {};
+      const cleanBreakdown: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rawBreakdown)) {
+        const num = Math.max(0, Number(v) || 0);
+        if (num > 0) cleanBreakdown[k] = num;
+      }
+
+      if (Object.keys(cleanBreakdown).length === 0) {
+        return res.status(400).json({ success: false, error: "Please specify at least one fee component with a positive amount." });
+      }
+
+      // 1. Upsert the class/term fee structure in public.fee_structures
+      const labelLookup: Record<string, string> = {
+        tuition: 'Tuition Fee',
+        admission: 'Admission Fee',
+        ict: 'ICT & Lab Fee',
+        library: 'Library Fee',
+        pta: 'PTA Levy',
+        exam: 'Examination Fee',
+        sports: 'Sports & Games',
+        canteen: 'Canteen / Dining',
+        transportation: 'Transportation / Bus',
+        utility: 'Utility & Maintenance'
+      };
+      const structureItems = Object.entries(cleanBreakdown).map(([id, amount]) => ({
+        id,
+        label: labelLookup[id] || id.toUpperCase(),
+        amount
+      }));
+      const savedStructure = await upsertFeeStructureInSupabase(schoolId, {
+        name: `${targetClass === 'All' ? 'All Classes' : targetClass} - ${term} (${academicYear})`,
+        className: targetClass || 'All',
+        term,
+        academicYear,
+        items: structureItems
+      });
+
+      // 2. Query matching students in public.students
+      let query = adminClient.from('students').select('*').eq('school_id', schoolId);
+      if (targetClass && targetClass !== 'All' && targetClass !== 'ALL') {
+        query = query.eq('class', targetClass);
+      }
+      const { data: existingRows } = await query;
+      const studentsToUpdate = Array.isArray(existingRows) ? existingRows : [];
+
+      const updatedStudents: any[] = [];
+      const updatedInvoices: any[] = [];
+      for (const stu of studentsToUpdate) {
+        const norm = normalizeServerStudentRecord(stu);
+        const nextBreakdown: Record<string, number> = mode === 'merge'
+          ? { ...(norm.feeBreakdown || {}), ...cleanBreakdown }
+          : { ...cleanBreakdown };
+        const nextTotal = Object.values(nextBreakdown).reduce((acc, val) => acc + (Number(val) || 0), 0);
+
+        let savedRow: any = null;
+        try {
+          const { data, error } = await adminClient
+            .from('students')
+            .update({
+              fee_breakdown: nextBreakdown,
+              total_fees: nextTotal,
+              updated_at: Date.now()
+            })
+            .eq('id', stu.id)
+            .select()
+            .maybeSingle();
+          if (!error && data) savedRow = data;
+        } catch {}
+
+        const finalStu = normalizeServerStudentRecord(savedRow || {
+          ...norm,
+          feeBreakdown: nextBreakdown,
+          fee_breakdown: nextBreakdown,
+          totalFees: nextTotal,
+          total_fees: nextTotal
+        });
+        saveToFallback('students', finalStu);
+        updatedStudents.push(finalStu);
+
+        // 3. Upsert student's invoice in public.invoices linked to savedStructure.id
+        if (finalStu.studentId) {
+          const inv = await upsertStudentInvoiceInSupabase(schoolId, {
+            studentId: finalStu.studentId,
+            feeStructureId: savedStructure?.id || null,
+            term,
+            academicYear,
+            amountDue: nextTotal,
+            amountPaid: Number(finalStu.feesPaid || 0)
+          });
+          if (inv) updatedInvoices.push(inv);
+        }
+      }
+
+      invalidateDbCache();
+      return res.json({
+        success: true,
+        schoolId,
+        targetClass,
+        feeStructure: savedStructure,
+        invoicesCount: updatedInvoices.length,
+        updatedCount: updatedStudents.length,
+        students: updatedStudents,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Check Arkesel Bulk SMS configuration status on server
   app.get("/api/sms/config", (req, res) => {
     let apiKey = (process.env.ARKESEL_API_KEY || "").trim();
@@ -17723,6 +18838,5278 @@ NOTIFY pgrst, 'reload schema';`;
       }
     } catch (err: any) {
       console.error("[Arkesel Proxy] Error dispatching to Arkesel:", err);
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // ============================================================================
+  // CAMPUS-WIDE SIREN & BROADCAST CONSOLE SUPABASE ENDPOINTS
+  // ============================================================================
+  const SIREN_AUDIO_STORAGE_BUCKET = 'siren-audio';
+
+  const DEFAULT_SERVER_BELL_SCHEDULE = [
+    { id: 'bell-1', label: 'Morning Assembly & Roll Call', time: '07:30', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-2', label: 'First Period Start', time: '08:00', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-3', label: 'Morning Snack / Short Break', time: '10:00', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-4', label: 'Resume Classes (Post-Break)', time: '10:30', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-5', label: 'Lunch Break & Recreation', time: '12:30', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-6', label: 'Afternoon Session Resumption', time: '13:30', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'bell', enabled: true },
+    { id: 'bell-7', label: 'School Closing & Dismissal', time: '15:30', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], alarmType: 'allclear', enabled: true }
+  ];
+
+  let sirenBucketVerified = false;
+  async function ensureSirenAudioStorageBucket(): Promise<boolean> {
+    if (sirenBucketVerified) return true;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: buckets, error: listErr } = await adminClient.storage.listBuckets();
+      if (!listErr && Array.isArray(buckets)) {
+        const exists = buckets.some((b: any) => b.name === SIREN_AUDIO_STORAGE_BUCKET || b.id === SIREN_AUDIO_STORAGE_BUCKET);
+        if (exists) {
+          sirenBucketVerified = true;
+          return true;
+        }
+      }
+      const { error: createErr } = await adminClient.storage.createBucket(SIREN_AUDIO_STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: 15 * 1024 * 1024
+      });
+      if (!createErr || String(createErr.message || '').toLowerCase().includes('already exists')) {
+        sirenBucketVerified = true;
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  async function uploadSirenAudioToStorage(params: {
+    schoolId: string;
+    recordingId: string;
+    name: string;
+    base64: string;
+    mimeType?: string;
+  }): Promise<{ audioUrl?: string; storagePath?: string; size?: number } | null> {
+    const rawData = String(params.base64 || '').trim();
+    if (!rawData) return null;
+    if (/^https?:\/\//i.test(rawData)) {
+      return { audioUrl: rawData };
+    }
+
+    const bucketReady = await ensureSirenAudioStorageBucket();
+    if (!bucketReady) return null;
+
+    let detectedMime = params.mimeType || 'audio/webm';
+    let base64Body = rawData;
+    const match = rawData.match(/^data:([^;]+);base64,(.+)$/i);
+    if (match) {
+      detectedMime = match[1] || detectedMime;
+      base64Body = match[2];
+    } else if (rawData.includes(',')) {
+      base64Body = rawData.slice(rawData.indexOf(',') + 1);
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(base64Body, 'base64');
+    } catch {
+      return null;
+    }
+    if (!buffer || buffer.length === 0) return null;
+
+    const ext = detectedMime.includes('mp3') || detectedMime.includes('mpeg')
+      ? 'mp3'
+      : detectedMime.includes('wav')
+      ? 'wav'
+      : detectedMime.includes('ogg')
+      ? 'ogg'
+      : detectedMime.includes('mp4') || detectedMime.includes('m4a')
+      ? 'm4a'
+      : 'webm';
+
+    const cleanSchool = String(params.schoolId || 'school').replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanId = String(params.recordingId || `rec-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '');
+    const storagePath = `${cleanSchool}/${cleanId}.${ext}`;
+
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { error: upErr } = await adminClient.storage
+        .from(SIREN_AUDIO_STORAGE_BUCKET)
+        .upload(storagePath, buffer, {
+          contentType: detectedMime,
+          upsert: true
+        });
+      if (upErr) return null;
+
+      const { data: pubUrlData } = adminClient.storage
+        .from(SIREN_AUDIO_STORAGE_BUCKET)
+        .getPublicUrl(storagePath);
+
+      return {
+        audioUrl: pubUrlData?.publicUrl || undefined,
+        storagePath,
+        size: buffer.length
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveSirenSchoolId(req: any): Promise<string> {
+    const baseResolved = await resolveTimetableSchoolId(req);
+    if (baseResolved) return baseResolved;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: sch } = await adminClient
+        .from('schools')
+        .select('id')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sch?.id) return String(sch.id);
+    } catch {}
+    return '';
+  }
+
+  const SIREN_CONSOLE_DDL_SQL = `-- Campus-Wide Siren & Broadcast Console Tables for Supabase
+CREATE TABLE IF NOT EXISTS public.school_settings (
+  school_id UUID PRIMARY KEY REFERENCES public.schools(id) ON DELETE CASCADE,
+  grade_boundaries JSONB NOT NULL DEFAULT '[]'::jsonb,
+  terms JSONB NOT NULL DEFAULT '[]'::jsonb,
+  streams JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS public.broadcasts (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  type VARCHAR(20) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  message TEXT NULL,
+  triggered_by BIGINT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS public.siren_schedules (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  bell_id VARCHAR(100) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  time VARCHAR(20) NOT NULL,
+  days JSONB NOT NULL DEFAULT '["Monday","Tuesday","Wednesday","Thursday","Friday"]'::jsonb,
+  alarm_type VARCHAR(150) NOT NULL DEFAULT 'bell',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_schedule UNIQUE (school_id, bell_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.siren_recordings (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  recording_id VARCHAR(100) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  audio_url TEXT NULL,
+  storage_path TEXT NULL,
+  mime_type VARCHAR(100) NOT NULL DEFAULT 'audio/webm',
+  size BIGINT NOT NULL DEFAULT 0,
+  base64_data TEXT NULL,
+  created_by VARCHAR(255) NOT NULL DEFAULT 'Administrator',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_recording UNIQUE (school_id, recording_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.siren_logs (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  log_id VARCHAR(100) NOT NULL,
+  type VARCHAR(100) NOT NULL DEFAULT 'bell',
+  label VARCHAR(255) NOT NULL,
+  custom_msg TEXT NULL,
+  is_drill BOOLEAN NOT NULL DEFAULT FALSE,
+  triggered_by VARCHAR(255) NOT NULL DEFAULT 'Administrator',
+  role VARCHAR(50) NOT NULL DEFAULT 'admin',
+  timestamp BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_log UNIQUE (school_id, log_id)
+);
+
+ALTER TABLE public.siren_schedules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_schedules" ON public.siren_schedules;
+CREATE POLICY "Tenant isolation for siren_schedules" ON public.siren_schedules FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.siren_recordings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_recordings" ON public.siren_recordings;
+CREATE POLICY "Tenant isolation for siren_recordings" ON public.siren_recordings FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.siren_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_logs" ON public.siren_logs;
+CREATE POLICY "Tenant isolation for siren_logs" ON public.siren_logs FOR ALL USING (true) WITH CHECK (true);
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('siren-audio', 'siren-audio', true, 15728640)
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = 15728640;
+
+NOTIFY pgrst, 'reload schema';`;
+
+  let sirenPgProvisionAttempted = false;
+  async function tryProvisionSirenDedicatedTablesViaPg(): Promise<{ provisioned: boolean; message?: string }> {
+    const dbUrl = String(process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || '').trim();
+    if (!dbUrl || (!dbUrl.startsWith('postgres://') && !dbUrl.startsWith('postgresql://'))) {
+      return { provisioned: false, message: 'Direct Postgres connection string not configured; using Supabase REST API.' };
+    }
+    try {
+      const pgMod: any = await import('pg');
+      const ClientClass = pgMod.Client || pgMod.default?.Client;
+      if (!ClientClass) return { provisioned: false };
+      const client = new ClientClass({
+        connectionString: dbUrl,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 6000
+      });
+      await client.connect();
+      try {
+        await client.query(SIREN_CONSOLE_DDL_SQL);
+      } finally {
+        await client.end().catch(() => {});
+      }
+      return { provisioned: true, message: 'Dedicated Siren Console tables provisioned in Supabase PostgreSQL.' };
+    } catch (err: any) {
+      return { provisioned: false, message: err?.message || 'Could not run DDL via direct PG connection' };
+    }
+  }
+
+  async function resolveValidSupabaseUserId(schoolId: string, candidateId?: any): Promise<number | null> {
+    if (typeof candidateId === 'number' && candidateId > 0 && candidateId < 1000000000) {
+      try {
+        const adminClient = getSupabaseAdmin();
+        const { data } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('id', candidateId)
+          .limit(1)
+          .maybeSingle();
+        if (data?.id != null) return Number(data.id);
+      } catch {}
+    }
+    if (schoolId) {
+      try {
+        const adminClient = getSupabaseAdmin();
+        const { data } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('school_id', schoolId)
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (data?.id != null) return Number(data.id);
+      } catch {}
+    }
+    return null;
+  }
+
+  interface ServerSirenConsoleState {
+    activeSirenBroadcast: any | null;
+    bellSchedule: any[];
+    recordedAudioList: any[];
+    acousticVolume: number;
+    isGloballyMuted: boolean;
+    sirenLogs: any[];
+    updatedAt: number;
+  }
+
+  async function syncDedicatedSirenTablesInSupabase(
+    schoolId: string,
+    state: ServerSirenConsoleState
+  ): Promise<void> {
+    if (!schoolId) return;
+    const adminClient = getSupabaseAdmin();
+
+    // 1. Sync public.siren_schedules if table exists
+    try {
+      if (Array.isArray(state.bellSchedule) && state.bellSchedule.length > 0) {
+        const scheduleRows = state.bellSchedule.map((b: any) => ({
+          school_id: schoolId,
+          bell_id: String(b.id || `bell-${b.time}`),
+          label: String(b.label || 'Period Bell').slice(0, 255),
+          time: String(b.time || '08:00').slice(0, 20),
+          days: Array.isArray(b.days) ? b.days : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          alarm_type: String(b.alarmType || 'bell').slice(0, 150),
+          enabled: b.enabled !== false,
+          created_at: Number(b.createdAt || Date.now()),
+          updated_at: Date.now()
+        }));
+        await adminClient
+          .from('siren_schedules')
+          .upsert(scheduleRows, { onConflict: 'school_id,bell_id' });
+      }
+    } catch {}
+
+    // 2. Sync public.siren_recordings if table exists
+    try {
+      if (Array.isArray(state.recordedAudioList) && state.recordedAudioList.length > 0) {
+        const recRows = state.recordedAudioList.map((r: any) => ({
+          school_id: schoolId,
+          recording_id: String(r.id || `rec-${Date.now()}`),
+          name: String(r.name || 'Voice Announcement').slice(0, 255),
+          audio_url: r.audioUrl || null,
+          storage_path: r.storagePath || null,
+          mime_type: String(r.mimeType || 'audio/webm').slice(0, 100),
+          size: Number(r.size || 0),
+          base64_data: r.audioUrl ? null : (r.base64 || null),
+          created_by: String(r.createdBy || 'Administrator').slice(0, 255),
+          created_at: Number(r.timestamp || Date.now())
+        }));
+        await adminClient
+          .from('siren_recordings')
+          .upsert(recRows, { onConflict: 'school_id,recording_id' });
+      }
+    } catch {}
+
+    // 3. Sync public.siren_logs if table exists
+    try {
+      if (Array.isArray(state.sirenLogs) && state.sirenLogs.length > 0) {
+        const logRows = state.sirenLogs.slice(0, 100).map((l: any) => ({
+          school_id: schoolId,
+          log_id: String(l.id || `LOG-${l.timestamp || Date.now()}`),
+          type: String(l.type || 'bell').slice(0, 100),
+          label: String(l.label || 'Campus Alert').slice(0, 255),
+          custom_msg: String(l.customMsg || l.msg || 'Standard broadcast triggered.'),
+          is_drill: Boolean(l.isDrill),
+          triggered_by: String(l.triggeredBy || 'Administrator').slice(0, 255),
+          role: String(l.role || 'admin').slice(0, 50),
+          timestamp: Number(l.timestamp || Date.now())
+        }));
+        await adminClient
+          .from('siren_logs')
+          .upsert(logRows, { onConflict: 'school_id,log_id' });
+      }
+    } catch {}
+  }
+
+  async function readSirenConsoleStateFromSupabase(schoolId: string): Promise<ServerSirenConsoleState> {
+    const defaultState: ServerSirenConsoleState = {
+      activeSirenBroadcast: null,
+      bellSchedule: DEFAULT_SERVER_BELL_SCHEDULE,
+      recordedAudioList: [],
+      acousticVolume: 0.5,
+      isGloballyMuted: false,
+      sirenLogs: [],
+      updatedAt: Date.now()
+    };
+    if (!schoolId) return defaultState;
+
+    const adminClient = getSupabaseAdmin();
+    let sirenData: any = null;
+    let existingSettingsRow: any = null;
+
+    // 1. Read from public.school_settings (streams.siren_console)
+    try {
+      const { data: schSet } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      existingSettingsRow = schSet || null;
+      if (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams)) {
+        sirenData = (schSet.streams as any).siren_console || null;
+      }
+    } catch {}
+
+    // 2. Read from dedicated public.siren_schedules if table exists
+    let dedicatedSchedules: any[] = [];
+    try {
+      const { data: schedRows, error: schedErr } = await adminClient
+        .from('siren_schedules')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('time', { ascending: true });
+      if (!schedErr && Array.isArray(schedRows) && schedRows.length > 0) {
+        dedicatedSchedules = schedRows.map((row: any) => ({
+          id: String(row.bell_id || `bell-${row.id}`),
+          label: String(row.label || 'Period Bell'),
+          time: String(row.time || '08:00'),
+          days: Array.isArray(row.days) ? row.days : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          alarmType: String(row.alarm_type || 'bell'),
+          enabled: row.enabled !== false,
+          updatedAt: Number(row.updated_at || row.created_at || Date.now())
+        }));
+      }
+    } catch {}
+
+    // 3. Read from dedicated public.siren_recordings if table exists
+    let dedicatedRecordings: any[] = [];
+    try {
+      const { data: recRows, error: recErr } = await adminClient
+        .from('siren_recordings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+      if (!recErr && Array.isArray(recRows) && recRows.length > 0) {
+        dedicatedRecordings = recRows.map((row: any) => ({
+          id: String(row.recording_id || `rec-${row.id}`),
+          name: String(row.name || 'Voice Announcement'),
+          audioUrl: row.audio_url || undefined,
+          storagePath: row.storage_path || undefined,
+          mimeType: String(row.mime_type || 'audio/webm'),
+          size: Number(row.size || 0),
+          base64: row.base64_data || row.audio_url || undefined,
+          createdBy: String(row.created_by || 'Administrator'),
+          schoolId,
+          timestamp: Number(row.created_at || Date.now())
+        }));
+      }
+    } catch {}
+
+    // 4. Read from dedicated public.siren_logs if table exists
+    let dedicatedLogs: any[] = [];
+    try {
+      const { data: sLogRows, error: sLogErr } = await adminClient
+        .from('siren_logs')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('timestamp', { ascending: false })
+        .limit(100);
+      if (!sLogErr && Array.isArray(sLogRows) && sLogRows.length > 0) {
+        dedicatedLogs = sLogRows.map((row: any) => ({
+          id: String(row.log_id || `LOG-${row.id}`),
+          type: String(row.type || 'bell'),
+          label: String(row.label || 'Campus Alert'),
+          customMsg: String(row.custom_msg || 'Standard broadcast triggered.'),
+          isDrill: Boolean(row.is_drill),
+          triggeredBy: String(row.triggered_by || 'Administrator'),
+          role: String(row.role || 'admin'),
+          timestamp: Number(row.timestamp || Date.now()),
+          schoolId
+        }));
+      }
+    } catch {}
+
+    // 5. Read from existing live public.broadcasts table (id, school_id, type, title, message, triggered_by, status, created_at)
+    let broadcastTableLogs: any[] = [];
+    let activeBroadcastFromTable: any = null;
+    try {
+      const { data: bRows, error: bErr } = await adminClient
+        .from('broadcasts')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!bErr && Array.isArray(bRows)) {
+        for (const row of bRows) {
+          let parsedMeta: any = null;
+          const rawMsg = String(row.message || '');
+          if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
+            try { parsedMeta = JSON.parse(rawMsg); } catch {}
+          }
+          const entryTimestamp = Number(row.created_at || parsedMeta?.timestamp || Date.now());
+          const entryId = String(parsedMeta?.logId || parsedMeta?.id || `BRC-${row.id}`);
+          const isDrill = Boolean(parsedMeta?.isDrill || row.status === 'drill' || String(row.title || '').includes('[DRILL]'));
+          const cleanMsg = parsedMeta?.customMsg !== undefined ? String(parsedMeta.customMsg) : rawMsg;
+          const triggeredBy = String(parsedMeta?.triggeredBy || 'Administrator');
+          const role = String(parsedMeta?.role || 'admin');
+          const fullType = String(parsedMeta?.fullType || row.type || 'bell');
+
+          broadcastTableLogs.push({
+            id: entryId,
+            broadcastDbId: row.id,
+            type: fullType,
+            label: String(row.title || parsedMeta?.label || 'Campus Broadcast'),
+            customMsg: cleanMsg || 'Standard broadcast triggered.',
+            isDrill,
+            triggeredBy,
+            role,
+            status: row.status || 'sent',
+            timestamp: entryTimestamp,
+            schoolId
+          });
+
+          if (!activeBroadcastFromTable && row.status === 'active' && Date.now() - entryTimestamp < 15 * 60 * 1000) {
+            activeBroadcastFromTable = {
+              id: String(parsedMeta?.id || `BRC-${row.id}`),
+              broadcastDbId: row.id,
+              type: fullType,
+              label: String(row.title || 'Campus Broadcast'),
+              customMsg: cleanMsg,
+              isDrill,
+              triggeredBy,
+              role,
+              audioUrl: parsedMeta?.audioUrl || undefined,
+              base64: parsedMeta?.base64 || undefined,
+              timestamp: entryTimestamp,
+              schoolId
+            };
+          }
+        }
+      }
+    } catch {}
+
+    // 6. Read from public.audit_logs (column is 'timestamp', NOT 'created_at')
+    let auditLogsList: any[] = [];
+    try {
+      const { data: auditRows } = await adminClient
+        .from('audit_logs')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('entity_type', 'siren')
+        .order('timestamp', { ascending: false })
+        .limit(100);
+
+      if (Array.isArray(auditRows)) {
+        auditLogsList = auditRows
+          .map((row: any) => {
+            const details = row.details && typeof row.details === 'object' ? row.details : {};
+            if (
+              row.action === 'SIREN_SQUELCHED' ||
+              row.action === 'SIREN_SCHEDULE_UPDATED' ||
+              row.action === 'SIREN_RECORDING_SAVED' ||
+              row.action === 'SIREN_RECORDING_DELETED'
+            ) {
+              return null;
+            }
+            return {
+              id: String(row.entity_id || details.id || `LOG-${row.timestamp || row.id || Date.now()}`),
+              type: String(details.type || 'bell'),
+              label: String(details.label || row.action || 'Siren Broadcast'),
+              customMsg: String(details.customMsg || 'Standard broadcast triggered.'),
+              isDrill: Boolean(details.isDrill),
+              triggeredBy: String(details.triggeredBy || 'Administrator'),
+              role: String(details.role || 'admin'),
+              timestamp: Number(details.timestamp || row.timestamp || Date.now()),
+              schoolId
+            };
+          })
+          .filter(Boolean);
+      }
+    } catch {}
+
+    // Merge logs across dedicated siren_logs, school_settings, broadcasts table, and audit_logs
+    const settingsLogs = Array.isArray(sirenData?.sirenLogs) ? sirenData.sirenLogs : [];
+    const logMap = new Map<string, any>();
+    for (const l of [...dedicatedLogs, ...settingsLogs, ...broadcastTableLogs, ...auditLogsList]) {
+      if (!l || !l.id) continue;
+      const key = String(l.id);
+      if (!logMap.has(key)) {
+        logMap.set(key, l);
+      }
+    }
+    const mergedLogs = Array.from(logMap.values())
+      .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+      .slice(0, 100);
+
+    // Merge bell schedules across dedicated siren_schedules and school_settings (seed defaults if empty)
+    const rawScheduleSource = dedicatedSchedules.length > 0
+      ? dedicatedSchedules
+      : (Array.isArray(sirenData?.bellSchedule) && sirenData.bellSchedule.length > 0
+          ? sirenData.bellSchedule
+          : DEFAULT_SERVER_BELL_SCHEDULE);
+    const bellSchedule = [...rawScheduleSource].sort((a: any, b: any) =>
+      String(a.time || '').localeCompare(String(b.time || ''))
+    );
+
+    // Merge recordings across dedicated siren_recordings and school_settings
+    const recMap = new Map<string, any>();
+    for (const r of [...dedicatedRecordings, ...(Array.isArray(sirenData?.recordedAudioList) ? sirenData.recordedAudioList : [])]) {
+      if (r && r.id && !recMap.has(String(r.id))) {
+        recMap.set(String(r.id), r);
+      }
+    }
+    const recordedAudioList = Array.from(recMap.values()).sort(
+      (a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0)
+    );
+
+    const resolvedState: ServerSirenConsoleState = {
+      activeSirenBroadcast: sirenData?.activeSirenBroadcast !== undefined
+        ? sirenData.activeSirenBroadcast
+        : activeBroadcastFromTable,
+      bellSchedule,
+      recordedAudioList,
+      acousticVolume: sirenData?.acousticVolume !== undefined && !isNaN(Number(sirenData.acousticVolume))
+        ? Math.min(1, Math.max(0, Number(sirenData.acousticVolume)))
+        : 0.5,
+      isGloballyMuted: Boolean(sirenData?.isGloballyMuted),
+      sirenLogs: mergedLogs,
+      updatedAt: Number(sirenData?.updatedAt || Date.now())
+    };
+
+    // Auto-seed streams.siren_console in public.school_settings if not yet initialized in Supabase
+    if (!sirenData) {
+      try {
+        const existingStreams = existingSettingsRow?.streams;
+        const baseStreamsObj = (existingStreams && typeof existingStreams === 'object' && !Array.isArray(existingStreams))
+          ? { ...existingStreams }
+          : { items: Array.isArray(existingStreams) ? existingStreams : [] };
+
+        await adminClient
+          .from('school_settings')
+          .upsert([{
+            school_id: schoolId,
+            grade_boundaries: existingSettingsRow?.grade_boundaries || [],
+            terms: existingSettingsRow?.terms || [],
+            streams: {
+              ...baseStreamsObj,
+              siren_console: resolvedState
+            },
+            updated_at: Date.now()
+          }], { onConflict: 'school_id' });
+
+        await syncDedicatedSirenTablesInSupabase(schoolId, resolvedState);
+      } catch {}
+    }
+
+    return resolvedState;
+  }
+
+  async function writeSirenConsoleStateToSupabase(
+    schoolId: string,
+    patch: Partial<ServerSirenConsoleState>
+  ): Promise<ServerSirenConsoleState> {
+    const adminClient = getSupabaseAdmin();
+    const current = await readSirenConsoleStateFromSupabase(schoolId);
+    const nextState: ServerSirenConsoleState = {
+      activeSirenBroadcast: patch.activeSirenBroadcast !== undefined ? patch.activeSirenBroadcast : current.activeSirenBroadcast,
+      bellSchedule: patch.bellSchedule !== undefined
+        ? [...patch.bellSchedule].sort((a: any, b: any) => String(a.time || '').localeCompare(String(b.time || '')))
+        : current.bellSchedule,
+      recordedAudioList: patch.recordedAudioList !== undefined
+        ? [...patch.recordedAudioList].sort((a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+        : current.recordedAudioList,
+      acousticVolume: patch.acousticVolume !== undefined && !isNaN(Number(patch.acousticVolume))
+        ? Math.min(1, Math.max(0, Number(patch.acousticVolume)))
+        : current.acousticVolume,
+      isGloballyMuted: patch.isGloballyMuted !== undefined ? Boolean(patch.isGloballyMuted) : current.isGloballyMuted,
+      sirenLogs: patch.sirenLogs !== undefined
+        ? [...patch.sirenLogs].sort((a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0)).slice(0, 100)
+        : current.sirenLogs,
+      updatedAt: Date.now()
+    };
+
+    if (!schoolId) return nextState;
+
+    try {
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams = existing?.streams;
+      const baseStreamsObj = (existingStreams && typeof existingStreams === 'object' && !Array.isArray(existingStreams))
+        ? { ...existingStreams }
+        : { items: Array.isArray(existingStreams) ? existingStreams : [] };
+
+      const nextStreamsObj = {
+        ...baseStreamsObj,
+        siren_console: nextState
+      };
+
+      await adminClient
+        .from('school_settings')
+        .upsert([{
+          school_id: schoolId,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: nextStreamsObj,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
+    } catch (err) {
+      console.warn('[Siren Console] Notice saving to public.school_settings:', err);
+    }
+
+    await syncDedicatedSirenTablesInSupabase(schoolId, nextState);
+    await syncBellScheduleToTimetablePeriods(schoolId, nextState.bellSchedule);
+
+    invalidateDbCache();
+    return nextState;
+  }
+
+  function classifyBellCategory(label: string, alarmType?: string, explicitCategory?: string): 'period_start' | 'break' | 'dismissal' | 'assembly' | 'custom' {
+    if (explicitCategory === 'period_start' || explicitCategory === 'break' || explicitCategory === 'dismissal' || explicitCategory === 'assembly' || explicitCategory === 'custom') {
+      return explicitCategory;
+    }
+    const lower = String(label || '').toLowerCase();
+    if (/dismissal|closing|end of school|school over|home time|departure/i.test(lower)) return 'dismissal';
+    if (/break|recess|lunch|snack|intermission|canteen/i.test(lower)) return 'break';
+    if (/assembly|devotion|morning parade|roll call/i.test(lower)) return 'assembly';
+    if (/period|lesson|class|session|subject|lecture/i.test(lower)) return 'period_start';
+    if (alarmType === 'allclear') return 'break';
+    return 'period_start';
+  }
+
+  function addMinutesToHHMM(hhmm: string, minsToAdd: number): string {
+    const parts = String(hhmm || '08:00').split(':');
+    const h = parseInt(parts[0] || '8', 10) || 8;
+    const m = parseInt(parts[1] || '0', 10) || 0;
+    const total = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + minsToAdd));
+    const nh = Math.floor(total / 60);
+    const nm = total % 60;
+    return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`;
+  }
+
+  function diffMinutesHHMM(startHHMM: string, endHHMM: string): number {
+    const [sh, sm] = String(startHHMM || '08:00').split(':').map(n => parseInt(n || '0', 10) || 0);
+    const [eh, em] = String(endHHMM || '08:45').split(':').map(n => parseInt(n || '0', 10) || 0);
+    return (eh * 60 + em) - (sh * 60 + sh * 0 + sm);
+  }
+
+  async function syncBellScheduleToTimetablePeriods(schoolId: string, bellSchedule: any[]): Promise<void> {
+    if (!schoolId || !Array.isArray(bellSchedule)) return;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: existingBreakPeriods } = await adminClient
+        .from('timetable_periods')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('is_break', true);
+
+      const existingByTime = new Map<string, any>();
+      for (const row of existingBreakPeriods || []) {
+        const st = normalizeHHMM(row.start_time, '');
+        if (st) existingByTime.set(st, row);
+      }
+
+      const activeBreakTimes = new Set<string>();
+      for (let i = 0; i < bellSchedule.length; i++) {
+        const b = bellSchedule[i];
+        if (!b || !b.time) continue;
+        const cat = classifyBellCategory(b.label, b.alarmType, b.category);
+        if (cat !== 'break' && cat !== 'assembly' && cat !== 'dismissal') continue;
+
+        const startTime = normalizeHHMM(b.time, '10:00');
+        const endTime = normalizeHHMM(b.endTime, addMinutesToHHMM(startTime, cat === 'dismissal' ? 15 : 30));
+        activeBreakTimes.add(startTime);
+
+        const existingRow = existingByTime.get(startTime);
+        const periodName = `BELL:${cat.toUpperCase()}|${String(b.label || 'Campus Chime').trim()}`.slice(0, 95);
+        const sortOrder = parseInt(startTime.replace(':', ''), 10) || (100 + i);
+
+        if (existingRow?.id != null) {
+          await adminClient
+            .from('timetable_periods')
+            .update({
+              name: periodName,
+              start_time: startTime,
+              end_time: endTime,
+              is_break: true,
+              sort_order: sortOrder
+            })
+            .eq('id', existingRow.id)
+            .eq('school_id', schoolId);
+        } else {
+          await adminClient
+            .from('timetable_periods')
+            .insert([{
+              school_id: schoolId,
+              name: periodName,
+              start_time: startTime,
+              end_time: endTime,
+              is_break: true,
+              sort_order: sortOrder,
+              created_at: Date.now()
+            }]);
+        }
+      }
+
+      const staleIds = (existingBreakPeriods || [])
+        .filter((r: any) => !activeBreakTimes.has(normalizeHHMM(r.start_time, '')))
+        .map((r: any) => r.id);
+      if (staleIds.length > 0) {
+        await adminClient
+          .from('timetable_periods')
+          .delete()
+          .in('id', staleIds)
+          .eq('school_id', schoolId);
+      }
+    } catch {}
+  }
+
+  async function reconcileTimetableAndBellScheduleInSupabase(
+    schoolId: string,
+    options?: {
+      incomingBells?: any[];
+      forceFromTimetable?: boolean;
+      persistIfChanged?: boolean;
+    }
+  ): Promise<{
+    bellSchedule: any[];
+    timetableSlots: any[];
+    stats: {
+      totalBells: number;
+      periodStartBells: number;
+      breakBells: number;
+      dismissalBells: number;
+      linkedSlotsCount: number;
+    };
+  }> {
+    const [sirenState, timetableData] = await Promise.all([
+      readSirenConsoleStateFromSupabase(schoolId),
+      fetchSchoolTimetableFromSupabase(schoolId).catch(() => ({ slots: [], suggestions: [], periods: [], classes: [], subjects: [], teachers: [] }))
+    ]);
+
+    const rawSlots = Array.isArray(timetableData.slots) ? timetableData.slots : [];
+    const baseBells = Array.isArray(options?.incomingBells)
+      ? options!.incomingBells
+      : (Array.isArray(sirenState.bellSchedule) ? sirenState.bellSchedule : DEFAULT_SERVER_BELL_SCHEDULE);
+
+    // Group School Timetable slots by startTime (HH:MM)
+    const slotsByStartTime = new Map<string, any[]>();
+    let latestSlotEndTime = '';
+    for (const slot of rawSlots) {
+      const st = normalizeHHMM(slot.startTime || slot.start_time, '');
+      const et = normalizeHHMM(slot.endTime || slot.end_time, '');
+      if (!st) continue;
+      if (!slotsByStartTime.has(st)) {
+        slotsByStartTime.set(st, []);
+      }
+      slotsByStartTime.get(st)!.push({
+        id: String(slot.id || slot.slotId || ''),
+        classId: String(slot.classId || slot.class_id || ''),
+        subjectName: String(slot.subjectName || slot.subject_name || ''),
+        teacherName: String(slot.teacherName || slot.teacher_name || ''),
+        day: String(slot.day || 'Monday'),
+        startTime: st,
+        endTime: et || addMinutesToHHMM(st, 45),
+        room: String(slot.room || 'Room A')
+      });
+      if (et && et.localeCompare(latestSlotEndTime) > 0) {
+        latestSlotEndTime = et;
+      }
+    }
+
+    const sortedSlotStartTimes = Array.from(slotsByStartTime.keys()).sort((a, b) => a.localeCompare(b));
+    const existingByTime = new Map<string, any>();
+    for (const b of baseBells) {
+      if (!b || !b.time) continue;
+      const t = normalizeHHMM(b.time, '');
+      if (t && !existingByTime.has(t)) {
+        existingByTime.set(t, b);
+      }
+    }
+
+    const mergedByTime = new Map<string, any>();
+    const standardWeekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+    // 1. Preserve or enrich existing bells first
+    for (const b of baseBells) {
+      if (!b || !b.time) continue;
+      const t = normalizeHHMM(b.time, '08:00');
+      const matchingSlots = slotsByStartTime.get(t) || [];
+      const cat = matchingSlots.length > 0
+        ? 'period_start'
+        : classifyBellCategory(b.label, b.alarmType, b.category);
+
+      let inferredEndTime = b.endTime ? normalizeHHMM(b.endTime, '') : '';
+      if (!inferredEndTime) {
+        if (matchingSlots.length > 0) {
+          // Pick most common or latest endTime among slots starting at t
+          inferredEndTime = matchingSlots.reduce((acc: string, s: any) => (s.endTime > acc ? s.endTime : acc), matchingSlots[0].endTime);
+        } else if (cat === 'break') {
+          inferredEndTime = addMinutesToHHMM(t, 30);
+        } else if (cat === 'assembly') {
+          inferredEndTime = addMinutesToHHMM(t, 20);
+        } else if (cat === 'dismissal') {
+          inferredEndTime = addMinutesToHHMM(t, 15);
+        } else {
+          inferredEndTime = addMinutesToHHMM(t, 45);
+        }
+      }
+
+      const slotDays = Array.from(new Set(matchingSlots.map((s: any) => s.day)));
+      const existingDays = Array.isArray(b.days) && b.days.length > 0 ? b.days : standardWeekdays;
+      const combinedDays = matchingSlots.length > 0
+        ? Array.from(new Set([...existingDays, ...slotDays]))
+        : existingDays;
+
+      mergedByTime.set(t, {
+        ...b,
+        id: String(b.id || `bell-${t.replace(':', '')}`),
+        label: String(b.label || 'Period Bell').trim(),
+        time: t,
+        endTime: inferredEndTime,
+        category: cat,
+        days: combinedDays,
+        alarmType: String(b.alarmType || (cat === 'break' ? 'allclear' : 'bell')),
+        enabled: b.enabled !== false,
+        linkedSlots: matchingSlots,
+        sourceTimetableSyncedAt: Date.now()
+      });
+    }
+
+    // 2. Ensure every School Timetable period start time has a Period Start Bell
+    sortedSlotStartTimes.forEach((st, idx) => {
+      const slotsAtTime = slotsByStartTime.get(st) || [];
+      const endTime = slotsAtTime.reduce((acc: string, s: any) => (s.endTime > acc ? s.endTime : acc), slotsAtTime[0]?.endTime || addMinutesToHHMM(st, 45));
+      const uniqueSubjects = Array.from(new Set(slotsAtTime.map((s: any) => s.subjectName).filter(Boolean)));
+      const uniqueClasses = Array.from(new Set(slotsAtTime.map((s: any) => s.classId).filter(Boolean)));
+      const periodNum = idx + 1;
+      const generatedLabel = uniqueClasses.length === 1 && uniqueSubjects.length === 1
+        ? `Period ${periodNum} — ${uniqueClasses[0]} ${uniqueSubjects[0]}`
+        : `Period ${periodNum} Start (${uniqueClasses.slice(0, 3).join(', ')}${uniqueClasses.length > 3 ? ` +${uniqueClasses.length - 3}` : ''})`;
+
+      if (mergedByTime.has(st)) {
+        const existing = mergedByTime.get(st)!;
+        const shouldRefreshLabel =
+          options?.forceFromTimetable &&
+          (/^period \d+/i.test(existing.label) || existing.label === 'First Period Bell' || existing.label === 'Second Period Bell');
+        mergedByTime.set(st, {
+          ...existing,
+          label: shouldRefreshLabel ? generatedLabel : existing.label,
+          endTime: endTime || existing.endTime,
+          category: 'period_start',
+          linkedSlots: slotsAtTime,
+          sourceTimetableSyncedAt: Date.now()
+        });
+      } else {
+        mergedByTime.set(st, {
+          id: `bell-period-${st.replace(':', '')}`,
+          label: generatedLabel,
+          time: st,
+          endTime,
+          category: 'period_start',
+          days: standardWeekdays,
+          alarmType: 'bell',
+          enabled: true,
+          linkedSlots: slotsAtTime,
+          sourceTimetableSyncedAt: Date.now()
+        });
+      }
+    });
+
+    // 3. Detect natural break/recess gaps between consecutive School Timetable periods (>= 15 mins gap)
+    for (let i = 0; i < sortedSlotStartTimes.length - 1; i++) {
+      const currentStart = sortedSlotStartTimes[i];
+      const nextStart = sortedSlotStartTimes[i + 1];
+      const currentSlots = slotsByStartTime.get(currentStart) || [];
+      const currentEnd = currentSlots.reduce((acc: string, s: any) => (s.endTime > acc ? s.endTime : acc), currentSlots[0]?.endTime || '');
+      if (!currentEnd) continue;
+      const gapMins = diffMinutesHHMM(currentEnd, nextStart);
+      if (gapMins >= 15 && gapMins <= 90 && !mergedByTime.has(currentEnd)) {
+        const isLunchWindow = parseInt(currentEnd.split(':')[0] || '10', 10) >= 12;
+        mergedByTime.set(currentEnd, {
+          id: `bell-break-${currentEnd.replace(':', '')}`,
+          label: isLunchWindow ? 'Afternoon Lunch Break' : 'Morning Break / Recess',
+          time: currentEnd,
+          endTime: nextStart,
+          category: 'break',
+          days: standardWeekdays,
+          alarmType: 'allclear',
+          enabled: true,
+          linkedSlots: [],
+          sourceTimetableSyncedAt: Date.now()
+        });
+      }
+    }
+
+    // 4. Ensure at least one Break/Recess chime and one Dismissal bell exist
+    const allCurrentBells = Array.from(mergedByTime.values());
+    const hasBreakBell = allCurrentBells.some(b => b.category === 'break');
+    if (!hasBreakBell && !mergedByTime.has('10:00')) {
+      mergedByTime.set('10:00', {
+        id: 'bell-break-1000',
+        label: 'Morning Break / Recess',
+        time: '10:00',
+        endTime: '10:30',
+        category: 'break',
+        days: standardWeekdays,
+        alarmType: 'allclear',
+        enabled: true,
+        linkedSlots: [],
+        sourceTimetableSyncedAt: Date.now()
+      });
+    }
+
+    const hasDismissalBell = Array.from(mergedByTime.values()).some(b => b.category === 'dismissal');
+    const dismissalTime = latestSlotEndTime && latestSlotEndTime >= '13:00' ? latestSlotEndTime : '15:00';
+    if (!hasDismissalBell && !mergedByTime.has(dismissalTime)) {
+      mergedByTime.set(dismissalTime, {
+        id: `bell-dismissal-${dismissalTime.replace(':', '')}`,
+        label: 'School Dismissal & Closing Bell',
+        time: dismissalTime,
+        endTime: addMinutesToHHMM(dismissalTime, 15),
+        category: 'dismissal',
+        days: standardWeekdays,
+        alarmType: 'bell',
+        enabled: true,
+        linkedSlots: [],
+        sourceTimetableSyncedAt: Date.now()
+      });
+    } else if (options?.forceFromTimetable && latestSlotEndTime && latestSlotEndTime >= '13:00') {
+      // If forcing sync from timetable, ensure a dismissal bell exists or is aligned with latestSlotEndTime
+      const existingDismissal = Array.from(mergedByTime.values()).find(b => b.category === 'dismissal');
+      if (existingDismissal && existingDismissal.time !== latestSlotEndTime && !mergedByTime.has(latestSlotEndTime)) {
+        mergedByTime.delete(existingDismissal.time);
+        mergedByTime.set(latestSlotEndTime, {
+          ...existingDismissal,
+          time: latestSlotEndTime,
+          endTime: addMinutesToHHMM(latestSlotEndTime, 15),
+          sourceTimetableSyncedAt: Date.now()
+        });
+      }
+    }
+
+    const finalBells = Array.from(mergedByTime.values()).sort((a, b) =>
+      String(a.time || '').localeCompare(String(b.time || ''))
+    );
+
+    if (options?.persistIfChanged !== false && schoolId) {
+      await writeSirenConsoleStateToSupabase(schoolId, {
+        bellSchedule: finalBells
+      });
+    }
+
+    return {
+      bellSchedule: finalBells,
+      timetableSlots: rawSlots,
+      stats: {
+        totalBells: finalBells.length,
+        periodStartBells: finalBells.filter(b => b.category === 'period_start').length,
+        breakBells: finalBells.filter(b => b.category === 'break').length,
+        dismissalBells: finalBells.filter(b => b.category === 'dismissal').length,
+        linkedSlotsCount: rawSlots.length
+      }
+    };
+  }
+
+  async function inspectSirenDatabaseTables(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const checkTable = async (tableName: string, filterSchool = true) => {
+      try {
+        let q = adminClient.from(tableName).select('*', { count: 'exact', head: true });
+        if (filterSchool && schoolId) {
+          q = q.eq('school_id', schoolId);
+        }
+        const { count, error } = await q;
+        if (!error) {
+          return { exists: true, rowCount: Number(count || 0) };
+        }
+        return { exists: false, rowCount: 0, error: error.message };
+      } catch (err: any) {
+        return { exists: false, rowCount: 0, error: err?.message };
+      }
+    };
+
+    const [
+      broadcastsStatus,
+      schoolSettingsStatus,
+      auditLogsStatus,
+      timetableEntriesStatus,
+      timetablePeriodsStatus,
+      sirenSchedulesStatus,
+      sirenRecordingsStatus,
+      sirenLogsStatus,
+      bucketReady
+    ] = await Promise.all([
+      checkTable('broadcasts', true),
+      checkTable('school_settings', true),
+      (async () => {
+        try {
+          let q = adminClient.from('audit_logs').select('*', { count: 'exact', head: true }).eq('entity_type', 'siren');
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { count, error } = await q;
+          if (!error) return { exists: true, rowCount: Number(count || 0) };
+          return { exists: false, rowCount: 0, error: error.message };
+        } catch (err: any) {
+          return { exists: false, rowCount: 0, error: err?.message };
+        }
+      })(),
+      checkTable('timetable_entries', true),
+      checkTable('timetable_periods', true),
+      checkTable('siren_schedules', true),
+      checkTable('siren_recordings', true),
+      checkTable('siren_logs', true),
+      ensureSirenAudioStorageBucket()
+    ]);
+
+    return {
+      schoolId,
+      connected: Boolean(broadcastsStatus.exists || schoolSettingsStatus.exists || auditLogsStatus.exists),
+      dedicatedTablesReady: Boolean(sirenSchedulesStatus.exists && sirenRecordingsStatus.exists && sirenLogsStatus.exists),
+      storageBucket: {
+        name: SIREN_AUDIO_STORAGE_BUCKET,
+        ready: bucketReady
+      },
+      tables: {
+        broadcasts: broadcastsStatus,
+        school_settings: schoolSettingsStatus,
+        audit_logs: auditLogsStatus,
+        timetable_entries: timetableEntriesStatus,
+        timetable_periods: timetablePeriodsStatus,
+        siren_schedules: sirenSchedulesStatus,
+        siren_recordings: sirenRecordingsStatus,
+        siren_logs: sirenLogsStatus
+      },
+      sql: SIREN_CONSOLE_DDL_SQL
+    };
+  }
+
+  // Auto-seed Siren Console state & storage bucket in Supabase on startup
+  setTimeout(async () => {
+    try {
+      if (!sirenPgProvisionAttempted) {
+        sirenPgProvisionAttempted = true;
+        await tryProvisionSirenDedicatedTablesViaPg();
+      }
+      await ensureSirenAudioStorageBucket();
+      const adminClient = getSupabaseAdmin();
+      const { data: schools } = await adminClient.from('schools').select('id').limit(10);
+      if (Array.isArray(schools)) {
+        for (const s of schools) {
+          if (s?.id) {
+            await readSirenConsoleStateFromSupabase(String(s.id));
+          }
+        }
+      }
+    } catch {}
+  }, 1500);
+
+  // GET /api/siren/db-status - Inspect live Supabase tables connected to the Siren Console
+  app.get("/api/siren/db-status", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      await readSirenConsoleStateFromSupabase(schoolId);
+      const status = await inspectSirenDatabaseTables(schoolId);
+      return res.json({
+        success: true,
+        ...status,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/provision-tables - Provision or verify Siren Console tables & seed initial records in Supabase
+  app.post("/api/siren/provision-tables", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const pgRes = await tryProvisionSirenDedicatedTablesViaPg();
+      const state = await readSirenConsoleStateFromSupabase(schoolId);
+      await writeSirenConsoleStateToSupabase(schoolId, state);
+      const status = await inspectSirenDatabaseTables(schoolId);
+      return res.json({
+        success: true,
+        provisionResult: pgRes,
+        ...status,
+        state,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/siren/state - Fetch canonical Siren Console state from Supabase (enriched with School Timetable link)
+  app.get("/api/siren/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const [state, reconciled, dbStatus] = await Promise.all([
+        readSirenConsoleStateFromSupabase(schoolId),
+        reconcileTimetableAndBellScheduleInSupabase(schoolId, { persistIfChanged: true }),
+        inspectSirenDatabaseTables(schoolId)
+      ]);
+      return res.json({
+        success: true,
+        schoolId,
+        ...state,
+        bellSchedule: reconciled.bellSchedule,
+        timetableSlots: reconciled.timetableSlots,
+        timetableStats: reconciled.stats,
+        dbStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/sync-timetable - Two-way sync between School Timetable and Siren Console Period Bell Timetable
+  app.post("/api/siren/sync-timetable", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const incomingBells = Array.isArray(req.body?.bellSchedule) ? req.body.bellSchedule : undefined;
+      const forceFromTimetable = req.body?.forceFromTimetable !== false;
+      const reconciled = await reconcileTimetableAndBellScheduleInSupabase(schoolId, {
+        incomingBells,
+        forceFromTimetable,
+        persistIfChanged: true
+      });
+      const state = await readSirenConsoleStateFromSupabase(schoolId);
+      const dbStatus = await inspectSirenDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        ...state,
+        bellSchedule: reconciled.bellSchedule,
+        timetableSlots: reconciled.timetableSlots,
+        timetableStats: reconciled.stats,
+        dbStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/sync - Reconcile & migrate local Siren Console data with Supabase
+  app.post("/api/siren/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const body = req.body || {};
+      const current = await readSirenConsoleStateFromSupabase(schoolId);
+
+      // 1. Merge bellSchedule (if remote is empty and local has items, or if forcePushSchedule is true)
+      let nextSchedule = current.bellSchedule;
+      if (Array.isArray(body.bellSchedule) && body.bellSchedule.length > 0) {
+        if (body.forcePushSchedule || current.bellSchedule.length === 0) {
+          nextSchedule = body.bellSchedule;
+        } else {
+          const map = new Map<string, any>();
+          for (const b of current.bellSchedule) {
+            if (b?.id) map.set(String(b.id), b);
+          }
+          for (const lb of body.bellSchedule) {
+            if (lb?.id && !map.has(String(lb.id))) {
+              map.set(String(lb.id), lb);
+            }
+          }
+          nextSchedule = Array.from(map.values());
+        }
+      } else if (current.bellSchedule.length === 0 && body.seedDefaultsIfEmpty !== false) {
+        nextSchedule = DEFAULT_SERVER_BELL_SCHEDULE;
+      }
+
+      // 2. Merge recordedAudioList (upload any local base64-only recordings to Supabase Storage)
+      const audioMap = new Map<string, any>();
+      for (const r of current.recordedAudioList) {
+        if (r?.id) audioMap.set(String(r.id), r);
+      }
+      if (Array.isArray(body.recordedAudioList)) {
+        for (const localRec of body.recordedAudioList) {
+          if (!localRec || !localRec.id) continue;
+          const recId = String(localRec.id);
+          if (!audioMap.has(recId)) {
+            let uploaded: { audioUrl?: string; storagePath?: string; size?: number } | null = null;
+            if (localRec.base64 && !localRec.audioUrl) {
+              uploaded = await uploadSirenAudioToStorage({
+                schoolId,
+                recordingId: recId,
+                name: localRec.name || 'Announcement',
+                base64: localRec.base64,
+                mimeType: localRec.mimeType
+              });
+            }
+            audioMap.set(recId, {
+              ...localRec,
+              id: recId,
+              audioUrl: uploaded?.audioUrl || localRec.audioUrl || undefined,
+              storagePath: uploaded?.storagePath || localRec.storagePath || undefined,
+              size: uploaded?.size || localRec.size || 0,
+              schoolId,
+              timestamp: Number(localRec.timestamp || Date.now())
+            });
+          }
+        }
+      }
+      const nextRecordings = Array.from(audioMap.values());
+
+      // 3. Merge sirenLogs
+      const logMap = new Map<string, any>();
+      for (const l of current.sirenLogs) {
+        if (l?.id) logMap.set(String(l.id), l);
+      }
+      if (Array.isArray(body.sirenLogs)) {
+        for (const ll of body.sirenLogs) {
+          if (ll?.id && !logMap.has(String(ll.id))) {
+            logMap.set(String(ll.id), { ...ll, schoolId });
+          }
+        }
+      }
+      const nextLogs = Array.from(logMap.values())
+        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+        .slice(0, 100);
+
+      const nextVolume = body.acousticVolume !== undefined && !isNaN(Number(body.acousticVolume))
+        ? Number(body.acousticVolume)
+        : current.acousticVolume;
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        bellSchedule: nextSchedule,
+        recordedAudioList: nextRecordings,
+        sirenLogs: nextLogs,
+        acousticVolume: nextVolume
+      });
+
+      const dbStatus = await inspectSirenDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        ...savedState,
+        dbStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/broadcast - Trigger an emergency alarm, period bell, or live intercom announcement in Supabase
+  app.post("/api/siren/broadcast", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const type = String(body.type || 'bell').trim();
+      const label = String(body.label || 'Campus Alert').trim();
+      const customMsg = String(body.customMsg || 'Standard broadcast triggered.').trim();
+      const isDrill = Boolean(body.isDrill);
+      const triggeredBy = String(
+        body.triggeredBy ||
+        (req.user as any)?.full_name ||
+        req.user?.fullName ||
+        req.user?.username ||
+        'Administrator'
+      ).trim();
+      const role = String(body.role || req.user?.role || 'admin').trim();
+
+      const broadcastPayload: any = {
+        id: String(body.id || `BRC-${now}`),
+        type,
+        label,
+        customMsg,
+        isDrill,
+        triggeredBy,
+        role,
+        ...(body.audioUrl ? { audioUrl: String(body.audioUrl) } : {}),
+        ...(body.base64 ? { base64: String(body.base64) } : {}),
+        timestamp: Number(body.timestamp || now),
+        schoolId
+      };
+
+      const newLog = {
+        id: String(body.logId || `LOG-${now}`),
+        type,
+        label,
+        customMsg: customMsg || 'Standard broadcast triggered.',
+        isDrill,
+        triggeredBy,
+        role,
+        timestamp: Number(body.timestamp || now),
+        schoolId
+      };
+
+      // 1. Insert into live public.broadcasts table in Supabase
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          // Mark any previously active broadcasts for this school as 'sent'
+          await adminClient
+            .from('broadcasts')
+            .update({ status: 'sent' })
+            .eq('school_id', schoolId)
+            .eq('status', 'active');
+
+          const shortType = (type.startsWith('recorded:') ? 'recorded' : type).slice(0, 20);
+          const { data: insertedBroadcast } = await adminClient
+            .from('broadcasts')
+            .insert([{
+              school_id: schoolId,
+              type: shortType,
+              title: label.slice(0, 200),
+              message: customMsg || 'Standard broadcast triggered.',
+              triggered_by: validUserId,
+              status: 'active',
+              created_at: now
+            }])
+            .select()
+            .maybeSingle();
+
+          if (insertedBroadcast?.id != null) {
+            broadcastPayload.broadcastDbId = insertedBroadcast.id;
+          }
+        } catch (bErr) {
+          console.warn('[Siren Console] Notice inserting into public.broadcasts:', bErr);
+        }
+      }
+
+      // 2. Persist to public.audit_logs in Supabase using the canonical 'timestamp' column
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([{
+            school_id: schoolId,
+            user_id: validUserId,
+            action: isDrill ? 'SIREN_DRILL_TRIGGERED' : 'SIREN_ALARM_TRIGGERED',
+            entity_type: 'siren',
+            entity_id: newLog.id,
+            details: newLog,
+            ip_address: extractIpAddress(req),
+            timestamp: now
+          }]);
+        } catch (aErr) {
+          console.warn('[Siren Console] Notice inserting into public.audit_logs:', aErr);
+        }
+      }
+
+      const current = await readSirenConsoleStateFromSupabase(schoolId);
+      const nextLogs = [
+        newLog,
+        ...current.sirenLogs.filter((l: any) => String(l.id) !== String(newLog.id))
+      ].slice(0, 100);
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        activeSirenBroadcast: broadcastPayload,
+        sirenLogs: nextLogs
+      });
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        activeSirenBroadcast: savedState.activeSirenBroadcast,
+        log: newLog,
+        sirenLogs: savedState.sirenLogs,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/siren/broadcast (and POST /api/siren/squelch) - Squelch/stop active campus siren broadcast in Supabase
+  const squelchSirenHandler = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const now = Date.now();
+
+      // 1. Update active rows in public.broadcasts to 'squelched'
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient
+            .from('broadcasts')
+            .update({ status: 'squelched' })
+            .eq('school_id', schoolId)
+            .eq('status', 'active');
+        } catch {}
+      }
+
+      // 2. Record squelch action in public.audit_logs (using 'timestamp' column)
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([{
+            school_id: schoolId,
+            user_id: validUserId,
+            action: 'SIREN_SQUELCHED',
+            entity_type: 'siren',
+            entity_id: `SQ-${now}`,
+            details: {
+              squelchedBy: (req.user as any)?.full_name || req.user?.fullName || req.user?.username || 'Administrator',
+              timestamp: now
+            },
+            ip_address: extractIpAddress(req),
+            timestamp: now
+          }]);
+        } catch {}
+      }
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        activeSirenBroadcast: null
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        activeSirenBroadcast: null,
+        sirenLogs: savedState.sirenLogs,
+        syncedAt: now
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  };
+
+  app.delete("/api/siren/broadcast", optionalAuthenticateToken, squelchSirenHandler);
+  app.post("/api/siren/squelch", optionalAuthenticateToken, squelchSirenHandler);
+
+  // PUT /api/siren/schedule - Save automated period bell timetable schedule to Supabase
+  app.put("/api/siren/schedule", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const rawSchedule = Array.isArray(req.body?.bellSchedule)
+        ? req.body.bellSchedule
+        : (Array.isArray(req.body) ? req.body : []);
+
+      const normalizedSchedule = rawSchedule
+        .filter((item: any) => item && item.label && item.time)
+        .map((item: any) => ({
+          id: String(item.id || `bell-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+          label: String(item.label).trim(),
+          time: String(item.time).trim(),
+          endTime: item.endTime ? String(item.endTime).trim() : undefined,
+          category: item.category || classifyBellCategory(item.label, item.alarmType),
+          days: Array.isArray(item.days) ? item.days : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          alarmType: String(item.alarmType || 'bell'),
+          enabled: item.enabled !== false,
+          linkedSlots: Array.isArray(item.linkedSlots) ? item.linkedSlots : undefined,
+          updatedAt: Date.now()
+        }))
+        .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)));
+
+      // Remove deleted schedule rows from dedicated public.siren_schedules if table exists
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const keepIds = normalizedSchedule.map((b: any) => String(b.id));
+          const { data: existingRows } = await adminClient
+            .from('siren_schedules')
+            .select('id, bell_id')
+            .eq('school_id', schoolId);
+          if (Array.isArray(existingRows)) {
+            const toDelete = existingRows
+              .filter((r: any) => !keepIds.includes(String(r.bell_id)))
+              .map((r: any) => r.id);
+            if (toDelete.length > 0) {
+              await adminClient.from('siren_schedules').delete().in('id', toDelete);
+            }
+          }
+        } catch {}
+      }
+
+      const reconciled = await reconcileTimetableAndBellScheduleInSupabase(schoolId, {
+        incomingBells: normalizedSchedule,
+        forceFromTimetable: false,
+        persistIfChanged: true
+      });
+
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([{
+            school_id: schoolId,
+            user_id: validUserId,
+            action: 'SIREN_SCHEDULE_UPDATED',
+            entity_type: 'siren',
+            entity_id: `SCHED-${Date.now()}`,
+            details: { count: reconciled.bellSchedule.length, updatedAt: Date.now() },
+            ip_address: extractIpAddress(req),
+            timestamp: Date.now()
+          }]);
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        schoolId,
+        bellSchedule: reconciled.bellSchedule,
+        timetableSlots: reconciled.timetableSlots,
+        timetableStats: reconciled.stats,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/siren/settings - Save acoustic volume & global mute preferences to Supabase
+  app.put("/api/siren/settings", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const patch: Partial<ServerSirenConsoleState> = {};
+      if (req.body?.acousticVolume !== undefined && !isNaN(Number(req.body.acousticVolume))) {
+        patch.acousticVolume = Math.min(1, Math.max(0, Number(req.body.acousticVolume)));
+      }
+      if (req.body?.isGloballyMuted !== undefined) {
+        patch.isGloballyMuted = Boolean(req.body.isGloballyMuted);
+      }
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, patch);
+      return res.json({
+        success: true,
+        schoolId,
+        acousticVolume: savedState.acousticVolume,
+        isGloballyMuted: savedState.isGloballyMuted,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/recordings - Save recorded microphone announcement or uploaded audio chime to Supabase Storage + school_settings
+  app.post("/api/siren/recordings", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const body = req.body?.recording || req.body || {};
+      const recId = String(body.id || `rec-${Date.now()}`).trim();
+      const name = String(body.name || `Voice Announcement (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`).trim();
+      const base64 = String(body.base64 || '').trim();
+      const mimeType = String(body.mimeType || 'audio/webm').trim();
+
+      if (!base64 && !body.audioUrl) {
+        return res.status(400).json({ success: false, error: "Audio data (base64 or audioUrl) is required." });
+      }
+
+      const uploaded = base64
+        ? await uploadSirenAudioToStorage({
+            schoolId,
+            recordingId: recId,
+            name,
+            base64,
+            mimeType
+          })
+        : null;
+
+      const newRecording = {
+        id: recId,
+        name,
+        audioUrl: uploaded?.audioUrl || body.audioUrl || undefined,
+        storagePath: uploaded?.storagePath || body.storagePath || undefined,
+        base64: base64 || undefined,
+        mimeType,
+        size: Number(uploaded?.size || body.size || 0),
+        createdBy: String(body.createdBy || (req.user as any)?.full_name || req.user?.fullName || req.user?.username || 'Administrator'),
+        schoolId,
+        timestamp: Number(body.timestamp || Date.now())
+      };
+
+      const current = await readSirenConsoleStateFromSupabase(schoolId);
+      const nextList = [
+        newRecording,
+        ...current.recordedAudioList.filter((r: any) => String(r.id) !== recId)
+      ];
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        recordedAudioList: nextList
+      });
+
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([{
+            school_id: schoolId,
+            user_id: validUserId,
+            action: 'SIREN_RECORDING_SAVED',
+            entity_type: 'siren',
+            entity_id: recId,
+            details: { id: recId, name, audioUrl: newRecording.audioUrl, size: newRecording.size },
+            ip_address: extractIpAddress(req),
+            timestamp: Date.now()
+          }]);
+        } catch {}
+      }
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        recording: newRecording,
+        recordedAudioList: savedState.recordedAudioList,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/siren/recordings/:id - Delete a custom audio recording from Supabase Storage & school_settings
+  app.delete("/api/siren/recordings/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const recId = String(req.params.id || '').trim();
+      if (!recId) {
+        return res.status(400).json({ success: false, error: "Recording ID is required." });
+      }
+
+      const current = await readSirenConsoleStateFromSupabase(schoolId);
+      const targetRec = current.recordedAudioList.find((r: any) => String(r.id) === recId);
+
+      if (targetRec?.storagePath) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.storage.from(SIREN_AUDIO_STORAGE_BUCKET).remove([String(targetRec.storagePath)]);
+        } catch {}
+      }
+
+      // Also delete from dedicated public.siren_recordings if table exists
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient
+            .from('siren_recordings')
+            .delete()
+            .eq('school_id', schoolId)
+            .eq('recording_id', recId);
+        } catch {}
+      }
+
+      const nextList = current.recordedAudioList.filter((r: any) => String(r.id) !== recId);
+      const nextSchedule = current.bellSchedule.map((b: any) =>
+        b.alarmType === `recorded:${recId}` ? { ...b, alarmType: 'bell' } : b
+      );
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        recordedAudioList: nextList,
+        bellSchedule: nextSchedule
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: recId,
+        recordedAudioList: savedState.recordedAudioList,
+        bellSchedule: savedState.bellSchedule,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/siren/logs - Append a siren trigger or drill log to Supabase
+  app.post("/api/siren/logs", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      const body = req.body?.log || req.body || {};
+      const now = Date.now();
+      const newLog = {
+        id: String(body.id || `LOG-${now}`),
+        type: String(body.type || 'bell'),
+        label: String(body.label || 'Campus Alert'),
+        customMsg: String(body.customMsg || 'Standard broadcast triggered.'),
+        isDrill: Boolean(body.isDrill),
+        triggeredBy: String(body.triggeredBy || (req.user as any)?.full_name || req.user?.fullName || 'Administrator'),
+        role: String(body.role || req.user?.role || 'admin'),
+        timestamp: Number(body.timestamp || now),
+        schoolId
+      };
+
+      if (schoolId) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('broadcasts').insert([{
+            school_id: schoolId,
+            type: String(newLog.type || 'bell').slice(0, 20),
+            title: String(newLog.label || 'Campus Alert').slice(0, 200),
+            message: newLog.customMsg,
+            triggered_by: validUserId,
+            status: newLog.isDrill ? 'drill' : 'sent',
+            created_at: now
+          }]);
+          await adminClient.from('audit_logs').insert([{
+            school_id: schoolId,
+            user_id: validUserId,
+            action: newLog.isDrill ? 'SIREN_DRILL_TRIGGERED' : 'SIREN_ALARM_TRIGGERED',
+            entity_type: 'siren',
+            entity_id: newLog.id,
+            details: newLog,
+            ip_address: extractIpAddress(req),
+            timestamp: now
+          }]);
+        } catch {}
+      }
+
+      const current = await readSirenConsoleStateFromSupabase(schoolId);
+      const nextLogs = [
+        newLog,
+        ...current.sirenLogs.filter((l: any) => String(l.id) !== newLog.id)
+      ].slice(0, 100);
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        sirenLogs: nextLogs
+      });
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        log: newLog,
+        sirenLogs: savedState.sirenLogs,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/siren/logs - Clear tenant siren trigger & drill logs in Supabase
+  app.delete("/api/siren/logs", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveSirenSchoolId(req);
+      if (schoolId) {
+        const adminClient = getSupabaseAdmin();
+        try {
+          await adminClient
+            .from('audit_logs')
+            .delete()
+            .eq('school_id', schoolId)
+            .eq('entity_type', 'siren');
+        } catch {}
+        try {
+          await adminClient
+            .from('broadcasts')
+            .delete()
+            .eq('school_id', schoolId)
+            .neq('status', 'active');
+        } catch {}
+        try {
+          await adminClient
+            .from('siren_logs')
+            .delete()
+            .eq('school_id', schoolId);
+        } catch {}
+      }
+
+      const savedState = await writeSirenConsoleStateToSupabase(schoolId, {
+        sirenLogs: []
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        sirenLogs: savedState.sirenLogs,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // CAMPUS E-VOTING PORTAL SUPABASE DATABASE & STORAGE ENDPOINTS
+  // =========================================================================
+
+  const CANDIDATE_PHOTO_STORAGE_BUCKET = 'candidate-photos';
+  let candidatePhotoBucketVerified = false;
+
+  async function ensureCandidatePhotoBucketExists(): Promise<boolean> {
+    if (candidatePhotoBucketVerified) return true;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: buckets, error: listErr } = await adminClient.storage.listBuckets();
+      if (!listErr && Array.isArray(buckets)) {
+        const exists = buckets.some(
+          (b: any) => b.id === CANDIDATE_PHOTO_STORAGE_BUCKET || b.name === CANDIDATE_PHOTO_STORAGE_BUCKET
+        );
+        if (exists) {
+          candidatePhotoBucketVerified = true;
+          return true;
+        }
+      }
+      const { error: createErr } = await adminClient.storage.createBucket(CANDIDATE_PHOTO_STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: 8 * 1024 * 1024
+      });
+      if (!createErr || String(createErr.message || '').toLowerCase().includes('already exists')) {
+        candidatePhotoBucketVerified = true;
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  async function uploadCandidatePhotoToStorage(params: {
+    schoolId: string;
+    candidateKey: string;
+    base64: string;
+    mimeType?: string;
+  }): Promise<{ photoUrl?: string; storagePath?: string; size?: number } | null> {
+    const rawData = String(params.base64 || '').trim();
+    if (!rawData) return null;
+    if (/^https?:\/\//i.test(rawData)) {
+      return { photoUrl: rawData };
+    }
+
+    const bucketReady = await ensureCandidatePhotoBucketExists();
+    if (!bucketReady) return null;
+
+    let detectedMime = params.mimeType || 'image/jpeg';
+    let base64Body = rawData;
+    const match = rawData.match(/^data:([^;]+);base64,(.+)$/i);
+    if (match) {
+      detectedMime = match[1] || detectedMime;
+      base64Body = match[2];
+    } else if (rawData.includes(',')) {
+      base64Body = rawData.slice(rawData.indexOf(',') + 1);
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(base64Body, 'base64');
+    } catch {
+      return null;
+    }
+    if (!buffer || buffer.length === 0) return null;
+
+    const ext = detectedMime.includes('png')
+      ? 'png'
+      : detectedMime.includes('webp')
+      ? 'webp'
+      : detectedMime.includes('gif')
+      ? 'gif'
+      : 'jpg';
+
+    const cleanSchool = String(params.schoolId || 'school').replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanKey = String(params.candidateKey || `cand-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '');
+    const storagePath = `${cleanSchool}/${cleanKey}.${ext}`;
+
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { error: upErr } = await adminClient.storage
+        .from(CANDIDATE_PHOTO_STORAGE_BUCKET)
+        .upload(storagePath, buffer, {
+          contentType: detectedMime,
+          upsert: true
+        });
+      if (upErr) return null;
+
+      const { data: pubUrlData } = adminClient.storage
+        .from(CANDIDATE_PHOTO_STORAGE_BUCKET)
+        .getPublicUrl(storagePath);
+
+      return {
+        photoUrl: pubUrlData?.publicUrl || undefined,
+        storagePath,
+        size: buffer.length
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const EVOTING_DDL_SQL = `-- Campus E-Voting Portal Tables for Supabase (polls, candidates, votes, and votes_table)
+CREATE TABLE IF NOT EXISTS public.polls (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'active', 'completed', 'archived')),
+  category VARCHAR(100) NOT NULL DEFAULT 'SRC Election',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_polls_school ON public.polls (school_id, status);
+
+CREATE TABLE IF NOT EXISTS public.candidates (
+  id BIGSERIAL PRIMARY KEY,
+  poll_id BIGINT NOT NULL REFERENCES public.polls(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  position VARCHAR(100) NOT NULL,
+  class VARCHAR(100) NULL,
+  votes_count INT NOT NULL DEFAULT 0 CHECK (votes_count >= 0),
+  photo TEXT NULL,
+  manifesto TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidates_poll ON public.candidates (poll_id, position);
+
+CREATE TABLE IF NOT EXISTS public.votes (
+  id BIGSERIAL PRIMARY KEY,
+  poll_id BIGINT NOT NULL REFERENCES public.polls(id) ON DELETE CASCADE,
+  student_id VARCHAR(50) NOT NULL,
+  candidate_id BIGINT NOT NULL REFERENCES public.candidates(id) ON DELETE CASCADE,
+  position VARCHAR(100) NOT NULL,
+  timestamp BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_ballot_student_position UNIQUE (poll_id, student_id, position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_votes_poll ON public.votes (poll_id, candidate_id);
+
+CREATE TABLE IF NOT EXISTS public.votes_table (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  poll_id BIGINT NOT NULL REFERENCES public.polls(id) ON DELETE CASCADE,
+  student_id VARCHAR(50) NOT NULL,
+  student_name VARCHAR(255) NULL,
+  student_class VARCHAR(100) NULL,
+  candidate_id BIGINT NOT NULL REFERENCES public.candidates(id) ON DELETE CASCADE,
+  candidate_name VARCHAR(255) NULL,
+  position VARCHAR(100) NOT NULL,
+  receipt_code VARCHAR(100) NULL,
+  timestamp BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_votes_table_student_position UNIQUE (poll_id, student_id, position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_votes_table_poll ON public.votes_table (poll_id, candidate_id);
+CREATE INDEX IF NOT EXISTS idx_votes_table_student ON public.votes_table (student_id, poll_id);
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('candidate-photos', 'candidate-photos', true, 8388608)
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = 8388608;
+
+NOTIFY pgrst, 'reload schema';`;
+
+  const DEFAULT_SERVER_SRC_POLL = {
+    title: 'School Representative Council (SRC) General Elections 2026',
+    description: 'Annual democratic election to choose next leader for student body. Be heard, vote right!',
+    category: 'SRC Executive General Elections',
+    status: 'active',
+    candidates: [
+      {
+        name: 'Sandra Ofori-Amoah',
+        position: 'President',
+        class: 'JHS 1',
+        votesCount: 0,
+        manifesto: 'I pledge to expand clean drinking fountains, champion weekly soccer invitationals, and restore the students lounge.',
+        photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&q=80'
+      },
+      {
+        name: 'Kofi Mensah Junior',
+        position: 'President',
+        class: 'JHS 1',
+        votesCount: 0,
+        manifesto: 'Leading through digital tools! I stand for adding a computer graphics club, faster library computers, and creative arts field trips.',
+        photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&q=80'
+      },
+      {
+        name: 'Linda Appiah Mensah',
+        position: 'General Secretary',
+        class: 'JHS 1',
+        votesCount: 0,
+        manifesto: 'Diligent documentation and active notices. I will publish beautiful weekly briefs so students are always informed of upcoming fun events!',
+        photo: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&q=80'
+      },
+      {
+        name: 'Dennis Baah Asante',
+        position: 'General Secretary',
+        class: 'P2',
+        votesCount: 0,
+        manifesto: 'Pristine management. Let us modernise internal feedback boxes and provide active platforms for JHS and Primary connection points.',
+        photo: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&q=80'
+      }
+    ]
+  };
+
+  async function resolveEvotingSchoolId(req: any): Promise<string> {
+    const adminClient = getSupabaseAdmin();
+
+    // 1. Check if a studentId hint is provided in body/query and resolve its school_id
+    const hintStudentId = String(
+      req.body?.studentId ||
+      req.body?.student_id ||
+      req.query?.studentId ||
+      req.query?.student_id ||
+      ''
+    ).trim();
+    if (hintStudentId) {
+      try {
+        const { data: stuMatch } = await adminClient
+          .from('students')
+          .select('school_id')
+          .ilike('student_id', hintStudentId)
+          .limit(1)
+          .maybeSingle();
+        if (stuMatch?.school_id) return String(stuMatch.school_id);
+      } catch {}
+    }
+
+    // 2. Check if a pollId hint is provided in params/body and resolve its school_id
+    const hintPollId = Number(req.params?.id || req.body?.pollId || req.body?.poll_id || req.query?.pollId || req.query?.poll_id || 0);
+    if (hintPollId > 0 && (req.path?.includes('/polls/') || req.body?.pollId || req.query?.pollId)) {
+      try {
+        const { data: pollMatch } = await adminClient
+          .from('polls')
+          .select('school_id')
+          .eq('id', hintPollId)
+          .limit(1)
+          .maybeSingle();
+        if (pollMatch?.school_id) return String(pollMatch.school_id);
+      } catch {}
+    }
+
+    // 3. Use standard tenant / timetable / siren resolution
+    const baseResolved = await resolveTimetableSchoolId(req);
+    if (baseResolved) return baseResolved;
+
+    // 4. Check if any school has polls or students in Supabase
+    try {
+      const { data: pollSch } = await adminClient
+        .from('polls')
+        .select('school_id')
+        .limit(1)
+        .maybeSingle();
+      if (pollSch?.school_id) return String(pollSch.school_id);
+    } catch {}
+
+    try {
+      const { data: stuSch } = await adminClient
+        .from('students')
+        .select('school_id')
+        .limit(1)
+        .maybeSingle();
+      if (stuSch?.school_id) return String(stuSch.school_id);
+    } catch {}
+
+    return await resolveSirenSchoolId(req);
+  }
+
+  const buildBallotReceiptCode = (raw: {
+    id?: number;
+    pollId: number;
+    studentId: string;
+    candidateId: number;
+    position: string;
+    timestamp?: number;
+  }) => {
+    const cleanStu = String(raw.studentId || 'STU')
+      .replace(/[^A-Z0-9]/gi, '')
+      .toUpperCase()
+      .slice(-4)
+      .padStart(4, '0');
+    const posCode = String(raw.position || 'POS')
+      .replace(/[^A-Z0-9]/gi, '')
+      .toUpperCase()
+      .slice(0, 3)
+      .padEnd(3, 'X');
+    const seqPart = raw.id
+      ? String(raw.id).padStart(4, '0')
+      : String(Math.abs((raw.pollId * 31 + raw.candidateId * 17 + Number(raw.timestamp || 0)) % 10000)).padStart(4, '0');
+    return `EV-${raw.pollId}-${posCode}-${seqPart}-${cleanStu}`;
+  };
+
+  const normalizePollRecord = (raw: any, defaultSchoolId?: string) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const title = String(raw.title || '').trim();
+    if (!title) return null;
+    const rawStatus = String(raw.status || 'draft').trim().toLowerCase();
+    const status: 'draft' | 'active' | 'completed' | 'archived' =
+      rawStatus === 'active' || rawStatus === 'completed' || rawStatus === 'archived'
+        ? rawStatus
+        : 'draft';
+    return {
+      id,
+      schoolId: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      school_id: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      title,
+      description: String(raw.description || '').trim(),
+      category: String(raw.category || 'SRC General Elections').trim(),
+      status,
+      createdAt: Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now()
+    };
+  };
+
+  const normalizeCandidateRecord = (raw: any) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const pollId = Number(raw.poll_id ?? raw.pollId ?? 0);
+    const name = String(raw.name || '').trim();
+    if (!pollId || !name) return null;
+    return {
+      id,
+      pollId,
+      poll_id: pollId,
+      name,
+      position: String(raw.position || 'President').trim(),
+      class: String(raw.class || 'JHS 1').trim(),
+      votesCount: Math.max(0, Number(raw.votes_count ?? raw.votesCount ?? 0) || 0),
+      votes_count: Math.max(0, Number(raw.votes_count ?? raw.votesCount ?? 0) || 0),
+      photo: raw.photo ? String(raw.photo) : undefined,
+      manifesto: String(raw.manifesto || 'Pledge to serve students body with core integrity.').trim()
+    };
+  };
+
+  const normalizeVoteRecord = (raw: any) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const pollId = Number(raw.poll_id ?? raw.pollId ?? 0);
+    const candidateId = Number(raw.candidate_id ?? raw.candidateId ?? 0);
+    const studentId = String(raw.student_id || raw.studentId || '').trim();
+    if (!pollId || !candidateId || !studentId) return null;
+    const position = String(raw.position || 'President').trim();
+    const timestamp = Number(raw.timestamp ?? raw.created_at ?? Date.now()) || Date.now();
+    const receiptCode =
+      String(raw.receipt_code || raw.receiptCode || '').trim() ||
+      buildBallotReceiptCode({ id, pollId, studentId, candidateId, position, timestamp });
+    return {
+      id,
+      pollId,
+      poll_id: pollId,
+      studentId,
+      student_id: studentId,
+      candidateId,
+      candidate_id: candidateId,
+      position,
+      timestamp,
+      receiptCode,
+      receipt_code: receiptCode,
+      studentName: raw.student_name || raw.studentName || undefined,
+      studentClass: raw.student_class || raw.studentClass || undefined,
+      studentGender: raw.student_gender || raw.studentGender || undefined,
+      candidateName: raw.candidate_name || raw.candidateName || undefined,
+      candidatePhoto: raw.candidate_photo || raw.candidatePhoto || undefined,
+      pollTitle: raw.poll_title || raw.pollTitle || undefined,
+      sourceTable: raw.source_table || raw.sourceTable || 'votes_table + votes'
+    };
+  };
+
+  async function readEvotingBackupFromSchoolSettings(schoolId: string): Promise<{
+    hasInitialized: boolean;
+    polls: any[];
+    candidates: any[];
+    votes: any[];
+    votesTable: any[];
+    updatedAt: number;
+  }> {
+    const empty = { hasInitialized: false, polls: [], candidates: [], votes: [], votesTable: [], updatedAt: 0 };
+    if (!schoolId) return empty;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data } = await adminClient
+        .from('school_settings')
+        .select('streams')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+      if (data?.streams && typeof data.streams === 'object' && !Array.isArray(data.streams)) {
+        const ev = (data.streams as any).evoting;
+        if (ev && typeof ev === 'object') {
+          return {
+            hasInitialized: Boolean(ev.hasInitialized),
+            polls: Array.isArray(ev.polls) ? ev.polls : [],
+            candidates: Array.isArray(ev.candidates) ? ev.candidates : [],
+            votes: Array.isArray(ev.votes) ? ev.votes : [],
+            votesTable: Array.isArray(ev.votes_table) ? ev.votes_table : Array.isArray(ev.votes) ? ev.votes : [],
+            updatedAt: Number(ev.updatedAt || 0)
+          };
+        }
+      }
+    } catch {}
+    return empty;
+  }
+
+  async function writeEvotingBackupToSchoolSettings(
+    schoolId: string,
+    payload: {
+      hasInitialized?: boolean;
+      polls: any[];
+      candidates: any[];
+      votes: any[];
+      votesTable?: any[];
+    }
+  ): Promise<void> {
+    if (!schoolId) return;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams =
+        existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams)
+          ? existing.streams
+          : {};
+
+      const nextStreams = {
+        ...existingStreams,
+        evoting: {
+          hasInitialized: payload.hasInitialized !== undefined ? payload.hasInitialized : true,
+          polls: payload.polls || [],
+          candidates: payload.candidates || [],
+          votes: payload.votes || [],
+          votes_table: payload.votesTable || payload.votes || [],
+          updatedAt: Date.now()
+        }
+      };
+
+      await adminClient.from('school_settings').upsert(
+        [
+          {
+            school_id: schoolId,
+            grade_boundaries: existing?.grade_boundaries || [],
+            terms: existing?.terms || [],
+            streams: nextStreams,
+            updated_at: Date.now()
+          }
+        ],
+        { onConflict: 'school_id' }
+      );
+    } catch {}
+  }
+
+  async function seedDefaultSrcElectionInSupabase(schoolId: string): Promise<void> {
+    if (!schoolId) return;
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data: insertedPoll, error: pollErr } = await adminClient
+        .from('polls')
+        .insert([
+          {
+            school_id: schoolId,
+            title: DEFAULT_SERVER_SRC_POLL.title,
+            description: DEFAULT_SERVER_SRC_POLL.description,
+            category: DEFAULT_SERVER_SRC_POLL.category,
+            status: DEFAULT_SERVER_SRC_POLL.status,
+            created_at: Date.now()
+          }
+        ])
+        .select()
+        .maybeSingle();
+
+      if (!pollErr && insertedPoll?.id) {
+        const candPayload = DEFAULT_SERVER_SRC_POLL.candidates.map((c) => ({
+          poll_id: insertedPoll.id,
+          name: c.name,
+          position: c.position,
+          class: c.class,
+          votes_count: 0,
+          photo: c.photo,
+          manifesto: c.manifesto
+        }));
+        await adminClient.from('candidates').insert(candPayload);
+      }
+    } catch {}
+  }
+
+  // Dual-table synchronization helper between public.votes_table and public.votes in Supabase
+  async function syncAndFetchVotesTablesInSupabase(params: {
+    schoolId: string;
+    pollIds: number[];
+    polls: any[];
+    candidates: any[];
+    students: any[];
+  }): Promise<{
+    votes: any[];
+    votesTablePhysicalExists: boolean;
+    votesTableSyncMode: string;
+  }> {
+    const { schoolId, pollIds, polls, candidates, students } = params;
+    const adminClient = getSupabaseAdmin();
+    if (!pollIds || pollIds.length === 0) {
+      // Probe if votes_table exists physically
+      let physicalExists = false;
+      try {
+        const { error: vtProbeErr } = await adminClient.from('votes_table').select('id').limit(1);
+        physicalExists = !vtProbeErr;
+      } catch {}
+      return {
+        votes: [],
+        votesTablePhysicalExists: physicalExists,
+        votesTableSyncMode: physicalExists ? 'dual_physical_tables' : 'synced_with_public_votes'
+      };
+    }
+
+    // 1. Query public.votes
+    const { data: votesRows } = await adminClient
+      .from('votes')
+      .select('*')
+      .in('poll_id', pollIds)
+      .order('timestamp', { ascending: false });
+
+    // 2. Query public.votes_table (if physical table exists in Supabase)
+    let votesTableRows: any[] = [];
+    let votesTablePhysicalExists = false;
+    try {
+      const { data: vtData, error: vtErr } = await adminClient
+        .from('votes_table')
+        .select('*')
+        .in('poll_id', pollIds)
+        .order('timestamp', { ascending: false });
+      if (!vtErr) {
+        votesTablePhysicalExists = true;
+        votesTableRows = vtData || [];
+      }
+    } catch {}
+
+    const pollMap = new Map<number, any>();
+    for (const p of polls) {
+      if (p?.id) pollMap.set(Number(p.id), p);
+    }
+    const candMap = new Map<number, any>();
+    for (const c of candidates) {
+      if (c?.id) candMap.set(Number(c.id), c);
+    }
+    const stuMap = new Map<string, any>();
+    for (const s of students) {
+      const sid = String(s?.studentId || s?.student_id || '').trim().toUpperCase();
+      if (sid) stuMap.set(sid, s);
+    }
+
+    const makeVoteKey = (pollId: number, studentId: string, position: string) =>
+      `${Number(pollId)}::${String(studentId || '').trim().toUpperCase()}::${String(position || '').trim().toLowerCase()}`;
+
+    const votesByKey = new Map<string, any>();
+    const vtKeys = new Set<string>();
+    const vKeys = new Set<string>();
+
+    for (const raw of votesRows || []) {
+      const norm = normalizeVoteRecord(raw);
+      if (!norm) continue;
+      const key = makeVoteKey(norm.pollId, norm.studentId, norm.position);
+      vKeys.add(key);
+      votesByKey.set(key, norm);
+    }
+
+    for (const raw of votesTableRows || []) {
+      const norm = normalizeVoteRecord(raw);
+      if (!norm) continue;
+      const key = makeVoteKey(norm.pollId, norm.studentId, norm.position);
+      vtKeys.add(key);
+      if (!votesByKey.has(key)) {
+        votesByKey.set(key, norm);
+      } else {
+        const existing = votesByKey.get(key);
+        votesByKey.set(key, {
+          ...existing,
+          receiptCode: raw.receipt_code || existing.receiptCode,
+          receipt_code: raw.receipt_code || existing.receipt_code,
+          studentName: raw.student_name || existing.studentName,
+          studentClass: raw.student_class || existing.studentClass,
+          candidateName: raw.candidate_name || existing.candidateName
+        });
+      }
+    }
+
+    // 3. Auto-migrate missing rows between public.votes and public.votes_table if physical table exists
+    if (votesTablePhysicalExists) {
+      for (const [key, v] of votesByKey.entries()) {
+        if (!vKeys.has(key)) {
+          try {
+            await adminClient.from('votes').upsert(
+              [
+                {
+                  poll_id: v.pollId,
+                  student_id: v.studentId,
+                  candidate_id: v.candidateId,
+                  position: v.position,
+                  timestamp: v.timestamp
+                }
+              ],
+              { onConflict: 'poll_id,student_id,position' }
+            );
+          } catch {}
+        }
+        if (!vtKeys.has(key)) {
+          try {
+            const stu = stuMap.get(String(v.studentId).trim().toUpperCase());
+            const cand = candMap.get(Number(v.candidateId));
+            const fullInsert = await adminClient.from('votes_table').insert([
+              {
+                school_id: schoolId || null,
+                poll_id: v.pollId,
+                student_id: v.studentId,
+                student_name: stu ? `${stu.firstName || ''} ${stu.lastName || ''}`.trim() : null,
+                student_class: stu?.class || null,
+                candidate_id: v.candidateId,
+                candidate_name: cand?.name || null,
+                position: v.position,
+                receipt_code: v.receiptCode,
+                timestamp: v.timestamp
+              }
+            ]);
+            if (fullInsert.error) {
+              await adminClient.from('votes_table').insert([
+                {
+                  poll_id: v.pollId,
+                  student_id: v.studentId,
+                  candidate_id: v.candidateId,
+                  position: v.position,
+                  timestamp: v.timestamp
+                }
+              ]);
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // 4. Enrich all merged vote rows with voter, candidate, poll, and receipt metadata
+    const enrichedVotes = Array.from(votesByKey.values())
+      .map((v) => {
+        const stu = stuMap.get(String(v.studentId || '').trim().toUpperCase());
+        const cand = candMap.get(Number(v.candidateId));
+        const poll = pollMap.get(Number(v.pollId));
+        const studentName =
+          v.studentName ||
+          (stu ? `${stu.firstName || ''} ${stu.lastName || ''}`.trim() : '') ||
+          'Verified Student Voter';
+        const studentClass = v.studentClass || stu?.class || 'Unassigned';
+        const studentGender = v.studentGender || stu?.gender || 'Unspecified';
+        const candidateName = v.candidateName || cand?.name || `Candidate #${v.candidateId}`;
+        const candidatePhoto = v.candidatePhoto || cand?.photo || undefined;
+        const pollTitle = v.pollTitle || poll?.title || `Election #${v.pollId}`;
+        const receiptCode =
+          v.receiptCode ||
+          buildBallotReceiptCode({
+            id: v.id,
+            pollId: v.pollId,
+            studentId: v.studentId,
+            candidateId: v.candidateId,
+            position: v.position,
+            timestamp: v.timestamp
+          });
+
+        return {
+          ...v,
+          receiptCode,
+          receipt_code: receiptCode,
+          studentName,
+          student_name: studentName,
+          studentClass,
+          student_class: studentClass,
+          studentGender,
+          student_gender: studentGender,
+          candidateName,
+          candidate_name: candidateName,
+          candidatePhoto,
+          pollTitle,
+          poll_title: pollTitle,
+          sourceTable: votesTablePhysicalExists ? 'votes_table + votes' : 'votes_table (synced via public.votes)'
+        };
+      })
+      .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+
+    return {
+      votes: enrichedVotes,
+      votesTablePhysicalExists,
+      votesTableSyncMode: votesTablePhysicalExists ? 'dual_physical_tables' : 'synced_with_public_votes'
+    };
+  }
+
+  async function inspectEvotingDatabaseTables(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const result: Record<string, { exists: boolean; status: string; count?: number; mode?: string; error?: string }> = {};
+
+    // First fetch poll IDs for this school so we can count scoped candidates and votes accurately
+    let pollIds: number[] = [];
+    try {
+      let pq = adminClient.from('polls').select('id', { count: 'exact' });
+      if (schoolId) pq = pq.eq('school_id', schoolId);
+      const { data: pRows, count: pCount, error: pErr } = await pq;
+      if (pErr) {
+        result['polls'] = { exists: false, status: 'error', error: pErr.message };
+      } else {
+        pollIds = (pRows || []).map((r: any) => Number(r.id)).filter(Boolean);
+        result['polls'] = { exists: true, status: 'ready', count: pCount ?? pollIds.length };
+      }
+    } catch (e: any) {
+      result['polls'] = { exists: false, status: 'error', error: e?.message };
+    }
+
+    // Candidates
+    try {
+      let cq = adminClient.from('candidates').select('id', { count: 'exact', head: true });
+      if (pollIds.length > 0) {
+        cq = cq.in('poll_id', pollIds);
+      } else if (schoolId) {
+        cq = cq.eq('poll_id', -1);
+      }
+      const { count: cCount, error: cErr } = await cq;
+      result['candidates'] = cErr
+        ? { exists: false, status: 'error', error: cErr.message }
+        : { exists: true, status: 'ready', count: cCount ?? 0 };
+    } catch (e: any) {
+      result['candidates'] = { exists: false, status: 'error', error: e?.message };
+    }
+
+    // Votes & votes_table
+    let votesCountVal = 0;
+    try {
+      let vq = adminClient.from('votes').select('id', { count: 'exact', head: true });
+      if (pollIds.length > 0) {
+        vq = vq.in('poll_id', pollIds);
+      } else if (schoolId) {
+        vq = vq.eq('poll_id', -1);
+      }
+      const { count: vCount, error: vErr } = await vq;
+      votesCountVal = vCount ?? 0;
+      result['votes'] = vErr
+        ? { exists: false, status: 'error', error: vErr.message }
+        : { exists: true, status: 'ready', count: votesCountVal };
+    } catch (e: any) {
+      result['votes'] = { exists: false, status: 'error', error: e?.message };
+    }
+
+    // Check votes_table (either physical table in Supabase or bridged to public.votes + school_settings.streams.evoting.votes_table)
+    try {
+      let vtq = adminClient.from('votes_table').select('id', { count: 'exact', head: true });
+      if (pollIds.length > 0) {
+        vtq = vtq.in('poll_id', pollIds);
+      } else if (schoolId) {
+        vtq = vtq.eq('poll_id', -1);
+      }
+      const { count: vtCount, error: vtErr } = await vtq;
+      if (!vtErr) {
+        result['votes_table'] = {
+          exists: true,
+          status: 'ready',
+          mode: 'physical_table',
+          count: vtCount ?? votesCountVal
+        };
+      } else {
+        result['votes_table'] = {
+          exists: true,
+          status: 'ready',
+          mode: 'synced_with_votes',
+          count: votesCountVal
+        };
+      }
+    } catch {
+      result['votes_table'] = {
+        exists: true,
+        status: 'ready',
+        mode: 'synced_with_votes',
+        count: votesCountVal
+      };
+    }
+
+    // Students, SMS Logs, Audit Logs, School Settings
+    const scopedTables = ['students', 'sms_logs', 'audit_logs', 'school_settings'];
+    await Promise.all(
+      scopedTables.map(async (tableName) => {
+        try {
+          let q = adminClient.from(tableName).select('*', { count: 'exact', head: true });
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { count, error } = await q;
+          result[tableName] = error
+            ? { exists: false, status: 'error', error: error.message }
+            : { exists: true, status: 'ready', count: count ?? 0 };
+        } catch (e: any) {
+          result[tableName] = { exists: false, status: 'error', error: e?.message };
+        }
+      })
+    );
+
+    return result;
+  }
+
+  async function fetchSchoolEvotingFromSupabase(
+    schoolId: string,
+    options?: { allowAutoSeed?: boolean }
+  ): Promise<{
+    polls: any[];
+    candidates: any[];
+    votes: any[];
+    votesTable: any[];
+    votesTableSyncMode: string;
+    students: any[];
+    smsLogs: any[];
+  }> {
+    if (!schoolId) {
+      return {
+        polls: [],
+        candidates: [],
+        votes: [],
+        votesTable: [],
+        votesTableSyncMode: 'uninitialized',
+        students: [],
+        smsLogs: []
+      };
+    }
+    const adminClient = getSupabaseAdmin();
+    const backup = await readEvotingBackupFromSchoolSettings(schoolId);
+
+    // 1. Fetch polls for schoolId
+    let { data: pollRows } = await adminClient
+      .from('polls')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+
+    // If no polls in relational table, check if backup has polls to restore OR auto-seed default SRC election
+    if ((!pollRows || pollRows.length === 0) && backup.polls.length > 0) {
+      for (const bp of backup.polls) {
+        try {
+          const { data: restoredPoll } = await adminClient
+            .from('polls')
+            .insert([
+              {
+                school_id: schoolId,
+                title: String(bp.title || 'SRC Election'),
+                description: String(bp.description || ''),
+                category: String(bp.category || 'SRC Election'),
+                status: String(bp.status || 'active'),
+                created_at: Number(bp.createdAt || Date.now())
+              }
+            ])
+            .select()
+            .maybeSingle();
+
+          if (restoredPoll?.id) {
+            const oldPollId = bp.id;
+            const matchingCands = backup.candidates.filter((c: any) => Number(c.pollId) === Number(oldPollId));
+            for (const bc of matchingCands) {
+              await adminClient.from('candidates').insert([
+                {
+                  poll_id: restoredPoll.id,
+                  name: String(bc.name || 'Candidate'),
+                  position: String(bc.position || 'President'),
+                  class: String(bc.class || 'JHS 1'),
+                  votes_count: Number(bc.votesCount || 0),
+                  photo: bc.photo || null,
+                  manifesto: String(bc.manifesto || '')
+                }
+              ]);
+            }
+          }
+        } catch {}
+      }
+      const rePolls = await adminClient
+        .from('polls')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+      pollRows = rePolls.data || [];
+    } else if (
+      (!pollRows || pollRows.length === 0) &&
+      !backup.hasInitialized &&
+      options?.allowAutoSeed !== false
+    ) {
+      await seedDefaultSrcElectionInSupabase(schoolId);
+      const seededPolls = await adminClient
+        .from('polls')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+      pollRows = seededPolls.data || [];
+    }
+
+    const polls = (pollRows || [])
+      .map((r: any) => normalizePollRecord(r, schoolId))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizePollRecord>>[];
+    const pollIds = polls.map((p) => Number(p.id)).filter(Boolean);
+
+    // 2. Fetch students and recent SMS logs for this school first so we can enrich votes_table rows with voter details
+    const [stuRes, smsRes, candRes] = await Promise.all([
+      adminClient
+        .from('students')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('first_name', { ascending: true }),
+      adminClient
+        .from('sms_logs')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      pollIds.length > 0
+        ? adminClient
+            .from('candidates')
+            .select('*')
+            .in('poll_id', pollIds)
+            .order('id', { ascending: true })
+        : Promise.resolve({ data: [] as any[] })
+    ]);
+
+    let students = Array.isArray(stuRes.data)
+      ? stuRes.data.map((s: any) => normalizeServerStudentRecord(s))
+      : [];
+
+    if (students.length === 0) {
+      try {
+        const { data: anyStudents } = await adminClient
+          .from('students')
+          .select('*')
+          .order('first_name', { ascending: true })
+          .limit(200);
+        if (Array.isArray(anyStudents) && anyStudents.length > 0) {
+          students = anyStudents.map((s: any) => normalizeServerStudentRecord(s));
+        }
+      } catch {}
+    }
+
+    const rawCandidates = (candRes.data || [])
+      .map((c: any) => normalizeCandidateRecord(c))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizeCandidateRecord>>[];
+
+    // 3. Synchronize and fetch from both public.votes_table and public.votes
+    const syncedVotesResult = await syncAndFetchVotesTablesInSupabase({
+      schoolId,
+      pollIds,
+      polls,
+      candidates: rawCandidates,
+      students
+    });
+    const votes = syncedVotesResult.votes;
+
+    // 4. Authoritatively reconcile each candidate's votesCount with actual rows in votes_table / votes
+    const voteCountByCandidateId = new Map<number, number>();
+    for (const v of votes) {
+      if (v.candidateId) {
+        voteCountByCandidateId.set(v.candidateId, (voteCountByCandidateId.get(v.candidateId) || 0) + 1);
+      }
+    }
+
+    const candidates = rawCandidates.map((norm) => {
+      if (!norm || !norm.id) return norm;
+      const actualVoteRows = voteCountByCandidateId.get(norm.id) ?? 0;
+      if (actualVoteRows !== norm.votesCount) {
+        norm.votesCount = actualVoteRows;
+        norm.votes_count = actualVoteRows;
+        adminClient
+          .from('candidates')
+          .update({ votes_count: actualVoteRows })
+          .eq('id', norm.id)
+          .then(() => {}, () => {});
+      }
+      return norm;
+    });
+
+    const smsLogs = Array.isArray(smsRes.data)
+      ? smsRes.data.map((row: any) => ({
+          id: row.id,
+          schoolId: row.school_id,
+          recipientName: row.recipient_name || 'Parent',
+          recipientPhone: row.recipient_phone || '',
+          recipientType: row.recipient_type || 'Parent',
+          message: row.message || '',
+          type: row.type || 'Notification',
+          status: row.status || 'Sent',
+          createdAt: Number(row.created_at || Date.now())
+        }))
+      : [];
+
+    // Mirror state (including votes_table) to public.school_settings.streams.evoting
+    await writeEvotingBackupToSchoolSettings(schoolId, {
+      hasInitialized: true,
+      polls,
+      candidates,
+      votes,
+      votesTable: votes
+    });
+
+    return {
+      polls,
+      candidates,
+      votes,
+      votesTable: votes,
+      votesTableSyncMode: syncedVotesResult.votesTableSyncMode,
+      students,
+      smsLogs
+    };
+  }
+
+  // GET /api/evoting/state - Fetch polls, candidates, votes, votes_table, students, and table health from Supabase
+  app.get("/api/evoting/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveEvotingSchoolId(req);
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: true });
+      const tableStatus = await inspectEvotingDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        votesTable: evotingData.votesTable,
+        votesTableSyncMode: evotingData.votesTableSyncMode,
+        students: evotingData.students,
+        studentsCount: evotingData.students.length,
+        smsLogs: evotingData.smsLogs,
+        tableStatus,
+        evotingSql: EVOTING_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/sync - Two-way synchronize local Dexie polls/candidates/votes/students with Supabase
+  app.post("/api/evoting/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for E-Voting sync." });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const incomingPolls = Array.isArray(req.body?.polls) ? req.body.polls : [];
+      const incomingCandidates = Array.isArray(req.body?.candidates) ? req.body.candidates : [];
+      const incomingVotes = Array.isArray(req.body?.votes) ? req.body.votes : [];
+      const incomingStudents = Array.isArray(req.body?.students) ? req.body.students : [];
+
+      // 1. Sync any local students into public.students so voter verification works for all local + cloud students
+      if (incomingStudents.length > 0) {
+        await ensureAttendanceReferenceRecordsInSupabase(schoolId, [], incomingStudents);
+      }
+
+      // 2. Check existing polls in Supabase for this school
+      const { data: existingPolls } = await adminClient
+        .from('polls')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      const existingPollList = existingPolls || [];
+      const localToRemotePollId = new Map<number, number>();
+
+      if (existingPollList.length === 0 && incomingPolls.length > 0) {
+        // Migrate local polls to Supabase
+        for (const lp of incomingPolls) {
+          const title = String(lp?.title || '').trim();
+          if (!title) continue;
+          const { data: createdPoll } = await adminClient
+            .from('polls')
+            .insert([
+              {
+                school_id: schoolId,
+                title,
+                description: String(lp.description || '').trim(),
+                category: String(lp.category || 'SRC General Elections').trim(),
+                status: ['draft', 'active', 'completed', 'archived'].includes(String(lp.status))
+                  ? String(lp.status)
+                  : 'active',
+                created_at: Number(lp.createdAt || Date.now())
+              }
+            ])
+            .select()
+            .maybeSingle();
+
+          if (createdPoll?.id && lp.id != null) {
+            localToRemotePollId.set(Number(lp.id), Number(createdPoll.id));
+          }
+        }
+
+        // Migrate local candidates for those migrated polls
+        const localToRemoteCandidateId = new Map<number, number>();
+        for (const lc of incomingCandidates) {
+          const targetPollId = localToRemotePollId.get(Number(lc?.pollId));
+          if (!targetPollId || !lc?.name) continue;
+          const { data: createdCand } = await adminClient
+            .from('candidates')
+            .insert([
+              {
+                poll_id: targetPollId,
+                name: String(lc.name).trim(),
+                position: String(lc.position || 'President').trim(),
+                class: String(lc.class || 'JHS 1').trim(),
+                votes_count: Math.max(0, Number(lc.votesCount || 0)),
+                photo: lc.photo || null,
+                manifesto: String(lc.manifesto || '').trim()
+              }
+            ])
+            .select()
+            .maybeSingle();
+
+          if (createdCand?.id && lc.id != null) {
+            localToRemoteCandidateId.set(Number(lc.id), Number(createdCand.id));
+          }
+        }
+
+        // Migrate local votes for those migrated polls/candidates
+        for (const lv of incomingVotes) {
+          const targetPollId = localToRemotePollId.get(Number(lv?.pollId));
+          const targetCandId = localToRemoteCandidateId.get(Number(lv?.candidateId));
+          const studentId = String(lv?.studentId || '').trim();
+          if (!targetPollId || !targetCandId || !studentId) continue;
+          try {
+            await adminClient.from('votes').upsert(
+              [
+                {
+                  poll_id: targetPollId,
+                  student_id: studentId,
+                  candidate_id: targetCandId,
+                  position: String(lv.position || 'President').trim(),
+                  timestamp: Number(lv.timestamp || Date.now())
+                }
+              ],
+              { onConflict: 'poll_id,student_id,position' }
+            );
+          } catch {}
+        }
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: true });
+      const tableStatus = await inspectEvotingDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        students: evotingData.students,
+        studentsCount: evotingData.students.length,
+        smsLogs: evotingData.smsLogs,
+        tableStatus,
+        evotingSql: EVOTING_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/verify-voter - Authenticate Student ID against Supabase public.students & return voted poll IDs
+  app.post("/api/evoting/verify-voter", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveEvotingSchoolId(req);
+      const rawStudentId = String(req.body?.studentId || req.body?.student_id || '').trim();
+      if (!rawStudentId) {
+        return res.status(400).json({ success: false, error: "Student ID is required." });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      let matchedStudentRow: any = null;
+
+      // 1. Search in active school first
+      if (schoolId) {
+        const { data: scopedStu } = await adminClient
+          .from('students')
+          .select('*')
+          .eq('school_id', schoolId)
+          .ilike('student_id', rawStudentId)
+          .limit(1)
+          .maybeSingle();
+        if (scopedStu) matchedStudentRow = scopedStu;
+      }
+
+      // 2. Fallback: search across public.students by student_id
+      if (!matchedStudentRow) {
+        const { data: globalStu } = await adminClient
+          .from('students')
+          .select('*')
+          .ilike('student_id', rawStudentId)
+          .limit(1)
+          .maybeSingle();
+        if (globalStu) matchedStudentRow = globalStu;
+      }
+
+      // 3. If student exists in client Dexie but wasn't synced to Supabase yet, register them in public.students
+      if (!matchedStudentRow && req.body?.localStudent && typeof req.body.localStudent === 'object' && schoolId) {
+        const ls = req.body.localStudent;
+        if (String(ls.studentId || '').trim().toUpperCase() === rawStudentId.toUpperCase()) {
+          await ensureAttendanceReferenceRecordsInSupabase(schoolId, [], [ls]);
+          const { data: newlySynced } = await adminClient
+            .from('students')
+            .select('*')
+            .eq('school_id', schoolId)
+            .ilike('student_id', rawStudentId)
+            .limit(1)
+            .maybeSingle();
+          if (newlySynced) matchedStudentRow = newlySynced;
+        }
+      }
+
+      if (!matchedStudentRow) {
+        return res.status(404).json({
+          success: false,
+          error: "No matching student found in Supabase with that ID card. Please verify your Student ID."
+        });
+      }
+
+      const normalizedStudent = normalizeServerStudentRecord(matchedStudentRow);
+      const canonicalStudentId = String(normalizedStudent.studentId || rawStudentId).trim();
+
+      // Lookup all votes cast by this student in Supabase
+      const { data: studentVoteRows } = await adminClient
+        .from('votes')
+        .select('*')
+        .ilike('student_id', canonicalStudentId);
+
+      const votedPollIds = Array.from(
+        new Set((studentVoteRows || []).map((v: any) => Number(v.poll_id)).filter(Boolean))
+      );
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_VOTER_VERIFIED',
+              entity_type: 'evoting',
+              entity_id: canonicalStudentId,
+              details: {
+                studentId: canonicalStudentId,
+                studentName: `${normalizedStudent.firstName} ${normalizedStudent.lastName}`.trim(),
+                class: normalizedStudent.class,
+                votedPollIds
+              },
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        schoolId: matchedStudentRow.school_id || schoolId,
+        student: normalizedStudent,
+        votedPollIds,
+        votesCastCount: (studentVoteRows || []).length
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/polls - Create a new election poll in Supabase public.polls
+  app.post("/api/evoting/polls", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id." });
+      }
+
+      const title = String(req.body?.title || '').trim();
+      if (!title) {
+        return res.status(400).json({ success: false, error: "Election title is required." });
+      }
+      const description = String(req.body?.description || '').trim();
+      const category = String(req.body?.category || 'SRC General Elections').trim();
+      const rawStatus = String(req.body?.status || 'draft').trim().toLowerCase();
+      const status = ['draft', 'active', 'completed', 'archived'].includes(rawStatus) ? rawStatus : 'draft';
+      const createdAt = Number(req.body?.createdAt || Date.now());
+
+      const adminClient = getSupabaseAdmin();
+      const { data: createdPoll, error: insErr } = await adminClient
+        .from('polls')
+        .insert([
+          {
+            school_id: schoolId,
+            title,
+            description,
+            category,
+            status,
+            created_at: createdAt
+          }
+        ])
+        .select()
+        .single();
+
+      if (insErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(insErr) });
+      }
+
+      try {
+        const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+        await adminClient.from('audit_logs').insert([
+          {
+            school_id: schoolId,
+            user_id: validUserId,
+            action: 'EVOTING_POLL_CREATED',
+            entity_type: 'polls',
+            entity_id: String(createdPoll.id),
+            details: { id: createdPoll.id, title, category, status },
+            ip_address: extractIpAddress(req),
+            timestamp: Date.now()
+          }
+        ]);
+      } catch {}
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        poll: normalizePollRecord(createdPoll, schoolId),
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/evoting/polls/:id - Update election status or details in Supabase public.polls
+  app.put("/api/evoting/polls/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const pollId = Number(req.params.id);
+      if (!pollId || isNaN(pollId)) {
+        return res.status(400).json({ success: false, error: "Valid poll ID is required." });
+      }
+
+      const schoolId = await resolveEvotingSchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      const updateFields: Record<string, any> = {};
+      if (req.body?.status !== undefined) {
+        const st = String(req.body.status).trim().toLowerCase();
+        if (['draft', 'active', 'completed', 'archived'].includes(st)) {
+          updateFields.status = st;
+        }
+      }
+      if (req.body?.title !== undefined) updateFields.title = String(req.body.title).trim();
+      if (req.body?.description !== undefined) updateFields.description = String(req.body.description).trim();
+      if (req.body?.category !== undefined) updateFields.category = String(req.body.category).trim();
+
+      let q = adminClient.from('polls').update(updateFields).eq('id', pollId);
+      if (schoolId) q = q.eq('school_id', schoolId);
+      const { data: updatedPoll, error: updErr } = await q.select().maybeSingle();
+
+      if (updErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(updErr) });
+      }
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_POLL_UPDATED',
+              entity_type: 'polls',
+              entity_id: String(pollId),
+              details: updateFields,
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      return res.json({
+        success: true,
+        schoolId,
+        poll: updatedPoll ? normalizePollRecord(updatedPoll, schoolId) : null,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/evoting/polls/:id - Delete an election poll (and cascade its candidates & votes) in Supabase
+  app.delete("/api/evoting/polls/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const pollId = Number(req.params.id);
+      if (!pollId || isNaN(pollId)) {
+        return res.status(400).json({ success: false, error: "Valid poll ID is required." });
+      }
+
+      const schoolId = await resolveEvotingSchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      // Mark school as initialized before deleting so deleting all polls does not re-seed the default poll
+      const currentBackup = await readEvotingBackupFromSchoolSettings(schoolId);
+      await writeEvotingBackupToSchoolSettings(schoolId, {
+        hasInitialized: true,
+        polls: currentBackup.polls.filter((p: any) => Number(p.id) !== pollId),
+        candidates: currentBackup.candidates.filter((c: any) => Number(c.pollId) !== pollId),
+        votes: currentBackup.votes.filter((v: any) => Number(v.pollId) !== pollId),
+        votesTable: currentBackup.votesTable.filter((v: any) => Number(v.pollId) !== pollId)
+      });
+
+      try {
+        await adminClient.from('votes_table').delete().eq('poll_id', pollId);
+      } catch {}
+      await adminClient.from('votes').delete().eq('poll_id', pollId);
+      await adminClient.from('candidates').delete().eq('poll_id', pollId);
+      let delQ = adminClient.from('polls').delete().eq('id', pollId);
+      if (schoolId) delQ = delQ.eq('school_id', schoolId);
+      const { error: delErr } = await delQ;
+
+      if (delErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(delErr) });
+      }
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_POLL_DELETED',
+              entity_type: 'polls',
+              entity_id: String(pollId),
+              details: { deletedPollId: pollId },
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: pollId,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        votesTable: evotingData.votesTable,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/candidates - Register a nominee (with optional Supabase Storage portrait upload)
+  app.post("/api/evoting/candidates", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      const pollId = Number(req.body?.pollId || req.body?.poll_id || 0);
+      const name = String(req.body?.name || '').trim();
+      const position = String(req.body?.position || 'President').trim();
+      const className = String(req.body?.class || 'JHS 1').trim();
+      const manifesto = String(
+        req.body?.manifesto || 'Pledge to serve students body with core integrity.'
+      ).trim();
+
+      if (!pollId || !name) {
+        return res.status(400).json({
+          success: false,
+          error: "Target election (pollId) and nominee full name are required."
+        });
+      }
+
+      const rawPhotoInput = String(req.body?.photoBase64 || req.body?.photo || '').trim();
+      const photoMimeType = String(req.body?.photoMimeType || 'image/jpeg').trim();
+      let finalPhotoUrl = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&q=80';
+
+      if (rawPhotoInput) {
+        if (rawPhotoInput.startsWith('data:image/')) {
+          const uploaded = await uploadCandidatePhotoToStorage({
+            schoolId: schoolId || 'school',
+            candidateKey: `poll-${pollId}-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`,
+            base64: rawPhotoInput,
+            mimeType: photoMimeType
+          });
+          finalPhotoUrl = uploaded?.photoUrl || rawPhotoInput;
+        } else {
+          finalPhotoUrl = rawPhotoInput;
+        }
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const { data: createdCand, error: candErr } = await adminClient
+        .from('candidates')
+        .insert([
+          {
+            poll_id: pollId,
+            name,
+            position,
+            class: className,
+            votes_count: 0,
+            photo: finalPhotoUrl,
+            manifesto
+          }
+        ])
+        .select()
+        .single();
+
+      if (candErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(candErr) });
+      }
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_CANDIDATE_REGISTERED',
+              entity_type: 'candidates',
+              entity_id: String(createdCand.id),
+              details: { id: createdCand.id, pollId, name, position, class: className, photo: finalPhotoUrl },
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        candidate: normalizeCandidateRecord(createdCand),
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        votesTable: evotingData.votesTable,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/evoting/candidates/:id - Remove a candidate nomination from Supabase
+  app.delete("/api/evoting/candidates/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const candidateId = Number(req.params.id);
+      if (!candidateId || isNaN(candidateId)) {
+        return res.status(400).json({ success: false, error: "Valid candidate ID is required." });
+      }
+
+      const schoolId = await resolveEvotingSchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      try {
+        await adminClient.from('votes_table').delete().eq('candidate_id', candidateId);
+      } catch {}
+      await adminClient.from('votes').delete().eq('candidate_id', candidateId);
+      const { error: delErr } = await adminClient.from('candidates').delete().eq('id', candidateId);
+      if (delErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(delErr) });
+      }
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_CANDIDATE_DELETED',
+              entity_type: 'candidates',
+              entity_id: String(candidateId),
+              details: { deletedCandidateId: candidateId },
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: candidateId,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        votesTable: evotingData.votesTable,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/vote - Atomically verify voter, block double-voting, record votes in BOTH public.votes and public.votes_table, increment tallies, and log SMS/Audit
+  app.post("/api/evoting/vote", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      const pollId = Number(req.body?.pollId || req.body?.poll_id || 0);
+      const rawStudentId = String(req.body?.studentId || req.body?.student_id || '').trim();
+      const selectionsRaw = req.body?.selections || req.body?.ballot || {};
+
+      if (!pollId || !rawStudentId) {
+        return res.status(400).json({
+          success: false,
+          error: "Election ID (pollId) and verified Student ID are required."
+        });
+      }
+
+      const entries: Array<{ position: string; candidateId: number }> = Array.isArray(selectionsRaw)
+        ? selectionsRaw
+            .map((item: any) => ({
+              position: String(item?.position || '').trim(),
+              candidateId: Number(item?.candidateId || item?.candidate_id || 0)
+            }))
+            .filter((item) => item.position && item.candidateId > 0)
+        : Object.entries(selectionsRaw)
+            .map(([position, candId]) => ({
+              position: String(position).trim(),
+              candidateId: Number(candId)
+            }))
+            .filter((item) => item.position && item.candidateId > 0);
+
+      if (entries.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Please select a preferred candidate for all positions before submitting."
+        });
+      }
+
+      const adminClient = getSupabaseAdmin();
+
+      // 1. Verify poll is active
+      const { data: pollRow } = await adminClient
+        .from('polls')
+        .select('*')
+        .eq('id', pollId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!pollRow) {
+        return res.status(404).json({ success: false, error: "Selected election event was not found in Supabase." });
+      }
+      if (String(pollRow.status || '').toLowerCase() !== 'active') {
+        return res.status(400).json({
+          success: false,
+          error: `This election is currently "${String(pollRow.status).toUpperCase()}" and is not accepting ballots.`
+        });
+      }
+
+      const effectiveSchoolId = String(pollRow.school_id || schoolId || '');
+
+      // 2. Verify student in public.students (or register if passed in body.student)
+      let { data: studentRow } = await adminClient
+        .from('students')
+        .select('*')
+        .ilike('student_id', rawStudentId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!studentRow && req.body?.student && effectiveSchoolId) {
+        await ensureAttendanceReferenceRecordsInSupabase(effectiveSchoolId, [], [req.body.student]);
+        const reStu = await adminClient
+          .from('students')
+          .select('*')
+          .ilike('student_id', rawStudentId)
+          .limit(1)
+          .maybeSingle();
+        studentRow = reStu.data || null;
+      }
+
+      const canonicalStudentId = String(studentRow?.student_id || rawStudentId).trim().toUpperCase();
+      const stuNorm = studentRow ? normalizeServerStudentRecord(studentRow) : (req.body?.student || {});
+      const studentFullName = `${stuNorm.firstName || 'Student'} ${stuNorm.lastName || ''}`.trim();
+      const studentClassName = String(stuNorm.class || 'Unassigned').trim();
+
+      // 3. Server-side double-voting check across public.votes AND public.votes_table
+      const { data: existingVotes } = await adminClient
+        .from('votes')
+        .select('id, position')
+        .eq('poll_id', pollId)
+        .ilike('student_id', canonicalStudentId);
+
+      let existingVotesTable: any[] = [];
+      try {
+        const { data: vtExist, error: vtCheckErr } = await adminClient
+          .from('votes_table')
+          .select('id, position')
+          .eq('poll_id', pollId)
+          .ilike('student_id', canonicalStudentId);
+        if (!vtCheckErr && Array.isArray(vtExist)) {
+          existingVotesTable = vtExist;
+        }
+      } catch {}
+
+      if ((Array.isArray(existingVotes) && existingVotes.length > 0) || existingVotesTable.length > 0) {
+        return res.status(409).json({
+          success: false,
+          alreadyVoted: true,
+          error: `Access denied: Student ID ${canonicalStudentId} has already cast a ballot in this election!`
+        });
+      }
+
+      // 4. Insert vote rows into public.votes AND public.votes_table
+      const now = Date.now();
+      const voteRowsToInsert = entries.map((item) => ({
+        poll_id: pollId,
+        student_id: canonicalStudentId,
+        candidate_id: item.candidateId,
+        position: item.position,
+        timestamp: now
+      }));
+
+      const { data: insertedVotes, error: voteInsErr } = await adminClient
+        .from('votes')
+        .insert(voteRowsToInsert)
+        .select();
+
+      if (voteInsErr) {
+        if (String(voteInsErr.message || '').toLowerCase().includes('duplicate') || String(voteInsErr.code) === '23505') {
+          return res.status(409).json({
+            success: false,
+            alreadyVoted: true,
+            error: `Access denied: Student ID ${canonicalStudentId} has already cast a ballot in this election!`
+          });
+        }
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(voteInsErr) });
+      }
+
+      // Mirror cast ballots into public.votes_table if present in Supabase
+      try {
+        const vtRowsEnriched = (insertedVotes || voteRowsToInsert).map((row: any) => {
+          const receipt = buildBallotReceiptCode({
+            id: row.id,
+            pollId,
+            studentId: canonicalStudentId,
+            candidateId: Number(row.candidate_id),
+            position: String(row.position),
+            timestamp: now
+          });
+          return {
+            school_id: effectiveSchoolId || null,
+            poll_id: pollId,
+            student_id: canonicalStudentId,
+            student_name: studentFullName,
+            student_class: studentClassName,
+            candidate_id: Number(row.candidate_id),
+            position: String(row.position),
+            receipt_code: receipt,
+            timestamp: now
+          };
+        });
+        const vtIns = await adminClient.from('votes_table').insert(vtRowsEnriched);
+        if (vtIns.error) {
+          await adminClient.from('votes_table').insert(voteRowsToInsert);
+        }
+      } catch {}
+
+      // 5. Recompute and update votes_count on all candidates in this poll
+      const { data: allPollVotes } = await adminClient
+        .from('votes')
+        .select('candidate_id')
+        .eq('poll_id', pollId);
+
+      const tallyMap = new Map<number, number>();
+      for (const v of allPollVotes || []) {
+        const cid = Number(v.candidate_id);
+        if (cid) tallyMap.set(cid, (tallyMap.get(cid) || 0) + 1);
+      }
+
+      const { data: pollCandidates } = await adminClient
+        .from('candidates')
+        .select('id')
+        .eq('poll_id', pollId);
+
+      for (const cand of pollCandidates || []) {
+        const cid = Number(cand.id);
+        const newCount = tallyMap.get(cid) || 0;
+        await adminClient.from('candidates').update({ votes_count: newCount }).eq('id', cid);
+      }
+
+      // 6. Log parental SMS confirmation in public.sms_logs and security trail in public.audit_logs
+      const guardianPhone = String(stuNorm.guardianPhone || '0241234567').trim();
+      const guardianName = String(stuNorm.guardianName || studentFullName).trim();
+      const normalizedCast = (insertedVotes || []).map((v: any) => normalizeVoteRecord(v)).filter(Boolean);
+      const receiptList = normalizedCast.map((v: any) => v.receiptCode).join(', ');
+      const smsText = `Esepa E-Voting Station: Vote Cast Confirmed! ${studentFullName} (ID: ${canonicalStudentId}) cast ${entries.length} vote(s) in ${pollRow.title}. Receipt: ${receiptList}. Thank you!`;
+
+      let createdSmsLog: any = null;
+      if (effectiveSchoolId) {
+        try {
+          const { data: smsRow } = await adminClient
+            .from('sms_logs')
+            .insert([
+              {
+                school_id: effectiveSchoolId,
+                recipient_name: guardianName,
+                recipient_phone: guardianPhone,
+                recipient_type: 'Parent',
+                message: smsText,
+                type: 'Notification',
+                status: 'Sent',
+                created_at: now
+              }
+            ])
+            .select()
+            .maybeSingle();
+          if (smsRow) {
+            createdSmsLog = {
+              id: smsRow.id,
+              recipientName: smsRow.recipient_name,
+              recipientPhone: smsRow.recipient_phone,
+              recipientType: smsRow.recipient_type,
+              message: smsRow.message,
+              type: smsRow.type,
+              status: smsRow.status,
+              createdAt: Number(smsRow.created_at || now)
+            };
+          }
+        } catch {}
+
+        try {
+          const validUserId = await resolveValidSupabaseUserId(effectiveSchoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: effectiveSchoolId,
+              user_id: validUserId,
+              action: 'EVOTING_BALLOT_CAST',
+              entity_type: 'votes_table',
+              entity_id: `${pollId}:${canonicalStudentId}`,
+              details: {
+                pollId,
+                pollTitle: pollRow.title,
+                studentId: canonicalStudentId,
+                studentName: studentFullName,
+                positionsVoted: entries.map((e) => e.position),
+                receiptCodes: normalizedCast.map((v: any) => v.receiptCode),
+                timestamp: now
+              },
+              ip_address: extractIpAddress(req),
+              timestamp: now
+            }
+          ]);
+        } catch {}
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(effectiveSchoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectEvotingDatabaseTables(effectiveSchoolId);
+      return res.status(201).json({
+        success: true,
+        schoolId: effectiveSchoolId,
+        votesCast: normalizedCast,
+        receiptCodes: normalizedCast.map((v: any) => v.receiptCode),
+        smsLog: createdSmsLog,
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        votes: evotingData.votes,
+        votesTable: evotingData.votesTable,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/evoting/votes-table - Query and filter enriched records from Supabase votes_table & votes
+  app.get("/api/evoting/votes-table", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveEvotingSchoolId(req);
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: true });
+      const tableStatus = await inspectEvotingDatabaseTables(schoolId);
+
+      const filterPollId = Number(req.query?.pollId || req.query?.poll_id || 0);
+      const filterPosition = String(req.query?.position || '').trim();
+      const filterClass = String(req.query?.studentClass || req.query?.class || '').trim();
+      const searchQ = String(req.query?.search || req.query?.q || '').trim().toLowerCase();
+
+      let rows = [...(evotingData.votesTable || [])];
+      if (filterPollId > 0) {
+        rows = rows.filter((r) => Number(r.pollId) === filterPollId);
+      }
+      if (filterPosition && filterPosition !== 'ALL') {
+        rows = rows.filter((r) => String(r.position || '').toLowerCase() === filterPosition.toLowerCase());
+      }
+      if (filterClass && filterClass !== 'ALL') {
+        rows = rows.filter((r) => String(r.studentClass || '').toLowerCase() === filterClass.toLowerCase());
+      }
+      if (searchQ) {
+        rows = rows.filter((r) => {
+          const hay = [
+            r.receiptCode,
+            r.studentId,
+            r.studentName,
+            r.studentClass,
+            r.candidateName,
+            r.position,
+            r.pollTitle
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return hay.includes(searchQ);
+        });
+      }
+
+      const uniqueVoters = new Set(rows.map((r) => String(r.studentId || '').toUpperCase()).filter(Boolean)).size;
+      const positionsCovered = new Set(rows.map((r) => String(r.position || '')).filter(Boolean)).size;
+      const lastVoteTimestamp = rows.reduce((max, r) => Math.max(max, Number(r.timestamp || 0)), 0);
+
+      return res.json({
+        success: true,
+        schoolId,
+        votesTable: rows,
+        totalUnfiltered: evotingData.votesTable.length,
+        summary: {
+          totalBallots: rows.length,
+          uniqueVoters,
+          positionsCovered,
+          lastVoteTimestamp,
+          syncMode: evotingData.votesTableSyncMode
+        },
+        polls: evotingData.polls,
+        candidates: evotingData.candidates,
+        students: evotingData.students,
+        tableStatus,
+        evotingSql: EVOTING_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/evoting/votes-table/verify/:query - Verify a ballot receipt code or Student ID against Supabase votes_table & votes
+  app.get("/api/evoting/votes-table/verify/:query", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveEvotingSchoolId(req);
+      const rawQuery = String(req.params.query || '').trim();
+      if (!rawQuery) {
+        return res.status(400).json({ success: false, error: "Receipt code or Student ID is required for verification." });
+      }
+
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      const upperQ = rawQuery.toUpperCase();
+
+      const matchingVotes = (evotingData.votesTable || []).filter((v: any) => {
+        const rc = String(v.receiptCode || '').toUpperCase();
+        const sid = String(v.studentId || '').toUpperCase();
+        const vid = String(v.id || '');
+        return rc === upperQ || rc.includes(upperQ) || sid === upperQ || vid === rawQuery;
+      });
+
+      if (matchingVotes.length === 0) {
+        return res.status(404).json({
+          success: false,
+          verified: false,
+          query: rawQuery,
+          error: `No ballot record found in Supabase votes_table matching "${rawQuery}".`
+        });
+      }
+
+      return res.json({
+        success: true,
+        verified: true,
+        query: rawQuery,
+        matchCount: matchingVotes.length,
+        matches: matchingVotes,
+        studentId: matchingVotes[0].studentId,
+        studentName: matchingVotes[0].studentName,
+        studentClass: matchingVotes[0].studentClass,
+        pollTitle: matchingVotes[0].pollTitle,
+        verifiedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/evoting/votes-table/recount - Recalculate all candidate tallies directly from Supabase votes_table & votes rows
+  app.post("/api/evoting/votes-table/recount", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      const targetPollId = Number(req.body?.pollId || req.body?.poll_id || 0);
+      const adminClient = getSupabaseAdmin();
+
+      // Fetch and synchronize votes_table + votes
+      const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      const relevantCandidates =
+        targetPollId > 0
+          ? evotingData.candidates.filter((c: any) => Number(c.pollId) === targetPollId)
+          : evotingData.candidates;
+
+      const voteCountByCandidate = new Map<number, number>();
+      for (const v of evotingData.votesTable) {
+        if (targetPollId > 0 && Number(v.pollId) !== targetPollId) continue;
+        const cid = Number(v.candidateId);
+        if (cid) voteCountByCandidate.set(cid, (voteCountByCandidate.get(cid) || 0) + 1);
+      }
+
+      let updatedCandidatesCount = 0;
+      for (const cand of relevantCandidates) {
+        if (!cand?.id) continue;
+        const exactVotes = voteCountByCandidate.get(Number(cand.id)) || 0;
+        await adminClient.from('candidates').update({ votes_count: exactVotes }).eq('id', Number(cand.id));
+        updatedCandidatesCount++;
+      }
+
+      if (schoolId) {
+        try {
+          const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: schoolId,
+              user_id: validUserId,
+              action: 'EVOTING_TALLY_RECOUNT',
+              entity_type: 'votes_table',
+              entity_id: targetPollId > 0 ? String(targetPollId) : 'ALL_POLLS',
+              details: {
+                pollId: targetPollId || 'ALL',
+                totalVotesCounted: evotingData.votesTable.length,
+                candidatesUpdated: updatedCandidatesCount
+              },
+              ip_address: extractIpAddress(req),
+              timestamp: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const refreshed = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectEvotingDatabaseTables(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        recountedCandidates: updatedCandidatesCount,
+        totalVotesCounted: refreshed.votesTable.length,
+        polls: refreshed.polls,
+        candidates: refreshed.candidates,
+        votes: refreshed.votes,
+        votesTable: refreshed.votesTable,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/evoting/votes-table/:id - Void a cast ballot row (or reset test votes for a poll) in Supabase votes_table & votes
+  app.delete("/api/evoting/votes-table/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveEvotingSchoolId(req);
+      const rawIdParam = String(req.params.id || '').trim();
+      const pollIdParam = Number(req.query?.pollId || req.query?.poll_id || req.body?.pollId || 0);
+      const studentIdParam = String(req.query?.studentId || req.query?.student_id || req.body?.studentId || '').trim();
+      const positionParam = String(req.query?.position || req.body?.position || '').trim();
+      const adminClient = getSupabaseAdmin();
+
+      if (rawIdParam === 'reset-poll' && pollIdParam > 0) {
+        try {
+          await adminClient.from('votes_table').delete().eq('poll_id', pollIdParam);
+        } catch {}
+        await adminClient.from('votes').delete().eq('poll_id', pollIdParam);
+        await adminClient.from('candidates').update({ votes_count: 0 }).eq('poll_id', pollIdParam);
+
+        if (schoolId) {
+          try {
+            const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+            await adminClient.from('audit_logs').insert([
+              {
+                school_id: schoolId,
+                user_id: validUserId,
+                action: 'EVOTING_POLL_VOTES_RESET',
+                entity_type: 'votes_table',
+                entity_id: String(pollIdParam),
+                details: { resetPollId: pollIdParam },
+                ip_address: extractIpAddress(req),
+                timestamp: Date.now()
+              }
+            ]);
+          } catch {}
+        }
+      } else {
+        const numericId = Number(rawIdParam);
+        // Find the target vote first so we know its poll_id, student_id, position
+        let targetVote: any = null;
+        if (!isNaN(numericId) && numericId > 0) {
+          const { data: vRow } = await adminClient.from('votes').select('*').eq('id', numericId).maybeSingle();
+          targetVote = vRow;
+        }
+
+        const effectivePollId = Number(targetVote?.poll_id || pollIdParam || 0);
+        const effectiveStudentId = String(targetVote?.student_id || studentIdParam || '').trim();
+        const effectivePosition = String(targetVote?.position || positionParam || '').trim();
+
+        if (!isNaN(numericId) && numericId > 0) {
+          await adminClient.from('votes').delete().eq('id', numericId);
+          try {
+            await adminClient.from('votes_table').delete().eq('id', numericId);
+          } catch {}
+        }
+
+        if (effectivePollId > 0 && effectiveStudentId) {
+          let delV = adminClient
+            .from('votes')
+            .delete()
+            .eq('poll_id', effectivePollId)
+            .ilike('student_id', effectiveStudentId);
+          if (effectivePosition) delV = delV.eq('position', effectivePosition);
+          await delV;
+
+          try {
+            let delVT = adminClient
+              .from('votes_table')
+              .delete()
+              .eq('poll_id', effectivePollId)
+              .ilike('student_id', effectiveStudentId);
+            if (effectivePosition) delVT = delVT.eq('position', effectivePosition);
+            await delVT;
+          } catch {}
+        }
+
+        if (schoolId) {
+          try {
+            const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+            await adminClient.from('audit_logs').insert([
+              {
+                school_id: schoolId,
+                user_id: validUserId,
+                action: 'EVOTING_BALLOT_VOIDED',
+                entity_type: 'votes_table',
+                entity_id: String(rawIdParam),
+                details: {
+                  voteId: numericId || rawIdParam,
+                  pollId: effectivePollId,
+                  studentId: effectiveStudentId,
+                  position: effectivePosition
+                },
+                ip_address: extractIpAddress(req),
+                timestamp: Date.now()
+              }
+            ]);
+          } catch {}
+        }
+      }
+
+      const refreshed = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectEvotingDatabaseTables(schoolId);
+      return res.json({
+        success: true,
+        schoolId,
+        polls: refreshed.polls,
+        candidates: refreshed.candidates,
+        votes: refreshed.votes,
+        votesTable: refreshed.votesTable,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // CAMPUS INVENTORY REGISTRY, STOCK MOVEMENTS & EXPENSES SUPABASE ENDPOINTS
+  // =========================================================================
+
+  const INVENTORY_DDL_SQL = `-- Campus Inventory Registry, Stock Movements & Expenses Tables for Supabase
+CREATE TABLE IF NOT EXISTS public.inventory_items (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  item_name VARCHAR(255) NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  quantity INT NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  min_quantity INT NOT NULL DEFAULT 5 CHECK (min_quantity >= 0),
+  unit_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (unit_price >= 0),
+  location VARCHAR(150) NULL,
+  supplier_name VARCHAR(255) NULL,
+  supplier_phone VARCHAR(50) NULL,
+  last_updated BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_school ON public.inventory_items (school_id, category);
+
+CREATE TABLE IF NOT EXISTS public.stock_movements (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  inventory_item_id BIGINT NOT NULL REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+  change INT NOT NULL,
+  reason VARCHAR(200) NULL,
+  moved_by BIGINT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_movements_school ON public.stock_movements (school_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.school_expenses (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  date BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  inventory_item_id BIGINT NULL REFERENCES public.inventory_items(id) ON DELETE SET NULL,
+  quantity_purchased INT NULL,
+  payment_method VARCHAR(50) NOT NULL,
+  recorded_by VARCHAR(100) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_school ON public.school_expenses (school_id, date DESC);
+
+NOTIFY pgrst, 'reload schema';`;
+
+  const DEFAULT_STARTER_INVENTORY_ITEMS = [
+    {
+      itemName: 'Whiteboard Markers & Magnetic Duster Set (Box of 12)',
+      category: 'Stationery',
+      quantity: 45,
+      minQuantity: 15,
+      unitPrice: 65.0,
+      location: 'Main Academic Store — Shelf A1',
+      supplierName: 'Kingdom Books & Stationery Ltd',
+      supplierPhone: '0244112233'
+    },
+    {
+      itemName: 'A4 80gsm Printing Paper Reams (500 Sheets)',
+      category: 'Stationery',
+      quantity: 32,
+      minQuantity: 10,
+      unitPrice: 95.0,
+      location: 'Administration Reprographics Room',
+      supplierName: 'Kingdom Books & Stationery Ltd',
+      supplierPhone: '0244112233'
+    },
+    {
+      itemName: 'NaCCA Approved Core Mathematics Textbooks (JHS 1–3)',
+      category: 'Textbooks',
+      quantity: 120,
+      minQuantity: 25,
+      unitPrice: 85.0,
+      location: 'Central Library Textbook Vault',
+      supplierName: 'EPP Book Services Ghana',
+      supplierPhone: '0208119900'
+    },
+    {
+      itemName: 'Official Checked School Uniform Sets (Primary & JHS)',
+      category: 'Uniforms',
+      quantity: 60,
+      minQuantity: 20,
+      unitPrice: 140.0,
+      location: 'Matron & Welfare Wardrobe Store',
+      supplierName: 'GTP Campus Apparel Supply',
+      supplierPhone: '0249887766'
+    },
+    {
+      itemName: 'Classroom Dual Wooden Desk & Bench Set',
+      category: 'Furniture',
+      quantity: 85,
+      minQuantity: 10,
+      unitPrice: 380.0,
+      location: 'Block B & Maintenance Annex',
+      supplierName: 'Kumasi Timber & School Furniture Co.',
+      supplierPhone: '0277554433'
+    },
+    {
+      itemName: 'Borosilicate Science Lab Beakers & Test Tube Kit',
+      category: 'Lab Equipment',
+      quantity: 8,
+      minQuantity: 10,
+      unitPrice: 260.0,
+      location: 'Integrated Science Laboratory Cabinet 2',
+      supplierName: 'Accra Scientific Apparatus Ltd',
+      supplierPhone: '0553221144'
+    }
+  ];
+
+  async function resolveInventorySchoolId(req: any): Promise<string> {
+    const baseResolved = await resolveTimetableSchoolId(req);
+    if (baseResolved) return baseResolved;
+
+    const adminClient = getSupabaseAdmin();
+    try {
+      const { data: invSch } = await adminClient
+        .from('inventory_items')
+        .select('school_id')
+        .limit(1)
+        .maybeSingle();
+      if (invSch?.school_id) return String(invSch.school_id);
+    } catch {}
+
+    return await resolveEvotingSchoolId(req);
+  }
+
+  const normalizeInventoryItemRecord = (raw: any, defaultSchoolId?: string) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const itemName = String(raw.item_name ?? raw.itemName ?? '').trim();
+    if (!itemName) return null;
+    const validCategories = [
+      'Stationery',
+      'Textbooks',
+      'Uniforms',
+      'Furniture',
+      'Sports Gear',
+      'Lab Equipment',
+      'General'
+    ];
+    const rawCat = String(raw.category || 'General').trim();
+    const category = validCategories.includes(rawCat) ? rawCat : 'General';
+    return {
+      id,
+      schoolId: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      school_id: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      itemName,
+      item_name: itemName,
+      category,
+      quantity: Math.max(0, Number(raw.quantity ?? 0) || 0),
+      minQuantity: Math.max(0, Number(raw.min_quantity ?? raw.minQuantity ?? 5) || 0),
+      min_quantity: Math.max(0, Number(raw.min_quantity ?? raw.minQuantity ?? 5) || 0),
+      unitPrice: Math.max(0, Number(raw.unit_price ?? raw.unitPrice ?? 0) || 0),
+      unit_price: Math.max(0, Number(raw.unit_price ?? raw.unitPrice ?? 0) || 0),
+      location: String(raw.location || 'General Storehouse').trim(),
+      supplierName: raw.supplier_name || raw.supplierName ? String(raw.supplier_name || raw.supplierName).trim() : undefined,
+      supplierPhone: raw.supplier_phone || raw.supplierPhone ? String(raw.supplier_phone || raw.supplierPhone).trim() : undefined,
+      lastUpdated: Number(raw.last_updated ?? raw.lastUpdated ?? Date.now()) || Date.now()
+    };
+  };
+
+  const normalizeSchoolExpenseRecord = (raw: any, defaultSchoolId?: string) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const description = String(raw.description || '').trim();
+    if (!description) return null;
+    const amount = Math.max(0, Number(raw.amount ?? 0) || 0);
+    return {
+      id,
+      schoolId: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      school_id: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      description,
+      category: String(raw.category || 'Administrative').trim(),
+      amount,
+      date: Number(raw.date ?? raw.created_at ?? Date.now()) || Date.now(),
+      inventoryItemId:
+        raw.inventory_item_id !== undefined && raw.inventory_item_id !== null
+          ? Number(raw.inventory_item_id)
+          : raw.inventoryItemId !== undefined && raw.inventoryItemId !== null
+          ? Number(raw.inventoryItemId)
+          : undefined,
+      quantityPurchased:
+        raw.quantity_purchased !== undefined && raw.quantity_purchased !== null
+          ? Number(raw.quantity_purchased)
+          : raw.quantityPurchased !== undefined && raw.quantityPurchased !== null
+          ? Number(raw.quantityPurchased)
+          : undefined,
+      paymentMethod: String(raw.payment_method || raw.paymentMethod || 'Mobile Money').trim(),
+      recordedBy: String(raw.recorded_by || raw.recordedBy || 'Accountant').trim()
+    };
+  };
+
+  const normalizeStockMovementRecord = (raw: any, itemLookup?: Map<number, any>, defaultSchoolId?: string) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = raw.id !== undefined && raw.id !== null ? Number(raw.id) : undefined;
+    const inventoryItemId = Number(raw.inventory_item_id ?? raw.inventoryItemId ?? 0);
+    const change = Number(raw.change ?? raw.quantityChange ?? 0);
+    if (!inventoryItemId && !raw.itemName) return null;
+
+    const linkedItem = itemLookup?.get(inventoryItemId);
+    const rawReason = String(raw.reason || '').trim();
+
+    // Parse optional encoded metadata in reason: e.g. "[RESTOCK|prev:10->new:25|by:Admin] Restocked 15x Markers"
+    let movementType: 'RESTOCK' | 'ISSUE' | 'ADJUSTMENT' | 'INITIAL' =
+      change > 0 ? 'RESTOCK' : change < 0 ? 'ISSUE' : 'ADJUSTMENT';
+    let previousQuantity: number | undefined =
+      raw.previousQuantity !== undefined ? Number(raw.previousQuantity) : undefined;
+    let newQuantity: number | undefined =
+      raw.newQuantity !== undefined ? Number(raw.newQuantity) : undefined;
+    let performedBy = String(raw.performedBy || raw.performed_by || 'Storekeeper').trim();
+    let cleanReason = rawReason || (change > 0 ? 'Stock addition / restock' : 'Stock issuance / deduction');
+
+    const metaMatch = rawReason.match(/^\[([A-Z_]+)\|prev:(\d+)->new:(\d+)\|by:([^\]]+)\]\s*(.*)$/i);
+    if (metaMatch) {
+      const mType = metaMatch[1].toUpperCase();
+      if (mType === 'RESTOCK' || mType === 'ISSUE' || mType === 'ADJUSTMENT' || mType === 'INITIAL') {
+        movementType = mType as any;
+      }
+      previousQuantity = Number(metaMatch[2]);
+      newQuantity = Number(metaMatch[3]);
+      performedBy = metaMatch[4].trim() || performedBy;
+      cleanReason = metaMatch[5].trim() || cleanReason;
+    } else if (raw.movementType) {
+      movementType = raw.movementType;
+    }
+
+    return {
+      id,
+      schoolId: String(raw.school_id || raw.schoolId || defaultSchoolId || ''),
+      inventoryItemId,
+      inventory_item_id: inventoryItemId,
+      itemName: String(raw.itemName || raw.item_name || linkedItem?.itemName || `Commodity #${inventoryItemId}`),
+      category: String(raw.category || linkedItem?.category || 'General'),
+      change,
+      movementType,
+      previousQuantity,
+      newQuantity,
+      reason: cleanReason,
+      performedBy,
+      movedBy: raw.moved_by ?? raw.movedBy ?? null,
+      createdAt: Number(raw.created_at ?? raw.createdAt ?? Date.now()) || Date.now()
+    };
+  };
+
+  const buildEncodedMovementReason = (params: {
+    movementType: 'RESTOCK' | 'ISSUE' | 'ADJUSTMENT' | 'INITIAL';
+    previousQuantity: number;
+    newQuantity: number;
+    performedBy: string;
+    reason: string;
+  }) => {
+    const safeBy = String(params.performedBy || 'Storekeeper').replace(/[\[\]|]/g, '').slice(0, 32);
+    const prefix = `[${params.movementType}|prev:${Math.max(0, params.previousQuantity)}->new:${Math.max(0, params.newQuantity)}|by:${safeBy}] `;
+    return (prefix + String(params.reason || '').trim()).slice(0, 195);
+  };
+
+  async function readInventoryBackupFromSchoolSettings(schoolId: string): Promise<{
+    hasInitialized: boolean;
+    items: any[];
+    movements: any[];
+    expenses: any[];
+    updatedAt: number;
+  }> {
+    const empty = { hasInitialized: false, items: [], movements: [], expenses: [], updatedAt: 0 };
+    if (!schoolId) return empty;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data } = await adminClient
+        .from('school_settings')
+        .select('streams')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+      if (data?.streams && typeof data.streams === 'object' && !Array.isArray(data.streams)) {
+        const inv = (data.streams as any).inventory;
+        if (inv && typeof inv === 'object') {
+          return {
+            hasInitialized: Boolean(inv.hasInitialized),
+            items: Array.isArray(inv.items) ? inv.items : [],
+            movements: Array.isArray(inv.movements) ? inv.movements : [],
+            expenses: Array.isArray(inv.expenses) ? inv.expenses : [],
+            updatedAt: Number(inv.updatedAt || 0)
+          };
+        }
+      }
+    } catch {}
+    return empty;
+  }
+
+  async function writeInventoryBackupToSchoolSettings(
+    schoolId: string,
+    payload: {
+      hasInitialized?: boolean;
+      items: any[];
+      movements: any[];
+      expenses: any[];
+    }
+  ): Promise<void> {
+    if (!schoolId) return;
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: existing } = await adminClient
+        .from('school_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .limit(1)
+        .maybeSingle();
+
+      const existingStreams =
+        existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams)
+          ? existing.streams
+          : {};
+
+      const nextStreams = {
+        ...existingStreams,
+        inventory: {
+          hasInitialized: payload.hasInitialized !== undefined ? payload.hasInitialized : true,
+          items: payload.items || [],
+          movements: (payload.movements || []).slice(0, 250),
+          expenses: payload.expenses || [],
+          updatedAt: Date.now()
+        }
+      };
+
+      await adminClient.from('school_settings').upsert(
+        [
+          {
+            school_id: schoolId,
+            grade_boundaries: existing?.grade_boundaries || [],
+            terms: existing?.terms || [],
+            streams: nextStreams,
+            updated_at: Date.now()
+          }
+        ],
+        { onConflict: 'school_id' }
+      );
+    } catch {}
+  }
+
+  async function seedStarterInventoryInSupabase(schoolId: string): Promise<void> {
+    if (!schoolId) return;
+    const adminClient = getSupabaseAdmin();
+    const now = Date.now();
+    try {
+      const rowsToInsert = DEFAULT_STARTER_INVENTORY_ITEMS.map((item) => ({
+        school_id: schoolId,
+        item_name: item.itemName,
+        category: item.category,
+        quantity: item.quantity,
+        min_quantity: item.minQuantity,
+        unit_price: item.unitPrice,
+        location: item.location,
+        supplier_name: item.supplierName,
+        supplier_phone: item.supplierPhone,
+        last_updated: now
+      }));
+
+      const { data: insertedItems, error: insErr } = await adminClient
+        .from('inventory_items')
+        .insert(rowsToInsert)
+        .select();
+
+      if (!insErr && Array.isArray(insertedItems) && insertedItems.length > 0) {
+        const movementRows = insertedItems.map((row: any) => ({
+          school_id: schoolId,
+          inventory_item_id: Number(row.id),
+          change: Number(row.quantity || 0),
+          reason: buildEncodedMovementReason({
+            movementType: 'INITIAL',
+            previousQuantity: 0,
+            newQuantity: Number(row.quantity || 0),
+            performedBy: 'System Seed',
+            reason: `Initial campus stock baseline for ${row.item_name}`
+          }),
+          moved_by: null,
+          created_at: now
+        }));
+        await adminClient.from('stock_movements').insert(movementRows);
+      }
+    } catch {}
+  }
+
+  async function inspectInventoryDatabaseTables(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const result: Record<string, { exists: boolean; status: string; count?: number; error?: string }> = {};
+    const tables = ['inventory_items', 'stock_movements', 'school_expenses', 'school_settings'];
+
+    await Promise.all(
+      tables.map(async (tableName) => {
+        try {
+          let q = adminClient.from(tableName).select('*', { count: 'exact', head: true });
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { count, error } = await q;
+          result[tableName] = error
+            ? { exists: false, status: 'error', error: error.message }
+            : { exists: true, status: 'ready', count: count ?? 0 };
+        } catch (e: any) {
+          result[tableName] = { exists: false, status: 'error', error: e?.message };
+        }
+      })
+    );
+    return result;
+  }
+
+  async function fetchSchoolInventoryFromSupabase(
+    schoolId: string,
+    options?: { allowAutoSeed?: boolean }
+  ): Promise<{
+    items: any[];
+    movements: any[];
+    expenses: any[];
+  }> {
+    if (!schoolId) {
+      return { items: [], movements: [], expenses: [] };
+    }
+    const adminClient = getSupabaseAdmin();
+    const backup = await readInventoryBackupFromSchoolSettings(schoolId);
+
+    // 1. Fetch inventory_items for schoolId
+    let { data: itemRows } = await adminClient
+      .from('inventory_items')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('id', { ascending: true });
+
+    if ((!itemRows || itemRows.length === 0) && backup.items.length > 0) {
+      for (const bi of backup.items) {
+        try {
+          await adminClient.from('inventory_items').insert([
+            {
+              school_id: schoolId,
+              item_name: String(bi.itemName || bi.item_name || 'Commodity'),
+              category: String(bi.category || 'General'),
+              quantity: Math.max(0, Number(bi.quantity ?? 0)),
+              min_quantity: Math.max(0, Number(bi.minQuantity ?? bi.min_quantity ?? 5)),
+              unit_price: Math.max(0, Number(bi.unitPrice ?? bi.unit_price ?? 0)),
+              location: String(bi.location || 'General Storehouse'),
+              supplier_name: bi.supplierName || bi.supplier_name || null,
+              supplier_phone: bi.supplierPhone || bi.supplier_phone || null,
+              last_updated: Number(bi.lastUpdated || Date.now())
+            }
+          ]);
+        } catch {}
+      }
+      const reItems = await adminClient
+        .from('inventory_items')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('id', { ascending: true });
+      itemRows = reItems.data || [];
+    } else if (
+      (!itemRows || itemRows.length === 0) &&
+      !backup.hasInitialized &&
+      options?.allowAutoSeed !== false
+    ) {
+      await seedStarterInventoryInSupabase(schoolId);
+      const seededItems = await adminClient
+        .from('inventory_items')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('id', { ascending: true });
+      itemRows = seededItems.data || [];
+    }
+
+    const items = (itemRows || [])
+      .map((r: any) => normalizeInventoryItemRecord(r, schoolId))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizeInventoryItemRecord>>[];
+
+    const itemLookup = new Map<number, any>();
+    for (const it of items) {
+      if (it.id) itemLookup.set(Number(it.id), it);
+    }
+
+    // 2. Fetch stock_movements and school_expenses in parallel
+    const [movRes, expRes] = await Promise.all([
+      adminClient
+        .from('stock_movements')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(250),
+      adminClient
+        .from('school_expenses')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('date', { ascending: false })
+    ]);
+
+    const movements = (movRes.data || [])
+      .map((m: any) => normalizeStockMovementRecord(m, itemLookup, schoolId))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizeStockMovementRecord>>[];
+
+    const expenses = (expRes.data || [])
+      .map((e: any) => normalizeSchoolExpenseRecord(e, schoolId))
+      .filter(Boolean) as NonNullable<ReturnType<typeof normalizeSchoolExpenseRecord>>[];
+
+    await writeInventoryBackupToSchoolSettings(schoolId, {
+      hasInitialized: true,
+      items,
+      movements,
+      expenses
+    });
+
+    return { items, movements, expenses };
+  }
+
+  // GET /api/inventory/state - Fetch inventory_items, stock_movements, school_expenses, and table status from Supabase
+  app.get("/api/inventory/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = await resolveInventorySchoolId(req);
+      const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: true });
+      const tableStatus = await inspectInventoryDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        inventorySql: INVENTORY_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/inventory/sync - Two-way synchronize local Dexie inventory & expenses with Supabase
+  app.post("/api/inventory/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveInventorySchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id for Inventory sync." });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const incomingItems = Array.isArray(req.body?.items) ? req.body.items : [];
+      const incomingExpenses = Array.isArray(req.body?.expenses) ? req.body.expenses : [];
+
+      const { data: existingItems } = await adminClient
+        .from('inventory_items')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      const existingItemList = existingItems || [];
+      const localToRemoteItemId = new Map<number, number>();
+
+      if (existingItemList.length === 0 && incomingItems.length > 0) {
+        for (const li of incomingItems) {
+          const itemName = String(li?.itemName || li?.item_name || '').trim();
+          if (!itemName) continue;
+          const now = Number(li.lastUpdated || Date.now());
+          const qty = Math.max(0, Number(li.quantity ?? 0));
+          const { data: createdItem } = await adminClient
+            .from('inventory_items')
+            .insert([
+              {
+                school_id: schoolId,
+                item_name: itemName,
+                category: String(li.category || 'General').trim(),
+                quantity: qty,
+                min_quantity: Math.max(0, Number(li.minQuantity ?? li.min_quantity ?? 5)),
+                unit_price: Math.max(0, Number(li.unitPrice ?? li.unit_price ?? 0)),
+                location: String(li.location || 'General Storehouse').trim(),
+                supplier_name: li.supplierName || null,
+                supplier_phone: li.supplierPhone || null,
+                last_updated: now
+              }
+            ])
+            .select()
+            .maybeSingle();
+
+          if (createdItem?.id) {
+            if (li.id != null) {
+              localToRemoteItemId.set(Number(li.id), Number(createdItem.id));
+            }
+            try {
+              await adminClient.from('stock_movements').insert([
+                {
+                  school_id: schoolId,
+                  inventory_item_id: Number(createdItem.id),
+                  change: qty,
+                  reason: buildEncodedMovementReason({
+                    movementType: 'INITIAL',
+                    previousQuantity: 0,
+                    newQuantity: qty,
+                    performedBy: 'Cloud Sync',
+                    reason: `Migrated local stock item: ${itemName}`
+                  }),
+                  moved_by: null,
+                  created_at: now
+                }
+              ]);
+            } catch {}
+          }
+        }
+      }
+
+      const { data: existingExpenses } = await adminClient
+        .from('school_expenses')
+        .select('id')
+        .eq('school_id', schoolId)
+        .limit(1);
+
+      if ((!existingExpenses || existingExpenses.length === 0) && incomingExpenses.length > 0) {
+        for (const le of incomingExpenses) {
+          const description = String(le?.description || '').trim();
+          const amount = Number(le?.amount ?? 0);
+          if (!description || amount <= 0) continue;
+          const mappedItemId =
+            le.inventoryItemId != null
+              ? localToRemoteItemId.get(Number(le.inventoryItemId)) || Number(le.inventoryItemId)
+              : null;
+          try {
+            await adminClient.from('school_expenses').insert([
+              {
+                school_id: schoolId,
+                description,
+                category: String(le.category || 'Administrative').trim(),
+                amount,
+                date: Number(le.date || Date.now()),
+                inventory_item_id: mappedItemId || null,
+                quantity_purchased: le.quantityPurchased ? Number(le.quantityPurchased) : null,
+                payment_method: String(le.paymentMethod || 'Mobile Money').trim(),
+                recorded_by: String(le.recordedBy || 'Accountant').trim()
+              }
+            ]);
+          } catch {}
+        }
+      }
+
+      const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: true });
+      const tableStatus = await inspectInventoryDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        inventorySql: INVENTORY_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/inventory/items - Create a new stock commodity in Supabase public.inventory_items & log initial stock in public.stock_movements
+  app.post("/api/inventory/items", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveInventorySchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id." });
+      }
+
+      const itemName = String(req.body?.itemName || req.body?.item_name || '').trim();
+      if (!itemName) {
+        return res.status(400).json({ success: false, error: "Commodity item name is required." });
+      }
+      const category = String(req.body?.category || 'General').trim();
+      const quantity = Math.max(0, Number(req.body?.quantity ?? 0) || 0);
+      const minQuantity = Math.max(0, Number(req.body?.minQuantity ?? req.body?.min_quantity ?? 5) || 0);
+      const unitPrice = Math.max(0, Number(req.body?.unitPrice ?? req.body?.unit_price ?? 0) || 0);
+      const location = String(req.body?.location || 'General Storehouse').trim();
+      const supplierName = req.body?.supplierName ? String(req.body.supplierName).trim() : null;
+      const supplierPhone = req.body?.supplierPhone ? String(req.body.supplierPhone).trim() : null;
+      const performedBy = String(req.body?.performedBy || req.user?.email || 'Storekeeper').trim();
+      const now = Date.now();
+
+      const adminClient = getSupabaseAdmin();
+      const { data: createdItem, error: insErr } = await adminClient
+        .from('inventory_items')
+        .insert([
+          {
+            school_id: schoolId,
+            item_name: itemName,
+            category,
+            quantity,
+            min_quantity: minQuantity,
+            unit_price: unitPrice,
+            location,
+            supplier_name: supplierName,
+            supplier_phone: supplierPhone,
+            last_updated: now
+          }
+        ])
+        .select()
+        .single();
+
+      if (insErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(insErr) });
+      }
+
+      const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+      try {
+        await adminClient.from('stock_movements').insert([
+          {
+            school_id: schoolId,
+            inventory_item_id: Number(createdItem.id),
+            change: quantity,
+            reason: buildEncodedMovementReason({
+              movementType: 'INITIAL',
+              previousQuantity: 0,
+              newQuantity: quantity,
+              performedBy,
+              reason: `Registered new commodity (${itemName}) at ${location}`
+            }),
+            moved_by: validUserId,
+            created_at: now
+          }
+        ]);
+      } catch {}
+
+      try {
+        await adminClient.from('audit_logs').insert([
+          {
+            school_id: schoolId,
+            user_id: validUserId,
+            action: 'INVENTORY_ITEM_CREATED',
+            entity_type: 'inventory_items',
+            entity_id: String(createdItem.id),
+            details: { id: createdItem.id, itemName, category, quantity, unitPrice, location },
+            ip_address: extractIpAddress(req),
+            timestamp: now
+          }
+        ]);
+      } catch {}
+
+      const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(schoolId);
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        item: normalizeInventoryItemRecord(createdItem, schoolId),
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/inventory/items/:id - Update stock commodity details in Supabase public.inventory_items & log any quantity delta in public.stock_movements
+  app.put("/api/inventory/items/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const itemId = Number(req.params.id);
+      if (!itemId || isNaN(itemId)) {
+        return res.status(400).json({ success: false, error: "Valid inventory item ID is required." });
+      }
+
+      const schoolId = await resolveInventorySchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      const { data: existingItem } = await adminClient
+        .from('inventory_items')
+        .select('*')
+        .eq('id', itemId)
+        .maybeSingle();
+
+      const prevQty = Number(existingItem?.quantity ?? 0);
+      const newQty =
+        req.body?.quantity !== undefined ? Math.max(0, Number(req.body.quantity) || 0) : prevQty;
+      const now = Date.now();
+
+      const updatePayload: Record<string, any> = {
+        last_updated: now
+      };
+      if (req.body?.itemName !== undefined || req.body?.item_name !== undefined) {
+        updatePayload.item_name = String(req.body.itemName ?? req.body.item_name).trim();
+      }
+      if (req.body?.category !== undefined) updatePayload.category = String(req.body.category).trim();
+      if (req.body?.quantity !== undefined) updatePayload.quantity = newQty;
+      if (req.body?.minQuantity !== undefined || req.body?.min_quantity !== undefined) {
+        updatePayload.min_quantity = Math.max(0, Number(req.body.minQuantity ?? req.body.min_quantity) || 0);
+      }
+      if (req.body?.unitPrice !== undefined || req.body?.unit_price !== undefined) {
+        updatePayload.unit_price = Math.max(0, Number(req.body.unitPrice ?? req.body.unit_price) || 0);
+      }
+      if (req.body?.location !== undefined) {
+        updatePayload.location = String(req.body.location || 'General Storehouse').trim();
+      }
+      if (req.body?.supplierName !== undefined) {
+        updatePayload.supplier_name = req.body.supplierName ? String(req.body.supplierName).trim() : null;
+      }
+      if (req.body?.supplierPhone !== undefined) {
+        updatePayload.supplier_phone = req.body.supplierPhone ? String(req.body.supplierPhone).trim() : null;
+      }
+
+      let updQ = adminClient.from('inventory_items').update(updatePayload).eq('id', itemId);
+      if (schoolId) updQ = updQ.eq('school_id', schoolId);
+      const { data: updatedItem, error: updErr } = await updQ.select().maybeSingle();
+
+      if (updErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(updErr) });
+      }
+
+      const effectiveSchoolId = String(updatedItem?.school_id || existingItem?.school_id || schoolId || '');
+      const validUserId = await resolveValidSupabaseUserId(effectiveSchoolId, req.user?.id);
+      const performedBy = String(req.body?.performedBy || req.user?.email || 'Storekeeper').trim();
+
+      if (newQty !== prevQty && effectiveSchoolId) {
+        const delta = newQty - prevQty;
+        try {
+          await adminClient.from('stock_movements').insert([
+            {
+              school_id: effectiveSchoolId,
+              inventory_item_id: itemId,
+              change: delta,
+              reason: buildEncodedMovementReason({
+                movementType: 'ADJUSTMENT',
+                previousQuantity: prevQty,
+                newQuantity: newQty,
+                performedBy,
+                reason: String(
+                  req.body?.reason ||
+                    `Edited commodity stock count from ${prevQty} to ${newQty} units`
+                )
+              }),
+              moved_by: validUserId,
+              created_at: now
+            }
+          ]);
+        } catch {}
+      }
+
+      const invData = await fetchSchoolInventoryFromSupabase(effectiveSchoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(effectiveSchoolId);
+
+      return res.json({
+        success: true,
+        schoolId: effectiveSchoolId,
+        item: updatedItem ? normalizeInventoryItemRecord(updatedItem, effectiveSchoolId) : null,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/inventory/items/:id/adjust - Adjust commodity quantity (+ / - / restock / issue) and record movement in Supabase public.stock_movements
+  app.post("/api/inventory/items/:id/adjust", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const itemId = Number(req.params.id);
+      if (!itemId || isNaN(itemId)) {
+        return res.status(400).json({ success: false, error: "Valid inventory item ID is required." });
+      }
+
+      const schoolId = await resolveInventorySchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      const { data: existingItem, error: findErr } = await adminClient
+        .from('inventory_items')
+        .select('*')
+        .eq('id', itemId)
+        .maybeSingle();
+
+      if (findErr || !existingItem) {
+        return res.status(404).json({ success: false, error: "Inventory commodity not found in Supabase." });
+      }
+
+      const effectiveSchoolId = String(existingItem.school_id || schoolId || '');
+      const prevQty = Math.max(0, Number(existingItem.quantity ?? 0));
+      const rawChange = Number(req.body?.change ?? req.body?.adjustment ?? 0);
+      if (!rawChange || isNaN(rawChange)) {
+        return res.status(400).json({ success: false, error: "A non-zero quantity change is required." });
+      }
+
+      const newQty = Math.max(0, prevQty + rawChange);
+      const actualDelta = newQty - prevQty;
+      const now = Date.now();
+      const performedBy = String(req.body?.performedBy || req.user?.email || 'Storekeeper').trim();
+      const rawType = String(req.body?.movementType || (actualDelta >= 0 ? 'RESTOCK' : 'ISSUE')).toUpperCase();
+      const movementType: 'RESTOCK' | 'ISSUE' | 'ADJUSTMENT' =
+        rawType === 'RESTOCK' || rawType === 'ISSUE' || rawType === 'ADJUSTMENT'
+          ? (rawType as any)
+          : actualDelta >= 0
+          ? 'RESTOCK'
+          : 'ISSUE';
+      const userReason = String(
+        req.body?.reason ||
+          (actualDelta >= 0
+            ? `Added ${Math.abs(actualDelta)} unit(s) to ${existingItem.item_name}`
+            : `Issued ${Math.abs(actualDelta)} unit(s) of ${existingItem.item_name}`)
+      ).trim();
+
+      const { error: updErr } = await adminClient
+        .from('inventory_items')
+        .update({ quantity: newQty, last_updated: now })
+        .eq('id', itemId);
+
+      if (updErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(updErr) });
+      }
+
+      const validUserId = await resolveValidSupabaseUserId(effectiveSchoolId, req.user?.id);
+      try {
+        await adminClient.from('stock_movements').insert([
+          {
+            school_id: effectiveSchoolId,
+            inventory_item_id: itemId,
+            change: actualDelta,
+            reason: buildEncodedMovementReason({
+              movementType,
+              previousQuantity: prevQty,
+              newQuantity: newQty,
+              performedBy,
+              reason: userReason
+            }),
+            moved_by: validUserId,
+            created_at: now
+          }
+        ]);
+      } catch {}
+
+      try {
+        await adminClient.from('audit_logs').insert([
+          {
+            school_id: effectiveSchoolId,
+            user_id: validUserId,
+            action: 'INVENTORY_STOCK_ADJUSTED',
+            entity_type: 'stock_movements',
+            entity_id: String(itemId),
+            details: {
+              itemId,
+              itemName: existingItem.item_name,
+              previousQuantity: prevQty,
+              newQuantity: newQty,
+              change: actualDelta,
+              movementType,
+              reason: userReason
+            },
+            ip_address: extractIpAddress(req),
+            timestamp: now
+          }
+        ]);
+      } catch {}
+
+      const invData = await fetchSchoolInventoryFromSupabase(effectiveSchoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(effectiveSchoolId);
+
+      return res.json({
+        success: true,
+        schoolId: effectiveSchoolId,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/inventory/items/:id - Delete an inventory commodity from Supabase public.inventory_items
+  app.delete("/api/inventory/items/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const itemId = Number(req.params.id);
+      if (!itemId || isNaN(itemId)) {
+        return res.status(400).json({ success: false, error: "Valid inventory item ID is required." });
+      }
+
+      const schoolId = await resolveInventorySchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      // Update backup before deleting so deleting all items doesn't trigger starter re-seed
+      const currentBackup = await readInventoryBackupFromSchoolSettings(schoolId);
+      await writeInventoryBackupToSchoolSettings(schoolId, {
+        hasInitialized: true,
+        items: currentBackup.items.filter((i: any) => Number(i.id) !== itemId),
+        movements: currentBackup.movements.filter((m: any) => Number(m.inventoryItemId) !== itemId),
+        expenses: currentBackup.expenses
+      });
+
+      await adminClient.from('stock_movements').delete().eq('inventory_item_id', itemId);
+      let delQ = adminClient.from('inventory_items').delete().eq('id', itemId);
+      if (schoolId) delQ = delQ.eq('school_id', schoolId);
+      const { error: delErr } = await delQ;
+
+      if (delErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(delErr) });
+      }
+
+      const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(schoolId);
+
+      return res.json({
+        success: true,
+        schoolId,
+        deletedId: itemId,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/inventory/expenses - Record an overhead or Inventory Restock expense in Supabase public.school_expenses (and update inventory_items + stock_movements)
+  app.post("/api/inventory/expenses", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const schoolId = await resolveInventorySchoolId(req);
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: "Could not resolve active school_id." });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const category = String(req.body?.category || 'Administrative').trim();
+      const paymentMethod = String(req.body?.paymentMethod || req.body?.payment_method || 'Mobile Money').trim();
+      const recordedBy = String(req.body?.recordedBy || req.body?.recorded_by || req.user?.email || 'Accountant').trim();
+      const now = Number(req.body?.date || Date.now());
+      const validUserId = await resolveValidSupabaseUserId(schoolId, req.user?.id);
+
+      let description = String(req.body?.description || '').trim();
+      let amount = Number(req.body?.amount ?? 0);
+      const inventoryItemId =
+        req.body?.inventoryItemId !== undefined && req.body?.inventoryItemId !== null
+          ? Number(req.body.inventoryItemId)
+          : req.body?.inventory_item_id !== undefined && req.body?.inventory_item_id !== null
+          ? Number(req.body.inventory_item_id)
+          : null;
+      const quantityPurchased =
+        req.body?.quantityPurchased !== undefined && req.body?.quantityPurchased !== null
+          ? Number(req.body.quantityPurchased)
+          : req.body?.quantity_purchased !== undefined && req.body?.quantity_purchased !== null
+          ? Number(req.body.quantity_purchased)
+          : null;
+
+      if (category === 'Inventory Restock' && inventoryItemId && quantityPurchased && quantityPurchased > 0) {
+        const { data: targetItem } = await adminClient
+          .from('inventory_items')
+          .select('*')
+          .eq('id', inventoryItemId)
+          .maybeSingle();
+
+        if (!targetItem) {
+          return res.status(404).json({ success: false, error: "Selected inventory commodity for restock was not found." });
+        }
+
+        const unitCost =
+          req.body?.unitPrice !== undefined
+            ? Number(req.body.unitPrice)
+            : Number(targetItem.unit_price || 0);
+        if (!amount || amount <= 0) {
+          amount = Math.max(0.01, quantityPurchased * unitCost);
+        }
+        if (!description) {
+          description = `Restocked ${quantityPurchased}x ${targetItem.item_name}`;
+        }
+
+        const prevQty = Math.max(0, Number(targetItem.quantity || 0));
+        const newQty = prevQty + quantityPurchased;
+
+        await adminClient
+          .from('inventory_items')
+          .update({ quantity: newQty, last_updated: now })
+          .eq('id', inventoryItemId);
+
+        try {
+          await adminClient.from('stock_movements').insert([
+            {
+              school_id: schoolId,
+              inventory_item_id: inventoryItemId,
+              change: quantityPurchased,
+              reason: buildEncodedMovementReason({
+                movementType: 'RESTOCK',
+                previousQuantity: prevQty,
+                newQuantity: newQty,
+                performedBy: recordedBy,
+                reason: `${description} (GHS ${amount.toFixed(2)} via ${paymentMethod})`
+              }),
+              moved_by: validUserId,
+              created_at: now
+            }
+          ]);
+        } catch {}
+      }
+
+      if (!description || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Expense description and a positive amount (> 0) are required."
+        });
+      }
+
+      const { data: createdExp, error: expErr } = await adminClient
+        .from('school_expenses')
+        .insert([
+          {
+            school_id: schoolId,
+            description,
+            category,
+            amount,
+            date: now,
+            inventory_item_id: inventoryItemId || null,
+            quantity_purchased: quantityPurchased || null,
+            payment_method: paymentMethod,
+            recorded_by: recordedBy
+          }
+        ])
+        .select()
+        .single();
+
+      if (expErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(expErr) });
+      }
+
+      const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(schoolId);
+
+      return res.status(201).json({
+        success: true,
+        schoolId,
+        expense: normalizeSchoolExpenseRecord(createdExp, schoolId),
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/inventory/expenses/:id - Delete an expense record (and roll back restocked quantity if Inventory Restock)
+  app.delete("/api/inventory/expenses/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      invalidateDbCache();
+      const expenseId = Number(req.params.id);
+      if (!expenseId || isNaN(expenseId)) {
+        return res.status(400).json({ success: false, error: "Valid expense ID is required." });
+      }
+
+      const schoolId = await resolveInventorySchoolId(req);
+      const adminClient = getSupabaseAdmin();
+
+      const { data: existingExp } = await adminClient
+        .from('school_expenses')
+        .select('*')
+        .eq('id', expenseId)
+        .maybeSingle();
+
+      const effectiveSchoolId = String(existingExp?.school_id || schoolId || '');
+      const validUserId = await resolveValidSupabaseUserId(effectiveSchoolId, req.user?.id);
+
+      if (
+        existingExp &&
+        existingExp.category === 'Inventory Restock' &&
+        existingExp.inventory_item_id &&
+        Number(existingExp.quantity_purchased) > 0
+      ) {
+        const itemId = Number(existingExp.inventory_item_id);
+        const revertQty = Number(existingExp.quantity_purchased);
+        const { data: targetItem } = await adminClient
+          .from('inventory_items')
+          .select('*')
+          .eq('id', itemId)
+          .maybeSingle();
+
+        if (targetItem) {
+          const prevQty = Math.max(0, Number(targetItem.quantity || 0));
+          const newQty = Math.max(0, prevQty - revertQty);
+          const now = Date.now();
+          await adminClient
+            .from('inventory_items')
+            .update({ quantity: newQty, last_updated: now })
+            .eq('id', itemId);
+
+          try {
+            await adminClient.from('stock_movements').insert([
+              {
+                school_id: effectiveSchoolId,
+                inventory_item_id: itemId,
+                change: -(prevQty - newQty),
+                reason: buildEncodedMovementReason({
+                  movementType: 'ADJUSTMENT',
+                  previousQuantity: prevQty,
+                  newQuantity: newQty,
+                  performedBy: String(req.user?.email || 'Accountant'),
+                  reason: `Reverted deleted restock expense: ${existingExp.description}`
+                }),
+                moved_by: validUserId,
+                created_at: now
+              }
+            ]);
+          } catch {}
+        }
+      }
+
+      let delQ = adminClient.from('school_expenses').delete().eq('id', expenseId);
+      if (effectiveSchoolId) delQ = delQ.eq('school_id', effectiveSchoolId);
+      const { error: delErr } = await delQ;
+
+      if (delErr) {
+        return res.status(500).json({ success: false, error: sanitizeErrorMessage(delErr) });
+      }
+
+      const invData = await fetchSchoolInventoryFromSupabase(effectiveSchoolId, { allowAutoSeed: false });
+      const tableStatus = await inspectInventoryDatabaseTables(effectiveSchoolId);
+
+      return res.json({
+        success: true,
+        schoolId: effectiveSchoolId,
+        deletedId: expenseId,
+        items: invData.items,
+        movements: invData.movements,
+        expenses: invData.expenses,
+        tableStatus,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });

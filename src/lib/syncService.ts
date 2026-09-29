@@ -1,4 +1,4 @@
-import { db, normalizeStudentRecord } from '../db/schema';
+import { db, normalizeStudentRecord, normalizeFeeTransactionRecord } from '../db/schema';
 import { supabase, getCurrentSchoolId } from './supabase';
 
 /**
@@ -458,11 +458,106 @@ export async function reconcileSettingsInDexie(remoteSettings: any[]) {
     if (typeof value === 'string') {
       try { value = JSON.parse(value); } catch {}
     }
+    if (remote.key === 'activeSirenBroadcast' && !value) {
+      if (existing?.id !== undefined) {
+        await db.settings.delete(existing.id);
+      }
+      continue;
+    }
+    if (remote.key === 'sirenLogs' && Array.isArray(value)) {
+      try {
+        localStorage.setItem('esepa_siren_logs', JSON.stringify(value));
+      } catch {}
+    }
     if (existing) {
       await db.settings.update(existing.id, { key: remote.key, value, id: existing.id });
     } else {
       const { id, ...rest } = remote;
       await db.settings.add({ ...rest, value });
+    }
+  }
+}
+
+/**
+ * Reconcile fee transactions in Dexie IndexedDB in-place without creating duplicate rows
+ */
+export async function reconcileFeeTransactionsInDexie(remoteTransactions: any[], isFullSync = false) {
+  if (!Array.isArray(remoteTransactions)) return;
+  if (isFullSync && remoteTransactions.length === 0) {
+    return;
+  }
+  const localTx = await db.feeTransactions.toArray();
+  const receiptMap = new Map<string, any>();
+  const idMap = new Map<string | number, any>();
+
+  for (const local of localTx) {
+    if (local.id) idMap.set(local.id, local);
+    const rcp = String(local.receiptNumber || local.receipt_number || '').trim().toUpperCase();
+    if (rcp && !receiptMap.has(rcp)) {
+      receiptMap.set(rcp, local);
+    } else if (rcp && receiptMap.has(rcp) && local.id) {
+      await db.feeTransactions.delete(local.id);
+    }
+  }
+
+  for (const remote of remoteTransactions) {
+    if (!remote) continue;
+    const norm = normalizeFeeTransactionRecord(remote);
+    if (!norm.studentId || norm.amount <= 0) continue;
+    const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+    const remoteNumId = norm.id != null && !isNaN(Number(norm.id)) ? Number(norm.id) : undefined;
+
+    let existing = rcp ? receiptMap.get(rcp) : null;
+    if (!existing && remoteNumId !== undefined && idMap.has(remoteNumId)) {
+      existing = idMap.get(remoteNumId);
+    }
+
+    if (existing) {
+      const targetId = existing.id ?? remoteNumId;
+      await db.feeTransactions.put({
+        ...existing,
+        ...norm,
+        id: targetId,
+        remoteId: remote.id ?? existing.remoteId
+      });
+    } else {
+      const { id, ...rest } = norm;
+      const newId = await db.feeTransactions.add({
+        ...rest,
+        remoteId: remote.id
+      });
+      if (rcp) receiptMap.set(rcp, { ...norm, id: newId });
+    }
+  }
+}
+
+/**
+ * Reconcile SMS logs in Dexie IndexedDB in-place without creating duplicate rows
+ */
+export async function reconcileSmsLogsInDexie(remoteLogs: any[]) {
+  if (!Array.isArray(remoteLogs) || remoteLogs.length === 0) return;
+  const localLogs = await db.smsLogs.toArray();
+  const sigMap = new Map<string, any>();
+  for (const local of localLogs) {
+    const sig = `${local.recipientPhone || ''}_${(local.message || '').slice(0, 80)}_${Math.floor((local.createdAt || 0) / 10000)}`;
+    if (!sigMap.has(sig)) sigMap.set(sig, local);
+  }
+
+  for (const remote of remoteLogs) {
+    if (!remote || !remote.message) continue;
+    const payload = {
+      recipientName: remote.recipientName || remote.recipient_name || 'Parent',
+      recipientPhone: remote.recipientPhone || remote.recipient_phone || '',
+      recipientType: (remote.recipientType || remote.recipient_type || 'Parent') as any,
+      message: remote.message,
+      type: (remote.type || 'Fee Reminder') as any,
+      status: (remote.status || 'Sent') as any,
+      createdAt: Number(remote.createdAt ?? remote.created_at ?? Date.now()) || Date.now()
+    };
+    const sig = `${payload.recipientPhone}_${payload.message.slice(0, 80)}_${Math.floor(payload.createdAt / 10000)}`;
+    if (!sigMap.has(sig)) {
+      const newId = await db.smsLogs.add(payload);
+      sigMap.set(sig, { ...payload, id: newId });
     }
   }
 }
@@ -502,6 +597,8 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
           else await reconcileTermReportsInDexie(dataset.termReports);
         }
         if (Array.isArray(dataset.settings)) await reconcileSettingsInDexie(dataset.settings);
+        if (Array.isArray(dataset.feeTransactions)) await reconcileFeeTransactionsInDexie(dataset.feeTransactions, true);
+        if (Array.isArray(dataset.smsLogs)) await reconcileSmsLogsInDexie(dataset.smsLogs);
         if (Array.isArray(dataset.lessonNotes) && dataset.lessonNotes.length > 0) {
           const localNotes = await db.lessonNotes.toArray();
           const byNoteId = new Map<string, any>();
@@ -604,6 +701,14 @@ export interface OfflineQueueItem {
   timestamp: number;
 }
 
+export function getOfflineQueueItems(): OfflineQueueItem[] {
+  try {
+    return JSON.parse(localStorage.getItem('esepa_offline_queue') || '[]');
+  } catch {
+    return [];
+  }
+}
+
 export function queueOfflineWrite(table: string, action: 'insert' | 'update' | 'delete', payload: any) {
   try {
     const queue: OfflineQueueItem[] = JSON.parse(localStorage.getItem('esepa_offline_queue') || '[]');
@@ -615,6 +720,9 @@ export function queueOfflineWrite(table: string, action: 'insert' | 'update' | '
       timestamp: Date.now()
     });
     localStorage.setItem('esepa_offline_queue', JSON.stringify(queue));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('offline-queue-changed'));
+    }
   } catch (e) {}
 }
 
@@ -629,7 +737,44 @@ export async function reconcileOfflineWrites(): Promise<void> {
     const remaining: OfflineQueueItem[] = [];
     for (const item of queue) {
       try {
-        if (item.action === 'insert') {
+        if (item.table === 'fee_payment') {
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;
+          const res = await fetch('/api/fees/pay', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(item.payload)
+          });
+          if (!res.ok) throw new Error('Offline fee payment replay failed');
+        } else if (item.table === 'fee_batch_bill') {
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;
+          const res = await fetch('/api/fees/batch-bill', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(item.payload)
+          });
+          if (!res.ok) throw new Error('Offline batch bill replay failed');
+        } else if (item.table === 'siren_api') {
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;
+          const endpoint = String(item.payload?.endpoint || '/api/siren/sync');
+          const method = String(item.payload?.method || 'POST').toUpperCase();
+          const res = await fetch(endpoint, {
+            method,
+            headers,
+            ...(method !== 'GET' && item.payload?.body !== undefined
+              ? { body: JSON.stringify(item.payload.body) }
+              : {})
+          });
+          if (!res.ok) throw new Error('Offline siren API replay failed');
+        } else if (item.action === 'insert') {
           const { error } = await supabase.from(item.table).insert(item.payload);
           if (error) throw error;
         } else if (item.action === 'update') {
@@ -649,6 +794,9 @@ export async function reconcileOfflineWrites(): Promise<void> {
       localStorage.setItem('esepa_offline_queue', JSON.stringify(remaining));
     } else {
       localStorage.removeItem('esepa_offline_queue');
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('offline-queue-changed'));
     }
   } catch (e) {}
 }
@@ -738,6 +886,45 @@ export function initRealtimeAndAutoSync() {
               if (newRecord) await reconcileResultsInDexie([newRecord]);
             } else if (table === 'settings') {
               if (newRecord) await reconcileSettingsInDexie([newRecord]);
+            } else if (table === 'school_settings') {
+              const sirenConsole = newRecord?.streams?.siren_console;
+              if (sirenConsole && typeof sirenConsole === 'object') {
+                const settingsToReconcile: any[] = [
+                  { key: 'activeSirenBroadcast', value: sirenConsole.activeSirenBroadcast ?? null }
+                ];
+                if (Array.isArray(sirenConsole.bellSchedule)) {
+                  settingsToReconcile.push({ key: 'bellSchedule', value: sirenConsole.bellSchedule });
+                }
+                if (Array.isArray(sirenConsole.recordedAudioList)) {
+                  settingsToReconcile.push({ key: 'recordedAudioList', value: sirenConsole.recordedAudioList });
+                }
+                if (sirenConsole.acousticVolume !== undefined) {
+                  settingsToReconcile.push({ key: 'acousticVolume', value: Number(sirenConsole.acousticVolume) });
+                }
+                if (Array.isArray(sirenConsole.sirenLogs)) {
+                  settingsToReconcile.push({ key: 'sirenLogs', value: sirenConsole.sirenLogs });
+                }
+                await reconcileSettingsInDexie(settingsToReconcile);
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('siren-state-updated', { detail: sirenConsole }));
+                }
+              } else {
+                syncAllDataFromBackend(undefined, true).catch(() => {});
+              }
+            } else if (
+              table === 'broadcasts' ||
+              table === 'siren_schedules' ||
+              table === 'siren_recordings' ||
+              table === 'siren_logs'
+            ) {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('siren-db-table-changed', { detail: { table, eventType, newRecord } }));
+              }
+              syncAllDataFromBackend(undefined, true).catch(() => {});
+            } else if (table === 'fee_transactions') {
+              if (newRecord) await reconcileFeeTransactionsInDexie([newRecord]);
+            } else if (table === 'sms_logs') {
+              if (newRecord) await reconcileSmsLogsInDexie([newRecord]);
             } else {
               // Trigger a fresh sync for any other tables
               syncAllDataFromBackend(undefined, true).catch(() => {});

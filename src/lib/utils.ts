@@ -1013,7 +1013,15 @@ export async function exportToPDF(elementId: string, filename: string) {
       logging: false,
       backgroundColor: '#ffffff',
       windowWidth: Math.max(window.innerWidth, 1024),
-      onclone: (doc) => onCloneForPDF(doc),
+      onclone: (doc) => {
+        onCloneForPDF(doc);
+        const clonedTarget = doc.getElementById(elementId);
+        if (clonedTarget) {
+          clonedTarget.style.overflow = 'visible';
+          clonedTarget.style.maxHeight = 'none';
+          clonedTarget.style.height = 'auto';
+        }
+      },
     });
 
     const imgData = canvas.toDataURL('image/png', 1.0);

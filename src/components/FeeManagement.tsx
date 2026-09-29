@@ -1,33 +1,105 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, useFeeTypes } from '../db/schema';
-import { Wallet, CreditCard, History, Search, ArrowUpRight, Download, X, Check, FileText, Printer, Smartphone, CheckCircle2, AlertCircle, RefreshCw, Award, Users } from 'lucide-react';
+import { db, useFeeTypes, normalizeStudentRecord, type Student, type FeeTypeConfig } from '../db/schema';
+import { Wallet, CreditCard, History, Search, ArrowUpRight, Download, X, Check, FileText, Printer, Smartphone, CheckCircle2, AlertCircle, RefreshCw, Award, Users, Plus, Trash2, Edit2, Layers, Cloud, CloudOff } from 'lucide-react';
 import { formatCurrency, cn, exportToPDF, triggerPrint } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../contexts/NotificationContext';
-import { studentsApi } from '../lib/api';
+import { studentsApi, feesApi, settingsApi } from '../lib/api';
+import { syncAllDataFromBackend, getOfflineQueueItems } from '../lib/syncService';
 import * as XLSX from 'xlsx';
 import PaystackPaymentButton from './PaystackPaymentButton';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function FeeManagement() {
   const { showToast } = useNotifications();
-  const { user } = useAuth();
+  const { user, school: activeSchool } = useAuth();
+  const targetSchoolId = activeSchool?.id || user?.schoolId;
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'billing'>('dashboard');
   const [ledgerTypeFilter, setLedgerTypeFilter] = useState<'all' | 'debit' | 'credit'>('all');
   const [ledgerSortOrder, setLedgerSortOrder] = useState<'asc' | 'desc'>('asc');
   const [ledgerSearchTerm, setLedgerSearchTerm] = useState('');
+  const [isSyncingLedger, setIsSyncingLedger] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+
   const feeTypes = useFeeTypes();
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const classesList = useLiveQuery(() => db.classes.toArray()) || [];
+  const schoolProfile = settings.find(s => s.key === 'schoolProfile')?.value;
+  const schoolName = schoolProfile?.schoolName || activeSchool?.name || 'ESEPA INTERNATIONAL SCHOOL';
+  const currentAcademicYear = schoolProfile?.currentAcademicYear || '2025/2026';
+  const currentTerm = schoolProfile?.currentTerm || 'Term 1';
 
   const isStudent = user?.role === 'student';
   const isParent = user?.role === 'parent';
   const isStaff = !isStudent && !isParent;
 
-  // Retrieve all students
-  const allStudents = useLiveQuery(() => db.students.toArray()) || [];
+  // Retrieve and normalize all students
+  const rawStudents = useLiveQuery(() => db.students.toArray()) || [];
+  const allStudents = useMemo(() => rawStudents.map(s => normalizeStudentRecord(s)), [rawStudents]);
+
+  // Retrieve all fee transactions from Dexie (synced with Supabase public.fee_transactions)
+  const allFeeTransactions = useLiveQuery(() => db.feeTransactions.toArray()) || [];
+
+  // Refresh fee transactions, fee_structures, invoices, and student balances from Supabase on load
+  useEffect(() => {
+    let mounted = true;
+    const loadRemoteData = async () => {
+      try {
+        const [, structRes] = await Promise.all([
+          feesApi.getAll(targetSchoolId),
+          feesApi.getStructures(targetSchoolId)
+        ]);
+        if (mounted && structRes) {
+          setSavedFeeStructures(structRes.feeStructures || []);
+          setStudentInvoices(structRes.invoices || []);
+        }
+        await syncAllDataFromBackend(targetSchoolId, false);
+        if (mounted) {
+          setOfflineQueueCount(getOfflineQueueItems().length);
+        }
+      } catch (err) {
+        console.warn('Initial fee ledger sync warning:', err);
+      }
+    };
+    loadRemoteData();
+
+    const handleQueueChange = () => {
+      if (mounted) {
+        setOfflineQueueCount(getOfflineQueueItems().length);
+      }
+    };
+    window.addEventListener('offline-queue-changed', handleQueueChange);
+    return () => {
+      mounted = false;
+      window.removeEventListener('offline-queue-changed', handleQueueChange);
+    };
+  }, [targetSchoolId]);
+
+  const handleManualSyncLedger = async () => {
+    setIsSyncingLedger(true);
+    try {
+      await studentsApi.syncLocalToRemote(targetSchoolId);
+      const [, structRes] = await Promise.all([
+        feesApi.getAll(targetSchoolId),
+        feesApi.getStructures(targetSchoolId)
+      ]);
+      if (structRes) {
+        setSavedFeeStructures(structRes.feeStructures || []);
+        setStudentInvoices(structRes.invoices || []);
+      }
+      await syncAllDataFromBackend(targetSchoolId, true);
+      setOfflineQueueCount(getOfflineQueueItems().length);
+      showToast('Fee transactions, fee_structures, invoices, and student balances synced with Supabase!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not complete full cloud sync. Offline queue remains active.', 'error');
+    } finally {
+      setIsSyncingLedger(false);
+    }
+  };
 
   // Match current user to a student record (if student role)
   const studentRecord = useMemo(() => {
@@ -65,7 +137,8 @@ export default function FeeManagement() {
     return allStudents.filter(s => 
       s.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.studentId.toLowerCase().includes(searchTerm.toLowerCase())
+      s.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.class || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [isStudent, studentRecord, isParent, parentWards, allStudents, searchTerm]);
 
@@ -86,9 +159,18 @@ export default function FeeManagement() {
     date: number; 
     method: string; 
     phone?: string; 
-    ref?: string; 
+    ref?: string;
+    studentOverride?: Student;
   } | null>(null);
   const selectedStudent = allStudents.find(s => s.studentId === selectedStudentId);
+  const receiptStudent = lastPayment?.studentOverride || selectedStudent;
+
+  useEffect(() => {
+    document.body.classList.toggle('receipt-modal-open', isReceiptModalOpen);
+    return () => {
+      document.body.classList.remove('receipt-modal-open');
+    };
+  }, [isReceiptModalOpen]);
 
   const paymentHistory = useLiveQuery(() => {
     if (!selectedStudent) return [];
@@ -102,32 +184,80 @@ export default function FeeManagement() {
   }, [selectedStudent]);
 
   const parsedPayments = useMemo(() => {
-    if (!paymentHistory) return [];
-    return paymentHistory.map(log => {
-      const msg = log.message;
-      let amount = 0;
-      let method = 'Online Payment';
-      let ref = 'MM-' + log.id;
-      
-      const amountMatch = msg.match(/GHS\s*([\d.]+)/i);
-      if (amountMatch) amount = parseFloat(amountMatch[1]);
-      
-      const refMatch = msg.match(/Ref:\s*([A-Z0-9-]+)/i);
-      if (refMatch) ref = refMatch[1];
-      
-      const viaMatch = msg.match(/received via\s*([^for]+)\s*for/i);
-      if (viaMatch) method = viaMatch[1].trim();
+    if (!selectedStudent) return [];
+    const fullNameLower = `${selectedStudent.firstName} ${selectedStudent.lastName}`.trim().toLowerCase();
 
-      return {
-        id: log.id,
-        amount,
-        method,
-        ref,
-        date: log.createdAt || Date.now(),
-        raw: log
-      };
-    }).sort((a, b) => b.date - a.date);
-  }, [paymentHistory]);
+    // 1. Canonical transactions from Supabase fee_transactions (stored in db.feeTransactions)
+    const studentTxs = allFeeTransactions.filter(tx => {
+      if (selectedStudent.id !== undefined && String(tx.studentId) === String(selectedStudent.id)) return true;
+      if (tx.studentCode && tx.studentCode.toLowerCase() === selectedStudent.studentId.toLowerCase()) return true;
+      if (tx.studentName && tx.studentName.trim().toLowerCase() === fullNameLower) return true;
+      return false;
+    });
+
+    const combinedMap = new Map<string, {
+      id: string | number;
+      amount: number;
+      method: string;
+      ref: string;
+      date: number;
+      phone?: string;
+      syncStatus?: 'synced' | 'pending';
+      academicYear?: string;
+      term?: string;
+      receivedBy?: string;
+    }>();
+
+    studentTxs.forEach(tx => {
+      const refKey = String(tx.receiptNumber || tx.transactionReference || `TX-${tx.id}`).trim().toUpperCase();
+      combinedMap.set(refKey, {
+        id: tx.id || refKey,
+        amount: Number(tx.amount) || 0,
+        method: tx.paymentChannelLabel || tx.paymentMethod || 'Cash',
+        ref: tx.receiptNumber || tx.transactionReference || `RCP-${tx.id}`,
+        date: tx.createdAt || Date.now(),
+        phone: tx.guardianPhone || selectedStudent.guardianPhone,
+        syncStatus: tx.syncStatus || 'synced',
+        academicYear: tx.academicYear,
+        term: tx.term,
+        receivedBy: tx.receivedBy,
+      });
+    });
+
+    // 2. Legacy SMS log fallback (only if not already represented by receipt/ref)
+    if (paymentHistory && paymentHistory.length > 0) {
+      paymentHistory.forEach(log => {
+        const msg = log.message || '';
+        let amount = 0;
+        let method = 'Online Payment';
+        let ref = 'MM-' + log.id;
+        
+        const amountMatch = msg.match(/GHS\s*([\d,.]+)/i);
+        if (amountMatch) amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+        
+        const refMatch = msg.match(/Ref:\s*([A-Z0-9-]+)/i);
+        if (refMatch) ref = refMatch[1];
+        
+        const viaMatch = msg.match(/received via\s*([^for]+)\s*for/i);
+        if (viaMatch) method = viaMatch[1].trim();
+
+        const refKey = ref.trim().toUpperCase();
+        if (!combinedMap.has(refKey) && amount > 0) {
+          combinedMap.set(refKey, {
+            id: `sms-${log.id}`,
+            amount,
+            method,
+            ref,
+            date: log.createdAt || Date.now(),
+            phone: log.recipientPhone,
+            syncStatus: 'synced'
+          });
+        }
+      });
+    }
+
+    return Array.from(combinedMap.values()).sort((a, b) => b.date - a.date);
+  }, [selectedStudent, allFeeTransactions, paymentHistory]);
 
   const studentLedger = useMemo(() => {
     if (!selectedStudent) return [];
@@ -167,11 +297,11 @@ export default function FeeManagement() {
         id: `pay-${p.id}`,
         date: p.date,
         type: 'credit',
-        description: `Payment Received`,
+        description: `Payment Received (${p.method})`,
         reference: p.ref,
         method: p.method,
         amount: p.amount,
-        recipientPhone: p.raw.recipientPhone
+        recipientPhone: p.phone
       });
     });
 
@@ -234,6 +364,16 @@ export default function FeeManagement() {
 
           {/* Quick Export Actions */}
           <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {isStaff && (
+              <button
+                type="button"
+                onClick={() => openStudentBreakdownModal(selectedStudent)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs hover:bg-indigo-100 transition-all cursor-pointer outline-none shadow-sm"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Adjust Student Bill</span>
+              </button>
+            )}
             <button
               onClick={() => triggerPrint()}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-100 transition-all cursor-pointer outline-none shadow-sm"
@@ -424,8 +564,9 @@ export default function FeeManagement() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [allocationType, setAllocationType] = useState<string>('automatic');
 
-  // MoMo payment channel features state
-  const [paymentMethod, setPaymentMethod] = useState<'cash_bank' | 'momo' | 'paystack'>('cash_bank');
+  // Payment channel features state
+  const [paymentMethod, setPaymentMethod] = useState<'cash_bank' | 'bank_transfer' | 'cheque' | 'momo' | 'paystack'>('cash_bank');
+  const [bankOrChequeRef, setBankOrChequeRef] = useState('');
   const [momoProvider, setMomoProvider] = useState<'mtn' | 'telecel' | 'at'>('mtn');
   const [momoNumber, setMomoNumber] = useState('');
   const [isVerifyingMomo, setIsVerifyingMomo] = useState(false);
@@ -433,15 +574,318 @@ export default function FeeManagement() {
   const [momoStep, setMomoStep] = useState<'idle' | 'sending' | 'pending' | 'success' | 'failed'>('idle');
   const [momoReference, setMomoReference] = useState('');
 
+  // Fee Structure & Class Billing State (synced with Supabase public.fee_structures, public.invoices & public.school_settings)
+  const [editableFeeTypes, setEditableFeeTypes] = useState<FeeTypeConfig[]>([]);
+  const [savedFeeStructures, setSavedFeeStructures] = useState<any[]>([]);
+  const [studentInvoices, setStudentInvoices] = useState<any[]>([]);
+  const [newFeeLabel, setNewFeeLabel] = useState('');
+  const [newFeeAmount, setNewFeeAmount] = useState('');
+  const [isSavingFeeStructure, setIsSavingFeeStructure] = useState(false);
+
+  const [billingTargetClass, setBillingTargetClass] = useState<string>('ALL');
+  const [billingMode, setBillingMode] = useState<'merge' | 'replace'>('merge');
+  const [selectedBillingComponents, setSelectedBillingComponents] = useState<Record<string, boolean>>({});
+  const [billingComponentAmounts, setBillingComponentAmounts] = useState<Record<string, number>>({});
+  const [isExecutingBatchBill, setIsExecutingBatchBill] = useState(false);
+
+  // Individual Student Fee Breakdown Editor Modal State
+  const [editingBillStudent, setEditingBillStudent] = useState<Student | null>(null);
+  const [studentBreakdownDraft, setStudentBreakdownDraft] = useState<Record<string, number>>({});
+  const [isSavingStudentBreakdown, setIsSavingStudentBreakdown] = useState(false);
+
+  useEffect(() => {
+    setEditableFeeTypes(feeTypes.map(ft => ({ ...ft })));
+    const defaultSelected: Record<string, boolean> = {};
+    const defaultAmounts: Record<string, number> = {};
+    feeTypes.forEach(ft => {
+      defaultSelected[ft.id] = ft.defaultAmount > 0;
+      defaultAmounts[ft.id] = ft.defaultAmount;
+    });
+    setSelectedBillingComponents(prev => Object.keys(prev).length > 0 ? prev : defaultSelected);
+    setBillingComponentAmounts(prev => Object.keys(prev).length > 0 ? prev : defaultAmounts);
+  }, [feeTypes]);
+
+  const openStudentBreakdownModal = (student: Student) => {
+    const currentBreakdown = student.feeBreakdown || { tuition: student.totalFees || 0 };
+    const draft: Record<string, number> = {};
+    feeTypes.forEach(ft => {
+      draft[ft.id] = Number(currentBreakdown[ft.id] ?? (ft.id === 'tuition' && Object.keys(currentBreakdown).length === 0 ? student.totalFees : 0)) || 0;
+    });
+    Object.entries(currentBreakdown).forEach(([k, v]) => {
+      if (draft[k] === undefined) draft[k] = Number(v) || 0;
+    });
+    setStudentBreakdownDraft(draft);
+    setEditingBillStudent(student);
+  };
+
+  const handleSaveStudentBreakdown = async () => {
+    if (!editingBillStudent || !editingBillStudent.id) return;
+    setIsSavingStudentBreakdown(true);
+    try {
+      const cleaned: Record<string, number> = {};
+      Object.entries(studentBreakdownDraft).forEach(([k, v]) => {
+        const num = Math.max(0, Number(v) || 0);
+        if (num > 0 || k === 'tuition') {
+          cleaned[k] = num;
+        }
+      });
+      await feesApi.saveStudentFeeBreakdown(
+        editingBillStudent.id,
+        cleaned,
+        targetSchoolId,
+        editingBillStudent.studentId
+      );
+      showToast(`Updated itemized bill for ${editingBillStudent.firstName} ${editingBillStudent.lastName} in Supabase!`, 'success');
+      setEditingBillStudent(null);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save student fee breakdown.', 'error');
+    } finally {
+      setIsSavingStudentBreakdown(false);
+    }
+  };
+
+  const handleAddFeeComponent = async () => {
+    const label = newFeeLabel.trim();
+    const amount = Math.max(0, Number(newFeeAmount) || 0);
+    if (!label) {
+      showToast('Please enter a fee component name (e.g., PTA Levy).', 'error');
+      return;
+    }
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `fee_${Date.now()}`;
+    if (editableFeeTypes.some(f => f.id === id)) {
+      showToast('A fee component with a similar code already exists.', 'error');
+      return;
+    }
+    const nextList = [...editableFeeTypes, { id, label, defaultAmount: amount }];
+    setEditableFeeTypes(nextList);
+    setSelectedBillingComponents(prev => ({ ...prev, [id]: amount > 0 }));
+    setBillingComponentAmounts(prev => ({ ...prev, [id]: amount }));
+    setNewFeeLabel('');
+    setNewFeeAmount('');
+
+    setIsSavingFeeStructure(true);
+    try {
+      await settingsApi.set('feeTypes', nextList, targetSchoolId);
+      const savedRes = await feesApi.saveStructure({
+        name: `Master School Fee Structure - ${currentTerm} (${currentAcademicYear})`,
+        className: 'All',
+        term: currentTerm,
+        academicYear: currentAcademicYear,
+        items: nextList.map(ft => ({ id: ft.id, label: ft.label, amount: Number(ft.defaultAmount) || 0 }))
+      }, targetSchoolId);
+      if (savedRes?.feeStructures?.length) {
+        setSavedFeeStructures(savedRes.feeStructures);
+      }
+      showToast(`Added "${label}" and saved to Supabase public.fee_structures & school_settings!`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Saved locally, will sync to Supabase when online.', 'info');
+    } finally {
+      setIsSavingFeeStructure(false);
+    }
+  };
+
+  const handleRemoveFeeComponent = async (idToRemove: string) => {
+    if (idToRemove === 'tuition') {
+      showToast('The core Tuition Fee component cannot be removed.', 'error');
+      return;
+    }
+    const nextList = editableFeeTypes.filter(f => f.id !== idToRemove);
+    setEditableFeeTypes(nextList);
+    setIsSavingFeeStructure(true);
+    try {
+      await settingsApi.set('feeTypes', nextList, targetSchoolId);
+      const savedRes = await feesApi.saveStructure({
+        name: `Master School Fee Structure - ${currentTerm} (${currentAcademicYear})`,
+        className: 'All',
+        term: currentTerm,
+        academicYear: currentAcademicYear,
+        items: nextList.map(ft => ({ id: ft.id, label: ft.label, amount: Number(ft.defaultAmount) || 0 }))
+      }, targetSchoolId);
+      if (savedRes?.feeStructures?.length) {
+        setSavedFeeStructures(savedRes.feeStructures);
+      }
+      showToast('Fee component removed and synced with Supabase public.fee_structures.', 'success');
+    } catch (err: any) {
+      showToast('Updated locally.', 'info');
+    } finally {
+      setIsSavingFeeStructure(false);
+    }
+  };
+
+  const handleSaveFeeStructure = async () => {
+    setIsSavingFeeStructure(true);
+    try {
+      await settingsApi.set('feeTypes', editableFeeTypes, targetSchoolId);
+      const savedRes = await feesApi.saveStructure({
+        name: `Master School Fee Structure - ${currentTerm} (${currentAcademicYear})`,
+        className: 'All',
+        term: currentTerm,
+        academicYear: currentAcademicYear,
+        items: editableFeeTypes.map(ft => ({ id: ft.id, label: ft.label, amount: Number(ft.defaultAmount) || 0 }))
+      }, targetSchoolId);
+      if (savedRes?.feeStructures?.length) {
+        setSavedFeeStructures(savedRes.feeStructures);
+      }
+      const updatedAmounts: Record<string, number> = { ...billingComponentAmounts };
+      editableFeeTypes.forEach(ft => {
+        updatedAmounts[ft.id] = Number(ft.defaultAmount) || 0;
+      });
+      setBillingComponentAmounts(updatedAmounts);
+      showToast('School fee structure saved to Supabase public.fee_structures & school_settings!', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Saved locally and queued for Supabase sync.', 'info');
+    } finally {
+      setIsSavingFeeStructure(false);
+    }
+  };
+
+  const handleSaveClassStructureTemplate = async () => {
+    const { activeStructure } = batchBillingPreview;
+    if (Object.keys(activeStructure).length === 0) {
+      showToast('Select at least one component before saving a class fee structure.', 'error');
+      return;
+    }
+    setIsSavingFeeStructure(true);
+    try {
+      const targetClassLabel = billingTargetClass === 'ALL' ? 'All' : billingTargetClass;
+      const items = Object.entries(activeStructure).map(([id, amount]) => {
+        const ft = editableFeeTypes.find(f => f.id === id);
+        return { id, label: ft?.label || id.toUpperCase(), amount };
+      });
+      const savedRes = await feesApi.saveStructure({
+        name: `${targetClassLabel === 'All' ? 'All Classes' : targetClassLabel} - ${currentTerm} (${currentAcademicYear})`,
+        className: targetClassLabel,
+        term: currentTerm,
+        academicYear: currentAcademicYear,
+        items
+      }, targetSchoolId);
+      if (savedRes?.feeStructures?.length) {
+        setSavedFeeStructures(savedRes.feeStructures);
+      }
+      showToast(`Saved "${targetClassLabel === 'All' ? 'All Classes' : targetClassLabel}" fee blueprint to Supabase public.fee_structures!`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not save fee structure template.', 'error');
+    } finally {
+      setIsSavingFeeStructure(false);
+    }
+  };
+
+  const handleLoadSavedFeeStructure = (fsRow: any) => {
+    const cls = fsRow.class_name || fsRow.className || 'ALL';
+    setBillingTargetClass(cls === 'All' ? 'ALL' : cls);
+    const itemsList = Array.isArray(fsRow.items) ? fsRow.items : [];
+    if (itemsList.length > 0) {
+      const nextChecked: Record<string, boolean> = {};
+      const nextAmounts: Record<string, number> = { ...billingComponentAmounts };
+      editableFeeTypes.forEach(ft => {
+        nextChecked[ft.id] = false;
+      });
+      itemsList.forEach((item: any) => {
+        const key = String(item.id || '').trim();
+        if (key) {
+          nextChecked[key] = true;
+          nextAmounts[key] = Number(item.amount) || 0;
+        }
+      });
+      setSelectedBillingComponents(nextChecked);
+      setBillingComponentAmounts(nextAmounts);
+    }
+    showToast(`Loaded "${fsRow.name}" (${cls}) into the Batch Class Billing Engine.`, 'info');
+  };
+
+  const handleDeleteSavedFeeStructure = async (id: number, name: string) => {
+    try {
+      const res = await feesApi.deleteStructure(id, targetSchoolId);
+      if (res.feeStructures) {
+        setSavedFeeStructures(res.feeStructures);
+      } else {
+        setSavedFeeStructures(prev => prev.filter(s => s.id !== id));
+      }
+      showToast(`Removed "${name}" from Supabase public.fee_structures.`, 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete fee structure.', 'error');
+    }
+  };
+
+  const availableClassNames = useMemo(() => {
+    const set = new Set<string>();
+    classesList.forEach(c => { if (c.name) set.add(c.name); });
+    allStudents.forEach(s => { if (s.class) set.add(s.class); });
+    return Array.from(set).sort();
+  }, [classesList, allStudents]);
+
+  const batchBillingPreview = useMemo(() => {
+    const matchedStudents = allStudents.filter(s =>
+      billingTargetClass === 'ALL' || !billingTargetClass
+        ? true
+        : (s.class || '').trim().toLowerCase() === billingTargetClass.trim().toLowerCase()
+    );
+    const activeStructure: Record<string, number> = {};
+    editableFeeTypes.forEach(ft => {
+      if (selectedBillingComponents[ft.id]) {
+        activeStructure[ft.id] = Math.max(0, Number(billingComponentAmounts[ft.id] ?? ft.defaultAmount) || 0);
+      }
+    });
+    const perStudentSelectedSum = Object.values(activeStructure).reduce((acc, v) => acc + v, 0);
+    return {
+      studentCount: matchedStudents.length,
+      perStudentSelectedSum,
+      totalAggregateImpact: matchedStudents.length * perStudentSelectedSum,
+      activeStructure,
+    };
+  }, [allStudents, billingTargetClass, editableFeeTypes, selectedBillingComponents, billingComponentAmounts]);
+
+  const handleExecuteBatchBill = async () => {
+    const { activeStructure, studentCount } = batchBillingPreview;
+    if (Object.keys(activeStructure).length === 0) {
+      showToast('Please select at least one fee component to bill.', 'error');
+      return;
+    }
+    if (studentCount === 0) {
+      showToast('No students found in the selected class target.', 'error');
+      return;
+    }
+    setIsExecutingBatchBill(true);
+    try {
+      const result = await feesApi.batchBill({
+        targetClass: billingTargetClass,
+        feeStructureToApply: activeStructure,
+        mode: billingMode,
+        academicYear: currentAcademicYear,
+        term: currentTerm,
+      }, targetSchoolId);
+
+      // Refresh fee_structures & invoices from Supabase so the registry reflects the newly saved structure and invoices
+      try {
+        const structRes = await feesApi.getStructures(targetSchoolId);
+        if (structRes) {
+          setSavedFeeStructures(structRes.feeStructures || []);
+          setStudentInvoices(structRes.invoices || []);
+        }
+      } catch {}
+
+      if (result.queuedOffline) {
+        showToast(`Billed ${result.updatedCount} student(s) locally and queued batch billing for Supabase sync.`, 'info');
+      } else {
+        showToast(`Saved fee structure to public.fee_structures and billed ${result.updatedCount} student(s) & invoices in Supabase!`, 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to execute batch class billing.', 'error');
+    } finally {
+      setIsExecutingBatchBill(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedStudent) {
       setMomoNumber(selectedStudent.guardianPhone || '');
       setMomoVerified(!!selectedStudent.guardianPhone);
-      setPaymentMethod('cash_bank');
+      setPaymentMethod(isStudent || isParent ? 'momo' : 'cash_bank');
       setMomoStep('idle');
       setMomoReference('');
+      setBankOrChequeRef('');
     }
-  }, [selectedStudentId]);
+  }, [selectedStudentId, isStudent, isParent]);
 
   const verifyMomoSubscriber = () => {
     if (!momoNumber || momoNumber.length < 9) {
@@ -459,69 +903,114 @@ export default function FeeManagement() {
   const submitPayment = async (referenceNum: string) => {
     const amount = Number(paymentAmount);
     if (isNaN(amount) || amount <= 0 || !selectedStudent || !selectedStudent.id) return;
-    
-    const currentPaid = selectedStudent.feePaidBreakdown || {};
-    const breakdown = selectedStudent.feeBreakdown || { tuition: selectedStudent.totalFees };
+    if (isSubmittingPayment) return;
 
-    const updatedPaid = { ...currentPaid };
-    feeTypes.forEach(ft => {
-      if (updatedPaid[ft.id] === undefined) {
-        updatedPaid[ft.id] = ft.id === 'tuition' ? selectedStudent.feesPaid : 0;
-      }
-    });
-
-    if (allocationType === 'automatic') {
-      let remaining = amount;
-      const allocationOrder = feeTypes.map(ft => ft.id);
-      
-      for (const feeId of allocationOrder) {
-        if (remaining <= 0) break;
-        const billed = breakdown[feeId] ?? (feeId === 'tuition' ? selectedStudent.totalFees : 0);
-        const paid = updatedPaid[feeId] ?? 0;
-        const outstanding = Math.max(0, billed - paid);
-        if (outstanding > 0) {
-          const allocate = Math.min(remaining, outstanding);
-          updatedPaid[feeId] = paid + allocate;
-          remaining -= allocate;
-        }
-      }
-      if (remaining > 0) {
-        updatedPaid['tuition'] = (updatedPaid['tuition'] || 0) + remaining;
-      }
-    } else {
-      updatedPaid[allocationType] = (updatedPaid[allocationType] || 0) + amount;
-    }
-
-    await studentsApi.update(selectedStudent.id, {
-      feesPaid: selectedStudent.feesPaid + amount,
-      feePaidBreakdown: updatedPaid
-    });
-
-    // Create a real database entry log inside client-server-synced smsLogs
+    setIsSubmittingPayment(true);
     try {
-      const channelLabel = paymentMethod === 'momo' ? `MoMo (${momoProvider.toUpperCase()})` : 'CASH / BANK';
-      await db.smsLogs.add({
-        recipientPhone: momoNumber || selectedStudent.guardianPhone || '0241234567',
-        recipientName: selectedStudent.guardianName || `${selectedStudent.firstName} ${selectedStudent.lastName}`,
-        recipientType: 'Parent',
-        message: `School Fees Payment Alert: GHS ${amount.toFixed(2)} received via ${channelLabel} for ${selectedStudent.firstName} ${selectedStudent.lastName}. Ref: ${referenceNum}. New Outstanding Balance: GHS ${(selectedStudent.totalFees - (selectedStudent.feesPaid + amount)).toFixed(2)}. Thank you!`,
-        type: 'Fee Reminder',
-        status: 'Sent',
-        createdAt: Date.now()
-      });
-    } catch (e) {
-      console.error("SMS logger insert exception:", e);
-    }
+      const currentPaid = selectedStudent.feePaidBreakdown || {};
+      const breakdown = selectedStudent.feeBreakdown || { tuition: selectedStudent.totalFees };
 
-    setLastPayment({ 
-      amount, 
-      date: Date.now(), 
-      method: paymentMethod === 'momo' ? `Mobile Money (${momoProvider.toUpperCase()})` : 'Cash / Bank',
-      phone: paymentMethod === 'momo' ? momoNumber : undefined,
-      ref: referenceNum
-    });
-    setPaymentAmount('');
-    setIsReceiptModalOpen(true);
+      const updatedPaid = { ...currentPaid };
+      feeTypes.forEach(ft => {
+        if (updatedPaid[ft.id] === undefined) {
+          updatedPaid[ft.id] = ft.id === 'tuition' ? selectedStudent.feesPaid : 0;
+        }
+      });
+
+      if (allocationType === 'automatic') {
+        let remaining = amount;
+        const allocationOrder = feeTypes.map(ft => ft.id);
+        
+        for (const feeId of allocationOrder) {
+          if (remaining <= 0) break;
+          const billed = breakdown[feeId] ?? (feeId === 'tuition' ? selectedStudent.totalFees : 0);
+          const paid = updatedPaid[feeId] ?? 0;
+          const outstanding = Math.max(0, billed - paid);
+          if (outstanding > 0) {
+            const allocate = Math.min(remaining, outstanding);
+            updatedPaid[feeId] = paid + allocate;
+            remaining -= allocate;
+          }
+        }
+        if (remaining > 0) {
+          updatedPaid['tuition'] = (updatedPaid['tuition'] || 0) + remaining;
+        }
+      } else {
+        updatedPaid[allocationType] = (updatedPaid[allocationType] || 0) + amount;
+      }
+
+      const canonicalMethod: 'Cash' | 'Bank Transfer' | 'Mobile Money' | 'Cheque' | 'Card' =
+        paymentMethod === 'momo'
+          ? 'Mobile Money'
+          : paymentMethod === 'paystack'
+          ? 'Card'
+          : paymentMethod === 'bank_transfer'
+          ? 'Bank Transfer'
+          : paymentMethod === 'cheque'
+          ? 'Cheque'
+          : 'Cash';
+
+      const channelLabel =
+        paymentMethod === 'momo'
+          ? `Mobile Money (${momoProvider.toUpperCase()})`
+          : paymentMethod === 'paystack'
+          ? 'Card (Paystack)'
+          : paymentMethod === 'bank_transfer'
+          ? 'Bank Transfer'
+          : paymentMethod === 'cheque'
+          ? 'Cheque'
+          : 'Cash';
+
+      const finalRef = (bankOrChequeRef.trim() || referenceNum).toUpperCase();
+      const targetFeeLabel =
+        allocationType === 'automatic'
+          ? 'Automatic Term Fee Allocation'
+          : feeTypes.find(f => f.id === allocationType)?.label || allocationType;
+
+      const result = await feesApi.recordPayment({
+        studentId: selectedStudent.id,
+        studentCode: selectedStudent.studentId,
+        studentName: `${selectedStudent.firstName} ${selectedStudent.lastName}`.trim(),
+        className: selectedStudent.class,
+        guardianPhone: momoNumber || selectedStudent.guardianPhone || '0241234567',
+        guardianName: selectedStudent.guardianName || `${selectedStudent.firstName} ${selectedStudent.lastName}`,
+        amount,
+        paymentMethod: canonicalMethod,
+        paymentChannelLabel: channelLabel,
+        transactionReference: finalRef,
+        academicYear: currentAcademicYear,
+        term: currentTerm,
+        receivedBy: user?.fullName || user?.email || (isStudent || isParent ? 'Self-Service Portal' : 'School Bursar'),
+        description: `${targetFeeLabel} via ${channelLabel}`,
+        feePaidBreakdown: updatedPaid,
+      }, targetSchoolId);
+
+      const finalReceiptNo = result.transaction?.receiptNumber || finalRef;
+
+      setLastPayment({ 
+        amount, 
+        date: Date.now(), 
+        method: channelLabel,
+        phone: paymentMethod === 'momo' ? momoNumber : selectedStudent.guardianPhone,
+        ref: finalReceiptNo,
+        studentOverride: result.student
+      });
+      setPaymentAmount('');
+      setBankOrChequeRef('');
+      setIsReceiptModalOpen(true);
+
+      if (result.queuedOffline) {
+        showToast(`Payment of ${formatCurrency(amount)} saved locally and queued for Supabase sync.`, 'info');
+      } else {
+        showToast(`Payment of ${formatCurrency(amount)} recorded in Supabase fee_transactions & student ledger!`, 'success');
+      }
+      setOfflineQueueCount(getOfflineQueueItems().length);
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      showToast(err?.message || 'Failed to record payment.', 'error');
+    } finally {
+      setIsSubmittingPayment(false);
+    }
   };
 
   const handlePayment = async () => {
@@ -547,17 +1036,18 @@ export default function FeeManagement() {
         setMomoStep('pending');
       }, 800);
     } else {
-      const cashRef = 'RCP-' + Math.floor(100000 + Math.random() * 900000);
-      await submitPayment(cashRef);
+      const prefix = paymentMethod === 'bank_transfer' ? 'BNK-' : paymentMethod === 'cheque' ? 'CHQ-' : 'RCP-';
+      const generatedRef = bankOrChequeRef.trim() || (prefix + Math.floor(100000 + Math.random() * 900000));
+      await submitPayment(generatedRef);
     }
   };
 
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const handleExportPDF = async () => {
-    if (!selectedStudent) return;
+    if (!receiptStudent) return;
     setIsExportingPDF(true);
     try {
-      await exportToPDF('receipt-content', `Receipt_${selectedStudent.firstName}_${selectedStudent.lastName}`);
+      await exportToPDF('receipt-content', `Receipt_${receiptStudent.firstName}_${receiptStudent.lastName}`);
     } catch (err) {
       showToast('Failed to export printable PDF.', 'error');
     } finally {
@@ -580,6 +1070,170 @@ export default function FeeManagement() {
     XLSX.writeFile(wb, "Fee_Management_Report.xlsx");
   };
 
+  const renderReceiptModal = () => (
+    <AnimatePresence>
+      {isReceiptModalOpen && receiptStudent && lastPayment && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="receipt-modal-title"
+          className="receipt-modal-root receipt-safe-overlay fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-transparent print:block"
+        >
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="receipt-modal-card bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-[calc(100vw-1.5rem-env(safe-area-inset-left,0px)-env(safe-area-inset-right,0px))] sm:max-w-md md:max-w-lg max-h-[calc(100dvh-1.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] sm:max-h-[90dvh] overflow-hidden flex flex-col my-auto print:max-w-none print:max-h-none print:shadow-none print:rounded-none"
+          >
+            <div className="px-3.5 py-3 sm:p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-white shrink-0 print:hidden">
+              <h3 id="receipt-modal-title" className="font-bold text-sm sm:text-base text-slate-800 tracking-tight">
+                Payment Receipt
+              </h3>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <button 
+                  type="button"
+                  onClick={triggerPrint}
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white border border-slate-200 text-slate-700 px-3 sm:px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold hover:bg-slate-50 transition-all min-h-[40px] sm:min-h-[42px] shadow-xs cursor-pointer whitespace-nowrap"
+                >
+                  <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 shrink-0" />
+                  <span>Print</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleExportPDF}
+                  disabled={isExportingPDF}
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 bg-slate-800 text-white px-3 sm:px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold hover:bg-slate-900 transition-all disabled:opacity-50 min-h-[40px] sm:min-h-[42px] cursor-pointer whitespace-nowrap"
+                >
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span>{isExportingPDF ? '...' : 'PDF'}</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsReceiptModalOpen(false);
+                    if (!isStudent && !isParent && activeTab !== 'ledger') {
+                      setSelectedStudentId(null);
+                    }
+                  }}
+                  className="min-h-[40px] min-w-[40px] sm:min-h-[42px] sm:min-w-[42px] flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                  aria-label="Close receipt modal"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              id="receipt-content"
+              className="p-4 sm:p-6 md:p-8 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] sm:pb-6 md:pb-8 bg-white space-y-4 sm:space-y-5 md:space-y-6 w-full max-w-full sm:max-w-md md:max-w-lg mx-auto overflow-y-auto overscroll-contain flex-1 print:p-6 print:overflow-visible print:max-w-full"
+            >
+              <div className="text-center space-y-1.5 sm:space-y-2 border-b-2 border-slate-900 pb-3.5 sm:pb-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 text-white rounded-full flex items-center justify-center mx-auto mb-1.5 sm:mb-2 font-black text-base sm:text-lg shrink-0">
+                  {schoolName.charAt(0)}
+                </div>
+                <h2 className="text-sm sm:text-base md:text-lg font-black uppercase tracking-wider sm:tracking-widest text-slate-900 break-words leading-snug px-1">
+                  {schoolName}
+                </h2>
+                <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                  Official Payment Receipt
+                </p>
+              </div>
+
+              <div className="space-y-2.5 sm:space-y-3">
+                <div className="receipt-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs py-1.5 border-b border-slate-100">
+                  <span className="font-black text-slate-400 uppercase text-[8px] sm:text-[9px] shrink-0">Receipt/Ref Number:</span>
+                  <span className="font-mono font-bold uppercase text-[11px] sm:text-xs text-slate-800 break-all sm:break-normal text-right">
+                    {lastPayment.ref || `RCP-${Math.floor(Math.random() * 1000000)}`}
+                  </span>
+                </div>
+                <div className="receipt-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs py-1.5 border-b border-slate-100 rounded">
+                  <span className="font-black text-slate-400 uppercase text-[8px] sm:text-[9px] shrink-0">Payment Channel:</span>
+                  <span className="font-bold uppercase text-[10px] sm:text-[11px] text-indigo-600 font-sans text-right">
+                    {lastPayment.method || 'CASH / BANK'}
+                  </span>
+                </div>
+                {lastPayment.phone && (
+                  <div className="receipt-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs py-1.5 border-b border-slate-100">
+                    <span className="font-black text-slate-400 uppercase text-[8px] sm:text-[9px] shrink-0">Payer Subscriber:</span>
+                    <span className="font-mono font-bold text-[11px] sm:text-xs text-right">{lastPayment.phone}</span>
+                  </div>
+                )}
+                <div className="receipt-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs py-1.5 border-b border-slate-100">
+                  <span className="font-black text-slate-400 uppercase text-[8px] sm:text-[9px] shrink-0">Date:</span>
+                  <span className="font-bold text-[11px] sm:text-xs text-right">{new Date(lastPayment.date).toLocaleDateString()}</span>
+                </div>
+
+                <div className="space-y-0.5 pt-2 sm:pt-3">
+                  <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase">Received From:</p>
+                  <p className="text-xs sm:text-sm font-bold uppercase text-slate-900 break-words">
+                    {receiptStudent.firstName} {receiptStudent.lastName}
+                  </p>
+                  <p className="text-[10px] sm:text-[11px] font-mono text-slate-400">{receiptStudent.studentId} • {receiptStudent.class}</p>
+                </div>
+
+                <div className="receipt-amount-banner p-3.5 sm:p-4 bg-slate-50 border border-slate-100 rounded-xl mt-3 sm:mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase">Amount Paid:</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-black text-indigo-600 font-mono tabular-nums break-words">
+                    {formatCurrency(lastPayment.amount)}
+                  </p>
+                </div>
+
+                <div className="receipt-summary-grid grid grid-cols-2 gap-2.5 sm:gap-4 text-xs pt-2 sm:pt-3">
+                  <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/70 border border-slate-100">
+                    <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase mb-0.5 sm:mb-1">Total Fees:</p>
+                    <p className="font-bold font-mono tabular-nums text-[11px] sm:text-xs md:text-sm text-slate-800 break-words">
+                      {formatCurrency(receiptStudent.totalFees)}
+                    </p>
+                  </div>
+                  <div className="p-2.5 sm:p-3 rounded-xl bg-rose-50/50 border border-rose-100/80">
+                    <p className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase mb-0.5 sm:mb-1">Balance Due:</p>
+                    <p className="font-bold font-mono tabular-nums text-[11px] sm:text-xs md:text-sm text-rose-600 break-words">
+                      {formatCurrency(receiptStudent.totalFees - receiptStudent.feesPaid)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="receipt-breakdown-box border border-slate-200 rounded-xl p-3 sm:p-3.5 space-y-2 mt-3 sm:mt-4">
+                  <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    Statement of Accounts Breakdown
+                  </p>
+                  <div className="space-y-1">
+                    {feeTypes.map(ft => {
+                      const billed = receiptStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? receiptStudent.totalFees : 0);
+                      const paid = receiptStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? receiptStudent.feesPaid : 0);
+                      if (billed === 0) return null;
+                      return (
+                        <div
+                          key={ft.id}
+                          className="receipt-row flex flex-wrap justify-between items-center gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] py-1 border-b border-slate-50 last:border-0 last:pb-0"
+                        >
+                          <span className="text-slate-600 font-medium">{ft.label}</span>
+                          <div className="font-mono tabular-nums text-right ml-auto">
+                            <span className="font-bold text-slate-800">{formatCurrency(paid)}</span>
+                            <span className="text-slate-400 text-[8px] sm:text-[9px]"> / {formatCurrency(billed)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 sm:pt-8 md:pt-10 pb-1 text-center">
+                <div className="border-b border-slate-900 w-28 sm:w-32 mx-auto mb-1" />
+                <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400">Cashier Signature</p>
+                <p className="mt-4 sm:mt-6 text-[8px] sm:text-[9px] text-slate-300 italic uppercase">
+                  Thank you for your prompt payment.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
   if (isStudent || isParent) {
     if (!selectedStudent) {
       return (
@@ -597,7 +1251,7 @@ export default function FeeManagement() {
 
     return (
       <>
-        <div className="space-y-6">
+        <div className={cn("space-y-6", isReceiptModalOpen && "print:hidden receipt-modal-hidden-on-print")}>
           {/* Deep Teal Hero Header Card */}
           <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
             <div className="space-y-2">
@@ -800,7 +1454,7 @@ export default function FeeManagement() {
                               amount: p.amount,
                               date: p.date,
                               method: p.method,
-                              phone: p.raw.recipientPhone,
+                              phone: p.phone,
                               ref: p.ref
                             });
                             setIsReceiptModalOpen(true);
@@ -1109,13 +1763,14 @@ export default function FeeManagement() {
           </>
           )}
         </div>
+        {renderReceiptModal()}
       </>
     );
   }
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={cn("space-y-6", isReceiptModalOpen && "print:hidden receipt-modal-hidden-on-print")}>
         {/* Print Only Header */}
         <div className="only-print">
           <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
@@ -1129,28 +1784,41 @@ export default function FeeManagement() {
         {/* Deep Teal Hero Header Card */}
         <div className="bg-[#1c4a59] rounded-3xl p-6 sm:p-7 text-white shadow-[0_8px_28px_rgba(28,74,89,0.16)] flex flex-col lg:flex-row lg:items-center justify-between gap-5 print:hidden">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
-              <Wallet className="w-3.5 h-3.5 text-[#faae57]" />
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
-                Bursary & Accounts Office
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15">
+                <Wallet className="w-3.5 h-3.5 text-[#faae57]" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#e1c594]">
+                  Bursary & Accounts Office
+                </span>
+              </div>
+              {offlineQueueCount > 0 ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-200 text-[11px] font-bold">
+                  <CloudOff className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{offlineQueueCount} Queued Offline</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-[11px] font-bold">
+                  <Cloud className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Supabase Connected</span>
+                </div>
+              )}
             </div>
             <h2 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-white leading-tight">
               Financial & Fee Management
             </h2>
             <p className="text-sm text-[#e1c594]/90 font-medium">
-              Configure fee structures, monitor live transaction ledgers, and issue official receipts.
+              Configure fee structures, bill classes, monitor live Supabase transaction ledgers, and issue official receipts.
             </p>
           </div>
           
           <div className="flex flex-wrap items-center gap-2.5">
             {/* View Switcher Tabs */}
-            <div className="flex items-center bg-white/10 p-1 rounded-full border border-white/15 print:hidden">
+            <div className="flex flex-wrap items-center bg-white/10 p-1 rounded-2xl sm:rounded-full border border-white/15 print:hidden">
               <button
                 type="button"
                 onClick={() => setActiveTab('dashboard')}
                 className={cn(
-                  "px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
+                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
                   activeTab === 'dashboard'
                     ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
                     : "text-white/85 hover:text-white"
@@ -1162,7 +1830,7 @@ export default function FeeManagement() {
                 type="button"
                 onClick={() => setActiveTab('ledger')}
                 className={cn(
-                  "px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
+                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px]",
                   activeTab === 'ledger'
                     ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
                     : "text-white/85 hover:text-white"
@@ -1170,7 +1838,30 @@ export default function FeeManagement() {
               >
                 Student Ledgers
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('billing')}
+                className={cn(
+                  "px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer min-h-[38px] flex items-center gap-1.5",
+                  activeTab === 'billing'
+                    ? "bg-[#faae57] text-[#1f2a2e] shadow-xs"
+                    : "text-white/85 hover:text-white"
+                )}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Fee Structure & Billing</span>
+              </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleManualSyncLedger}
+              disabled={isSyncingLedger}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-full text-white font-bold transition-all text-xs min-h-[44px] cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={cn("w-4 h-4 text-[#faae57]", isSyncingLedger && "animate-spin")} />
+              <span>{isSyncingLedger ? 'Syncing...' : 'Sync Supabase'}</span>
+            </button>
 
             {activeTab === 'dashboard' && (
               <>
@@ -1193,7 +1884,354 @@ export default function FeeManagement() {
           </div>
         </div>
 
-        {activeTab === 'ledger' ? (
+        {activeTab === 'billing' ? (
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8 print:hidden">
+            {/* Left Column: School Fee Structure Config */}
+            <div className="xl:col-span-5 space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Supabase school_settings</span>
+                    <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">School Fee Components</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Define standard term fee items and default amounts synced across all bursary stations.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveFeeStructure}
+                    disabled={isSavingFeeStructure}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isSavingFeeStructure ? 'Saving...' : 'Save Structure'}
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                  {editableFeeTypes.map((ft, idx) => (
+                    <div
+                      key={ft.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <input
+                          type="text"
+                          value={ft.label}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditableFeeTypes(prev => prev.map((item, i) => i === idx ? { ...item, label: val } : item));
+                          }}
+                          className="w-full bg-transparent font-bold text-xs text-slate-900 outline-none focus:underline"
+                        />
+                        <p className="text-[10px] font-mono text-slate-400 uppercase">Code: {ft.id}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-28">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={ft.defaultAmount}
+                            onChange={(e) => {
+                              const num = Math.max(0, Number(e.target.value) || 0);
+                              setEditableFeeTypes(prev => prev.map((item, i) => i === idx ? { ...item, defaultAmount: num } : item));
+                            }}
+                            className="w-full pl-9 pr-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        {ft.id !== 'tuition' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFeeComponent(ft.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Remove fee component"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add New Fee Component */}
+                <div className="pt-3 border-t border-slate-100 space-y-3">
+                  <p className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Add Custom Fee Item</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <input
+                      type="text"
+                      placeholder="e.g. PTA Levy, Science Practical..."
+                      value={newFeeLabel}
+                      onChange={(e) => setNewFeeLabel(e.target.value)}
+                      className="sm:col-span-6 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Default GHS"
+                      value={newFeeAmount}
+                      onChange={(e) => setNewFeeAmount(e.target.value)}
+                      className="sm:col-span-3 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddFeeComponent}
+                      disabled={isSavingFeeStructure}
+                      className="sm:col-span-3 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Item</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Batch Class Billing Engine */}
+            <div className="xl:col-span-7 space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+                <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Batch Class Billing Engine</span>
+                    <h3 className="text-lg font-extrabold text-slate-900 mt-0.5">Bill Students by Class or Whole School</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Apply selected fee components to all students in a class and persist updated balances directly to Supabase.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200 self-start">
+                    {currentAcademicYear} • {currentTerm}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Target Class</label>
+                    <select
+                      value={billingTargetClass}
+                      onChange={(e) => setBillingTargetClass(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="ALL">All Active Classes ({allStudents.length} Students)</option>
+                      {availableClassNames.map(clsName => {
+                        const count = allStudents.filter(s => (s.class || '').trim().toLowerCase() === clsName.trim().toLowerCase()).length;
+                        return (
+                          <option key={clsName} value={clsName}>
+                            {clsName} ({count} Student{count === 1 ? '' : 's'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Billing Application Mode</label>
+                    <select
+                      value={billingMode}
+                      onChange={(e) => setBillingMode(e.target.value as 'merge' | 'replace')}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="merge">Merge / Update Selected Components on Existing Bill</option>
+                      <option value="replace">Replace Entire Student Bill with Selected Structure</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Component Selector Table */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Select Fee Components to Apply</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allChecked = editableFeeTypes.every(ft => selectedBillingComponents[ft.id]);
+                        const next: Record<string, boolean> = {};
+                        editableFeeTypes.forEach(ft => { next[ft.id] = !allChecked; });
+                        setSelectedBillingComponents(next);
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                    >
+                      Toggle All
+                    </button>
+                  </div>
+                  <div className="divide-y divide-slate-100 max-h-[280px] overflow-y-auto">
+                    {editableFeeTypes.map(ft => {
+                      const isChecked = !!selectedBillingComponents[ft.id];
+                      const amountVal = billingComponentAmounts[ft.id] ?? ft.defaultAmount;
+                      return (
+                        <div
+                          key={ft.id}
+                          className={cn(
+                            "px-4 py-3 flex items-center justify-between gap-4 transition-colors",
+                            isChecked ? "bg-indigo-50/30" : "bg-white opacity-65"
+                          )}
+                        >
+                          <label className="flex items-center gap-3 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => setSelectedBillingComponents(prev => ({ ...prev, [ft.id]: e.target.checked }))}
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{ft.label}</p>
+                              <p className="text-[10px] font-mono text-slate-400">Default: {formatCurrency(ft.defaultAmount)}</p>
+                            </div>
+                          </label>
+                          <div className="relative w-32">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={amountVal}
+                              onChange={(e) => {
+                                const val = Math.max(0, Number(e.target.value) || 0);
+                                setBillingComponentAmounts(prev => ({ ...prev, [ft.id]: val }));
+                                if (val > 0 && !isChecked) {
+                                  setSelectedBillingComponents(prev => ({ ...prev, [ft.id]: true }));
+                                }
+                              }}
+                              className="w-full pl-10 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Live Billing Impact Preview Banner */}
+                <div className="bg-slate-900 text-white rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Matched Students</p>
+                    <p className="text-2xl font-black font-mono mt-0.5">{batchBillingPreview.studentCount}</p>
+                    <p className="text-[10px] text-slate-400">{billingTargetClass === 'ALL' ? 'Across all classes' : `In ${billingTargetClass}`}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selected Bill / Student</p>
+                    <p className="text-2xl font-black font-mono text-[#faae57] mt-0.5">{formatCurrency(batchBillingPreview.perStudentSelectedSum)}</p>
+                    <p className="text-[10px] text-slate-400">{Object.keys(batchBillingPreview.activeStructure).length} component(s) active</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aggregate Class Billing</p>
+                    <p className="text-2xl font-black font-mono text-emerald-400 mt-0.5">{formatCurrency(batchBillingPreview.totalAggregateImpact)}</p>
+                    <p className="text-[10px] text-slate-400">{billingMode === 'replace' ? 'Replaces previous bill' : 'Updates selected items'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveClassStructureTemplate}
+                    disabled={isSavingFeeStructure}
+                    className="sm:col-span-5 py-4 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    <span>Save to `fee_structures` Table</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExecuteBatchBill}
+                    disabled={isExecutingBatchBill || batchBillingPreview.studentCount === 0}
+                    className="sm:col-span-7 py-4 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100 cursor-pointer disabled:opacity-50"
+                  >
+                    {isExecutingBatchBill ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Applying Batch Billing to Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>
+                          Bill {batchBillingPreview.studentCount} Student{batchBillingPreview.studentCount === 1 ? '' : 's'} ({formatCurrency(batchBillingPreview.perStudentSelectedSum)} each)
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Supabase public.fee_structures & public.invoices Registry Card */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+                      Supabase `public.fee_structures` & `public.invoices`
+                    </span>
+                    <h4 className="text-sm font-extrabold text-slate-900 mt-0.5">
+                      Saved Class & Term Fee Blueprints ({savedFeeStructures.length})
+                    </h4>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                    {studentInvoices.length} Linked Student Invoice{studentInvoices.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {savedFeeStructures.length === 0 ? (
+                  <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                    No class fee structures found in `public.fee_structures` yet. Click "Save to `fee_structures` Table" or "Bill Students" above to create one.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
+                    {savedFeeStructures.map((fsRow: any) => {
+                      const itemsArr = Array.isArray(fsRow.items) ? fsRow.items : [];
+                      const linkedInvCount = studentInvoices.filter(
+                        (inv: any) => Number(inv.fee_structure_id) === Number(fsRow.id)
+                      ).length;
+                      return (
+                        <div
+                          key={fsRow.id || fsRow.name}
+                          className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-extrabold text-slate-900">{fsRow.name}</span>
+                              <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-mono font-bold">
+                                Class: {fsRow.class_name || 'All'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono font-semibold">
+                                {fsRow.term || 'Term 1'} • {fsRow.academic_year || '2025/2026'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              {itemsArr.length} Fee Component{itemsArr.length === 1 ? '' : 's'} • {linkedInvCount} Student Invoice{linkedInvCount === 1 ? '' : 's'} linked
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end sm:self-center">
+                            <div className="text-right">
+                              <p className="text-[10px] uppercase font-bold text-slate-400">Rate Total</p>
+                              <p className="text-sm font-black font-mono text-slate-900">
+                                {formatCurrency(Number(fsRow.total) || 0)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleLoadSavedFeeStructure(fsRow)}
+                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Load
+                            </button>
+                            {fsRow.id && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSavedFeeStructure(Number(fsRow.id), fsRow.name)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete structure from public.fee_structures"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'ledger' ? (
           <div className="space-y-6">
             {!selectedStudentId ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-xl mx-auto space-y-6 print:hidden">
@@ -1275,7 +2313,7 @@ export default function FeeManagement() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input 
                   type="text"
-                  placeholder="Search student for payment..."
+                  placeholder="Search student by name, ID, or class for payment or bill adjustment..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
@@ -1285,48 +2323,167 @@ export default function FeeManagement() {
 
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[600px]">
+                <table className="w-full text-left min-w-[640px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Student</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Total</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Total Billed</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Paid</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Balance</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase print:hidden text-right">Action</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase print:hidden text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {students?.map(student => (
-                      <tr key={student.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={student.id || student.studentId} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold text-slate-900">{student.firstName} {student.lastName}</div>
-                          <div className="text-[10px] text-slate-400 font-mono tracking-wider">{student.studentId}</div>
+                          <div className="text-[10px] text-slate-400 font-mono tracking-wider">{student.studentId} • {student.class}</div>
                         </td>
-                        <td className="px-6 py-4 text-sm font-medium text-slate-600">{formatCurrency(student.totalFees)}</td>
+                        <td className="px-6 py-4 text-sm font-mono font-medium text-slate-600">{formatCurrency(student.totalFees)}</td>
                         <td className="px-6 py-4">
-                          <span className="text-sm font-bold text-emerald-600">{formatCurrency(student.feesPaid)}</span>
+                          <span className="text-sm font-mono font-bold text-emerald-600">{formatCurrency(student.feesPaid)}</span>
                         </td>
                         <td className="px-6 py-4">
                           <span className={cn(
-                            "text-sm font-bold",
+                            "text-sm font-mono font-bold",
                             student.totalFees - student.feesPaid > 0 ? "text-rose-600" : "text-emerald-600"
                           )}>
                             {formatCurrency(student.totalFees - student.feesPaid)}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right print:hidden">
-                          <button 
-                            onClick={() => setSelectedStudentId(student.studentId)}
-                            className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"
-                          >
-                            Receive Payment
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openStudentBreakdownModal(student)}
+                              className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg hover:bg-slate-200 transition-all cursor-pointer"
+                              title="Customize student fee breakdown"
+                            >
+                              Adjust Bill
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => setSelectedStudentId(student.studentId)}
+                              className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white transition-all cursor-pointer"
+                            >
+                              Receive Payment
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Live Supabase Fee Transactions Register */}
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm print:hidden">
+              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-sm font-extrabold text-slate-800">Recent Supabase Fee Transactions (`fee_transactions`)</h3>
+                </div>
+                <span className="text-[11px] font-mono font-bold text-slate-500">
+                  {allFeeTransactions.length} Record{allFeeTransactions.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {allFeeTransactions.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs font-medium">
+                  No fee transactions recorded yet. Select a student above and click "Receive Payment" to log a transaction to Supabase.
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                  <table className="w-full text-left min-w-[640px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        <th className="px-5 py-3">Receipt No.</th>
+                        <th className="px-5 py-3">Student</th>
+                        <th className="px-5 py-3">Method</th>
+                        <th className="px-5 py-3 text-right">Amount</th>
+                        <th className="px-5 py-3">Sync Status</th>
+                        <th className="px-5 py-3 text-right">Receipt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {[...allFeeTransactions]
+                        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                        .slice(0, 25)
+                        .map(tx => {
+                          const matchedStu = allStudents.find(
+                            s =>
+                              (s.id !== undefined && String(s.id) === String(tx.studentId)) ||
+                              (tx.studentCode && s.studentId.toLowerCase() === tx.studentCode.toLowerCase()) ||
+                              (tx.studentName && `${s.firstName} ${s.lastName}`.trim().toLowerCase() === tx.studentName.trim().toLowerCase())
+                          );
+                          return (
+                            <tr key={tx.id || tx.receiptNumber} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="px-5 py-3 font-mono font-bold text-slate-700">
+                                {tx.receiptNumber}
+                                <div className="text-[10px] font-sans font-normal text-slate-400">
+                                  {new Date(tx.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="font-bold text-slate-900">
+                                  {matchedStu ? `${matchedStu.firstName} ${matchedStu.lastName}` : (tx.studentName || `Student #${tx.studentId}`)}
+                                </div>
+                                <div className="text-[10px] font-mono text-slate-400">
+                                  {matchedStu?.studentId || tx.studentCode || ''} {matchedStu?.class ? `• ${matchedStu.class}` : ''}
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] uppercase">
+                                  {tx.paymentChannelLabel || tx.paymentMethod}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600">
+                                {formatCurrency(tx.amount)}
+                              </td>
+                              <td className="px-5 py-3">
+                                {tx.syncStatus === 'pending' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold">
+                                    <CloudOff className="w-3 h-3" />
+                                    Queued Offline
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                                    <Check className="w-3 h-3" />
+                                    Synced
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-5 py-3 text-right">
+                                {matchedStu && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedStudentId(matchedStu.studentId);
+                                      setLastPayment({
+                                        amount: tx.amount,
+                                        date: tx.createdAt || Date.now(),
+                                        method: tx.paymentChannelLabel || tx.paymentMethod,
+                                        phone: tx.guardianPhone || matchedStu.guardianPhone,
+                                        ref: tx.receiptNumber,
+                                        studentOverride: matchedStu,
+                                      });
+                                      setIsReceiptModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-lg text-slate-600 font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <FileText className="w-3 h-3 text-indigo-500" />
+                                    <span>Receipt</span>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1365,7 +2522,7 @@ export default function FeeManagement() {
                   <X className="w-5 h-5" />
                 </button>
                 <h3 className="text-lg font-bold text-slate-900 mb-1">Process Payment</h3>
-                <p className="text-sm text-slate-500 mb-6">For {selectedStudent.firstName} {selectedStudent.lastName}</p>
+                <p className="text-sm text-slate-500 mb-6">For {selectedStudent.firstName} {selectedStudent.lastName} ({selectedStudent.class})</p>
                 
                 {momoStep !== 'idle' ? (
                   /* MoMo interactive simulations step rendering */
@@ -1455,7 +2612,16 @@ export default function FeeManagement() {
 
                     {/* List out itemized balances for the student */}
                     <div className="p-4 bg-slate-50 border border-slate-200/50 rounded-xl space-y-2">
-                      <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Itemized Outstanding Balances</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Itemized Outstanding Balances</p>
+                        <button
+                          type="button"
+                          onClick={() => openStudentBreakdownModal(selectedStudent)}
+                          className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                        >
+                          Edit Bill
+                        </button>
+                      </div>
                       <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
                         {feeTypes.map(ft => {
                           const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
@@ -1502,46 +2668,85 @@ export default function FeeManagement() {
 
                     {/* Payment Method Selector */}
                     <div className="space-y-1.5 font-semibold">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Payment Channel</label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Payment Channel (`fee_transactions`)</label>
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('cash_bank')}
                           className={cn(
-                            "py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all",
+                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
                             paymentMethod === 'cash_bank'
                               ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                           Cash
+                          Cash
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('bank_transfer')}
+                          className={cn(
+                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                            paymentMethod === 'bank_transfer'
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          )}
+                        >
+                          Bank Slip
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('cheque')}
+                          className={cn(
+                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
+                            paymentMethod === 'cheque'
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          )}
+                        >
+                          Cheque
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('momo')}
                           className={cn(
-                            "py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all",
+                            "py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
                             paymentMethod === 'momo'
                               ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                           MoMo
+                          MoMo
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('paystack')}
                           className={cn(
-                            "py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all",
+                            "col-span-2 py-2 px-2 rounded-xl border font-bold text-xs flex items-center justify-center transition-all cursor-pointer",
                             paymentMethod === 'paystack'
                               ? "border-indigo-600 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/10"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                           )}
                         >
-                           Paystack
+                          Card / Paystack
                         </button>
                       </div>
                     </div>
+
+                    {(paymentMethod === 'bank_transfer' || paymentMethod === 'cheque') && (
+                      <div className="space-y-1 font-semibold">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                          {paymentMethod === 'cheque' ? 'Cheque Number / Bank Reference' : 'Bank Deposit Slip / Reference No.'}
+                        </label>
+                        <input
+                          type="text"
+                          value={bankOrChequeRef}
+                          onChange={(e) => setBankOrChequeRef(e.target.value)}
+                          placeholder={paymentMethod === 'cheque' ? 'e.g. CHQ-0049281' : 'e.g. GCB-SLIP-88392'}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    )}
 
                     {paymentMethod === 'momo' && (
                       <motion.div
@@ -1666,9 +2871,20 @@ export default function FeeManagement() {
                     ) : (
                       <button 
                         onClick={handlePayment}
-                        className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                        disabled={isSubmittingPayment}
+                        className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-60 cursor-pointer"
                       >
-                        Confirm Payment <ArrowUpRight className="w-5 h-5" />
+                        {isSubmittingPayment ? (
+                          <>
+                            <RefreshCw className="w-5 h-5 animate-spin" />
+                            <span>Recording to Supabase...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Confirm Payment</span>
+                            <ArrowUpRight className="w-5 h-5" />
+                          </>
+                        )}
                       </button>
                     )}
                   </div>
@@ -1680,124 +2896,118 @@ export default function FeeManagement() {
         )}
       </div>
 
+      {/* Individual Student Fee Breakdown Editor Modal */}
       <AnimatePresence>
-          {isReceiptModalOpen && selectedStudent && lastPayment && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:p-0">
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col print:shadow-none print:rounded-none"
-              >
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between print:hidden">
-                  <h3 className="font-bold text-slate-800 tracking-tight">Payment Receipt</h3>
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={triggerPrint}
-                      className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg font-bold hover:bg-slate-50 transition-all h-10 shadow-sm"
-                    >
-                      <Printer className="w-4 h-4 text-indigo-600" />
-                      <span>Print</span>
-                    </button>
-                    <button 
-                      onClick={handleExportPDF}
-                      disabled={isExportingPDF}
-                      className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg font-bold hover:bg-slate-900 transition-all disabled:opacity-50 h-10"
-                    >
-                      <FileText className="w-4 h-4" />
-                      <span>{isExportingPDF ? '...' : 'PDF'}</span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setIsReceiptModalOpen(false);
-                        setSelectedStudentId(null);
-                      }}
-                      className="p-2 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-6 h-6" />
-                    </button>
-                  </div>
+        {editingBillStudent && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto print:hidden">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-auto"
+            >
+              <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Individual Bill Breakdown</span>
+                  <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+                    {editingBillStudent.firstName} {editingBillStudent.lastName}
+                  </h3>
+                  <p className="text-xs font-mono text-slate-500">
+                    {editingBillStudent.studentId} • {editingBillStudent.class}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingBillStudent(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4 max-h-[60dvh] overflow-y-auto">
+                <p className="text-xs text-slate-500">
+                  Customize itemized billed amounts for this student (e.g., scholarships, fee waivers, or optional transport/boarding items). Changes sync directly to Supabase.
+                </p>
+
+                <div className="space-y-2.5">
+                  {feeTypes.map(ft => {
+                    const currentVal = studentBreakdownDraft[ft.id] ?? 0;
+                    const paidForThis = editingBillStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? editingBillStudent.feesPaid : 0);
+                    return (
+                      <div key={ft.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/70">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{ft.label}</p>
+                          <p className="text-[10px] font-mono text-slate-400">
+                            Already Paid: <span className="text-emerald-600 font-bold">{formatCurrency(paidForThis)}</span>
+                          </p>
+                        </div>
+                        <div className="relative w-36">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">GHS</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={currentVal}
+                            onChange={(e) => {
+                              const num = Math.max(0, Number(e.target.value) || 0);
+                              setStudentBreakdownDraft(prev => ({ ...prev, [ft.id]: num }));
+                            }}
+                            className="w-full pl-10 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div id="receipt-content" className="p-8 bg-white space-y-6 w-full max-w-md mx-auto">
-                  <div className="text-center space-y-2 border-b-2 border-slate-900 pb-4">
-                    <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center mx-auto mb-2 font-black text-lg">
-                      {schoolName.charAt(0)}
-                    </div>
-                    <h2 className="text-lg font-black uppercase tracking-widest text-slate-900">{schoolName}</h2>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Official Payment Receipt</p>
+                <div className="bg-slate-900 text-white rounded-2xl p-4 grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-slate-400">New Total Bill</p>
+                    <p className="text-sm font-black font-mono mt-0.5">
+                      {formatCurrency(Object.values(studentBreakdownDraft).reduce((acc, v) => acc + (Number(v) || 0), 0))}
+                    </p>
                   </div>
-
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-xs py-1.5 border-b border-slate-100">
-                      <span className="font-black text-slate-400 uppercase text-[8px]">Receipt/Ref Number:</span>
-                      <span className="font-mono font-bold uppercase">{lastPayment.ref || `RCP-${Math.floor(Math.random() * 1000000)}`}</span>
-                    </div>
-                    <div className="flex justify-between text-xs py-1.5 border-b border-slate-100 p-0.5 rounded">
-                      <span className="font-black text-slate-400 uppercase text-[8px]">Payment Channel:</span>
-                      <span className="font-bold uppercase text-[10px] text-indigo-600 font-sans">{lastPayment.method || 'CASH / BANK'}</span>
-                    </div>
-                    {lastPayment.phone && (
-                      <div className="flex justify-between text-xs py-1.5 border-b border-slate-100">
-                        <span className="font-black text-slate-400 uppercase text-[8px]">Payer Subscriber:</span>
-                        <span className="font-mono font-bold">{lastPayment.phone}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-xs py-1.5 border-b border-slate-100">
-                      <span className="font-black text-slate-400 uppercase text-[8px]">Date:</span>
-                      <span className="font-bold">{new Date(lastPayment.date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="space-y-0.5 pt-4">
-                      <p className="text-[8px] font-black text-slate-400 uppercase">Received From:</p>
-                      <p className="text-sm font-bold uppercase">{selectedStudent.firstName} {selectedStudent.lastName}</p>
-                      <p className="text-[10px] font-mono text-slate-400">{selectedStudent.studentId}</p>
-                    </div>
-                    <div className="p-4 bg-slate-50 rounded-xl mt-4">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Amount Paid:</p>
-                      <p className="text-xl font-black text-indigo-600 font-mono">{formatCurrency(lastPayment.amount)}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-xs pt-4">
-                      <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Total Fees:</p>
-                        <p className="font-bold">{formatCurrency(selectedStudent.totalFees)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Balance Due:</p>
-                        <p className="font-bold text-rose-600">{formatCurrency(selectedStudent.totalFees - selectedStudent.feesPaid)}</p>
-                      </div>
-                    </div>
-
-                    <div className="border border-slate-200 rounded-xl p-3 space-y-2 mt-4">
-                      <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Statement of Accounts Breakdown</p>
-                      <div className="space-y-1">
-                        {feeTypes.map(ft => {
-                          const billed = selectedStudent.feeBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.totalFees : 0);
-                          const paid = selectedStudent.feePaidBreakdown?.[ft.id] ?? (ft.id === 'tuition' ? selectedStudent.feesPaid : 0);
-                          if (billed === 0) return null;
-                          return (
-                            <div key={ft.id} className="flex justify-between items-center text-[10px] py-0.5 border-b border-slate-50 last:border-0 last:pb-0">
-                              <span className="text-slate-500 font-medium">{ft.label}</span>
-                              <div className="font-mono">
-                                <span className="font-bold text-slate-700">{formatCurrency(paid)}</span>
-                                <span className="text-slate-400 text-[8px]"> / {formatCurrency(billed)}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-slate-400">Total Paid</p>
+                    <p className="text-sm font-black font-mono text-emerald-400 mt-0.5">
+                      {formatCurrency(editingBillStudent.feesPaid)}
+                    </p>
                   </div>
-
-                  <div className="pt-10 text-center">
-                    <div className="border-b border-slate-900 w-32 mx-auto mb-1" />
-                    <p className="text-[8px] font-black uppercase text-slate-400">Cashier Signature</p>
-                    <p className="mt-6 text-[8px] text-slate-300 italic uppercase">Thank you for your prompt payment.</p>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase text-slate-400">New Balance</p>
+                    <p className="text-sm font-black font-mono text-[#faae57] mt-0.5">
+                      {formatCurrency(
+                        Object.values(studentBreakdownDraft).reduce((acc, v) => acc + (Number(v) || 0), 0) -
+                          (editingBillStudent.feesPaid || 0)
+                      )}
+                    </p>
                   </div>
                 </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+              </div>
+
+              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingBillStudent(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveStudentBreakdown}
+                  disabled={isSavingStudentBreakdown}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingStudentBreakdown ? 'Saving to Supabase...' : 'Save Bill to Supabase'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {renderReceiptModal()}
     </>
   );
 }

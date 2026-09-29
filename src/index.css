@@ -162,17 +162,19 @@ body {
     font-size: 10pt !important;
     line-height: 1.4 !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Universal Reset for Print */
+  /* Universal Reset for Print (excluding Receipt Modal internals to preserve A4 safe padding) */
   #root, 
   .app-container,
   main,
-  .overflow-y-auto,
-  [class*="overflow-y-"],
-  .flex-1,
+  .overflow-y-auto:not(#receipt-content):not(.receipt-modal-root),
+  [class*="overflow-y-"]:not(#receipt-content):not(.receipt-modal-root),
+  .flex-1:not(#receipt-content),
   .max-w-7xl,
-  .mx-auto {
+  .mx-auto:not(#receipt-content):not(.receipt-modal-card):not(#receipt-content *) {
     display: block !important;
     overflow: visible !important;
     height: auto !important;
@@ -187,10 +189,9 @@ body {
     transform: none !important;
   }
 
-  /* Specific fix for modals/overlays */
-  /* We want to show the container but hide its background/blur */
-  .fixed.inset-0, 
-  [role="dialog"] {
+  /* Specific fix for generic modals/overlays */
+  .fixed.inset-0:not(.receipt-modal-root), 
+  [role="dialog"]:not(.receipt-modal-root) {
     display: block !important;
     position: static !important;
     background: transparent !important;
@@ -202,9 +203,9 @@ body {
     min-height: 0 !important;
   }
 
-  /* Target the actual inner modal card */
-  .fixed.inset-0 > div,
-  [role="dialog"] > div {
+  /* Target generic inner modal card */
+  .fixed.inset-0:not(.receipt-modal-root) > div,
+  [role="dialog"]:not(.receipt-modal-root) > div {
     display: block !important;
     position: static !important;
     margin: 0 !important;
@@ -223,12 +224,12 @@ body {
     margin: 0 !important;
   }
 
-  /* Force standard layout for print to avoid grid display issues on generic dashboards, excluding ReportCard */
-  .grid:not(.ReportCard *):not(.ReportCard) {
+  /* Force standard layout for print to avoid grid display issues on generic dashboards, excluding ReportCard and #receipt-content */
+  .grid:not(.ReportCard *):not(.ReportCard):not(#receipt-content *):not(#receipt-content) {
     display: block !important;
   }
 
-  .grid:not(.ReportCard *) > *:not(.ReportCard):not(.ReportCard *) {
+  .grid:not(.ReportCard *):not(#receipt-content *) > *:not(.ReportCard):not(.ReportCard *):not(#receipt-content *) {
     margin-bottom: 1.5rem !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
@@ -251,8 +252,127 @@ body {
   .no-print,
   #manual-sync,
   [role="dialog"] button,
-  .only-screen {
+  .only-screen,
+  .receipt-modal-hidden-on-print {
     display: none !important;
+  }
+
+  /* When the Receipt Modal is open, isolate it on the A4 page so background dashboard elements never overlap */
+  body.receipt-modal-open .only-print {
+    display: none !important;
+  }
+
+  /* Explicit A4 Print Media Queries for the Payment Receipt Modal */
+  .receipt-modal-root {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 14mm 16mm !important;
+    box-sizing: border-box !important;
+    background: white !important;
+    backdrop-filter: none !important;
+    overflow: visible !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .receipt-modal-card {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 178mm !important;
+    max-height: none !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    background: white !important;
+    border: 1.5pt solid #0f172a !important;
+    border-radius: 6pt !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 10mm 12mm !important;
+    box-sizing: border-box !important;
+    background: white !important;
+    overflow: visible !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content * {
+    box-sizing: border-box !important;
+    max-width: 100% !important;
+  }
+
+  #receipt-content .receipt-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content .receipt-amount-banner {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 10pt 12pt !important;
+    margin-top: 8pt !important;
+    margin-bottom: 8pt !important;
+    background-color: #f8fafc !important;
+    border: 1pt solid #e2e8f0 !important;
+    border-radius: 6pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content .receipt-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10pt !important;
+    margin-top: 6pt !important;
+    margin-bottom: 8pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content .receipt-summary-grid > div {
+    margin-bottom: 0 !important;
+    padding: 8pt 10pt !important;
+    border-radius: 6pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-content .receipt-breakdown-box {
+    margin-top: 8pt !important;
+    margin-bottom: 0 !important;
+    padding: 10pt 12pt !important;
+    border: 1pt solid #cbd5e1 !important;
+    border-radius: 6pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* Hide specifically the backdrop of modals */
@@ -302,9 +422,9 @@ body {
     font-size: 9pt !important;
   }
 
-  /* Avoid cutting off cards or sections outside ReportCard */
-  .bg-white:not(.ReportCard):not(.ReportCard *), 
-  .rounded-2xl:not(.ReportCard):not(.ReportCard *), 
+  /* Avoid cutting off cards or sections outside ReportCard and Receipt Modal */
+  .bg-white:not(.ReportCard):not(.ReportCard *):not(.receipt-modal-card):not(#receipt-content):not(#receipt-content *), 
+  .rounded-2xl:not(.ReportCard):not(.ReportCard *):not(.receipt-modal-card):not(#receipt-content):not(#receipt-content *), 
   section:not(.ReportCard-section) {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
@@ -468,6 +588,23 @@ body {
 }
 .safe-right {
   padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Responsive safe-area padding for the Receipt Modal so it is never obscured by notches, gesture bars, or mobile UI */
+.receipt-safe-overlay {
+  padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
+  padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));
+  padding-left: max(0.75rem, calc(env(safe-area-inset-left, 0px) + 0.5rem));
+  padding-right: max(0.75rem, calc(env(safe-area-inset-right, 0px) + 0.5rem));
+}
+
+@media (min-width: 640px) {
+  .receipt-safe-overlay {
+    padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    padding-left: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
+  }
 }
 
 /* Wrapper for the fixed bottom dock that automatically clears the OS hardware home bar */

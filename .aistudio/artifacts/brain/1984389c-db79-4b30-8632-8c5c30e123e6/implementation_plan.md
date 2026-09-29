@@ -1,71 +1,51 @@
-# Mobile Safe-Area Wrapper, Bottom Navigation & Stacked Primary Action Layout
+# Inventory Registry & Expenses — Supabase Database Integration Plan
 
-Resolve clipping and overlap at the bottom of mobile screens by introducing a hardware safe-area layout architecture (`env(safe-area-inset-bottom)`), updating the selected custom bottom navigation bar (`div#root > div > main > div:nth-of-type(2) > div:nth-of-type(1)`), fixing scroll-container bottom clearance, and providing a reusable sticky primary action bar (`MobileStickyActionBar` / `MobileSafeActionStack`) that stacks directly above the custom bottom navigation bar.
+Connect the **Assets, Inventory & Expense Terminal** (`src/components/InventoryManagement.tsx`) directly to the multi-tenant **Supabase PostgreSQL database** (`public.inventory_items`, `public.stock_movements`, `public.school_expenses`, `public.school_settings`, and `public.audit_logs`).
 
-## User Review & Critical Decisions
+---
 
-> [!IMPORTANT]
-> - **Why Primary Action Buttons Were Clipped**:
->   1. The custom mobile bottom navigation bar used a fixed `bottom-3` (`12px`) offset without `env(safe-area-inset-bottom, 0px)`, causing it to collide with the iPhone Home Indicator (`34px`) and Android gesture bar.
->   2. The inner animated view wrapper used `h-full` inside an `overflow-y-auto` scroll container, which prevented bottom padding (`pb-24`) from taking effect below overflowing page content—leaving bottom action buttons trapped behind the floating navigation bar.
-> - **Unified Safe-Area & Stacking Math**: All bottom layers reference shared CSS variables (`--safe-bottom: env(safe-area-inset-bottom, 0px)` and `--mobile-nav-height: 3.875rem`) so the hardware gesture bar, custom bottom navigation bar, sticky primary CTA bar, and scrollable content stack in deterministic vertical layers without ever overlapping.
+## 1. Supabase Schema & Multi-Table Architecture
 
-## 1. Overview & Core Concept
+The current frontend component (`InventoryManagement.tsx`) calls non-existent client tables (`inventory` and `expenses`). We will wire the module to the actual multi-tenant Supabase tables in your project:
 
-- **What It Does**: Establishes a three-tier bottom viewport hierarchy for mobile and tablet screens (`< 1024px`) while preserving standard desktop layouts (`≥ 1024px`):
-  1. **Tier 1 (Bottom-most)**: Native OS Hardware Safe Area (`env(safe-area-inset-bottom, 0px)` for iPhone Home Indicator / Android gesture bar).
-  2. **Tier 2 (Middle)**: Custom Floating/Docked Bottom Navigation Bar positioned at `bottom: max(0.75rem, env(safe-area-inset-bottom, 0px))`.
-  3. **Tier 3 (Top of Bottom Stack)**: Sticky Primary Action Bar (for "Submit", "Save All Marks", "Checkout", etc.) positioned at `bottom: calc(var(--mobile-nav-height) + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.625rem)` directly above the custom bottom nav, plus generous scroll padding on the main content container.
-- **Target Audience / Persona**: Mobile users on iOS (iPhone X through iPhone 16 Pro Dynamic Island / Home Indicator) and Android (gesture navigation and 3-button system bars).
-- **Key Value**: Guarantees every primary action button and bottom form control is 100% visible, tappable (`≥ 44px` hitbox), and never obscured by either the app's bottom navigation bar or the phone's hardware home bar.
+1. **`public.inventory_items` (Stock Commodities Registry)**
+   - Stores all school commodities and apparatus (`id`, `school_id`, `item_name`, `category`, `quantity`, `min_quantity`, `unit_price`, `location`, `supplier_name`, `supplier_phone`, `last_updated`).
+2. **`public.stock_movements` (Stock Adjustment, Issuance & Restock Ledger)**
+   - Tracks every stock change (`id`, `school_id`, `item_id`, `item_name`, `movement_type` (`IN`, `OUT`, `RESTOCK`, `ISSUE`, `ADJUSTMENT`), `quantity_change`, `previous_quantity`, `new_quantity`, `reason`, `performed_by`, `created_at`).
+   - Automatically synchronizes with both physical `public.stock_movements` rows and `public.school_settings.streams.inventory.movements` so movement history is preserved across all schema configurations.
+3. **`public.school_expenses` (Overhead & Inventory Restock Purchases)**
+   - Stores all financial expenditures (`id`, `school_id`, `description`, `category`, `amount`, `date`, `inventory_item_id`, `quantity_purchased`, `payment_method`, `recorded_by`).
+   - When an **Inventory Restock** expense is logged (or deleted), the server atomically increments (or rolls back) the linked commodity's `quantity` in `public.inventory_items` and records a corresponding entry in `public.stock_movements`.
+4. **`public.school_settings` JSONB Backup & Starter Commodities Auto-Seed**
+   - Mirrors the school's inventory items, stock movements, and expenses to `public.school_settings.streams.inventory`.
+   - On first initialization of a school with an empty `public.inventory_items` table, automatically seeds starter campus commodities (e.g., *Whiteboard Markers & Duster Set*, *A4 Printing Paper Reams*, *Core Mathematics Textbooks*, *Student Khaki Uniform Sets*, *Classroom Dual Desks*, *Science Lab Beakers*) so the registry is immediately populated.
 
-## 2. User Experience & Visual Design
+---
 
-- **Key User Flows**:
-  1. **Scrolling to the Bottom of Any View**: Users can scroll to the very bottom of any module (Dashboard, Results, Fees, Attendance, Reports, Lesson Notes) and see all bottom action buttons clearly resting above the custom bottom navigation bar with breathing room.
-  2. **Sticky Primary Action Button ("Submit" / "Save" / "Checkout")**: Views with a primary bottom CTA dock the action bar directly above the custom bottom navigation bar on mobile, and inline on desktop.
-  3. **Hardware Gesture & Home Indicator Clearance**: Swiping up on the iPhone Home Indicator or tapping Android navigation buttons never accidentally triggers or clips the app's bottom navigation tabs or central FAB.
-- **Visual Identity & Theme**:
-  - *Surface Elevation*: Translucent glassmorphic surface (`bg-white/95 backdrop-blur-md`) with crisp border (`border-[#bac4c6]`) and elevated ambient shadow (`shadow-[0_8px_28px_rgba(28,74,89,0.18)]`) for the selected bottom navigation capsule.
-  - *Touch Ergonomics*: Minimum `44px × 44px` hit targets for all navigation tabs and `48px` height for primary action buttons.
+## 2. Backend API Endpoints (`server.ts`)
 
-## 3. Key Product Decisions & Trade-Offs
+Add a dedicated `/api/inventory/*` suite in `server.ts`:
 
-- **Decision 1: Shared CSS Custom Properties for Safe Area & Nav Offset**
-  - *Chosen Approach*: Define `--safe-top`, `--safe-bottom`, `--mobile-nav-height`, and `--mobile-nav-bottom-offset` in root CSS using `env(safe-area-inset-*)` and `100dvh` dynamic viewport units.
-  - *Why*: Eliminates magic numbers and ensures that when a device reports a `34px` iOS bottom inset or `0px` desktop inset, both the custom bottom nav and any stacked primary CTA automatically shift upward by the exact hardware inset.
-- **Decision 2: Fix Scroll Container Overflow (`min-h-full` instead of `h-full`)**
-  - *Chosen Approach*: Replace `h-full` with `min-h-full` on the inner view wrapper inside `<main>` and apply `.pb-mobile-safe-content` so the scroll container always honors bottom clearance below the last button on every screen.
-  - *Why*: In CSS flexbox/scroll layouts, a child with `height: 100%` (`h-full`) causes overflowing descendants to ignore the parent scroll container's `padding-bottom`.
+- **`GET /api/inventory/state`**
+  - Resolves the active `school_id`, fetches `inventory_items`, `stock_movements`, and `school_expenses` from Supabase (auto-seeding starter items if uninitialized), inspects table health (`tableStatus`), and returns the full state plus `inventorySql` DDL.
+- **`POST /api/inventory/sync`**
+  - Performs two-way reconciliation between local IndexedDB (`db.inventory`, `db.expenses`) and Supabase (`public.inventory_items`, `public.stock_movements`, `public.school_expenses`), migrating any offline/local items and expenses to Supabase.
+- **`POST /api/inventory/items` & `PUT /api/inventory/items/:id` & `DELETE /api/inventory/items/:id`**
+  - Creates, updates, or deletes stock items in `public.inventory_items`, logs initial stock or quantity deltas in `public.stock_movements`, and writes an audit trail to `public.audit_logs`.
+- **`POST /api/inventory/items/:id/adjust`**
+  - Atomically adjusts a commodity's stock count (`+1`, `-1`, custom restock, or departmental issuance), updates `public.inventory_items.quantity`, and logs the movement in `public.stock_movements` with `previous_quantity`, `new_quantity`, `reason`, and `performed_by`.
+- **`POST /api/inventory/expenses` & `DELETE /api/inventory/expenses/:id`**
+  - Records or deletes expenditures in `public.school_expenses`. For `Inventory Restock` purchases, automatically increments/reverts `public.inventory_items.quantity` and logs the restock movement in `public.stock_movements`.
 
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+---
 
-- **Architecture & Viewport Stacking Diagram**:
+## 3. Frontend API Client & UI Enhancements (`src/lib/api.ts` & `src/components/InventoryManagement.tsx`)
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     Mobile Viewport (100dvh, <1024px)                   │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Top App Header (padding-top: env(safe-area-inset-top, 0px))       │  │
-│  ├───────────────────────────────────────────────────────────────────┤  │
-│  │ Scrollable Main Content Container (overflow-y-auto)               │  │
-│  │  • Inner View Wrapper (min-h-full, max-w-7xl)                     │  │
-│  │  • Bottom Scroll Clearance: .pb-mobile-safe-content               │  │
-│  ├───────────────────────────────────────────────────────────────────┤  │
-│  │ Tier 3: Sticky Primary Action Bar (MobileSafeActionStack)         │  │
-│  │  • Position: .above-mobile-nav (stacked above bottom nav)         │  │
-│  │  • Holds primary CTA ("Submit" / "Save All Marks" / "Checkout")   │  │
-│  ├───────────────────────────────────────────────────────────────────┤  │
-│  │ Tier 2: Selected Custom Bottom Navigation Bar                     │  │
-│  │  • Selector: main > div:nth-of-type(2) > div:nth-of-type(1)       │  │
-│  │  • Position: pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]    │  │
-│  ├───────────────────────────────────────────────────────────────────┤  │
-│  │ Tier 1: Native OS Hardware Bar / Home Indicator                   │  │
-│  │  • Height: env(safe-area-inset-bottom, 0px) (e.g. 34px on iOS)    │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Interactive Component & State Mapping**:
-  - **Selected Bottom Navigation Capsule (`main > div:nth-of-type(2) > div:nth-of-type(1)`)**: Updated with safe-area bottom offset (`pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]`), frosted backdrop blur (`bg-white/95 backdrop-blur-md`), and responsive spacing across narrow (`320px–375px`) and standard (`390px–430px`) screens.
-  - **Reusable `<MobileSafeActionStack>` & `<MobileStickyActionBar>` Component**: Provides a drop-in wrapper and sticky primary CTA stacking directly above the custom bottom navigation bar so any form or checkout/submission action stays unobstructed.
+1. **`inventoryApi` Client (`src/lib/api.ts`)**
+   - Add `inventoryApi` (`getState`, `syncState`, `saveItem`, `deleteItem`, `adjustQuantity`, `createExpense`, `deleteExpense`) with automatic local Dexie (`db.inventory`, `db.expenses`) reconciliation (`reconcileInventoryStateInDexie`).
+2. **Supabase Cloud Status Header & Table Inspector (`InventoryManagement.tsx`)**
+   - Add a dark slate header hero banner displaying real-time Supabase connection status, last sync timestamp, a **Sync Cloud** button, and a **Supabase Tables** inspector drawer showing live row counts and status for `public.inventory_items`, `public.stock_movements`, `public.school_expenses`, and `public.school_settings`.
+3. **Dedicated `Stock Movements` History Tab & Custom Stock Adjustment Modal**
+   - Add a 3rd tab — **Stock Movements (`stock_movements`)** — alongside **Stock Commodities** and **Expenses & Restocks**.
+   - Display a complete chronological movement ledger with badges for **Restock (+IN)**, **Issuance (-OUT)**, and **Adjustment**, showing previous vs. new quantity, staff member (`performed_by`), reason/department, timestamp, search/type filters, **Export CSV**, and **Print Movement Ledger**.
+   - Add a **Record Stock Issuance / Adjustment** action on each commodity so staff can issue items to classrooms/departments or restock with a reason note.

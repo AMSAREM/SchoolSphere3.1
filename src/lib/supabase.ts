@@ -58,6 +58,12 @@ export async function getCurrentSchoolId(): Promise<string | null> {
   }
 
   try {
+    const authUserRaw = localStorage.getItem('esepa_auth_user');
+    if (authUserRaw) {
+      const parsedUser = JSON.parse(authUserRaw);
+      if (parsedUser?.schoolId) return parsedUser.schoolId;
+      if (parsedUser?.school_id) return parsedUser.school_id;
+    }
     const stored = localStorage.getItem('esepa_active_school');
     if (stored) {
       const parsed = JSON.parse(stored);

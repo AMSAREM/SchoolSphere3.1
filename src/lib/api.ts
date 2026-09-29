@@ -1,5 +1,5 @@
 import { supabase, getCurrentSchoolId } from './supabase';
-import { db, normalizeStudentRecord } from '../db/schema';
+import { db, normalizeStudentRecord, normalizeFeeTransactionRecord, FEE_TYPES } from '../db/schema';
 import { 
   reconcileClassesInDexie, 
   reconcileTeachersInDexie, 
@@ -9,6 +9,9 @@ import {
   reconcileResultsInDexie,
   reconcileTermReportsInDexie,
   reconcileSettingsInDexie,
+  reconcileFeeTransactionsInDexie,
+  reconcileSmsLogsInDexie,
+  queueOfflineWrite,
   syncAllDataFromBackend,
   broadcastLocalMutation
 } from './syncService';
@@ -30,6 +33,31 @@ export function getApiHeaders(schoolId?: string): Record<string, string> {
     headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+}
+
+export async function resolveActiveSchoolId(): Promise<string> {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const authUserRaw = localStorage.getItem('esepa_auth_user');
+      if (authUserRaw) {
+        const parsedUser = JSON.parse(authUserRaw);
+        const userSchoolId = parsedUser?.schoolId || parsedUser?.school_id;
+        if (userSchoolId && typeof userSchoolId === 'string' && userSchoolId.trim()) {
+          return userSchoolId.trim();
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const setting = await db.settings.where('key').equals('school_id').first();
+    if (setting?.value && typeof setting.value === 'string' && setting.value.trim()) {
+      return setting.value.trim();
+    }
+  } catch {}
+
+  const currentId = await getCurrentSchoolId();
+  return currentId || '';
 }
 
 // ==========================================
@@ -138,7 +166,9 @@ export const studentsApi = {
       settings: await db.settings.toArray(),
       inventory: await db.inventory.toArray(),
       expenses: await db.expenses.toArray(),
-      promotionHistory: await db.promotionHistory.toArray()
+      promotionHistory: await db.promotionHistory.toArray(),
+      feeTransactions: await db.feeTransactions.toArray(),
+      smsLogs: await db.smsLogs.toArray()
     };
 
     const res = await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
@@ -1855,25 +1885,560 @@ export const promotionsApi = {
 };
 
 // ==========================================
-// 7. FEES & FINANCIAL TRANSACTIONS API
+// 7. FEES & FINANCIAL TRANSACTIONS API (SUPABASE)
 // ==========================================
 export const feesApi = {
-  recordPayment: async (paymentData: { studentId: string; amount: number; description?: string }, schoolId?: string) => {
+  getAll: async (schoolId?: string) => {
+    return await feesApi.getTransactions(undefined, schoolId);
+  },
+
+  getTransactions: async (studentId?: string, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const student = await db.students.where('studentId').equals(paymentData.studentId).first();
-    if (student && student.id) {
-      const newFeesPaid = (student.feesPaid || 0) + paymentData.amount;
-      await studentsApi.update(student.id, { feesPaid: newFeesPaid, studentId: paymentData.studentId }, targetSchoolId || undefined);
-    } else {
-      try {
-        await supabase
-          .from('students')
-          .update({ fees_paid: paymentData.amount })
-          .eq('school_id', targetSchoolId)
-          .eq('student_id', paymentData.studentId);
-      } catch (e) {}
+
+    // 1. Primary Server Endpoint (/api/fees/transactions)
+    try {
+      const params = new URLSearchParams();
+      if (targetSchoolId) params.set('school_id', targetSchoolId);
+      if (studentId) params.set('student_id', studentId);
+      const res = await fetch(`/api/fees/transactions?${params.toString()}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.transactions)) {
+          const normalized = json.transactions.map((tx: any) => normalizeFeeTransactionRecord(tx));
+          await reconcileFeeTransactionsInDexie(normalized, !studentId);
+          return normalized;
+        }
+      }
+    } catch (e) {
+      console.warn('Notice fetching /api/fees/transactions:', e);
     }
-    return true;
+
+    // 2. Direct Supabase query fallback
+    try {
+      if (targetSchoolId) {
+        let q = supabase.from('fee_transactions').select('*').eq('school_id', targetSchoolId);
+        if (studentId) q = q.eq('student_id', studentId);
+        const { data, error } = await q.order('date', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          const normalized = data.map((tx: any) => normalizeFeeTransactionRecord(tx));
+          await reconcileFeeTransactionsInDexie(normalized, false);
+          return normalized;
+        }
+      }
+    } catch (e) {}
+
+    // 3. Local Dexie fallback
+    const localTx = await db.feeTransactions.toArray();
+    const filtered = localTx
+      .map(tx => normalizeFeeTransactionRecord(tx))
+      .filter(tx => {
+        if (targetSchoolId && tx.schoolId && tx.schoolId !== targetSchoolId) return false;
+        if (studentId && String(tx.studentId).toLowerCase() !== String(studentId).toLowerCase()) return false;
+        return true;
+      })
+      .sort((a, b) => (b.date || 0) - (a.date || 0));
+    return filtered;
+  },
+
+  recordPayment: async (
+    paymentData: {
+      studentId: string | number;
+      studentCode?: string;
+      studentName?: string;
+      className?: string;
+      studentNumericId?: number;
+      amount: number;
+      receiptNumber?: string;
+      feeType?: string;
+      allocationType?: string;
+      paymentMethod?: string;
+      channelLabel?: string;
+      paymentChannelLabel?: string;
+      transactionReference?: string;
+      receivedBy?: string;
+      recipientPhone?: string;
+      guardianPhone?: string;
+      guardianName?: string;
+      academicYear?: string;
+      term?: string;
+      description?: string;
+      feePaidBreakdown?: Record<string, number>;
+      feeBreakdown?: Record<string, number>;
+      totalFees?: number;
+      newFeesPaid?: number;
+      date?: number;
+    },
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const amount = Number(paymentData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error('Payment amount must be greater than zero.');
+    }
+
+    // Resolve student from local Dexie
+    const studentCodeToLookup = paymentData.studentCode || String(paymentData.studentId);
+    let student = await db.students.where('studentId').equals(studentCodeToLookup).first();
+    if (!student && typeof paymentData.studentId === 'number') {
+      student = await db.students.get(paymentData.studentId);
+    }
+    if (!student && paymentData.studentNumericId != null) {
+      student = await db.students.get(Number(paymentData.studentNumericId));
+    }
+
+    const now = paymentData.date || Date.now();
+    const receiptNumber = String(
+      paymentData.receiptNumber || `RCP-${Math.floor(100000 + Math.random() * 900000)}`
+    ).trim();
+
+    const currentFeesPaid = Number(student?.feesPaid ?? 0);
+    const totalFees = Number(paymentData.totalFees ?? student?.totalFees ?? 0);
+    const newFeesPaid = paymentData.newFeesPaid !== undefined
+      ? Number(paymentData.newFeesPaid)
+      : currentFeesPaid + amount;
+
+    const currentBreakdown = paymentData.feeBreakdown || student?.feeBreakdown || (totalFees > 0 ? { tuition: totalFees } : {});
+    let updatedPaidBreakdown = paymentData.feePaidBreakdown;
+    if (!updatedPaidBreakdown) {
+      const basePaid: Record<string, number> = { ...(student?.feePaidBreakdown || {}) };
+      if (Object.keys(basePaid).length === 0 && currentFeesPaid > 0) {
+        basePaid.tuition = currentFeesPaid;
+      }
+      if (paymentData.allocationType && paymentData.allocationType !== 'automatic') {
+        basePaid[paymentData.allocationType] = (basePaid[paymentData.allocationType] || 0) + amount;
+      } else {
+        let remaining = amount;
+        const order = Array.from(new Set([...FEE_TYPES.map(f => f.id), ...Object.keys(currentBreakdown)]));
+        for (const fid of order) {
+          if (remaining <= 0) break;
+          const billed = Number(currentBreakdown[fid] ?? (fid === 'tuition' ? totalFees : 0));
+          const paid = Number(basePaid[fid] ?? 0);
+          const out = Math.max(0, billed - paid);
+          if (out > 0) {
+            const alloc = Math.min(remaining, out);
+            basePaid[fid] = paid + alloc;
+            remaining -= alloc;
+          }
+        }
+        if (remaining > 0) {
+          basePaid.tuition = (basePaid.tuition || 0) + remaining;
+        }
+      }
+      updatedPaidBreakdown = basePaid;
+    }
+
+    const rawMethod = paymentData.paymentMethod || paymentData.paymentChannelLabel || paymentData.channelLabel || 'Cash';
+    const resolvedChannelLabel = paymentData.paymentChannelLabel || paymentData.channelLabel || rawMethod;
+    const resolvedPhone = paymentData.guardianPhone || paymentData.recipientPhone || student?.guardianPhone || undefined;
+    const normTx = normalizeFeeTransactionRecord({
+      schoolId: targetSchoolId,
+      school_id: targetSchoolId,
+      receiptNumber,
+      studentId: student?.studentId || paymentData.studentCode || String(paymentData.studentId),
+      studentCode: student?.studentId || paymentData.studentCode || undefined,
+      studentName: student ? `${student.firstName} ${student.lastName}`.trim() : paymentData.studentName,
+      className: student?.class || paymentData.className,
+      feeType: paymentData.feeType || (paymentData.allocationType && paymentData.allocationType !== 'automatic' ? paymentData.allocationType.toUpperCase() : 'Automatic Allocation'),
+      amount,
+      paymentMethod: rawMethod,
+      channelLabel: resolvedChannelLabel,
+      paymentChannelLabel: resolvedChannelLabel,
+      transactionReference: paymentData.transactionReference || receiptNumber,
+      receivedBy: paymentData.receivedBy || 'Bursary Office',
+      recipientPhone: resolvedPhone,
+      guardianPhone: resolvedPhone,
+      academicYear: paymentData.academicYear,
+      term: paymentData.term,
+      allocationBreakdown: updatedPaidBreakdown,
+      date: now
+    });
+
+    // 1. Optimistic Local Dexie Updates (students, feeTransactions, smsLogs)
+    if (student && student.id) {
+      await db.students.update(student.id, {
+        feesPaid: newFeesPaid,
+        feePaidBreakdown: updatedPaidBreakdown
+      });
+    }
+    await reconcileFeeTransactionsInDexie([normTx], false);
+
+    const studentFullName = student ? `${student.firstName} ${student.lastName}`.trim() : String(paymentData.studentName || paymentData.studentId);
+    const outstandingBalance = Math.max(0, totalFees - newFeesPaid);
+    const channelLabel = normTx.channelLabel || normTx.paymentMethod;
+    try {
+      await db.smsLogs.add({
+        recipientPhone: normTx.recipientPhone || student?.guardianPhone || '0240000000',
+        recipientName: String(student?.guardianName || paymentData.guardianName || studentFullName),
+        recipientType: 'Parent',
+        message: `School Fees Payment Alert: GHS ${amount.toFixed(2)} received via ${channelLabel} for ${studentFullName}. Ref: ${normTx.receiptNumber}. New Outstanding Balance: GHS ${outstandingBalance.toFixed(2)}. Thank you!`,
+        type: 'Fee Reminder',
+        status: 'Sent',
+        createdAt: now
+      });
+    } catch {}
+
+    const apiPayload = {
+      schoolId: targetSchoolId,
+      school_id: targetSchoolId,
+      studentId: student?.studentId || paymentData.studentId,
+      studentNumericId: student?.remoteId ?? student?.id ?? paymentData.studentNumericId,
+      studentFirstName: student?.firstName,
+      studentLastName: student?.lastName,
+      className: student?.class,
+      amount,
+      newFeesPaid,
+      totalFees,
+      feeBreakdown: currentBreakdown,
+      feePaidBreakdown: updatedPaidBreakdown,
+      receiptNumber: normTx.receiptNumber,
+      feeType: normTx.feeType,
+      paymentMethod: normTx.paymentMethod,
+      channelLabel,
+      transactionReference: normTx.transactionReference,
+      receivedBy: normTx.receivedBy,
+      recipientPhone: normTx.recipientPhone,
+      date: now
+    };
+
+    // 2. Authoritative Server Endpoint (POST /api/fees/pay)
+    let syncedOnServer = false;
+    try {
+      const res = await fetch('/api/fees/pay', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify(apiPayload)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          syncedOnServer = true;
+          if (json.student) {
+            await reconcileStudentsInDexie([normalizeStudentRecord(json.student)], false);
+          }
+          if (json.transaction) {
+            const serverTx = normalizeFeeTransactionRecord(json.transaction);
+            await reconcileFeeTransactionsInDexie([serverTx], false);
+            broadcastLocalMutation('feeTransactions', 'create', serverTx);
+            broadcastLocalMutation('students', 'update', json.student);
+            return {
+              success: true,
+              synced: true,
+              queuedOffline: false,
+              receiptNumber: serverTx.receiptNumber,
+              transaction: serverTx,
+              student: json.student ? normalizeStudentRecord(json.student) : student
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Notice calling POST /api/fees/pay:', e);
+    }
+
+    // 3. Fallback Direct Supabase + Offline Queue
+    if (!syncedOnServer) {
+      try {
+        if (targetSchoolId) {
+          await supabase
+            .from('students')
+            .update({
+              fees_paid: newFeesPaid,
+              fee_paid_breakdown: updatedPaidBreakdown,
+              updated_at: now
+            })
+            .eq('school_id', targetSchoolId)
+            .eq('student_id', apiPayload.studentId);
+
+          await supabase
+            .from('fee_transactions')
+            .upsert([{
+              school_id: targetSchoolId,
+              receipt_number: normTx.receiptNumber,
+              student_id: apiPayload.studentId,
+              fee_type: normTx.feeType,
+              amount,
+              payment_method: normTx.paymentMethod,
+              transaction_reference: normTx.transactionReference,
+              received_by: normTx.receivedBy,
+              notes: normTx.notes,
+              date: now
+            }], { onConflict: 'school_id,receipt_number' });
+        }
+      } catch {}
+
+      queueOfflineWrite('fee_payment', 'insert', apiPayload);
+    }
+
+    broadcastLocalMutation('feeTransactions', 'create', normTx);
+    return {
+      success: true,
+      synced: syncedOnServer,
+      queuedOffline: !syncedOnServer,
+      receiptNumber: normTx.receiptNumber,
+      transaction: normTx,
+      student
+    };
+  },
+
+  batchBill: async (
+    payload: {
+      targetClass: string;
+      mode?: 'replace' | 'merge';
+      feeBreakdown?: Record<string, number>;
+      feeStructureToApply?: Record<string, number>;
+      academicYear?: string;
+      term?: string;
+    },
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const mode = payload.mode === 'merge' ? 'merge' : 'replace';
+    const rawStructure = payload.feeBreakdown || payload.feeStructureToApply || {};
+    const cleanBreakdown: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rawStructure)) {
+      const n = Math.max(0, Number(v) || 0);
+      if (n > 0) cleanBreakdown[k] = n;
+    }
+
+    // 1. Optimistic Local Dexie Update
+    const allLocal = await db.students.toArray();
+    const isAllClasses = !payload.targetClass || payload.targetClass === 'All' || payload.targetClass === 'ALL';
+    const matchingLocal = allLocal.filter(s => {
+      if (targetSchoolId && (s as any).school_id && (s as any).school_id !== targetSchoolId) return false;
+      if (!isAllClasses && (s.class || '').trim().toLowerCase() !== payload.targetClass.trim().toLowerCase()) return false;
+      return true;
+    });
+
+    for (const stu of matchingLocal) {
+      if (!stu.id) continue;
+      const nextBreakdown = mode === 'merge'
+        ? { ...(stu.feeBreakdown || {}), ...cleanBreakdown }
+        : { ...cleanBreakdown };
+      const nextTotal = Object.values(nextBreakdown).reduce((acc, val) => acc + (Number(val) || 0), 0);
+      await db.students.update(stu.id, {
+        feeBreakdown: nextBreakdown,
+        totalFees: nextTotal
+      });
+    }
+
+    const reqBody = {
+      schoolId: targetSchoolId,
+      school_id: targetSchoolId,
+      targetClass: isAllClasses ? 'All' : payload.targetClass,
+      mode,
+      feeBreakdown: cleanBreakdown,
+      academicYear: payload.academicYear,
+      term: payload.term
+    };
+
+    // 2. Authoritative Server Endpoint (POST /api/fees/batch-bill)
+    try {
+      const res = await fetch('/api/fees/batch-bill', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify(reqBody)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.students)) {
+          await reconcileStudentsInDexie(json.students.map((s: any) => normalizeStudentRecord(s)), false);
+          broadcastLocalMutation('students', 'batch_bill', json.students);
+          return {
+            success: true,
+            queuedOffline: false,
+            updatedCount: json.updatedCount ?? json.students.length,
+            students: json.students
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Notice calling POST /api/fees/batch-bill:', e);
+    }
+
+    queueOfflineWrite('fee_batch_bill', 'update', reqBody);
+    broadcastLocalMutation('students', 'batch_bill', matchingLocal);
+    return {
+      success: true,
+      queuedOffline: true,
+      updatedCount: matchingLocal.length,
+      students: matchingLocal
+    };
+  },
+
+  getStructures: async (schoolId?: string): Promise<{ feeStructures: any[]; invoices: any[] }> => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    try {
+      const params = new URLSearchParams();
+      if (targetSchoolId) params.set('school_id', targetSchoolId);
+      const res = await fetch(`/api/fees/structures?${params.toString()}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          return {
+            feeStructures: Array.isArray(json.feeStructures) ? json.feeStructures : [],
+            invoices: Array.isArray(json.invoices) ? json.invoices : []
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Notice fetching /api/fees/structures:', e);
+    }
+
+    try {
+      if (targetSchoolId) {
+        const [fsRes, invRes] = await Promise.all([
+          supabase.from('fee_structures').select('*').eq('school_id', targetSchoolId).order('created_at', { ascending: false }),
+          supabase.from('invoices').select('*').eq('school_id', targetSchoolId).order('created_at', { ascending: false })
+        ]);
+        return {
+          feeStructures: Array.isArray(fsRes.data) ? fsRes.data : [],
+          invoices: Array.isArray(invRes.data) ? invRes.data : []
+        };
+      }
+    } catch {}
+
+    return { feeStructures: [], invoices: [] };
+  },
+
+  saveStructure: async (
+    payload: {
+      name?: string;
+      className?: string;
+      term?: string;
+      academicYear?: string;
+      items: Array<{ id: string; label: string; amount?: number; defaultAmount?: number }>;
+    },
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const normalizedItems = (payload.items || []).map(item => ({
+      id: String(item.id || item.label || 'fee').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      label: String(item.label || item.id || 'Fee Component').trim(),
+      amount: Math.max(0, Number(item.amount ?? item.defaultAmount ?? 0) || 0)
+    }));
+    const total = normalizedItems.reduce((acc, i) => acc + i.amount, 0);
+    const className = payload.className || 'All';
+    const term = payload.term || 'Term 1';
+    const academicYear = payload.academicYear || '2025/2026';
+    const name = payload.name || `${className === 'All' ? 'All Classes' : className} - ${term} (${academicYear})`;
+
+    try {
+      const res = await fetch('/api/fees/structures', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({
+          schoolId: targetSchoolId,
+          school_id: targetSchoolId,
+          name,
+          className,
+          term,
+          academicYear,
+          items: normalizedItems,
+          total
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          return {
+            success: true,
+            feeStructure: json.feeStructure,
+            feeStructures: Array.isArray(json.feeStructures) ? json.feeStructures : []
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Notice calling POST /api/fees/structures:', e);
+    }
+
+    if (targetSchoolId) {
+      try {
+        const { data: inserted } = await supabase
+          .from('fee_structures')
+          .insert([{
+            school_id: targetSchoolId,
+            name,
+            class_name: className,
+            term,
+            academic_year: academicYear,
+            items: normalizedItems,
+            total,
+            created_at: Date.now()
+          }])
+          .select()
+          .maybeSingle();
+        return {
+          success: true,
+          feeStructure: inserted,
+          feeStructures: inserted ? [inserted] : []
+        };
+      } catch {}
+    }
+
+    return { success: false, feeStructure: null, feeStructures: [] };
+  },
+
+  deleteStructure: async (id: number, schoolId?: string) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    try {
+      const res = await fetch(`/api/fees/structures/${id}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          return {
+            success: true,
+            feeStructures: Array.isArray(json.feeStructures) ? json.feeStructures : []
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Notice calling DELETE /api/fees/structures:', e);
+    }
+
+    if (targetSchoolId) {
+      try {
+        await supabase.from('fee_structures').delete().eq('school_id', targetSchoolId).eq('id', id);
+      } catch {}
+    }
+    return { success: true, feeStructures: [] };
+  },
+
+  saveStudentFeeBreakdown: async (
+    studentIdOrNumId: number | string,
+    feeBreakdown: Record<string, number>,
+    schoolId?: string,
+    _studentCode?: string
+  ) => {
+    return await feesApi.updateStudentFeeBreakdown(studentIdOrNumId, feeBreakdown, schoolId);
+  },
+
+  updateStudentFeeBreakdown: async (
+    studentIdOrNumId: number | string,
+    feeBreakdown: Record<string, number>,
+    schoolId?: string
+  ) => {
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const cleanBreakdown: Record<string, number> = {};
+    for (const [k, v] of Object.entries(feeBreakdown || {})) {
+      const n = Math.max(0, Number(v) || 0);
+      if (n > 0) cleanBreakdown[k] = n;
+    }
+    const totalFees = Object.values(cleanBreakdown).reduce((acc, val) => acc + (Number(val) || 0), 0);
+    return await studentsApi.update(
+      studentIdOrNumId,
+      {
+        feeBreakdown: cleanBreakdown,
+        totalFees
+      },
+      targetSchoolId || undefined
+    );
   }
 };
 
@@ -2772,5 +3337,1245 @@ async function reconcileLessonNotesInDexie(remoteNotes: any[]) {
   }
 }
 
+// ============================================================================
+// CAMPUS-WIDE SIREN & BROADCAST CONSOLE API (SUPABASE + STORAGE + AUDIT LOGS)
+// ============================================================================
+export async function reconcileSirenStateInDexie(state: {
+  activeSirenBroadcast?: any | null;
+  bellSchedule?: any[];
+  timetableSlots?: any[];
+  recordedAudioList?: any[];
+  acousticVolume?: number;
+  isGloballyMuted?: boolean;
+  sirenLogs?: any[];
+}) {
+  if (!state || typeof state !== 'object') return;
+  const settingsToReconcile: Array<{ key: string; value: any }> = [];
 
+  if (state.activeSirenBroadcast !== undefined) {
+    settingsToReconcile.push({ key: 'activeSirenBroadcast', value: state.activeSirenBroadcast });
+  }
+  if (Array.isArray(state.bellSchedule)) {
+    settingsToReconcile.push({ key: 'bellSchedule', value: state.bellSchedule });
+  }
+  if (Array.isArray(state.timetableSlots) && state.timetableSlots.length > 0) {
+    settingsToReconcile.push({ key: 'timetable_slots', value: state.timetableSlots });
+  }
+  if (Array.isArray(state.recordedAudioList)) {
+    settingsToReconcile.push({ key: 'recordedAudioList', value: state.recordedAudioList });
+  }
+  if (state.acousticVolume !== undefined && !isNaN(Number(state.acousticVolume))) {
+    settingsToReconcile.push({ key: 'acousticVolume', value: Number(state.acousticVolume) });
+  }
+  if (state.isGloballyMuted !== undefined) {
+    settingsToReconcile.push({ key: 'isGloballyMuted', value: Boolean(state.isGloballyMuted) });
+  }
+  if (Array.isArray(state.sirenLogs)) {
+    settingsToReconcile.push({ key: 'sirenLogs', value: state.sirenLogs });
+    try {
+      localStorage.setItem('esepa_siren_logs', JSON.stringify(state.sirenLogs));
+    } catch {}
+  }
+
+  if (settingsToReconcile.length > 0) {
+    await reconcileSettingsInDexie(settingsToReconcile);
+  }
+}
+
+export const sirenApi = {
+  getState: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const params = new URLSearchParams();
+    if (activeSchoolId) params.set('school_id', activeSchoolId);
+
+    const res = await fetch(`/api/siren/state?${params.toString()}`, {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to fetch Siren Console state from Supabase');
+    }
+
+    await reconcileSirenStateInDexie(data);
+    return {
+      ...data,
+      sirenBells: data.bellSchedule || [],
+      sirenRecordings: data.recordedAudioList || [],
+      updatedAt: data.syncedAt || data.updatedAt || Date.now()
+    };
+  },
+
+  syncWithTimetable: async (
+    options?: {
+      bellSchedule?: any[];
+      forceFromTimetable?: boolean;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/siren/sync-timetable', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        bellSchedule: options?.bellSchedule,
+        forceFromTimetable: options?.forceFromTimetable !== false
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to synchronize School Timetable and Period Bell Timetable');
+    }
+
+    await reconcileSirenStateInDexie(data);
+    return {
+      ...data,
+      sirenBells: data.bellSchedule || [],
+      sirenRecordings: data.recordedAudioList || [],
+      updatedAt: data.syncedAt || Date.now()
+    };
+  },
+
+  getDbStatus: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/siren/db-status?school_id=${encodeURIComponent(activeSchoolId || '')}`, {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to inspect Siren Console Supabase tables');
+    }
+    return data;
+  },
+
+  provisionTables: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/siren/provision-tables', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ school_id: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to provision Siren Console Supabase tables');
+    }
+    if (data.state) {
+      await reconcileSirenStateInDexie(data.state);
+    }
+    return data;
+  },
+
+  syncState: async (
+    localPayload?: {
+      bellSchedule?: any[];
+      sirenBells?: any[];
+      recordedAudioList?: any[];
+      sirenRecordings?: any[];
+      sirenLogs?: any[];
+      acousticVolume?: number;
+      forcePushSchedule?: boolean;
+      seedDefaultsIfEmpty?: boolean;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const normalizedPayload = {
+      ...(localPayload || {}),
+      bellSchedule: localPayload?.bellSchedule || localPayload?.sirenBells,
+      recordedAudioList: localPayload?.recordedAudioList || localPayload?.sirenRecordings
+    };
+    try {
+      const res = await fetch('/api/siren/sync', {
+        method: 'POST',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          school_id: activeSchoolId,
+          ...normalizedPayload
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to sync Siren Console with Supabase');
+      }
+
+      await reconcileSirenStateInDexie(data);
+      return {
+        ...data,
+        sirenBells: data.bellSchedule || [],
+        sirenRecordings: data.recordedAudioList || [],
+        updatedAt: data.syncedAt || data.updatedAt || Date.now(),
+        queued: false,
+        queuedOffline: false
+      };
+    } catch {
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        bellSchedule: normalizedPayload.bellSchedule || [],
+        sirenBells: normalizedPayload.bellSchedule || [],
+        recordedAudioList: normalizedPayload.recordedAudioList || [],
+        sirenRecordings: normalizedPayload.recordedAudioList || [],
+        sirenLogs: normalizedPayload.sirenLogs || [],
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  },
+
+  triggerBroadcast: async (
+    rawInput: any,
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const payload = rawInput?.broadcast ? { ...rawInput.broadcast, logId: rawInput.logEntry?.id } : (rawInput || {});
+    const logObj = rawInput?.logEntry || null;
+    const now = payload.timestamp || logObj?.timestamp || Date.now();
+
+    const optimisticBroadcast = {
+      id: payload.id || `BRC-${now}`,
+      type: payload.type || 'bell',
+      label: payload.label || 'Campus Alert',
+      customMsg: payload.customMsg || 'Standard broadcast triggered.',
+      isDrill: Boolean(payload.isDrill),
+      triggeredBy: payload.triggeredBy || 'Administrator',
+      role: payload.role || logObj?.role || 'admin',
+      ...(payload.audioUrl ? { audioUrl: payload.audioUrl } : {}),
+      ...(payload.base64 ? { base64: payload.base64 } : {}),
+      timestamp: now,
+      schoolId: activeSchoolId
+    };
+    const optimisticLog = {
+      id: logObj?.id || payload.logId || `LOG-${now}`,
+      type: logObj?.type || optimisticBroadcast.type,
+      label: logObj?.label || optimisticBroadcast.label,
+      customMsg: logObj?.customMsg || optimisticBroadcast.customMsg || 'Standard broadcast triggered.',
+      isDrill: Boolean(logObj?.isDrill ?? optimisticBroadcast.isDrill),
+      triggeredBy: logObj?.triggeredBy || optimisticBroadcast.triggeredBy || 'Administrator',
+      role: logObj?.role || optimisticBroadcast.role || 'admin',
+      timestamp: now,
+      schoolId: activeSchoolId
+    };
+
+    const existingLogsSetting = await db.settings.where('key').equals('sirenLogs').first();
+    const currentLogs = Array.isArray(existingLogsSetting?.value)
+      ? existingLogsSetting.value
+      : (() => {
+          try {
+            return JSON.parse(localStorage.getItem('esepa_siren_logs') || '[]');
+          } catch {
+            return [];
+          }
+        })();
+    const nextLogs = [optimisticLog, ...currentLogs.filter((l: any) => String(l.id) !== optimisticLog.id)].slice(0, 100);
+
+    await reconcileSirenStateInDexie({
+      activeSirenBroadcast: optimisticBroadcast,
+      sirenLogs: nextLogs
+    });
+    broadcastLocalMutation('settings', 'update', { key: 'activeSirenBroadcast', value: optimisticBroadcast });
+
+    try {
+      const res = await fetch('/api/siren/broadcast', {
+        method: 'POST',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          school_id: activeSchoolId,
+          ...optimisticBroadcast,
+          logId: optimisticLog.id
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to save broadcast to Supabase');
+      }
+      await reconcileSirenStateInDexie({
+        activeSirenBroadcast: data.activeSirenBroadcast,
+        sirenLogs: data.sirenLogs
+      });
+      return {
+        ...data,
+        queued: false,
+        queuedOffline: false
+      };
+    } catch {
+      queueOfflineWrite('siren_api', 'insert', {
+        endpoint: '/api/siren/broadcast',
+        method: 'POST',
+        schoolId: activeSchoolId,
+        body: {
+          school_id: activeSchoolId,
+          ...optimisticBroadcast,
+          logId: optimisticLog.id
+        }
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        activeSirenBroadcast: optimisticBroadcast,
+        log: optimisticLog,
+        sirenLogs: nextLogs,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: now
+      };
+    }
+  },
+
+  stopBroadcast: async (schoolIdOrOpts?: any) => {
+    const schoolId = typeof schoolIdOrOpts === 'string' ? schoolIdOrOpts : schoolIdOrOpts?.schoolId;
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    await reconcileSirenStateInDexie({ activeSirenBroadcast: null });
+    broadcastLocalMutation('settings', 'delete', { key: 'activeSirenBroadcast', value: null });
+
+    try {
+      const res = await fetch(`/api/siren/broadcast?school_id=${encodeURIComponent(activeSchoolId || '')}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to squelch broadcast in Supabase');
+      }
+      await reconcileSirenStateInDexie({ activeSirenBroadcast: null });
+      return { ...data, queued: false, queuedOffline: false };
+    } catch {
+      queueOfflineWrite('siren_api', 'delete', {
+        endpoint: `/api/siren/broadcast?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+        method: 'DELETE',
+        schoolId: activeSchoolId
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        activeSirenBroadcast: null,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  },
+
+  squelch: async (opts?: any) => {
+    return sirenApi.stopBroadcast(opts);
+  },
+
+  saveSchedule: async (bellSchedule: any[], logOrSchoolId?: any, maybeSchoolId?: string) => {
+    const schoolId = typeof logOrSchoolId === 'string' ? logOrSchoolId : maybeSchoolId;
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const sorted = [...(bellSchedule || [])].sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+    await reconcileSirenStateInDexie({ bellSchedule: sorted });
+    broadcastLocalMutation('settings', 'update', { key: 'bellSchedule', value: sorted });
+
+    try {
+      const res = await fetch('/api/siren/schedule', {
+        method: 'PUT',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          school_id: activeSchoolId,
+          bellSchedule: sorted
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to save bell schedule to Supabase');
+      }
+      await reconcileSirenStateInDexie({ bellSchedule: data.bellSchedule || sorted });
+      return { ...data, queued: false, queuedOffline: false };
+    } catch {
+      queueOfflineWrite('siren_api', 'update', {
+        endpoint: '/api/siren/schedule',
+        method: 'PUT',
+        schoolId: activeSchoolId,
+        body: {
+          school_id: activeSchoolId,
+          bellSchedule: sorted
+        }
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        bellSchedule: sorted,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  },
+
+  saveBells: async (bellSchedule: any[], logEntry?: any, schoolId?: string) => {
+    return sirenApi.saveSchedule(bellSchedule, logEntry, schoolId);
+  },
+
+  deleteBell: async (bellId: string, _label?: string, schoolId?: string) => {
+    const existingEntry = await db.settings.where('key').equals('bellSchedule').first();
+    const currentBells = Array.isArray(existingEntry?.value) ? existingEntry.value : [];
+    const nextBells = currentBells.filter((b: any) => String(b.id) !== String(bellId));
+    return sirenApi.saveSchedule(nextBells, undefined, schoolId);
+  },
+
+  saveSettings: async (
+    settings: { acousticVolume?: number; isGloballyMuted?: boolean },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    await reconcileSirenStateInDexie(settings);
+
+    try {
+      const res = await fetch('/api/siren/settings', {
+        method: 'PUT',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          school_id: activeSchoolId,
+          ...settings
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to save siren settings to Supabase');
+      }
+      return { ...data, queued: false, queuedOffline: false };
+    } catch {
+      queueOfflineWrite('siren_api', 'update', {
+        endpoint: '/api/siren/settings',
+        method: 'PUT',
+        schoolId: activeSchoolId,
+        body: {
+          school_id: activeSchoolId,
+          ...settings
+        }
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        ...settings,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  },
+
+  saveRecording: async (
+    rawInput: any,
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const recording = rawInput?.recording ? rawInput.recording : (rawInput || {});
+    const now = recording.timestamp || Date.now();
+    const optimisticRec = {
+      id: recording.id || `rec-${now}`,
+      name: recording.name || recording.title || 'Voice Announcement',
+      title: recording.title || recording.name || 'Voice Announcement',
+      base64: recording.base64,
+      audioUrl: recording.audioUrl || undefined,
+      mimeType: recording.mimeType || 'audio/webm',
+      duration: recording.duration || undefined,
+      size: recording.size || 0,
+      createdBy: recording.createdBy || 'Administrator',
+      timestamp: now
+    };
+
+    const existingRecSetting = await db.settings.where('key').equals('recordedAudioList').first();
+    const currentRecs = Array.isArray(existingRecSetting?.value) ? existingRecSetting.value : [];
+    const nextRecs = [optimisticRec, ...currentRecs.filter((r: any) => String(r.id) !== optimisticRec.id)];
+    await reconcileSirenStateInDexie({ recordedAudioList: nextRecs });
+    broadcastLocalMutation('settings', 'update', { key: 'recordedAudioList', value: nextRecs });
+
+    try {
+      const res = await fetch('/api/siren/recordings', {
+        method: 'POST',
+        headers: getApiHeaders(activeSchoolId),
+        body: JSON.stringify({
+          school_id: activeSchoolId,
+          recording: optimisticRec
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to save audio recording to Supabase');
+      }
+      await reconcileSirenStateInDexie({
+        recordedAudioList: data.recordedAudioList || nextRecs
+      });
+      return {
+        ...data,
+        recording: data.recording || optimisticRec,
+        recordedAudioList: data.recordedAudioList || nextRecs,
+        queued: false,
+        queuedOffline: false
+      };
+    } catch {
+      queueOfflineWrite('siren_api', 'insert', {
+        endpoint: '/api/siren/recordings',
+        method: 'POST',
+        schoolId: activeSchoolId,
+        body: {
+          school_id: activeSchoolId,
+          recording: optimisticRec
+        }
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        recording: optimisticRec,
+        recordedAudioList: nextRecs,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: now
+      };
+    }
+  },
+
+  deleteRecording: async (recordingId: string, _nameOrSchoolId?: string, maybeSchoolId?: string) => {
+    const activeSchoolId = maybeSchoolId || (await resolveActiveSchoolId());
+    const existingRecSetting = await db.settings.where('key').equals('recordedAudioList').first();
+    const currentRecs = Array.isArray(existingRecSetting?.value) ? existingRecSetting.value : [];
+    const nextRecs = currentRecs.filter((r: any) => String(r.id) !== String(recordingId));
+    await reconcileSirenStateInDexie({ recordedAudioList: nextRecs });
+    broadcastLocalMutation('settings', 'update', { key: 'recordedAudioList', value: nextRecs });
+
+    try {
+      const res = await fetch(
+        `/api/siren/recordings/${encodeURIComponent(recordingId)}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+        {
+          method: 'DELETE',
+          headers: getApiHeaders(activeSchoolId)
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to delete recording from Supabase');
+      }
+      await reconcileSirenStateInDexie({
+        recordedAudioList: data.recordedAudioList || nextRecs,
+        ...(Array.isArray(data.bellSchedule) ? { bellSchedule: data.bellSchedule } : {})
+      });
+      return { ...data, queued: false, queuedOffline: false };
+    } catch {
+      queueOfflineWrite('siren_api', 'delete', {
+        endpoint: `/api/siren/recordings/${encodeURIComponent(recordingId)}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+        method: 'DELETE',
+        schoolId: activeSchoolId
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        deletedId: recordingId,
+        recordedAudioList: nextRecs,
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  },
+
+  clearLogs: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    await reconcileSirenStateInDexie({ sirenLogs: [] });
+
+    try {
+      const res = await fetch(`/api/siren/logs?school_id=${encodeURIComponent(activeSchoolId || '')}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || 'Failed to clear siren logs in Supabase');
+      }
+      await reconcileSirenStateInDexie({ sirenLogs: [] });
+      return { ...data, queued: false, queuedOffline: false };
+    } catch {
+      queueOfflineWrite('siren_api', 'delete', {
+        endpoint: `/api/siren/logs?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+        method: 'DELETE',
+        schoolId: activeSchoolId
+      });
+      return {
+        success: true,
+        schoolId: activeSchoolId,
+        sirenLogs: [],
+        queued: true,
+        queuedOffline: true,
+        syncedAt: Date.now()
+      };
+    }
+  }
+};
+
+// ============================================================================
+// CAMPUS E-VOTING PORTAL SUPABASE CLIENT API
+// ============================================================================
+
+async function reconcileEvotingStateInDexie(payload: {
+  polls?: any[];
+  candidates?: any[];
+  votes?: any[];
+  students?: any[];
+  smsLog?: any;
+}) {
+  try {
+    if (Array.isArray(payload.polls)) {
+      await db.polls.clear();
+      if (payload.polls.length > 0) {
+        await db.polls.bulkPut(
+          payload.polls.map((p: any) => ({
+            id: Number(p.id),
+            title: String(p.title || ''),
+            description: String(p.description || ''),
+            category: String(p.category || 'SRC General Elections'),
+            status: (p.status || 'active') as 'draft' | 'active' | 'completed',
+            createdAt: Number(p.createdAt ?? p.created_at ?? Date.now())
+          }))
+        );
+      }
+    }
+
+    if (Array.isArray(payload.candidates)) {
+      await db.candidates.clear();
+      if (payload.candidates.length > 0) {
+        await db.candidates.bulkPut(
+          payload.candidates.map((c: any) => ({
+            id: Number(c.id),
+            pollId: Number(c.pollId ?? c.poll_id),
+            name: String(c.name || ''),
+            position: String(c.position || 'President'),
+            class: String(c.class || 'JHS 1'),
+            votesCount: Math.max(0, Number(c.votesCount ?? c.votes_count ?? 0)),
+            photo: c.photo || undefined,
+            manifesto: String(c.manifesto || '')
+          }))
+        );
+      }
+    }
+
+    const incomingVotesList = Array.isArray(payload.votes)
+      ? payload.votes
+      : Array.isArray((payload as any).votesTable)
+      ? (payload as any).votesTable
+      : null;
+
+    if (Array.isArray(incomingVotesList)) {
+      await db.votes.clear();
+      if (incomingVotesList.length > 0) {
+        await db.votes.bulkPut(
+          incomingVotesList.map((v: any, idx: number) => ({
+            id: Number(v.id) || idx + 1,
+            pollId: Number(v.pollId ?? v.poll_id),
+            studentId: String(v.studentId ?? v.student_id ?? '').trim(),
+            candidateId: Number(v.candidateId ?? v.candidate_id),
+            position: String(v.position || 'President'),
+            timestamp: Number(v.timestamp ?? Date.now())
+          }))
+        );
+      }
+    }
+
+    if (Array.isArray(payload.students) && payload.students.length > 0) {
+      const existingStudents = await db.students.toArray();
+      const existingByStudentId = new Map<string, number>();
+      existingStudents.forEach((s) => {
+        if (s.studentId && s.id != null) {
+          existingByStudentId.set(String(s.studentId).toUpperCase(), s.id);
+        }
+      });
+
+      for (const remStu of payload.students) {
+        const sid = String(remStu.studentId || remStu.student_id || '').trim();
+        if (!sid) continue;
+        const matchedLocalId = existingByStudentId.get(sid.toUpperCase());
+        const record = {
+          ...(matchedLocalId ? { id: matchedLocalId } : {}),
+          studentId: sid,
+          firstName: String(remStu.firstName || remStu.first_name || 'Student'),
+          lastName: String(remStu.lastName || remStu.last_name || ''),
+          class: String(remStu.class || 'P1'),
+          dateOfBirth: String(remStu.dateOfBirth || remStu.date_of_birth || '2012-01-01'),
+          gender: (remStu.gender === 'Female' ? 'Female' : 'Male') as 'Male' | 'Female',
+          guardianName: String(remStu.guardianName || remStu.guardian_name || 'Parent'),
+          guardianPhone: String(remStu.guardianPhone || remStu.guardian_phone || '0240000000'),
+          feesPaid: Number(remStu.feesPaid ?? remStu.fees_paid ?? 0),
+          totalFees: Number(remStu.totalFees ?? remStu.total_fees ?? 0),
+          photo: remStu.photo || undefined,
+          createdAt: Number(remStu.createdAt ?? remStu.created_at ?? Date.now())
+        };
+        await db.students.put(record);
+      }
+    }
+
+    if (payload.smsLog && typeof payload.smsLog === 'object') {
+      await db.smsLogs.add({
+        recipientPhone: String(payload.smsLog.recipientPhone || '0241234567'),
+        recipientName: String(payload.smsLog.recipientName || 'Parent'),
+        recipientType: 'Parent',
+        message: String(payload.smsLog.message || ''),
+        type: 'Notification',
+        status: 'Sent',
+        createdAt: Number(payload.smsLog.createdAt || Date.now())
+      });
+    }
+  } catch (err) {
+    console.warn('Error reconciling E-Voting state in Dexie:', err);
+  }
+}
+
+export const evotingApi = {
+  getState: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/evoting/state?school_id=${encodeURIComponent(activeSchoolId || '')}`, {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to fetch E-Voting state from Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  syncState: async (
+    localPayload?: { polls?: any[]; candidates?: any[]; votes?: any[]; students?: any[] },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const [localPolls, localCandidates, localVotes, localStudents] = await Promise.all([
+      localPayload?.polls ? Promise.resolve(localPayload.polls) : db.polls.toArray(),
+      localPayload?.candidates ? Promise.resolve(localPayload.candidates) : db.candidates.toArray(),
+      localPayload?.votes ? Promise.resolve(localPayload.votes) : db.votes.toArray(),
+      localPayload?.students ? Promise.resolve(localPayload.students) : db.students.toArray()
+    ]);
+
+    const res = await fetch('/api/evoting/sync', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        polls: localPolls,
+        candidates: localCandidates,
+        votes: localVotes,
+        students: localStudents
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to synchronize E-Voting Portal with Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  verifyVoter: async (studentId: string, localStudent?: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/evoting/verify-voter', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        studentId: studentId.trim(),
+        localStudent
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'No matching student found with that ID card.');
+    }
+    return data;
+  },
+
+  createPoll: async (
+    poll: { title: string; description: string; category: string; status?: string },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/evoting/polls', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        ...poll,
+        createdAt: Date.now()
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to create election poll in Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  updatePoll: async (
+    pollId: number,
+    updates: { status?: string; title?: string; description?: string; category?: string },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/evoting/polls/${encodeURIComponent(String(pollId))}`, {
+      method: 'PUT',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        ...updates
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to update election status in Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  deletePoll: async (pollId: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/evoting/polls/${encodeURIComponent(String(pollId))}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete election from Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  addCandidate: async (
+    candidate: {
+      pollId: number;
+      name: string;
+      position: string;
+      class: string;
+      manifesto: string;
+      photo?: string;
+      photoBase64?: string;
+      photoMimeType?: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/evoting/candidates', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        ...candidate
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to register nominee in Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  deleteCandidate: async (candidateId: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/evoting/candidates/${encodeURIComponent(String(candidateId))}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete nominee from Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  castVote: async (
+    params: {
+      pollId: number;
+      studentId: string;
+      selections: Record<string, number>;
+      student?: any;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/evoting/vote', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        pollId: params.pollId,
+        studentId: params.studentId,
+        selections: params.selections,
+        student: params.student
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      const err: any = new Error(data.error || 'Failed to submit ballot to Supabase');
+      err.alreadyVoted = Boolean(data.alreadyVoted);
+      throw err;
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  getVotesTable: async (
+    params?: {
+      pollId?: number;
+      position?: string;
+      studentClass?: string;
+      search?: string;
+      schoolId?: string;
+    }
+  ) => {
+    const activeSchoolId = params?.schoolId || (await resolveActiveSchoolId());
+    const qs = new URLSearchParams();
+    if (activeSchoolId) qs.set('school_id', activeSchoolId);
+    if (params?.pollId) qs.set('pollId', String(params.pollId));
+    if (params?.position) qs.set('position', params.position);
+    if (params?.studentClass) qs.set('studentClass', params.studentClass);
+    if (params?.search) qs.set('search', params.search);
+
+    const res = await fetch(`/api/evoting/votes-table?${qs.toString()}`, {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to fetch votes_table records from Supabase');
+    }
+    if (!params?.pollId && !params?.position && !params?.studentClass && !params?.search) {
+      await reconcileEvotingStateInDexie({
+        polls: data.polls,
+        candidates: data.candidates,
+        votes: data.votesTable,
+        students: data.students
+      });
+    }
+    return data;
+  },
+
+  verifyBallotReceipt: async (query: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/evoting/votes-table/verify/${encodeURIComponent(query.trim())}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `No ballot record found in Supabase votes_table matching "${query}".`);
+    }
+    return data;
+  },
+
+  recountVotesTable: async (pollId?: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/evoting/votes-table/recount', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        pollId: pollId || 0
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to recount votes_table tallies in Supabase');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  voidVoteRecord: async (
+    params: { id?: number; pollId?: number; studentId?: string; position?: string },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const idTarget = params.id || 'by-voter';
+    const qs = new URLSearchParams();
+    if (activeSchoolId) qs.set('school_id', activeSchoolId);
+    if (params.pollId) qs.set('pollId', String(params.pollId));
+    if (params.studentId) qs.set('studentId', params.studentId);
+    if (params.position) qs.set('position', params.position);
+
+    const res = await fetch(`/api/evoting/votes-table/${encodeURIComponent(String(idTarget))}?${qs.toString()}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to void ballot in Supabase votes_table');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  },
+
+  resetPollVotes: async (pollId: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const qs = new URLSearchParams();
+    if (activeSchoolId) qs.set('school_id', activeSchoolId);
+    qs.set('pollId', String(pollId));
+
+    const res = await fetch(`/api/evoting/votes-table/reset-poll?${qs.toString()}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to reset poll test votes in Supabase votes_table');
+    }
+    await reconcileEvotingStateInDexie(data);
+    return data;
+  }
+};
+
+export interface StockMovementRecord {
+  id?: number;
+  schoolId?: string;
+  inventoryItemId: number;
+  itemName: string;
+  category?: string;
+  change: number;
+  movementType: 'RESTOCK' | 'ISSUE' | 'ADJUSTMENT' | 'INITIAL';
+  previousQuantity?: number;
+  newQuantity?: number;
+  reason: string;
+  performedBy: string;
+  movedBy?: number | null;
+  createdAt: number;
+}
+
+export async function reconcileInventoryStateInDexie(payload: {
+  items?: any[];
+  expenses?: any[];
+}) {
+  try {
+    if (Array.isArray(payload.items)) {
+      await db.inventory.clear();
+      if (payload.items.length > 0) {
+        await db.inventory.bulkPut(
+          payload.items.map((item: any) => ({
+            id: Number(item.id),
+            itemName: String(item.itemName || item.item_name || 'Commodity'),
+            category: (item.category || 'General') as any,
+            quantity: Math.max(0, Number(item.quantity ?? 0)),
+            minQuantity: Math.max(0, Number(item.minQuantity ?? item.min_quantity ?? 5)),
+            unitPrice: Math.max(0, Number(item.unitPrice ?? item.unit_price ?? 0)),
+            location: String(item.location || 'General Storehouse'),
+            supplierName: item.supplierName || item.supplier_name || undefined,
+            supplierPhone: item.supplierPhone || item.supplier_phone || undefined,
+            lastUpdated: Number(item.lastUpdated || item.last_updated || Date.now())
+          }))
+        );
+      }
+    }
+
+    if (Array.isArray(payload.expenses)) {
+      await db.expenses.clear();
+      if (payload.expenses.length > 0) {
+        await db.expenses.bulkPut(
+          payload.expenses.map((exp: any) => ({
+            id: Number(exp.id),
+            description: String(exp.description || 'Expense'),
+            category: (exp.category || 'Administrative') as any,
+            amount: Math.max(0, Number(exp.amount ?? 0)),
+            date: Number(exp.date || Date.now()),
+            inventoryItemId:
+              exp.inventoryItemId !== undefined && exp.inventoryItemId !== null
+                ? Number(exp.inventoryItemId)
+                : exp.inventory_item_id !== undefined && exp.inventory_item_id !== null
+                ? Number(exp.inventory_item_id)
+                : undefined,
+            quantityPurchased:
+              exp.quantityPurchased !== undefined && exp.quantityPurchased !== null
+                ? Number(exp.quantityPurchased)
+                : exp.quantity_purchased !== undefined && exp.quantity_purchased !== null
+                ? Number(exp.quantity_purchased)
+                : undefined,
+            paymentMethod: (exp.paymentMethod || exp.payment_method || 'Mobile Money') as any,
+            recordedBy: String(exp.recordedBy || exp.recorded_by || 'Accountant')
+          }))
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('[reconcileInventoryStateInDexie] Warning:', err);
+  }
+}
+
+export const inventoryApi = {
+  getState: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/inventory/state?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to load Inventory Registry state from Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  syncState: async (
+    payload?: { items?: any[]; expenses?: any[] },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const localItems = payload?.items ?? (await db.inventory.toArray());
+    const localExpenses = payload?.expenses ?? (await db.expenses.toArray());
+
+    const res = await fetch('/api/inventory/sync', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        school_id: activeSchoolId,
+        items: localItems,
+        expenses: localExpenses
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to synchronize Inventory Registry with Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  saveItem: async (
+    item: {
+      id?: number | null;
+      itemName: string;
+      category: string;
+      quantity: number;
+      minQuantity: number;
+      unitPrice: number;
+      location: string;
+      supplierName?: string;
+      supplierPhone?: string;
+      performedBy?: string;
+      reason?: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const isEdit = item.id !== undefined && item.id !== null;
+    const endpoint = isEdit ? `/api/inventory/items/${item.id}` : '/api/inventory/items';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    const res = await fetch(endpoint, {
+      method,
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        ...item,
+        school_id: activeSchoolId
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to save inventory commodity in Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  adjustQuantity: async (
+    params: {
+      id: number;
+      delta?: number;
+      newQuantity?: number;
+      movementType?: 'RESTOCK' | 'ISSUE' | 'ADJUSTMENT';
+      reason?: string;
+      performedBy?: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/inventory/items/${params.id}/adjust`, {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        ...params,
+        school_id: activeSchoolId
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to adjust commodity stock quantity in Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  deleteItem: async (id: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/inventory/items/${id}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete inventory commodity from Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  createExpense: async (
+    expense: {
+      description: string;
+      category: string;
+      amount: number;
+      date?: number;
+      inventoryItemId?: number | null;
+      quantityPurchased?: number;
+      unitPrice?: number;
+      paymentMethod: string;
+      recordedBy: string;
+    },
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/inventory/expenses', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        ...expense,
+        school_id: activeSchoolId
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to record school expense in Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  },
+
+  deleteExpense: async (id: number, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(
+      `/api/inventory/expenses/${id}?school_id=${encodeURIComponent(activeSchoolId || '')}`,
+      {
+        method: 'DELETE',
+        headers: getApiHeaders(activeSchoolId)
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete expense record from Supabase');
+    }
+    await reconcileInventoryStateInDexie(data);
+    return data;
+  }
+};
 

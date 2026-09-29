@@ -46,6 +46,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { db, purgeDemoRecordsFromDb } from './db/schema';
 import { initRealtimeAndAutoSync, syncAllDataFromBackend } from './lib/syncService';
+import { sirenApi } from './lib/api';
 import Dashboard from './components/Dashboard';
 import StudentManagement from './components/StudentManagement';
 import AttendanceTerminal from './components/AttendanceTerminal';
@@ -309,16 +310,17 @@ function AppContent() {
       if (type.startsWith('recorded:')) {
         const audioId = type.split(':')[1];
         const recordedAudioListSetting = settings.find(s => s.key === 'recordedAudioList');
-        const recordedAudioList = (recordedAudioListSetting?.value || []) as Array<{ id: string; name: string; base64: string }>;
+        const recordedAudioList = (recordedAudioListSetting?.value || []) as Array<{ id: string; name: string; base64?: string; audioUrl?: string }>;
         const targetTrack = recordedAudioList.find(r => r.id === audioId);
-        if (targetTrack) {
-          const audio = new Audio(targetTrack.base64);
+        const audioSource = activeSirenBroadcast?.audioUrl || targetTrack?.audioUrl || targetTrack?.base64;
+        if (audioSource) {
+          const audio = new Audio(audioSource);
           audio.volume = acousticVolume;
           mediaAudioRef.current = audio;
           audio.onended = async () => {
             const existingBroadcast = await db.settings.where('key').equals('activeSirenBroadcast').first();
             if (existingBroadcast && existingBroadcast.value?.type === type) {
-              await db.settings.delete(existingBroadcast.id!);
+              await sirenApi.squelch({ logEntry: null });
             }
           };
           audio.play().catch(err => {
@@ -527,39 +529,51 @@ function AppContent() {
             await db.settings.add({ key: 'bellScheduleState', value: lockObj });
           }
 
-          // Trigger activeSirenBroadcast!
+          // Resolve audioUrl if recorded audio is selected for this bell
+          let audioUrl: string | undefined;
+          const alarmType = matchingBell.alarmType || 'bell';
+          if (alarmType.startsWith('recorded:')) {
+            const audioId = alarmType.split(':')[1];
+            const recordedAudioListSetting = settings.find(s => s.key === 'recordedAudioList');
+            const recordedAudioList = (recordedAudioListSetting?.value || []) as Array<{ id: string; audioUrl?: string; base64?: string }>;
+            const targetTrack = recordedAudioList.find(r => r.id === audioId);
+            audioUrl = targetTrack?.audioUrl || targetTrack?.base64;
+          }
+
+          // Trigger activeSirenBroadcast across all devices via Supabase API + local cache
           const activeBroadcastPayload = {
-            type: matchingBell.alarmType || 'bell',
+            type: alarmType,
             label: `${matchingBell.label}`,
             customMsg: `Timetable shift bell trigger: ${matchingBell.label}. Please adjust activities accordingly.`,
             isDrill: false,
             triggeredBy: 'School Timetable System',
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            ...(audioUrl ? { audioUrl } : {})
           };
 
-          const existingBroadcast = await db.settings.where('key').equals('activeSirenBroadcast').first();
-          if (existingBroadcast) {
-            await db.settings.update(existingBroadcast.id!, { value: activeBroadcastPayload });
-          } else {
-            await db.settings.add({ key: 'activeSirenBroadcast', value: activeBroadcastPayload });
-          }
+          const logEntry = {
+            id: `LOG-${Date.now()}`,
+            type: alarmType,
+            label: `Scheduled Bell: ${matchingBell.label}`,
+            triggeredBy: 'School Timetable System',
+            role: 'system',
+            customMsg: `Class Timetable transition automatic trigger: ${matchingBell.label}.`,
+            timestamp: Date.now(),
+            isDrill: false
+          };
 
-          // Append to local warnings log
+          await sirenApi.triggerBroadcast({
+            broadcast: activeBroadcastPayload,
+            logEntry,
+            bellScheduleState: lockObj
+          });
+
+          // Also keep localStorage backup synced
           try {
             const savedLogs = localStorage.getItem('esepa_siren_logs');
             let logsArr = [];
             if (savedLogs) logsArr = JSON.parse(savedLogs);
-            const logEntry = {
-              id: `LOG-${Date.now()}`,
-              type: matchingBell.alarmType || 'bell',
-              label: `Scheduled Bell: ${matchingBell.label}`,
-              triggeredBy: 'School Timetable System',
-              role: 'system',
-              customMsg: `Class Timetable transition automatic trigger: ${matchingBell.label}.`,
-              timestamp: Date.now(),
-              isDrill: false
-            };
-            localStorage.setItem('esepa_siren_logs', JSON.stringify([logEntry, ...logsArr]));
+            localStorage.setItem('esepa_siren_logs', JSON.stringify([logEntry, ...logsArr].slice(0, 250)));
           } catch (e) {
             console.error("Failed to write schedule log:", e);
           }
@@ -576,12 +590,24 @@ function AppContent() {
       const timer = setTimeout(async () => {
         const existingBroadcast = await db.settings.where('key').equals('activeSirenBroadcast').first();
         if (existingBroadcast && existingBroadcast.value?.timestamp === activeSirenBroadcast.timestamp) {
-          await db.settings.delete(existingBroadcast.id!);
+          await sirenApi.squelch({ logEntry: null });
         }
       }, 12000);
       return () => clearTimeout(timer);
     }
   }, [activeSirenBroadcast]);
+
+  // Poll Siren Console state from Supabase every 10 seconds so multi-device broadcasts stay synchronized
+  useEffect(() => {
+    if (!user) return;
+    sirenApi.getState().catch(() => {});
+    const pollInterval = setInterval(() => {
+      if (navigator.onLine) {
+        sirenApi.getState().catch(() => {});
+      }
+    }, 10000);
+    return () => clearInterval(pollInterval);
+  }, [user]);
 
   useEffect(() => {
     purgeDemoRecordsFromDb(school?.id);
@@ -1056,6 +1082,24 @@ function AppContent() {
                 {isGloballyMuted ? "Unmute" : "Mute Tab"}
               </button>
               
+              <button 
+                onClick={async () => {
+                  await sirenApi.squelch({
+                    logEntry: {
+                      id: 'LOG-STOP-' + Date.now(),
+                      type: 'ALL SIRENS SQUELCHED [GLOBAL BANNER]',
+                      details: 'Emergency and PA audio streams terminated from global alert banner.',
+                      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                      date: new Date().toISOString().split('T')[0],
+                      user: user?.fullName || user?.username || 'Duty Officer'
+                    }
+                  });
+                }}
+                className="text-[9px] font-black tracking-widest bg-red-900/60 hover:bg-white text-white hover:text-red-700 px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm border border-white/30"
+              >
+                Squelch All
+              </button>
+
               <button 
                 onClick={() => setActiveView('siren')}
                 className="text-[9px] font-black tracking-widest bg-white/20 hover:bg-white text-white hover:text-slate-900 px-2.5 py-1 rounded-md transition-colors uppercase shadow-sm animate-pulse-subtle"

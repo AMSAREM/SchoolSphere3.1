@@ -44,6 +44,7 @@ export interface ClassHistoryRecord {
 
 export interface Student {
   id?: number;
+  remoteId?: number | string;
   schoolId?: string;
   studentId: string;
   firstName: string;
@@ -83,6 +84,41 @@ export const FEE_TYPES: FeeTypeConfig[] = [
   { id: 'transportation', label: 'Transportation / Bus', defaultAmount: 250 },
   { id: 'utility', label: 'Utility & Maintenance', defaultAmount: 150 }
 ];
+
+export interface FeeTransaction {
+  id?: number;
+  remoteId?: number | string;
+  schoolId?: string;
+  school_id?: string;
+  receiptNumber: string;
+  receipt_number?: string;
+  studentId: string | number;
+  student_id?: string | number;
+  studentCode?: string;
+  studentName?: string;
+  className?: string;
+  feeType: string;
+  fee_type?: string;
+  amount: number;
+  paymentMethod: 'Cash' | 'Bank Transfer' | 'Mobile Money' | 'Cheque' | 'Card' | string;
+  payment_method?: string;
+  channelLabel?: string;
+  paymentChannelLabel?: string;
+  transactionReference?: string;
+  transaction_reference?: string;
+  receivedBy?: string;
+  received_by?: string;
+  notes?: string;
+  recipientPhone?: string;
+  guardianPhone?: string;
+  guardianName?: string;
+  academicYear?: string;
+  term?: string;
+  syncStatus?: 'synced' | 'pending';
+  allocationBreakdown?: Record<string, number>;
+  date: number;
+  createdAt?: number;
+}
 
 export interface TermReport {
   id?: number;
@@ -347,6 +383,7 @@ export class SchoolDB extends Dexie {
   inventory!: Table<InventoryItem>;
   expenses!: Table<SchoolExpense>;
   lessonNotes!: Table<LessonNote>;
+  feeTransactions!: Table<FeeTransaction>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -494,6 +531,27 @@ export class SchoolDB extends Dexie {
       inventory: '++id, itemName, category, location',
       expenses: '++id, category, date, inventoryItemId',
       lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt'
+    });
+    this.version(16).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date'
     });
   }
 }
@@ -659,14 +717,108 @@ export async function autoRepairStudentsInDb(): Promise<number> {
   }
 }
 
+export function normalizeFeeTransactionRecord(raw: any): FeeTransaction {
+  if (!raw || typeof raw !== 'object') return raw;
+  const receiptNumber = String(
+    raw.receiptNumber || raw.receipt_number || raw.ref || raw.transactionReference || raw.transaction_reference || `RCP-${Date.now().toString().slice(-6)}`
+  ).trim();
+  const studentId = String(raw.studentId || raw.student_id || '').trim();
+  const schoolId = String(raw.schoolId || raw.school_id || '').trim();
+  const feeType = String(raw.feeType || raw.fee_type || 'Automatic Allocation').trim();
+  const amount = Math.max(0, Number(raw.amount ?? 0) || 0);
+
+  const rawMethod = String(raw.paymentMethod || raw.payment_method || raw.method || 'Cash').trim();
+  let paymentMethod: FeeTransaction['paymentMethod'] = 'Cash';
+  const lowerMethod = rawMethod.toLowerCase();
+  if (lowerMethod.includes('momo') || lowerMethod.includes('mobile') || lowerMethod.includes('mtn') || lowerMethod.includes('telecel') || lowerMethod.includes('at money')) {
+    paymentMethod = 'Mobile Money';
+  } else if (lowerMethod.includes('card') || lowerMethod.includes('paystack') || lowerMethod.includes('online')) {
+    paymentMethod = 'Card';
+  } else if (lowerMethod.includes('bank') || lowerMethod.includes('transfer')) {
+    paymentMethod = 'Bank Transfer';
+  } else if (lowerMethod.includes('cheque') || lowerMethod.includes('check')) {
+    paymentMethod = 'Cheque';
+  } else {
+    paymentMethod = 'Cash';
+  }
+
+  let parsedNotesObj: any = null;
+  const rawNotes = raw.notes;
+  if (typeof rawNotes === 'string' && rawNotes.trim().startsWith('{')) {
+    try {
+      parsedNotesObj = JSON.parse(rawNotes);
+    } catch {}
+  } else if (rawNotes && typeof rawNotes === 'object') {
+    parsedNotesObj = rawNotes;
+  }
+
+  const transactionReference = String(
+    raw.transactionReference || raw.transaction_reference || parsedNotesObj?.transactionReference || receiptNumber
+  ).trim();
+  const receivedBy = String(raw.receivedBy || raw.received_by || parsedNotesObj?.receivedBy || 'Bursary Office').trim();
+  const recipientPhone = String(raw.recipientPhone || raw.recipient_phone || raw.guardianPhone || parsedNotesObj?.phone || '').trim() || undefined;
+  const channelLabel = String(raw.paymentChannelLabel || raw.channelLabel || parsedNotesObj?.channelLabel || rawMethod || paymentMethod).trim();
+  const studentName = String(raw.studentName || raw.student_name || parsedNotesObj?.studentName || '').trim() || undefined;
+  const studentCode = String(raw.studentCode || raw.student_code || parsedNotesObj?.studentCode || (String(studentId).startsWith('STU-') ? studentId : '')).trim() || undefined;
+  const className = String(raw.className || raw.class_name || parsedNotesObj?.className || '').trim() || undefined;
+  const academicYear = String(raw.academicYear || raw.academic_year || parsedNotesObj?.academicYear || '').trim() || undefined;
+  const term = String(raw.term || parsedNotesObj?.term || '').trim() || undefined;
+  const syncStatus: 'synced' | 'pending' = raw.syncStatus === 'pending' ? 'pending' : 'synced';
+  const allocationBreakdown = raw.allocationBreakdown || parsedNotesObj?.allocationBreakdown || undefined;
+  const notes = typeof rawNotes === 'string' ? rawNotes : (rawNotes ? JSON.stringify(rawNotes) : '');
+  const date = Number(raw.date ?? raw.createdAt ?? raw.created_at ?? Date.now()) || Date.now();
+
+  return {
+    ...raw,
+    id: typeof raw.id === 'number' ? raw.id : undefined,
+    remoteId: raw.remoteId ?? raw.id,
+    schoolId,
+    school_id: schoolId,
+    receiptNumber,
+    receipt_number: receiptNumber,
+    studentId,
+    student_id: studentId,
+    studentCode,
+    studentName,
+    className,
+    feeType,
+    fee_type: feeType,
+    amount,
+    paymentMethod,
+    payment_method: paymentMethod,
+    channelLabel,
+    paymentChannelLabel: channelLabel,
+    transactionReference,
+    transaction_reference: transactionReference,
+    receivedBy,
+    received_by: receivedBy,
+    notes,
+    recipientPhone,
+    guardianPhone: recipientPhone,
+    academicYear,
+    term,
+    syncStatus,
+    allocationBreakdown,
+    date,
+    createdAt: date
+  };
+}
+
 export function useFeeTypes(): FeeTypeConfig[] {
+  const fullSetting = useLiveQuery(() =>
+    db.settings.where('key').equals('feeTypes').first()
+  );
   const customSetting = useLiveQuery(() => 
     db.settings.where('key').equals('customFeeTypes').first()
   );
-  const customList: FeeTypeConfig[] = customSetting?.value || [];
-  const serialized = JSON.stringify(customList);
+  const fullList: FeeTypeConfig[] | null = Array.isArray(fullSetting?.value) && fullSetting.value.length > 0 ? fullSetting.value : null;
+  const customList: FeeTypeConfig[] = Array.isArray(customSetting?.value) ? customSetting.value : [];
+  const serialized = JSON.stringify({ fullList, customList });
   return useMemo(() => {
-    return [...FEE_TYPES, ...customList];
+    const base = fullList || FEE_TYPES;
+    const seen = new Set(base.map(f => f.id));
+    const extras = customList.filter(c => c && c.id && !seen.has(c.id));
+    return [...base, ...extras];
   }, [serialized]);
 }
 
@@ -699,7 +851,9 @@ export async function clearTenantLocalDatabase(activeSchoolId?: string): Promise
       db.polls.clear(),
       db.candidates.clear(),
       db.votes.clear(),
-      db.lessonNotes.clear()
+      db.lessonNotes.clear(),
+      db.feeTransactions.clear(),
+      db.smsLogs.clear()
     ]);
 
     await db.settings.where('key').anyOf(['timetable_slots', 'timetable_suggestions']).delete();
