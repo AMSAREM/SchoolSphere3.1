@@ -3,27 +3,87 @@
  */
 
 export async function recordUserLogin(params: {
+  user_id?: string | number;
   auth_user_id?: string;
   organization_id?: string;
+  school_name?: string;
+  full_name?: string;
+  username?: string;
+  role?: string;
   email: string;
   status?: string;
 }): Promise<void> {
   try {
-    if (!params.email) return;
+    if (!params.email && !params.username) return;
 
     await fetch('/api/auth/record-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        user_id: params.user_id,
         auth_user_id: params.auth_user_id,
         organization_id: params.organization_id,
-        email: params.email.trim().toLowerCase(),
-        status: params.status || 'success'
+        school_name: params.school_name,
+        full_name: params.full_name,
+        username: params.username,
+        role: params.role,
+        email: (params.email || `${params.username}@schoolsphere.edu.gh`).trim().toLowerCase(),
+        status: params.status || 'Authenticated'
       })
     });
   } catch (err) {
     // Non-blocking telemetry
     console.debug('[Telemetry] Notice recording login:', err);
+  }
+}
+
+export async function sendSessionHeartbeat(params: {
+  userId?: string | number;
+  authUserId?: string;
+  username?: string;
+  fullName?: string;
+  email?: string;
+  role?: string;
+  schoolId?: string | null;
+  schoolName?: string;
+  loginAt?: number;
+  authStatus?: string;
+}): Promise<void> {
+  try {
+    const token = localStorage.getItem('esepa_auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    await fetch('/api/auth/heartbeat', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...params,
+        isOnline: true
+      })
+    });
+  } catch (err) {
+    console.debug('[Telemetry] Heartbeat notice:', err);
+  }
+}
+
+export async function sendSessionLogout(params: {
+  userId?: string | number;
+  authUserId?: string;
+  username?: string;
+  email?: string;
+  schoolId?: string | null;
+}): Promise<void> {
+  try {
+    const token = localStorage.getItem('esepa_auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    await fetch('/api/auth/logout-telemetry', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(params)
+    });
+  } catch (err) {
+    console.debug('[Telemetry] Logout notice:', err);
   }
 }
 

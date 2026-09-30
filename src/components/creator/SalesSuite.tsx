@@ -626,7 +626,7 @@ export default function SalesSuite({
 
             <div className="flex items-center gap-2">
               <a
-                href="https://esepa-school-portal.vercel.app"
+                href="https://schoolsphere-portal.vercel.app"
                 target="_blank"
                 rel="noreferrer"
                 className="px-3.5 py-1.5 bg-indigo-600/40 hover:bg-indigo-600 text-indigo-100 rounded-xl text-xs font-bold border border-indigo-500/40 transition flex items-center gap-1.5"
@@ -647,7 +647,7 @@ export default function SalesSuite({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-3 bg-slate-800/60 rounded-2xl border border-slate-700/60">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Frontend Origin</span>
-              <span className="text-xs font-mono font-bold text-indigo-300 block truncate mt-0.5">https://esepa-school-portal.vercel.app</span>
+              <span className="text-xs font-mono font-bold text-indigo-300 block truncate mt-0.5">https://schoolsphere-portal.vercel.app</span>
               <span className="text-[9px] text-emerald-400 font-bold block mt-1"> Connected (Vercel Edge)</span>
             </div>
 

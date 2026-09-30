@@ -197,7 +197,7 @@ export default function StudentManagement() {
   }, [promoSourceStudents]);
 
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
   const academicConfig = settings.find(s => s.key === 'academicConfig')?.value || { academicYear: '2025/2026', currentTerm: 'Term 1' };
 
   React.useEffect(() => {

@@ -561,8 +561,22 @@ export default function LandingPage({
                 <span className="font-bold text-base text-white">School<span className="text-[#faae57]">Sphere</span></span>
               </div>
               <p className="text-xs text-white/70 leading-relaxed">
-                Empowering Ghanaian & West African educational institutions with modern planning, assessments, and cloud persistence.
+                Empowering Ghanaian &amp; West African educational institutions with modern planning, assessments, and cloud persistence.
               </p>
+              <div className="pt-1 space-y-1 text-[11px] text-white/85">
+                <p className="font-semibold text-[#faae57]">SchoolSphere Team / Emmanuel Amoako</p>
+                <p>
+                  <a href="mailto:amoakoemmanuel@hotmail.com" className="hover:text-[#faae57] transition-colors underline underline-offset-2">
+                    amoakoemmanuel@hotmail.com
+                  </a>
+                </p>
+                <p>
+                  Tel:{' '}
+                  <a href="tel:0551187045" className="hover:text-[#faae57] transition-colors">0551187045</a>
+                  {' / '}
+                  <a href="tel:0554234590" className="hover:text-[#faae57] transition-colors">0554234590</a>
+                </p>
+              </div>
             </div>
 
             <div>

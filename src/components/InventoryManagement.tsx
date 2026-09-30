@@ -46,7 +46,7 @@ export default function InventoryManagement() {
   const schoolName =
     school?.name ||
     settings.find((s) => s.key === 'schoolProfile')?.value?.schoolName ||
-    'ESEPA INTERNATIONAL SCHOOL';
+    'SCHOOLSPHERE PORTAL';
 
   // Navigation / Tabs State
   const [activeTab, setActiveTab] = useState<'registry' | 'movements' | 'expenses'>('registry');

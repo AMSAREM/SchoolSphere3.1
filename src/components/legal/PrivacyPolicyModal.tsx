@@ -38,7 +38,7 @@ export function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyModalProps)
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Effective Date: September 2026 • SchoolSphere 3.1 & Akoko Solutions
+                  Effective Date: September 2026 • SchoolSphere 3.1 • SchoolSphere Team / Emmanuel Amoako
                 </p>
               </div>
             </div>
@@ -80,7 +80,7 @@ export function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyModalProps)
                 1. Institutional Roles & Legal Status
               </h3>
               <p>
-                Under the <strong>Ghana Data Protection Act, 2012 (Act 843)</strong> and international educational privacy standards (including FERPA principles), the contracting school or educational establishment is the <strong>Data Controller</strong>. SchoolSphere (Akoko Solutions) operates strictly as the <strong>Data Processor</strong>. We never monetize, sell, or rent student or institutional data to third-party advertisers.
+                Under the <strong>Ghana Data Protection Act, 2012 (Act 843)</strong> and international educational privacy standards (including FERPA principles), the contracting school or educational establishment is the <strong>Data Controller</strong>. SchoolSphere (SchoolSphere Team / Emmanuel Amoako) operates strictly as the <strong>Data Processor</strong>. We never monetize, sell, or rent student or institutional data to third-party advertisers.
               </p>
             </div>
 
@@ -141,8 +141,9 @@ export function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyModalProps)
                 For compliance requests or Data Protection Officer (DPO) audits under Act 843, contact:
               </p>
               <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-1">
-                <p><strong>Akoko Solutions Legal & Privacy Office</strong></p>
-                <p>Email: <a href="mailto:privacy@schoolsphere.xyz" className="text-[#1B9AAA] underline">privacy@schoolsphere.xyz</a> / <a href="mailto:legal@schoolsphere.xyz" className="text-[#1B9AAA] underline">legal@schoolsphere.xyz</a></p>
+                <p><strong>SchoolSphere Team / Emmanuel Amoako — Legal &amp; Privacy Office</strong></p>
+                <p>Email: <a href="mailto:amoakoemmanuel@hotmail.com" className="text-[#1B9AAA] underline">amoakoemmanuel@hotmail.com</a></p>
+                <p>Tel: <a href="tel:0551187045" className="text-[#1B9AAA] underline">0551187045</a> / <a href="tel:0554234590" className="text-[#1B9AAA] underline">0554234590</a></p>
                 <p>Accra / Cape Coast, Ghana</p>
               </div>
             </div>

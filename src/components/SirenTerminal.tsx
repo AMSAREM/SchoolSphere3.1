@@ -1026,7 +1026,7 @@ export default function SirenTerminal() {
         label: config.label,
         customMsg: customAnnouncement.trim() || 'Standard broadcast triggered.',
         isDrill,
-        triggeredBy: user?.fullName || user?.username || 'Elena (Admin)',
+        triggeredBy: user?.fullName || user?.username || 'SchoolSphere Admin',
         role: user?.role || 'admin',
         timestamp: Date.now()
       };
@@ -1381,7 +1381,7 @@ export default function SirenTerminal() {
                     {isDrill ? 'DRILL IN PROGRESS' : 'ACTIVE EMERGENCY'}
                   </span>
                   <span className="text-xs font-bold text-slate-500">
-                    Triggered by {activeGlobalBroadcast?.triggeredBy || 'Elena (Admin)'}
+                    Triggered by {activeGlobalBroadcast?.triggeredBy || 'SchoolSphere Admin'}
                   </span>
                 </div>
                 <h3 className="text-xl font-black tracking-tight">{activeGlobalBroadcast?.label || 'Active Siren Alert'}</h3>

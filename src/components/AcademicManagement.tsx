@@ -12,7 +12,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 export default function AcademicManagement() {
   const [activeTab, setActiveTab] = useState<'teachers' | 'classes' | 'subjects'>('teachers');
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
 
   React.useEffect(() => {
     teachersApi.getAll().catch(() => {});

@@ -568,7 +568,7 @@ export default function EVoting() {
               )}
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-none">
-              Esepa Digital <span className="text-indigo-400">E-Voting</span> Suite
+              SchoolSphere Digital <span className="text-indigo-400">E-Voting</span> Suite
             </h2>
             <p className="text-xs text-slate-400 leading-relaxed max-w-lg font-medium">
               Authenticated student ballot verification against Supabase, nominee portrait storage,

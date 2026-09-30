@@ -117,24 +117,48 @@ export function getBufferedAuditLogs(): any[] {
  * Log an audit entry to the database
  */
 export async function logAuditEntry(entry: AuditLogEntry): Promise<{ success: boolean; error?: string }> {
-  const auditRecord = {
-    id: crypto.randomUUID(),
-    school_id: entry.school_id || null,
-    user_id: entry.user_id || null,
+  const numericUserId =
+    typeof entry.user_id === 'number' && Number.isFinite(entry.user_id) && entry.user_id < 1000000000
+      ? entry.user_id
+      : typeof entry.user_id === 'string' && /^\d+$/.test(entry.user_id.trim()) && Number(entry.user_id.trim()) < 1000000000
+        ? Number(entry.user_id.trim())
+        : null;
+
+  const validSchoolUuid =
+    entry.school_id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(entry.school_id).trim()) &&
+    String(entry.school_id).trim() !== '00000000-0000-0000-0000-000000000000' &&
+    String(entry.school_id).trim() !== '00000000-0000-0000-0000-000000000001'
+      ? String(entry.school_id).trim()
+      : null;
+
+  const enrichedDetails = {
+    ...(entry.details && typeof entry.details === 'object' ? entry.details : {}),
+    ...(entry.user_id && numericUserId === null ? { raw_user_id: entry.user_id } : {})
+  };
+
+  const dbInsertPayload = {
+    school_id: validSchoolUuid,
+    user_id: numericUserId,
     action: entry.action,
     entity_type: entry.entity_type,
-    entity_id: entry.entity_id || null,
-    details: entry.details || {},
+    entity_id: entry.entity_id ? String(entry.entity_id) : null,
+    details: enrichedDetails,
     ip_address: entry.ip_address || null,
     timestamp: entry.timestamp || Date.now()
   };
 
+  const memoryRecord = {
+    id: crypto.randomUUID(),
+    ...dbInsertPayload
+  };
+
   try {
     const adminClient = getSupabaseAdmin();
-    const { error } = await adminClient.from('audit_logs').insert(auditRecord);
+    const { error } = await adminClient.from('audit_logs').insert(dbInsertPayload);
     
     if (error) {
-      bufferAuditEntry(auditRecord);
+      bufferAuditEntry(memoryRecord);
       if (!error.message?.includes('permission denied') && !error.message?.includes('does not exist')) {
         console.warn('Audit logging note:', error.message);
       }
@@ -143,7 +167,7 @@ export async function logAuditEntry(entry: AuditLogEntry): Promise<{ success: bo
 
     return { success: true };
   } catch (error: any) {
-    bufferAuditEntry(auditRecord);
+    bufferAuditEntry(memoryRecord);
     return { success: true };
   }
 }

@@ -28,7 +28,10 @@ import {
   listOrganizationWorkers, 
   recordUserLoginActivity, 
   getRecentLoginActivities,
-  getInMemoryStaffProfiles
+  getInMemoryStaffProfiles,
+  recordUserSessionHeartbeat,
+  markUserSessionOffline,
+  getActiveUserSessions
 } from "./lib/multiTenantAuth.ts";
 
 dotenv.config();
@@ -419,8 +422,15 @@ async function ensureUserSupabaseAuthIdentity(params: {
       }
     }
 
-    // Persist resolvedAuthUid back into public.users if userId is provided
-    if (resolvedAuthUid && params.userId !== undefined && params.userId !== null && typeof params.userId === 'number' && params.userId < 1000000000) {
+    // Persist resolvedAuthUid back into public.users only if auth_user_id actually changed (never overwrite updated_at on startup reconciliation)
+    if (
+      resolvedAuthUid &&
+      resolvedAuthUid !== params.existingAuthUserId &&
+      params.userId !== undefined &&
+      params.userId !== null &&
+      typeof params.userId === 'number' &&
+      params.userId < 1000000000
+    ) {
       try {
         // Remove any duplicate trigger-created row with the same auth_user_id before linking
         await adminClient
@@ -432,8 +442,7 @@ async function ensureUserSupabaseAuthIdentity(params: {
         await adminClient
           .from('users')
           .update({
-            auth_user_id: resolvedAuthUid,
-            updated_at: Date.now()
+            auth_user_id: resolvedAuthUid
           })
           .eq('id', params.userId);
       } catch {}
@@ -687,8 +696,9 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
       } catch {}
     }
 
-    // 4. Ensure every remaining user in public.users has a valid linked Supabase Auth identity (auth_user_id)
+    // 4. Ensure any user in public.users missing a linked Supabase Auth identity (auth_user_id) gets linked without altering timestamps
     for (const u of activeUsers) {
+      if (u.auth_user_id) continue;
       const sch = u.school_id ? schoolMap.get(String(u.school_id)) : null;
       await ensureUserSupabaseAuthIdentity({
         userId: u.id,
@@ -3554,16 +3564,21 @@ async function doStartServer() {
         const token = generateAuthToken(creatorUser);
         const refreshToken = generateRefreshToken(creatorUser);
         
-        // Audit log for creator login
-        createAuditLog({
-          userId: creatorUser.id,
-          schoolId: null,
-          action: AuditAction.USER_LOGIN,
-          entityType: EntityType.USER,
-          entityId: String(creatorUser.id),
-          details: { username: creatorUser.username, role: creatorUser.role },
-          ipAddress: extractIpAddress(req)
-        }).catch(err => console.error('Audit log failed:', err));
+        recordUserLoginActivity({
+          id: crypto.randomUUID(),
+          user_id: creatorUser.id,
+          auth_user_id: creatorUser.auth_user_id,
+          organization_id: undefined,
+          school_name: 'Platform Global Scope',
+          full_name: creatorUser.fullName,
+          username: creatorUser.username,
+          role: creatorUser.role,
+          email: creatorUser.email,
+          ip_address: extractIpAddress(req),
+          user_agent: req.headers['user-agent'] || 'Unknown',
+          status: 'Authenticated',
+          login_timestamp: Date.now()
+        });
         
         return res.json({
           success: true,
@@ -3920,6 +3935,22 @@ async function doStartServer() {
               const token = generateAuthToken(userObj);
               const refreshToken = generateRefreshToken(userObj);
 
+              recordUserLoginActivity({
+                id: crypto.randomUUID(),
+                user_id: userObj.id,
+                auth_user_id: userObj.auth_user_id || undefined,
+                organization_id: userObj.school_id || undefined,
+                school_name: userObj.schoolName || formattedSchool.name,
+                full_name: userObj.fullName,
+                username: userObj.username,
+                role: userObj.role,
+                email: userObj.email,
+                ip_address: extractIpAddress(req),
+                user_agent: req.headers['user-agent'] || 'Unknown',
+                status: 'Authenticated',
+                login_timestamp: Date.now()
+              });
+
               return res.json({
                 success: true,
                 token,
@@ -3979,6 +4010,21 @@ async function doStartServer() {
               };
               const token = generateAuthToken(teacherUser);
               const refreshToken = generateRefreshToken(teacherUser);
+              recordUserLoginActivity({
+                id: crypto.randomUUID(),
+                user_id: teacherUser.id,
+                auth_user_id: teacherUser.auth_user_id || undefined,
+                organization_id: teacherUser.school_id || undefined,
+                school_name: teacherUser.schoolName || teacherSchool.name,
+                full_name: teacherUser.fullName,
+                username: teacherUser.username,
+                role: teacherUser.role,
+                email: teacherUser.email,
+                ip_address: extractIpAddress(req),
+                user_agent: req.headers['user-agent'] || 'Unknown',
+                status: 'Authenticated',
+                login_timestamp: Date.now()
+              });
               return res.json({
                 success: true,
                 token,
@@ -4197,6 +4243,22 @@ async function doStartServer() {
             const token = generateAuthToken(userObj);
             const refreshToken = generateRefreshToken(userObj);
 
+            recordUserLoginActivity({
+              id: crypto.randomUUID(),
+              user_id: userObj.id,
+              auth_user_id: userObj.auth_user_id || undefined,
+              organization_id: userObj.school_id || undefined,
+              school_name: userObj.schoolName || formattedSchool.name,
+              full_name: userObj.fullName,
+              username: userObj.username,
+              role: userObj.role,
+              email: userObj.email,
+              ip_address: extractIpAddress(req),
+              user_agent: req.headers['user-agent'] || 'Unknown',
+              status: 'Authenticated',
+              login_timestamp: Date.now()
+            });
+
             return res.json({
               success: true,
               token,
@@ -4212,6 +4274,20 @@ async function doStartServer() {
       } catch (licAuthErr: any) {
         console.warn("License fallback login notice:", licAuthErr?.message);
       }
+
+      recordUserLoginActivity({
+        id: crypto.randomUUID(),
+        organization_id: resolvedHintSchool?.id || undefined,
+        school_name: resolvedHintSchool?.name || (targetSchoolHint ? targetSchoolHint.toUpperCase() : 'Unresolved Portal'),
+        full_name: rawUsernameInput,
+        username: userClean,
+        role: 'unknown',
+        email: rawUsernameInput,
+        ip_address: extractIpAddress(req),
+        user_agent: req.headers['user-agent'] || 'Unknown',
+        status: 'Failed Attempt',
+        login_timestamp: Date.now()
+      });
 
       return res.status(401).json({
         success: false,
@@ -5025,23 +5101,95 @@ async function doStartServer() {
   // Record User Login & Telemetry Audit Tracking
   app.post("/api/auth/record-login", async (req, res) => {
     try {
-      const { auth_user_id, organization_id, email, status } = req.body || {};
-      if (!email) {
-        return res.status(400).json({ success: false, error: "Email is required" });
+      const { user_id, auth_user_id, organization_id, school_name, full_name, username, role, email, status } = req.body || {};
+      if (!email && !username) {
+        return res.status(400).json({ success: false, error: "Email or username is required" });
       }
       const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '127.0.0.1';
       const userAgent = req.headers['user-agent'] || 'Unknown';
       recordUserLoginActivity({
         id: crypto.randomUUID(),
+        user_id,
         auth_user_id,
         organization_id,
-        email,
+        school_name,
+        full_name,
+        username,
+        role,
+        email: email || `${username}@schoolsphere.edu.gh`,
         ip_address: ip,
         user_agent: userAgent,
-        status: status || 'success',
+        status: status || 'Authenticated',
         login_timestamp: Date.now()
       });
       return res.json({ success: true, message: "Login recorded" });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Real-Time Active Session Heartbeat & Presence Endpoint
+  app.post("/api/auth/heartbeat", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const body = req.body || {};
+      const authUser = req.user || {};
+      const userId = body.userId ?? body.user_id ?? authUser.id ?? null;
+      const authUserId = body.authUserId || body.auth_user_id || authUser.auth_user_id || authUser.sub || null;
+      const username = body.username || authUser.username || (body.email ? String(body.email).split('@')[0] : 'user');
+      const fullName = body.fullName || body.full_name || authUser.fullName || username;
+      const email = body.email || authUser.email || `${username}@schoolsphere.edu.gh`;
+      const role = body.role || authUser.role || 'admin';
+      const schoolId = body.schoolId ?? body.school_id ?? authUser.school_id ?? authUser.schoolId ?? null;
+      const schoolName = body.schoolName || body.school_name || (role === 'creator' || role === 'super_admin' ? 'Platform Global Scope' : undefined);
+      const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '127.0.0.1';
+      const userAgent = req.headers['user-agent'] || 'Unknown';
+
+      const session = recordUserSessionHeartbeat({
+        userId,
+        authUserId,
+        username,
+        fullName,
+        email,
+        role,
+        schoolId,
+        schoolName,
+        authStatus: body.authStatus || 'Session Active',
+        loginTimestamp: body.loginAt || body.loginTimestamp || undefined,
+        ipAddress: ip,
+        userAgent,
+        isOnline: body.isOnline !== undefined ? Boolean(body.isOnline) : true
+      });
+
+      // Non-blocking update of last_login in Supabase public.users so Supabase Realtime & DB stay in sync
+      if (userId && typeof userId === 'number' && userId < 1000000000) {
+        const adminClient = getSupabaseAdmin();
+        Promise.resolve(
+          adminClient
+            .from('users')
+            .update({ last_login: Date.now() })
+            .eq('id', userId)
+        ).catch(() => {});
+      }
+
+      return res.json({ success: true, session });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Real-Time Logout Presence Endpoint
+  app.post("/api/auth/logout-telemetry", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const body = req.body || {};
+      const authUser = req.user || {};
+      markUserSessionOffline({
+        userId: body.userId ?? body.user_id ?? authUser.id ?? null,
+        authUserId: body.authUserId || body.auth_user_id || authUser.auth_user_id || null,
+        email: body.email || authUser.email || null,
+        username: body.username || authUser.username || null,
+        schoolId: body.schoolId ?? body.school_id ?? authUser.school_id ?? null
+      });
+      return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
@@ -5189,6 +5337,20 @@ async function doStartServer() {
         createdAt: dbUser.created_at ? Number(dbUser.created_at) : Date.now(),
         lastLogin: dbUser.last_login ? Number(dbUser.last_login) : null
       };
+
+      recordUserSessionHeartbeat({
+        userId: userObj.id,
+        authUserId: userObj.auth_user_id,
+        username: userObj.username,
+        fullName: userObj.fullName,
+        email: userObj.email,
+        role: userObj.role,
+        schoolId: userObj.school_id,
+        schoolName: dbUser.schools?.name || (userObj.role === 'creator' || userObj.role === 'super_admin' ? 'Platform Global Scope' : undefined),
+        authStatus: 'Session Active',
+        loginTimestamp: userObj.lastLogin || Date.now(),
+        isOnline: true
+      });
 
       return res.json({
         success: true,
@@ -8221,7 +8383,8 @@ async function doStartServer() {
           </tr>
           <tr>
             <td style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 28px;text-align:center;">
-              <div style="font-size:11px;color:#94a3b8;font-weight:600;">© ${new Date().getFullYear()} SchoolSphere Academy. Institutional Cloud License.</div>
+              <div style="font-size:11px;color:#94a3b8;font-weight:600;">© ${new Date().getFullYear()} SchoolSphere • SchoolSphere Team / Emmanuel Amoako</div>
+              <div style="font-size:11px;color:#64748b;margin-top:4px;">Support: amoakoemmanuel@hotmail.com • Tel: 0551187045 / 0554234590</div>
             </td>
           </tr>
         </table>
@@ -8436,7 +8599,7 @@ async function doStartServer() {
           </div>
 
           <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 11px; color: #94a3b8; font-weight: 600;">
-            © ${new Date().getFullYear()} SchoolSphere Academy · Direct Backend SMTP Dispatch
+            © ${new Date().getFullYear()} SchoolSphere • SchoolSphere Team / Emmanuel Amoako (amoakoemmanuel@hotmail.com • 0551187045 / 0554234590)
           </div>
         </div>
       </body>
@@ -9717,58 +9880,597 @@ async function doStartServer() {
   // CREATOR HUB TELEMETRY & SALES SUITE CRM ENDPOINTS (SUPABASE SINGLE SOURCE OF TRUTH)
   // =========================================================================
 
-  // Live Platform Telemetry Counts from Supabase for CreatorHub
+  // Live Platform Telemetry Counts, Real-Time Presence & Login Stream from Supabase for CreatorHub
   app.get("/api/creator/telemetry", optionalAuthenticateToken, async (_req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
-      const countTable = async (table: string): Promise<number> => {
+      const fetchTableRows = async (table: string): Promise<any[]> => {
         try {
-          const { count, error } = await adminClient.from(table).select('*', { count: 'exact', head: true });
-          if (!error && typeof count === 'number') return count;
+          const { data, error } = await adminClient.from(table).select('*');
+          if (!error && Array.isArray(data)) return data;
         } catch {}
-        return 0;
+        return [];
       };
 
       const [
-        students,
-        teachers,
-        classes,
-        subjects,
-        attendance,
-        results,
-        reports,
-        fees,
-        sms,
-        polls,
-        candidates,
-        votes,
-        inventory,
-        expenses,
-        schools,
-        licenses,
-        users
+        studentsRows,
+        rawDbTeachers,
+        classesRows,
+        subjectsRows,
+        attendanceRows,
+        resultsRows,
+        reportsRows,
+        feesRows,
+        smsRows,
+        pollsRows,
+        candidatesRows,
+        votesRows,
+        inventoryRows,
+        expensesRows,
+        rawDbSchools,
+        rawDbLicenses,
+        dbUsersRes,
+        dbAuditRes
       ] = await Promise.all([
-        countTable('students'),
-        countTable('teachers'),
-        countTable('classes'),
-        countTable('subjects'),
-        countTable('attendance'),
-        countTable('results'),
-        countTable('term_reports'),
-        countTable('fee_transactions'),
-        countTable('sms_logs'),
-        countTable('polls'),
-        countTable('candidates'),
-        countTable('votes'),
-        countTable('inventory_items'),
-        countTable('school_expenses'),
-        countTable('schools'),
-        countTable('school_licenses'),
-        countTable('users')
+        fetchTableRows('students'),
+        fetchTableRows('teachers'),
+        fetchTableRows('classes'),
+        fetchTableRows('subjects'),
+        fetchTableRows('attendance'),
+        fetchTableRows('results'),
+        fetchTableRows('term_reports'),
+        fetchTableRows('fee_transactions'),
+        fetchTableRows('sms_logs'),
+        fetchTableRows('polls'),
+        fetchTableRows('candidates'),
+        fetchTableRows('votes'),
+        fetchTableRows('inventory_items'),
+        fetchTableRows('school_expenses'),
+        fetchTableRows('schools'),
+        fetchTableRows('school_licenses'),
+        Promise.resolve(adminClient.from('users').select('*').order('last_login', { ascending: false, nullsFirst: false })).catch(() => ({ data: [] as any[] })),
+        Promise.resolve(adminClient.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(250)).catch(() => ({ data: [] as any[] }))
       ]);
 
+      const rawDbUsers = Array.isArray(dbUsersRes?.data) ? dbUsersRes.data : [];
+      const rawDbAudits = Array.isArray(dbAuditRes?.data) ? dbAuditRes.data : [];
+
+      const students = studentsRows.length;
+      const teachers = rawDbTeachers.length;
+      const classes = classesRows.length;
+      const subjects = subjectsRows.length;
+      const attendance = attendanceRows.length;
+      const results = resultsRows.length;
+      const reports = reportsRows.length;
+      const fees = feesRows.length;
+      const sms = smsRows.length;
+      const polls = pollsRows.length;
+      const candidates = candidatesRows.length;
+      const votes = votesRows.length;
+      const inventory = inventoryRows.length;
+      const expenses = expensesRows.length;
+      const schools = rawDbSchools.length;
+      const licenses = rawDbLicenses.length;
+      const users = rawDbUsers.length;
+      const auditLogsCount = rawDbAudits.length;
+
       const totalRecords =
-        students + attendance + results + reports + sms + polls + candidates + votes + inventory + expenses;
+        students +
+        teachers +
+        classes +
+        subjects +
+        attendance +
+        results +
+        reports +
+        fees +
+        sms +
+        polls +
+        candidates +
+        votes +
+        inventory +
+        expenses +
+        schools +
+        licenses +
+        users +
+        auditLogsCount;
+
+      const schoolMap = new Map<string, string>();
+      for (const s of rawDbSchools) {
+        if (s?.id && s?.name) {
+          schoolMap.set(String(s.id), String(s.name));
+        }
+      }
+      const fbSchools = getFromFallback('schools');
+      if (Array.isArray(fbSchools)) {
+        for (const s of fbSchools) {
+          if (s?.id && (s?.name || s?.schoolName) && !schoolMap.has(String(s.id))) {
+            schoolMap.set(String(s.id), String(s.name || s.schoolName));
+          }
+        }
+      }
+
+      const now = Date.now();
+      const ONLINE_WINDOW_MS = 180000; // 3 minutes active heartbeat window
+
+      const activeSessions = getActiveUserSessions(ONLINE_WINDOW_MS);
+      const userByIdMap = new Map<string, any>();
+      const userByEmailMap = new Map<string, any>();
+      const userByUsernameMap = new Map<string, any>();
+
+      for (const u of rawDbUsers) {
+        if (!u) continue;
+        if (u.id !== undefined && u.id !== null) userByIdMap.set(String(u.id), u);
+        if (u.auth_user_id) userByIdMap.set(String(u.auth_user_id), u);
+        if (u.email) userByEmailMap.set(String(u.email).trim().toLowerCase(), u);
+        if (u.username) userByUsernameMap.set(String(u.username).trim().toLowerCase(), u);
+      }
+
+      // Map latest audit timestamp per user from public.audit_logs
+      const latestAuditByUserKey = new Map<string, { timestamp: number; logId: any; action: string }>();
+      for (const log of rawDbAudits) {
+        if (!log) continue;
+        const actionStr = String(log.action || 'AUDIT_EVENT').toUpperCase();
+        const ts = Number(log.timestamp || log.created_at || 0);
+        if (!ts || ts <= 0) continue;
+        const details =
+          typeof log.details === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(log.details);
+                } catch {
+                  return {};
+                }
+              })()
+            : log.details || {};
+        const keysToMap = [
+          log.user_id !== undefined && log.user_id !== null ? `id:${log.user_id}` : '',
+          details.email ? `email:${String(details.email).trim().toLowerCase()}` : '',
+          details.username ? `user:${String(details.username).trim().toLowerCase()}` : ''
+        ].filter(Boolean);
+        for (const k of keysToMap) {
+          const prev = latestAuditByUserKey.get(k);
+          if (!prev || ts > prev.timestamp) {
+            latestAuditByUserKey.set(k, { timestamp: ts, logId: log.id, action: actionStr });
+          }
+        }
+      }
+
+      // Build unified allUsers directory from public.users and public.teachers with verified live presence
+      const allUsersList: any[] = [];
+      const seenUserKeys = new Set<string>();
+
+      // 1. First incorporate active sessions from server heartbeat store
+      for (const sess of activeSessions) {
+        const matchedDbUser =
+          (sess.userId ? userByIdMap.get(String(sess.userId)) : null) ||
+          (sess.authUserId ? userByIdMap.get(String(sess.authUserId)) : null) ||
+          (sess.email ? userByEmailMap.get(sess.email.toLowerCase()) : null) ||
+          (sess.username ? userByUsernameMap.get(sess.username.toLowerCase()) : null);
+
+        const role = String(sess.role || matchedDbUser?.role || 'admin').toLowerCase();
+        const schoolId = sess.schoolId || matchedDbUser?.school_id || null;
+        const schoolName =
+          sess.schoolName && sess.schoolName !== 'SchoolSphere Portal'
+            ? sess.schoolName
+            : schoolId && schoolMap.has(String(schoolId))
+              ? schoolMap.get(String(schoolId))!
+              : role === 'creator' || role === 'super_admin'
+                ? 'Platform Global Scope'
+                : 'SchoolSphere Portal';
+
+        const dedupeKey = String(
+          matchedDbUser?.id || sess.authUserId || sess.email || `${sess.username}@${schoolId || 'global'}`
+        ).toLowerCase();
+
+        if (seenUserKeys.has(dedupeKey)) continue;
+        seenUserKeys.add(dedupeKey);
+
+        const verifiedLoginTs = Number(sess.loginTimestamp || matchedDbUser?.last_login || now);
+
+        allUsersList.push({
+          id: matchedDbUser?.id || sess.userId || sess.sessionKey,
+          dbId: matchedDbUser?.id || null,
+          sourceTable: 'public.users',
+          authUserId: sess.authUserId || matchedDbUser?.auth_user_id || null,
+          username: sess.username || matchedDbUser?.username || 'user',
+          fullName: sess.fullName || matchedDbUser?.full_name || sess.username || 'User',
+          email: sess.email || matchedDbUser?.email || '',
+          role,
+          schoolId,
+          schoolName,
+          isOnline: Boolean(sess.isOnline),
+          lastActiveTimestamp: Number(sess.lastActiveTimestamp || now),
+          loginTimestamp: verifiedLoginTs,
+          createdAt: Number(matchedDbUser?.created_at || 0) || null,
+          authStatus: sess.isOnline ? 'Online · Authenticated' : 'Logged Out'
+        });
+      }
+
+      // 2. Add remaining users from Supabase public.users (strictly preserving null last_login as Never Logged In)
+      for (const u of rawDbUsers) {
+        if (!u.school_id && !u.role && !u.username && !u.email) continue;
+        const role = String(u.role || 'admin').toLowerCase();
+        const schoolId = u.school_id || null;
+        const dedupeKey = String(u.id || u.auth_user_id || u.email || `${u.username}@${schoolId || 'global'}`).toLowerCase();
+        if (seenUserKeys.has(dedupeKey)) continue;
+
+        const emailLower = String(u.email || '').trim().toLowerCase();
+        const unameLower = String(u.username || '').trim().toLowerCase();
+        const alreadyInList = allUsersList.some(
+          (item) =>
+            (u.id !== undefined && u.id !== null && String(item.dbId) === String(u.id)) ||
+            (emailLower && item.email && item.email.toLowerCase() === emailLower) ||
+            (unameLower && item.username?.toLowerCase() === unameLower && String(item.schoolId || '') === String(schoolId || ''))
+        );
+        if (alreadyInList) continue;
+        seenUserKeys.add(dedupeKey);
+
+        const auditMatch =
+          latestAuditByUserKey.get(`id:${u.id}`) ||
+          (emailLower ? latestAuditByUserKey.get(`email:${emailLower}`) : undefined) ||
+          (unameLower ? latestAuditByUserKey.get(`user:${unameLower}`) : undefined);
+
+        const rawLastLoginMs = Number(u.last_login || 0);
+        const verifiedLoginMs = Math.max(rawLastLoginMs, auditMatch?.timestamp || 0);
+        const hasEverLoggedIn = verifiedLoginMs > 0;
+
+        const schoolName =
+          schoolId && schoolMap.has(String(schoolId))
+            ? schoolMap.get(String(schoolId))!
+            : role === 'creator' || role === 'super_admin'
+              ? 'Platform Global Scope'
+              : 'SchoolSphere Portal';
+
+        allUsersList.push({
+          id: u.id,
+          dbId: u.id,
+          sourceTable: 'public.users',
+          authUserId: u.auth_user_id || null,
+          username: u.username || (emailLower ? emailLower.split('@')[0] : 'user'),
+          fullName: u.full_name || u.username || 'User',
+          email: u.email || '',
+          role,
+          schoolId,
+          schoolName,
+          isOnline: false,
+          lastActiveTimestamp: hasEverLoggedIn ? verifiedLoginMs : null,
+          loginTimestamp: hasEverLoggedIn ? verifiedLoginMs : null,
+          createdAt: Number(u.created_at || 0) || null,
+          authStatus: hasEverLoggedIn
+            ? auditMatch?.action === 'USER_LOGOUT'
+              ? 'Logged Out'
+              : 'Session Recorded'
+            : 'Never Logged In'
+        });
+      }
+
+      // 3. Also include staff profiles from Supabase public.teachers not yet in public.users
+      for (const t of rawDbTeachers) {
+        if (!t) continue;
+        const emailLower = String(t.email || '').trim().toLowerCase();
+        const tName = String(t.name || [t.first_name, t.last_name].filter(Boolean).join(' ') || '').trim();
+        const schoolId = t.school_id || null;
+        const unameLower = emailLower ? emailLower.split('@')[0] : tName.toLowerCase().replace(/\s+/g, '.');
+
+        const alreadyInList = allUsersList.some(
+          (item) =>
+            (t.user_id && String(item.dbId) === String(t.user_id)) ||
+            (emailLower && item.email && item.email.toLowerCase() === emailLower) ||
+            (tName && String(item.fullName || '').trim().toLowerCase() === tName.toLowerCase() && String(item.schoolId || '') === String(schoolId || ''))
+        );
+        if (alreadyInList) continue;
+
+        const schoolName =
+          schoolId && schoolMap.has(String(schoolId)) ? schoolMap.get(String(schoolId))! : 'SchoolSphere Portal';
+
+        allUsersList.push({
+          id: `teacher-${t.id}`,
+          dbId: t.id,
+          sourceTable: 'public.teachers',
+          authUserId: null,
+          username: t.staff_id || unameLower || 'teacher',
+          fullName: tName || 'Teacher',
+          email: t.email || '',
+          role: 'teacher',
+          schoolId,
+          schoolName,
+          isOnline: false,
+          lastActiveTimestamp: null,
+          loginTimestamp: null,
+          createdAt: Number(t.created_at || 0) || null,
+          authStatus: 'Never Logged In'
+        });
+      }
+
+      const onlineUsers = allUsersList
+        .filter((u) => u.isOnline)
+        .sort((a, b) => (b.lastActiveTimestamp || 0) - (a.lastActiveTimestamp || 0));
+
+      // Build chronological Recent Logins & Audit Stream from public.audit_logs & verified public.users.last_login > 0
+      const recentLogins: any[] = [];
+      const seenLoginEvents = new Set<string>();
+
+      const pushLoginEntry = (entry: {
+        id: string;
+        auditLogId?: number | string | null;
+        sourceTable?: string;
+        action?: string;
+        userId?: any;
+        authUserId?: string | null;
+        username?: string;
+        fullName?: string;
+        email?: string;
+        role?: string;
+        schoolId?: string | null;
+        schoolName?: string;
+        status?: string;
+        loginTimestamp: number;
+        lastActiveTimestamp?: number;
+        ipAddress?: string;
+      }) => {
+        if (!entry.loginTimestamp || entry.loginTimestamp <= 0) return;
+        const matchedUser =
+          (entry.userId !== undefined && entry.userId !== null ? userByIdMap.get(String(entry.userId)) : null) ||
+          (entry.authUserId ? userByIdMap.get(String(entry.authUserId)) : null) ||
+          (entry.email ? userByEmailMap.get(String(entry.email).toLowerCase()) : null) ||
+          (entry.username ? userByUsernameMap.get(String(entry.username).toLowerCase()) : null);
+
+        const email = String(entry.email || matchedUser?.email || '').trim().toLowerCase();
+        const username = String(entry.username || matchedUser?.username || (email ? email.split('@')[0] : 'user')).trim();
+        const fullName = String(entry.fullName || matchedUser?.full_name || username).trim();
+        const role = String(entry.role || matchedUser?.role || 'admin').toLowerCase();
+        const schoolId = entry.schoolId || matchedUser?.school_id || null;
+        const schoolName =
+          entry.schoolName && entry.schoolName !== 'SchoolSphere Portal'
+            ? entry.schoolName
+            : schoolId && schoolMap.has(String(schoolId))
+              ? schoolMap.get(String(schoolId))!
+              : role === 'creator' || role === 'super_admin'
+                ? 'Platform Global Scope'
+                : 'SchoolSphere Portal';
+
+        // Deduplicate events within 5 seconds for same user & action
+        const timeBucket = Math.floor(entry.loginTimestamp / 5000);
+        const eventKey = `${email || username}::${timeBucket}::${entry.action || entry.status || 'auth'}`;
+        if (seenLoginEvents.has(eventKey)) return;
+        seenLoginEvents.add(eventKey);
+
+        const matchingLiveUser = allUsersList.find(
+          (u) =>
+            (matchedUser?.id && String(u.dbId) === String(matchedUser.id)) ||
+            (email && u.email && u.email.toLowerCase() === email) ||
+            (u.username?.toLowerCase() === username.toLowerCase() && String(u.schoolId || '') === String(schoolId || ''))
+        );
+
+        const isOnline = Boolean(matchingLiveUser?.isOnline);
+        const lastActiveTimestamp = Number(
+          matchingLiveUser?.lastActiveTimestamp || entry.lastActiveTimestamp || entry.loginTimestamp
+        );
+
+        recentLogins.push({
+          id: entry.id,
+          auditLogId: entry.auditLogId || null,
+          dbId: matchedUser?.id || entry.userId || null,
+          sourceTable: entry.sourceTable || 'public.audit_logs',
+          action: entry.action || 'USER_LOGIN',
+          userId: matchedUser?.id || entry.userId || username,
+          authUserId: entry.authUserId || matchedUser?.auth_user_id || null,
+          username,
+          fullName,
+          email,
+          role,
+          schoolId,
+          schoolName,
+          isOnline,
+          loginTimestamp: entry.loginTimestamp,
+          lastActiveTimestamp,
+          authStatus: entry.status || 'Authenticated',
+          ipAddress: entry.ipAddress || undefined
+        });
+      };
+
+      // 1. Authoritative Supabase public.audit_logs entries (both USER_LOGIN / USER_LOGOUT and authenticated audit actions)
+      for (const log of rawDbAudits) {
+        if (!log) continue;
+        const actionStr = String(log.action || 'AUDIT_EVENT').toUpperCase();
+        const details =
+          typeof log.details === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(log.details);
+                } catch {
+                  return {};
+                }
+              })()
+            : log.details || {};
+        const statusLabel =
+          actionStr === 'USER_LOGIN_FAILED'
+            ? 'Failed Attempt'
+            : actionStr === 'USER_LOGOUT'
+              ? 'Logged Out'
+              : actionStr === 'USER_LOGIN'
+                ? details.authStatus || 'Authenticated (USER_LOGIN)'
+                : `Audit: ${actionStr}`;
+
+        pushLoginEntry({
+          id: `audit-${log.id}`,
+          auditLogId: log.id,
+          sourceTable: 'public.audit_logs',
+          action: actionStr,
+          userId: log.user_id ?? log.entity_id,
+          authUserId: details.authUserId || null,
+          username: details.username,
+          fullName: details.fullName || details.full_name || details.squelchedBy,
+          email: details.email,
+          role: details.role,
+          schoolId: log.school_id || null,
+          schoolName: details.schoolName || details.school_name,
+          status: statusLabel,
+          loginTimestamp: Number(log.timestamp || log.created_at || 0),
+          ipAddress: log.ip_address
+        });
+      }
+
+      // 2. In-memory login activities (for current server instance before/during DB flush)
+      for (const act of getRecentLoginActivities()) {
+        pushLoginEntry({
+          id: act.id,
+          sourceTable: 'public.audit_logs',
+          action: String(act.status || '').toLowerCase().includes('fail') ? 'USER_LOGIN_FAILED' : 'USER_LOGIN',
+          userId: act.user_id,
+          authUserId: act.auth_user_id,
+          username: act.username,
+          fullName: act.full_name,
+          email: act.email,
+          role: act.role,
+          schoolId: act.organization_id || null,
+          schoolName: act.school_name,
+          status: act.status,
+          loginTimestamp: Number(act.login_timestamp || 0),
+          lastActiveTimestamp: Number(act.last_active_timestamp || act.login_timestamp || 0),
+          ipAddress: act.ip_address
+        });
+      }
+
+      // 3. Users in public.users who have a real last_login > 0 (never include users where last_login is null!)
+      for (const u of rawDbUsers) {
+        const lastLoginMs = Number(u.last_login || 0);
+        if (lastLoginMs > 0) {
+          const alreadyHasRecentAudit = recentLogins.some(
+            (r) =>
+              (String(r.dbId) === String(u.id) || (u.email && r.email === String(u.email).toLowerCase())) &&
+              Math.abs(r.loginTimestamp - lastLoginMs) < 60000
+          );
+          if (!alreadyHasRecentAudit) {
+            pushLoginEntry({
+              id: `user-last-login-${u.id}`,
+              sourceTable: 'public.users',
+              action: 'LAST_LOGIN',
+              userId: u.id,
+              authUserId: u.auth_user_id,
+              username: u.username,
+              fullName: u.full_name || u.username,
+              email: u.email,
+              role: u.role,
+              schoolId: u.school_id,
+              status: 'Last Login (public.users)',
+              loginTimestamp: lastLoginMs,
+              lastActiveTimestamp: lastLoginMs
+            });
+          }
+        }
+      }
+
+      recentLogins.sort((a, b) => b.loginTimestamp - a.loginTimestamp);
+
+      // Compute authentic monthlyGrowthSeries directly from real Supabase created_at and timestamp fields (zero synthetic multipliers)
+      const toValidMs = (raw: any): number | null => {
+        if (raw === null || raw === undefined || raw === '') return null;
+        if (typeof raw === 'number' && Number.isFinite(raw) && raw > 946684800000) return raw;
+        if (typeof raw === 'number' && Number.isFinite(raw) && raw > 946684800 && raw < 10000000000) return raw * 1000;
+        if (typeof raw === 'string') {
+          const trimmed = raw.trim();
+          if (/^\d+$/.test(trimmed)) {
+            const n = Number(trimmed);
+            if (n > 946684800000) return n;
+            if (n > 946684800 && n < 10000000000) return n * 1000;
+          }
+          const parsed = Date.parse(trimmed);
+          if (!isNaN(parsed) && parsed > 946684800000) return parsed;
+        }
+        return null;
+      };
+
+      const allRecordTimestamps: number[] = [];
+      const pushRowTs = (rows: any[]) => {
+        for (const r of rows) {
+          const ms = toValidMs(
+            r?.created_at ?? r?.timestamp ?? r?.date ?? r?.last_updated ?? r?.activated_at ?? r?.updated_at
+          );
+          if (ms) allRecordTimestamps.push(ms);
+        }
+      };
+
+      pushRowTs(studentsRows);
+      pushRowTs(rawDbTeachers);
+      pushRowTs(classesRows);
+      pushRowTs(subjectsRows);
+      pushRowTs(attendanceRows);
+      pushRowTs(resultsRows);
+      pushRowTs(reportsRows);
+      pushRowTs(feesRows);
+      pushRowTs(smsRows);
+      pushRowTs(pollsRows);
+      pushRowTs(candidatesRows);
+      pushRowTs(votesRows);
+      pushRowTs(inventoryRows);
+      pushRowTs(expensesRows);
+      pushRowTs(rawDbSchools);
+      pushRowTs(rawDbLicenses);
+      pushRowTs(rawDbUsers);
+      pushRowTs(rawDbAudits);
+
+      const allLoginTimestamps: number[] = [];
+      for (const r of recentLogins) {
+        const ms = toValidMs(r.loginTimestamp);
+        if (ms) allLoginTimestamps.push(ms);
+      }
+
+      // Build chronological monthly buckets covering the last 6 calendar months (plus any earlier month with real records)
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthKeySet = new Set<string>();
+      const nowDate = new Date(now);
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        monthKeySet.add(ym);
+      }
+      for (const ms of [...allRecordTimestamps, ...allLoginTimestamps]) {
+        const d = new Date(ms);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        monthKeySet.add(ym);
+      }
+
+      const sortedMonthKeys = Array.from(monthKeySet).sort();
+      const displayMonthKeys = sortedMonthKeys.slice(-6);
+      const earlierMonthKeys = sortedMonthKeys.slice(0, Math.max(0, sortedMonthKeys.length - 6));
+
+      const recordsByMonth = new Map<string, number>();
+      const loginsByMonth = new Map<string, number>();
+
+      for (const ms of allRecordTimestamps) {
+        const d = new Date(ms);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        recordsByMonth.set(ym, (recordsByMonth.get(ym) || 0) + 1);
+      }
+      for (const ms of allLoginTimestamps) {
+        const d = new Date(ms);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        loginsByMonth.set(ym, (loginsByMonth.get(ym) || 0) + 1);
+      }
+
+      // Only count records that have an actual timestamp in their respective month; untimestamped rows are added to the current month's real snapshot
+      const untimestampedCount = Math.max(0, totalRecords - allRecordTimestamps.length);
+      let cumulativeRecords = 0;
+      for (const ym of earlierMonthKeys) {
+        cumulativeRecords += recordsByMonth.get(ym) || 0;
+      }
+
+      const monthlyGrowthSeries = displayMonthKeys.map((ym, idx) => {
+        const [yrStr, moStr] = ym.split('-');
+        const moIdx = Math.max(0, Math.min(11, parseInt(moStr, 10) - 1));
+        const isLastBucket = idx === displayMonthKeys.length - 1;
+        const newInMonth = (recordsByMonth.get(ym) || 0) + (isLastBucket ? untimestampedCount : 0);
+        cumulativeRecords += newInMonth;
+        const loginsInMonth = loginsByMonth.get(ym) || 0;
+        return {
+          monthKey: ym,
+          name: `${monthNames[moIdx]} ${yrStr.slice(2)}`,
+          records: cumulativeRecords,
+          newRecords: newInMonth,
+          logins: loginsInMonth
+        };
+      });
 
       return res.json({
         success: true,
@@ -9789,10 +10491,15 @@ async function doStartServer() {
           expenses,
           schools,
           licenses,
-          users
+          users,
+          auditLogs: auditLogsCount
         },
         totalRecords,
-        timestamp: Date.now()
+        monthlyGrowthSeries,
+        onlineUsers,
+        recentLogins: recentLogins.slice(0, 100),
+        allUsers: allUsersList,
+        timestamp: now
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -12188,7 +12895,7 @@ async function doStartServer() {
 
   app.get("/api/db/status", async (req, res) => {
     const supabaseUrl = getResolvedSupabaseUrl();
-    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://esepa-school-portal.vercel.app';
+    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://schoolsphere-portal.vercel.app';
     let isConnected = false;
     let pingLatency = 0;
     let errorDetail = null;
@@ -12243,7 +12950,7 @@ async function doStartServer() {
   app.get("/api/integrations/vercel-supabase", async (req, res) => {
     const startTime = Date.now();
     const supabaseUrl = getResolvedSupabaseUrl();
-    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://esepa-school-portal.vercel.app';
+    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://schoolsphere-portal.vercel.app';
     
     let isSupabaseAlive = true;
     let errorDetail = null;
@@ -18663,7 +19370,7 @@ NOTIFY pgrst, 'reload schema';`;
       apiKeyAbbrev: apiKey 
         ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` 
         : "",
-      senderId: "ESEPA_ACAD"
+      senderId: "SCHOOLSPHR"
     });
   });
 
@@ -18852,7 +19559,7 @@ NOTIFY pgrst, 'reload schema';`;
 
     try {
       console.log(`[Arkesel Proxy] Recipient Numbers sanitised from ${JSON.stringify(recipients)} to ${JSON.stringify(sanitizedRecipients)}`);
-      console.log(`[Arkesel Proxy] Sending SMS via Arkesel V2 API (Sender: "${sender || "ESEPA_ACAD"}")`);
+      console.log(`[Arkesel Proxy] Sending SMS via Arkesel V2 API (Sender: "${sender || "SCHOOLSPHR"}")`);
       
       const response = await fetch("https://openapi.arkesel.com/v2/sms/send", {
         method: "POST",
@@ -18861,7 +19568,7 @@ NOTIFY pgrst, 'reload schema';`;
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          sender: (sender || "ESEPA_ACAD").slice(0, 11), // Arkesel enforces strict max 11 chars
+          sender: (sender || "SCHOOLSPHR").slice(0, 11), // Arkesel enforces strict max 11 chars
           message: message,
           recipients: sanitizedRecipients,
           sandbox: false
@@ -18898,7 +19605,7 @@ NOTIFY pgrst, 'reload schema';`;
         console.warn("[Arkesel Proxy] V2 send rejected or invalid structure. Result:", result);
         // Offer a v1 fallback
         
-        const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(apiKey)}&to=${encodeURIComponent(sanitizedRecipients.join(","))}&from=${encodeURIComponent((sender || "ESEPA_ACAD").slice(0, 11))}&sms=${encodeURIComponent(message)}`;
+        const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(apiKey)}&to=${encodeURIComponent(sanitizedRecipients.join(","))}&from=${encodeURIComponent((sender || "SCHOOLSPHR").slice(0, 11))}&sms=${encodeURIComponent(message)}`;
         
         const v1Response = await fetch(v1Url);
         const v1Text = await v1Response.text();
@@ -22577,7 +23284,7 @@ NOTIFY pgrst, 'reload schema';`;
       const guardianName = String(stuNorm.guardianName || studentFullName).trim();
       const normalizedCast = (insertedVotes || []).map((v: any) => normalizeVoteRecord(v)).filter(Boolean);
       const receiptList = normalizedCast.map((v: any) => v.receiptCode).join(', ');
-      const smsText = `Esepa E-Voting Station: Vote Cast Confirmed! ${studentFullName} (ID: ${canonicalStudentId}) cast ${entries.length} vote(s) in ${pollRow.title}. Receipt: ${receiptList}. Thank you!`;
+      const smsText = `SchoolSphere E-Voting Station: Vote Cast Confirmed! ${studentFullName} (ID: ${canonicalStudentId}) cast ${entries.length} vote(s) in ${pollRow.title}. Receipt: ${receiptList}. Thank you!`;
 
       let createdSmsLog: any = null;
       if (effectiveSchoolId) {

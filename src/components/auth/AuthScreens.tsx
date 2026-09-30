@@ -983,7 +983,14 @@ export function AuthScreens({
 
       {/* Global Compliance & Regulatory Footer */}
       <footer className="w-full max-w-2xl mx-auto pt-6 pb-2 border-t border-[#bac4c6] mt-8 text-center sm:flex sm:items-center sm:justify-between text-xs text-[#6a7f84] relative z-10">
-        <p>© {new Date().getFullYear()} SchoolSphere 3.1 & Akoko Solutions</p>
+        <div className="text-center sm:text-left">
+          <p>© {new Date().getFullYear()} SchoolSphere 3.1 • SchoolSphere Team / Emmanuel Amoako</p>
+          <p className="text-[11px] text-[#6a7f84]/90 mt-0.5">
+            <a href="mailto:amoakoemmanuel@hotmail.com" className="hover:text-[#1c4a59] underline">amoakoemmanuel@hotmail.com</a>
+            {' • '}
+            <a href="tel:0551187045" className="hover:text-[#1c4a59]">0551187045</a> / <a href="tel:0554234590" className="hover:text-[#1c4a59]">0554234590</a>
+          </p>
+        </div>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-2 sm:mt-0 font-medium">
           <button
             type="button"

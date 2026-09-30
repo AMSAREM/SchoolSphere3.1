@@ -3,7 +3,7 @@ import { db, User, School, clearTenantLocalDatabase, purgeDemoRecordsFromDb } fr
 import { supabase } from '../lib/supabase/client';
 import { syncTenantAcademicData } from '../lib/api';
 import { AppPermission, UserRole, hasPermission as checkPermission, canAccessModule as checkModuleAccess, getRoleInfo } from '../lib/permissions';
-import { recordUserLogin, mapAuthErrorMessage } from '../lib/authTelemetry';
+import { recordUserLogin, sendSessionHeartbeat, sendSessionLogout, mapAuthErrorMessage } from '../lib/authTelemetry';
 import { normalizeEmail } from '../lib/emailValidation';
 
 interface RegisterOrgPayload {
@@ -354,6 +354,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Real-time Supabase Presence & Server Session Heartbeat for logged-in user
+  useEffect(() => {
+    if (!user) return;
+
+    const resolvedSchoolName =
+      (user as any).schoolName ||
+      school?.name ||
+      (user.role === 'creator' || user.role === 'super_admin' ? 'Platform Global Scope' : 'SchoolSphere Portal');
+
+    const emitHeartbeat = () => {
+      sendSessionHeartbeat({
+        userId: user.id,
+        authUserId: user.auth_user_id,
+        username: user.username,
+        fullName: user.fullName || (user as any).full_name || user.username,
+        email: user.email,
+        role: user.role,
+        schoolId: user.schoolId || user.school_id || school?.id || null,
+        schoolName: resolvedSchoolName,
+        loginAt: user.lastLogin || Date.now(),
+        authStatus: 'Authenticated'
+      });
+    };
+
+    emitHeartbeat();
+    const hbInterval = setInterval(emitHeartbeat, 20000);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        emitHeartbeat();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    // Join Supabase Realtime Presence channel for instant multi-client presence
+    const presenceKey = String(user.auth_user_id || user.id || user.email || user.username || 'session');
+    let presenceChannel: any = null;
+    try {
+      presenceChannel = supabase.channel('schoolsphere:live_presence', {
+        config: { presence: { key: presenceKey } }
+      });
+      presenceChannel.subscribe(async (status: string) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await presenceChannel.track({
+              userId: user.id,
+              authUserId: user.auth_user_id,
+              username: user.username,
+              fullName: user.fullName || (user as any).full_name || user.username,
+              email: user.email,
+              role: user.role,
+              schoolId: user.schoolId || user.school_id || school?.id || null,
+              schoolName: resolvedSchoolName,
+              loginTimestamp: user.lastLogin || Date.now(),
+              lastActiveTimestamp: Date.now(),
+              authStatus: 'Authenticated',
+              isOnline: true
+            });
+          } catch {}
+        }
+      });
+    } catch {}
+
+    return () => {
+      clearInterval(hbInterval);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if (presenceChannel) {
+        try {
+          presenceChannel.untrack();
+          supabase.removeChannel(presenceChannel);
+        } catch {}
+      }
+    };
+  }, [user?.id, user?.username, user?.role, user?.school_id, school?.id, school?.name]);
+
   const handleLogin = async (username: string, password: string, schoolId?: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {
     if (!username || !password) {
       return { success: false, error: "Please enter both username and password" };
@@ -460,15 +537,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const cleanEmail = email.trim().toLowerCase().includes('@') ? normalizeEmail(email) : email.trim().toLowerCase();
 
-    // 1. Authoritative backend multi-tenant sign-in first (issues server JWT + Supabase RLS session + resolves school & license credentials)
+    // 1. Authoritative backend multi-tenant sign-in first (issues server JWT + Supabase RLS session + records login in public.audit_logs & public.users.last_login)
     const result = await handleLogin(cleanEmail, passwordCandidate);
     if (result.success && result.user) {
-      recordUserLogin({
-        auth_user_id: String(result.user.auth_user_id || result.user.id),
-        organization_id: result.user.school_id,
-        email: result.user.email || cleanEmail,
-        status: 'success_api_login'
-      });
       return { success: true, user: result.user, token: result.token, refreshToken: result.refreshToken, school: result.school };
     }
 
@@ -655,6 +726,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    if (user) {
+      sendSessionLogout({
+        userId: user.id,
+        authUserId: user.auth_user_id,
+        username: user.username,
+        email: user.email,
+        schoolId: user.schoolId || user.school_id || school?.id || null
+      });
+    }
     setUser(null);
     setToken(null);
     setRefreshToken(null);

@@ -56,7 +56,7 @@ export default function AttendanceTerminal() {
   const { showToast } = useNotifications();
   const { user, school } = useAuth();
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
 
   const classesFromDB = useLiveQuery(() => db.classes.toArray()) || [];
   const studentsInSystem = useLiveQuery(() => db.students.toArray()) || [];

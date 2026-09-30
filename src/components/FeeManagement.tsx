@@ -29,7 +29,7 @@ export default function FeeManagement() {
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const classesList = useLiveQuery(() => db.classes.toArray()) || [];
   const schoolProfile = settings.find(s => s.key === 'schoolProfile')?.value;
-  const schoolName = schoolProfile?.schoolName || activeSchool?.name || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = schoolProfile?.schoolName || activeSchool?.name || 'SCHOOLSPHERE PORTAL';
   const currentAcademicYear = schoolProfile?.currentAcademicYear || '2025/2026';
   const currentTerm = schoolProfile?.currentTerm || 'Term 1';
 
@@ -1635,7 +1635,7 @@ export default function FeeManagement() {
                           </p>
                           <div className="bg-slate-950 text-slate-100 font-mono text-[10px] p-3 rounded-xl border border-slate-900 shadow-inner tracking-tight leading-relaxed">
                             <p className="text-yellow-400 font-black uppercase tracking-wider">{momoProvider.toUpperCase()} MOBILE DEBIT</p>
-                            <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to Esepa School Treasury Account?</p>
+                            <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to SchoolSphere Treasury Account?</p>
                             <p className="mt-2.5 text-right text-[9px] text-slate-500 font-bold border-t border-slate-900 pt-1.5">1. Enter MoMo PIN to Pay | 2. Decline</p>
                           </div>
                         </div>
@@ -1856,7 +1856,7 @@ export default function FeeManagement() {
                     {paymentMethod === 'paystack' ? (
                       <PaystackPaymentButton
                         amount={Number(paymentAmount)}
-                        email="admin@esepa.school"
+                        email="amoakoemmanuel@hotmail.com"
                         onSuccess={(ref: any) => {
                           submitPayment(ref.reference);
                         }}
@@ -2866,7 +2866,7 @@ export default function FeeManagement() {
                             </p>
                             <div className="bg-slate-950 text-slate-100 font-mono text-[10px] p-3 rounded-xl border border-slate-900 shadow-inner tracking-tight leading-relaxed">
                               <p className="text-yellow-400 font-black uppercase tracking-wider">{momoProvider.toUpperCase()} MOBILE DEBIT</p>
-                              <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to Esepa School Treasury Account?</p>
+                              <p className="mt-1.5 text-slate-200">Pay GHS {Number(paymentAmount).toFixed(2)} to SchoolSphere Treasury Account?</p>
                               <p className="mt-2.5 text-right text-[9px] text-slate-500 font-bold border-t border-slate-900 pt-1.5">1. Enter MoMo PIN to Pay | 2. Decline</p>
                             </div>
                           </div>
@@ -3174,7 +3174,7 @@ export default function FeeManagement() {
                       {paymentMethod === 'paystack' ? (
                         <PaystackPaymentButton
                           amount={Number(paymentAmount)}
-                          email="admin@esepa.school"
+                          email="amoakoemmanuel@hotmail.com"
                           onSuccess={(ref: any) => {
                             submitPayment(ref.reference);
                           }}

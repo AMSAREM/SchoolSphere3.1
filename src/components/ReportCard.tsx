@@ -37,10 +37,10 @@ export const ReportCard: React.FC<ReportCardProps> = ({
   const averageScore = normalizedResults.length > 0 ? (totalScore / normalizedResults.length).toFixed(1) : '0.0';
   
   const profile = schoolProfile || {
-    schoolName: 'ESEPA INTERNATIONAL SCHOOL',
+    schoolName: 'SCHOOLSPHERE PORTAL',
     schoolAddress: 'Accra, Ghana',
-    schoolPhone: '+233 24 000 0000',
-    schoolEmail: 'info@esepa.edu.gh'
+    schoolPhone: '0551187045 / 0554234590',
+    schoolEmail: 'amoakoemmanuel@hotmail.com'
   };
 
   const isA4Mode = viewMode === 'a4';

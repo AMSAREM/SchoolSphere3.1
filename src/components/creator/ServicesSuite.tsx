@@ -175,7 +175,7 @@ export default function ServicesSuite({
             <textarea
               value={lockAnnouncementMsg}
               onChange={(e) => setLockAnnouncementMsg(e.target.value)}
-              placeholder="e.g. Licensing validation required. Please contact Elena on akokosolutions24@gmail.com."
+              placeholder="e.g. Licensing validation required. Please contact SchoolSphere Support on amoakoemmanuel@hotmail.com or 0551187045 / 0554234590."
               rows={4}
               className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 font-medium text-xs text-slate-700 focus:outline-hidden resize-none"
             />

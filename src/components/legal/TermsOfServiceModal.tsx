@@ -35,7 +35,7 @@ export function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceModalProp
                   <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">Terms of Service & License Agreement</h2>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Institutional Master Contract • SchoolSphere 3.1 & Akoko Solutions
+                  Institutional Master Contract • SchoolSphere 3.1 • SchoolSphere Team / Emmanuel Amoako
                 </p>
               </div>
             </div>
@@ -76,7 +76,7 @@ export function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceModalProp
                 1. Institutional Licensing & Seat Authorization
               </h3>
               <p>
-                Access to the SchoolSphere suite is licensed on an institution-by-institution basis. Valid institutional license keys (issued by Akoko Solutions) authorize the contracting campus to operate academic portals, teacher marks collation, and fee collections.
+                Access to the SchoolSphere suite is licensed on an institution-by-institution basis. Valid institutional license keys (issued by SchoolSphere Team / Emmanuel Amoako) authorize the contracting campus to operate academic portals, teacher marks collation, and fee collections.
               </p>
               <ul className="list-disc pl-5 space-y-1 text-slate-600">
                 <li>License keys are non-transferable and restricted to the registered school entity.</li>
@@ -135,7 +135,7 @@ export function TermsOfServiceModal({ isOpen, onClose }: TermsOfServiceModalProp
                 5. Governing Law & Jurisdiction
               </h3>
               <p>
-                These Terms are governed by and construed in accordance with the Laws of the Republic of Ghana. Any disputes arising under this agreement shall be settled through good-faith negotiation or arbitration in Accra, Ghana.
+                These Terms are governed by and construed in accordance with the Laws of the Republic of Ghana. Any disputes arising under this agreement shall be settled through good-faith negotiation or arbitration in Accra, Ghana. Official correspondence: <strong>amoakoemmanuel@hotmail.com</strong> • Tel: <strong>0551187045 / 0554234590</strong>.
               </p>
             </div>
           </div>

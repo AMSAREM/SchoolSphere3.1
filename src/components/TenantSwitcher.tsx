@@ -156,7 +156,7 @@ export default function TenantSwitcher({
         
         <div className="flex flex-col min-w-0">
           <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[200px]">
-            {currentSchoolName || "ESEPA ACADEMY"}
+            {currentSchoolName || "SCHOOLSPHERE PORTAL"}
           </span>
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />

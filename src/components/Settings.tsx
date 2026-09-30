@@ -27,6 +27,8 @@ import {
   Cpu,
   Lock,
   UserCheck,
+  UserCog,
+  Sparkles,
   Sliders,
   ShieldCheck,
   Award
@@ -72,11 +74,14 @@ export default function Settings() {
 
   const currentRole = String(user?.role || 'admin').toLowerCase();
   const roleInfo = getRoleInfo(currentRole);
+  const roleMeta = { ...roleInfo, label: roleInfo.name };
   const isAdmin = isSchoolOrPlatformAdmin(currentRole);
+  const isSchoolAdmin = isAdmin;
   const canEditProfile = canEditSettingsSection(currentRole, 'profile');
   const canEditAcademic = canEditSettingsSection(currentRole, 'academic');
   const canEditFees = canEditSettingsSection(currentRole, 'fees');
   const canEditDatabase = canEditSettingsSection(currentRole, 'database');
+  const canAccessDatabase = canEditDatabase;
   const canEditGlobalTheme = canEditSettingsSection(currentRole, 'global_theme');
   const canViewFeesTab = isAdmin || currentRole === 'accountant' || currentRole === 'headteacher';
 
@@ -581,6 +586,7 @@ export default function Settings() {
   const [editingFee, setEditingFee] = useState<FeeTypeConfig | null>(null);
   const [feeForm, setFeeForm] = useState({ id: '', label: '', defaultAmount: 0 });
   const [feeError, setFeeError] = useState<string | null>(null);
+  const [customFeeTypesState, setCustomFeeTypesState] = useState<FeeTypeConfig[]>([]);
 
   // Local state for School Profile (Admin Editable, Read-only for others)
   const [schoolProfile, setSchoolProfile] = useState({
@@ -620,8 +626,11 @@ export default function Settings() {
   const [rolePreferences, setRolePreferences] = useState<Record<string, any>>({
     // Shared personal workspace preferences
     personalTheme: 'indigo',
+    themeOverride: '',
     preferredNotificationChannel: 'In-App & SMS',
+    notificationChannel: 'in_app',
     compactTableDensity: false,
+    compactMode: false,
     // Admin specific
     defaultDashboardView: 'executive_overview',
     autoCloudBackup: true,
@@ -634,14 +643,24 @@ export default function Settings() {
     passMarkThreshold: 50,
     reportCardSignatureTitle: currentRole === 'hod' ? 'Head of Department (HOD)' : 'Headteacher / Vice Principal',
     defaultLessonNoteFilter: 'pending_vetting',
+    defaultApprovalQueueView: 'pending_first',
+    requireHeadteacherRemark: true,
+    showAnalyticsSummary: true,
     autoComputeClassPositions: true,
     // Accountant / Bursar specific
+    defaultReceiptFormat: 'A4 Official',
     defaultPaymentMethod: 'Mobile Money',
     receiptPrefix: 'RCP',
     autoSendPaymentSmsReceipt: true,
     arrearsReminderThresholdGhs: 200,
+    arrearsAlertThreshold: 200,
     receiptFooterNote: 'Official Bursary Receipt • Non-Refundable',
     // Teacher specific
+    defaultClassFilter: '',
+    defaultSubjectFilter: '',
+    scoreEntryMode: 'quick',
+    autoSaveScores: true,
+    showBroadsheetPositions: true,
     defaultAttendanceStatus: 'Present',
     defaultLessonNoteFormat: 'structured',
     scoreEntryAutoSave: true,
@@ -652,6 +671,11 @@ export default function Settings() {
     terminalReportReadyAlerts: true,
     examCountdownAlerts: true
   });
+
+  const personalAccount = personalProfile;
+  const setPersonalAccount = setPersonalProfile;
+  const personalPreferences = rolePreferences;
+  const setPersonalPreferences = setRolePreferences;
 
   // Sync local user info into personalProfile form when user changes
   useEffect(() => {
@@ -689,6 +713,9 @@ export default function Settings() {
         }
         if (Array.isArray(state.gradeBoundaries) && state.gradeBoundaries.length > 0) {
           setGradeBoundaries(state.gradeBoundaries);
+        }
+        if (Array.isArray(state.customFeeTypes)) {
+          setCustomFeeTypesState(state.customFeeTypes);
         }
         if (state.userProfile) {
           setPersonalProfile(prev => ({
@@ -735,9 +762,11 @@ export default function Settings() {
       const profile = settingsData.find(s => s.key === 'schoolProfile')?.value;
       const academic = settingsData.find(s => s.key === 'academicConfig')?.value;
       const gb = settingsData.find(s => s.key === 'gradeBoundaries')?.value;
+      const cft = settingsData.find(s => s.key === 'customFeeTypes')?.value;
       if (profile) setSchoolProfile(prev => ({ ...prev, ...profile, theme: profile.theme || 'indigo' }));
       if (academic) setAcademicConfig(prev => ({ ...prev, ...academic }));
       if (Array.isArray(gb) && gb.length > 0) setGradeBoundaries(gb);
+      if (Array.isArray(cft)) setCustomFeeTypesState(cft);
     }
   }, [settingsData]);
 
@@ -783,8 +812,8 @@ export default function Settings() {
     }
   };
 
-  const handleSavePersonalAndRoleSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSavePersonalAndRoleSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (personalProfile.newPassword && personalProfile.newPassword !== personalProfile.confirmPassword) {
       setMessage({ type: 'error', text: 'New password and confirmation do not match.' });
       showToast('New password and confirmation do not match.', 'error');
@@ -811,6 +840,10 @@ export default function Settings() {
       }
     );
     setPersonalProfile(prev => ({ ...prev, newPassword: '', confirmPassword: '' }));
+  };
+
+  const handleSavePersonalAccount = () => {
+    handleSavePersonalAndRoleSettings();
   };
 
   const handleSaveFeeType = async (e: React.FormEvent) => {
@@ -843,7 +876,9 @@ export default function Settings() {
       return;
     }
 
-    const currentCustoms: FeeTypeConfig[] = settingsData?.find(s => s.key === 'customFeeTypes')?.value || [];
+    const currentCustoms: FeeTypeConfig[] = customFeeTypesState.length > 0
+      ? customFeeTypesState
+      : (settingsData?.find(s => s.key === 'customFeeTypes')?.value || []);
     const collisionOccurred = currentCustoms.some(f => f.id === targetId && (!editingFee || editingFee.id !== f.id));
     if (collisionOccurred) {
       setFeeError(`"${targetId}" is already used by another custom fee type.`);
@@ -858,6 +893,7 @@ export default function Settings() {
     }
 
     try {
+      setCustomFeeTypesState(updatedCustoms);
       await settingsApi.saveSection({
         section: 'fees',
         value: {
@@ -891,10 +927,13 @@ export default function Settings() {
       showToast('Only School Administrators and Accountants can delete custom fee types.', 'error');
       return;
     }
-    const currentCustoms: FeeTypeConfig[] = settingsData?.find(s => s.key === 'customFeeTypes')?.value || [];
+    const currentCustoms: FeeTypeConfig[] = customFeeTypesState.length > 0
+      ? customFeeTypesState
+      : (settingsData?.find(s => s.key === 'customFeeTypes')?.value || []);
     const updatedCustoms = currentCustoms.filter(f => f.id !== feeId);
 
     try {
+      setCustomFeeTypesState(updatedCustoms);
       await settingsApi.saveSection({
         section: 'fees',
         value: updatedCustoms,
@@ -1050,11 +1089,11 @@ export default function Settings() {
   const exportMySQLScript = async () => {
     try {
       let sql = `-- ====================================================================\n`;
-      sql += `-- ESEPA SCHOOL SPHERE - GENERATED DATA EXPORT SCRIPT (MYSQL)\n`;
+      sql += `-- SCHOOLSPHERE PORTAL - GENERATED DATA EXPORT SCRIPT (MYSQL)\n`;
       sql += `-- Export Date: ${new Date().toUTCString()}\n`;
       sql += `-- Target Environment: XAMPP / phpMyAdmin / Standalone MySQL\n`;
       sql += `-- ====================================================================\n\n`;
-      sql += `USE esepa_school_db;\n\n`;
+      sql += `USE schoolsphere_db;\n\n`;
       sql += `SET FOREIGN_KEY_CHECKS = 0;\n\n`;
 
       const escapeSql = (val: any): string => {
@@ -1925,7 +1964,7 @@ export default function Settings() {
             </div>
           )}
 
-          {activeTab === 'account' && (
+          {activeTab === 'personal' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-4">
@@ -2268,8 +2307,8 @@ export default function Settings() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-600">
                       <div>
                         <span className="font-medium text-slate-400 block mb-0.5 font-sans">Frontend Host (Vercel)</span>
-                        <a href="https://esepa-school-portal.vercel.app" target="_blank" rel="noreferrer" className="font-mono font-bold text-indigo-600 hover:underline truncate block">
-                          esepa-school-portal.vercel.app
+                        <a href="https://schoolsphere-portal.vercel.app" target="_blank" rel="noreferrer" className="font-mono font-bold text-indigo-600 hover:underline truncate block">
+                          schoolsphere-portal.vercel.app
                         </a>
                       </div>
                       <div>

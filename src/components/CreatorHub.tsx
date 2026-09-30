@@ -37,6 +37,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { getGoogleAccessToken, clearGoogleAccessToken } from '../lib/gmailService';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase/client';
 import {
   fetchTenantLicenseStatus,
   activateTenantLicense,
@@ -200,34 +201,60 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const [sysCurrentTerm, setSysCurrentTerm] = useState('Term 1');
   const [sysCurrency, setSysCurrency] = useState('GHS');
 
-  // Live Supabase database telemetry counts
+  // Live Supabase database telemetry counts & real-time presence/login streams
   const [telemetryCounts, setTelemetryCounts] = useState<{
     students: number;
+    teachers: number;
+    classes: number;
+    subjects: number;
     attendance: number;
     results: number;
     reports: number;
+    fees: number;
     sms: number;
     polls: number;
     candidates: number;
     votes: number;
     inventory: number;
     expenses: number;
-    totalRecords?: number;
+    schools: number;
+    licenses: number;
+    users: number;
+    auditLogs: number;
+    totalRecords: number;
   }>({
     students: 0,
+    teachers: 0,
+    classes: 0,
+    subjects: 0,
     attendance: 0,
     results: 0,
     reports: 0,
+    fees: 0,
     sms: 0,
     polls: 0,
     candidates: 0,
     votes: 0,
     inventory: 0,
     expenses: 0,
+    schools: 0,
+    licenses: 0,
+    users: 0,
+    auditLogs: 0,
     totalRecords: 0
   });
 
-  const fetchCreatorTelemetry = async () => {
+  const [monthlyGrowthSeries, setMonthlyGrowthSeries] = useState<any[]>([]);
+  const [serverOnlineUsers, setServerOnlineUsers] = useState<any[]>([]);
+  const [recentLogins, setRecentLogins] = useState<any[]>([]);
+  const [allUsersPresence, setAllUsersPresence] = useState<any[]>([]);
+  const [channelPresenceUsers, setChannelPresenceUsers] = useState<any[]>([]);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
+  const [lastTelemetrySyncAt, setLastTelemetrySyncAt] = useState<number>(Date.now());
+  const [isRefreshingTelemetry, setIsRefreshingTelemetry] = useState<boolean>(false);
+
+  const fetchCreatorTelemetry = async (showSpinner = false) => {
+    if (showSpinner) setIsRefreshingTelemetry(true);
     try {
       const token = localStorage.getItem('esepa_auth_token');
       const headers: Record<string, string> = {};
@@ -238,25 +265,51 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
         if (data.success && data.counts) {
           setTelemetryCounts({
             students: Number(data.counts.students || 0),
+            teachers: Number(data.counts.teachers || 0),
+            classes: Number(data.counts.classes || 0),
+            subjects: Number(data.counts.subjects || 0),
             attendance: Number(data.counts.attendance || 0),
             results: Number(data.counts.results || 0),
             reports: Number(data.counts.reports || 0),
+            fees: Number(data.counts.fees || 0),
             sms: Number(data.counts.sms || 0),
             polls: Number(data.counts.polls || 0),
             candidates: Number(data.counts.candidates || 0),
             votes: Number(data.counts.votes || 0),
             inventory: Number(data.counts.inventory || 0),
             expenses: Number(data.counts.expenses || 0),
+            schools: Number(data.counts.schools || 0),
+            licenses: Number(data.counts.licenses || 0),
+            users: Number(data.counts.users || 0),
+            auditLogs: Number(data.counts.auditLogs || 0),
             totalRecords: Number(data.totalRecords || 0)
           });
         }
+        if (Array.isArray(data.monthlyGrowthSeries)) {
+          setMonthlyGrowthSeries(data.monthlyGrowthSeries);
+        }
+        if (Array.isArray(data.onlineUsers)) {
+          setServerOnlineUsers(data.onlineUsers);
+        }
+        if (Array.isArray(data.recentLogins)) {
+          setRecentLogins(data.recentLogins);
+        }
+        if (Array.isArray(data.allUsers)) {
+          setAllUsersPresence(data.allUsers);
+        }
+        setLastTelemetrySyncAt(Number(data.timestamp || Date.now()));
       }
     } catch (err) {
       console.warn('Notice fetching live Supabase creator telemetry:', err);
+    } finally {
+      if (showSpinner) setIsRefreshingTelemetry(false);
     }
   };
 
   const countStudents = telemetryCounts.students;
+  const countTeachers = telemetryCounts.teachers;
+  const countClasses = telemetryCounts.classes;
+  const countSubjects = telemetryCounts.subjects;
   const countAttendance = telemetryCounts.attendance;
   const countResults = telemetryCounts.results;
   const countReports = telemetryCounts.reports;
@@ -266,10 +319,15 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const countVotes = telemetryCounts.votes;
   const countInventory = telemetryCounts.inventory;
   const countExpenses = telemetryCounts.expenses;
+  const countUsers = telemetryCounts.users;
+  const countAuditLogs = telemetryCounts.auditLogs;
 
   const totalDemoRecords =
     telemetryCounts.totalRecords ||
     countStudents +
+      countTeachers +
+      countClasses +
+      countSubjects +
       countAttendance +
       countResults +
       countReports +
@@ -278,7 +336,9 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       countCandidates +
       countVotes +
       countInventory +
-      countExpenses;
+      countExpenses +
+      countUsers +
+      countAuditLogs;
 
   const fetchLicenseInfo = async () => {
     try {
@@ -358,8 +418,88 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       fetchCreatorTelemetry();
     };
     window.addEventListener('esepa_licenses_updated', handleLicensesUpdated);
+
+    // Live polling interval for continuous real-time telemetry updates
+    const liveInterval = setInterval(() => {
+      fetchCreatorTelemetry();
+    }, 8000);
+
+    // Subscribe to Supabase Realtime Postgres Changes + Live Presence Channel
+    let dbRealtimeChannel: any = null;
+    let presenceMonitorChannel: any = null;
+
+    try {
+      dbRealtimeChannel = supabase
+        .channel('creator_dashboard_postgres_changes')
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+          fetchCreatorTelemetry();
+        })
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            setIsRealtimeConnected(true);
+          }
+        });
+
+      presenceMonitorChannel = supabase.channel('schoolsphere:live_presence');
+      const syncPresenceState = () => {
+        try {
+          const state = presenceMonitorChannel.presenceState() || {};
+          const extracted: any[] = [];
+          Object.values(state).forEach((presences: any) => {
+            if (Array.isArray(presences)) {
+              presences.forEach((p: any) => {
+                if (p && (p.username || p.email || p.userId)) {
+                  extracted.push({
+                    ...p,
+                    isOnline: true,
+                    lastActiveTimestamp: Number(p.lastActiveTimestamp || Date.now()),
+                    loginTimestamp: Number(p.loginTimestamp || Date.now()),
+                    authStatus: p.authStatus || 'Authenticated'
+                  });
+                }
+              });
+            }
+          });
+          setChannelPresenceUsers(extracted);
+        } catch {}
+      };
+
+      presenceMonitorChannel
+        .on('presence', { event: 'sync' }, () => {
+          syncPresenceState();
+          fetchCreatorTelemetry();
+        })
+        .on('presence', { event: 'join' }, () => {
+          syncPresenceState();
+          fetchCreatorTelemetry();
+        })
+        .on('presence', { event: 'leave' }, () => {
+          syncPresenceState();
+          fetchCreatorTelemetry();
+        })
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            setIsRealtimeConnected(true);
+            syncPresenceState();
+          }
+        });
+    } catch (rtErr) {
+      console.warn('Supabase Realtime subscription notice:', rtErr);
+    }
+
     return () => {
       window.removeEventListener('esepa_licenses_updated', handleLicensesUpdated);
+      clearInterval(liveInterval);
+      if (dbRealtimeChannel) {
+        try {
+          supabase.removeChannel(dbRealtimeChannel);
+        } catch {}
+      }
+      if (presenceMonitorChannel) {
+        try {
+          supabase.removeChannel(presenceMonitorChannel);
+        } catch {}
+      }
     };
   }, []);
 
@@ -704,7 +844,8 @@ COMMERCIAL OFFERS:
 2. Annual Software License & Priority Support: $${pricing.annualLicense}/Year (approx. GHS ${pricing.localGHSAnnual.toLocaleString()})
 
 Best Regards,
-Elena / Akoko Solutions (Vendor System Creator)`;
+SchoolSphere Team / Emmanuel Amoako
+Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
 
   const copyProposalToClipboard = () => {
     navigator.clipboard.writeText(proposalTemplate);
@@ -723,28 +864,121 @@ Elena / Akoko Solutions (Vendor System Creator)`;
     return matchesSearch && matchesFilter;
   });
 
-  // Recharts Data Sets for Platform Sync and Active Session Monitoring
-  const activeSchoolsCount = validLicensesList.filter((lic) => lic.status === 'active').length;
-  const activeSchoolsBaseline = Math.max(3, activeSchoolsCount);
+  // Merge live Supabase Realtime channel presence with server heartbeat onlineUsers & current logged-in user
+  const mergedOnlineUsers = React.useMemo(() => {
+    const map = new Map<string, any>();
 
-  const monthlyTrendData = [
-    { name: 'Jan', records: 450 + Math.floor(totalDemoRecords * 0.2), logins: activeSchoolsBaseline * 42 },
-    { name: 'Feb', records: 680 + Math.floor(totalDemoRecords * 0.4), logins: activeSchoolsBaseline * 58 },
-    { name: 'Mar', records: 920 + Math.floor(totalDemoRecords * 0.6), logins: activeSchoolsBaseline * 75 },
-    { name: 'Apr', records: 1250 + Math.floor(totalDemoRecords * 0.8), logins: activeSchoolsBaseline * 92 },
-    { name: 'May', records: 1600 + Math.floor(totalDemoRecords * 0.9), logins: activeSchoolsBaseline * 115 },
-    { name: 'Jun', records: 1980 + totalDemoRecords, logins: activeSchoolsBaseline * 148 },
-  ];
+    const addOrMerge = (u: any) => {
+      if (!u) return;
+      const key = String(
+        u.authUserId || u.auth_user_id || u.email || `${u.username || 'user'}@${u.schoolId || u.school_id || 'global'}`
+      )
+        .trim()
+        .toLowerCase();
+      if (!key) return;
+      const existing = map.get(key);
+      map.set(key, {
+        ...existing,
+        ...u,
+        dbId: u.dbId ?? existing?.dbId ?? (typeof u.id === 'number' ? u.id : null),
+        sourceTable: u.sourceTable || existing?.sourceTable || 'public.users',
+        username: u.username || existing?.username || 'user',
+        fullName: u.fullName || u.full_name || existing?.fullName || u.username || 'User',
+        email: u.email || existing?.email || '',
+        role: u.role || existing?.role || 'admin',
+        schoolName:
+          u.schoolName ||
+          existing?.schoolName ||
+          (u.role === 'creator' || u.role === 'super_admin' ? 'Platform Global Scope' : 'SchoolSphere Portal'),
+        isOnline: true,
+        lastActiveTimestamp: Math.max(
+          Number(u.lastActiveTimestamp || 0),
+          Number(existing?.lastActiveTimestamp || 0),
+          Date.now() - 5000
+        ),
+        loginTimestamp: Number(u.loginTimestamp || existing?.loginTimestamp || Date.now()),
+        authStatus: u.authStatus || existing?.authStatus || 'Online · Authenticated'
+      });
+    };
+
+    serverOnlineUsers.forEach(addOrMerge);
+    channelPresenceUsers.forEach(addOrMerge);
+
+    if (user) {
+      addOrMerge({
+        id: user.id,
+        dbId: typeof user.id === 'number' && user.id < 1000000000 ? user.id : null,
+        sourceTable: 'public.users',
+        authUserId: user.auth_user_id,
+        username: user.username,
+        fullName: user.fullName || (user as any).full_name || user.username,
+        email: user.email,
+        role: user.role,
+        schoolId: user.schoolId || user.school_id,
+        schoolName:
+          (user as any).schoolName ||
+          (user.role === 'creator' || user.role === 'super_admin' ? 'Platform Global Scope' : 'SchoolSphere Portal'),
+        isOnline: true,
+        lastActiveTimestamp: Date.now(),
+        loginTimestamp: user.lastLogin || Date.now(),
+        authStatus: 'Online · Authenticated'
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => (b.lastActiveTimestamp || 0) - (a.lastActiveTimestamp || 0));
+  }, [serverOnlineUsers, channelPresenceUsers, user]);
+
+  const mergedAllUsers = React.useMemo(() => {
+    const map = new Map<string, any>();
+    allUsersPresence.forEach((u) => {
+      const key = String(u.authUserId || u.email || `${u.username}@${u.schoolId || 'global'}`).toLowerCase();
+      map.set(key, { ...u });
+    });
+    mergedOnlineUsers.forEach((onlineU) => {
+      const key = String(
+        onlineU.authUserId || onlineU.email || `${onlineU.username}@${onlineU.schoolId || 'global'}`
+      ).toLowerCase();
+      const existing = map.get(key);
+      map.set(key, {
+        ...existing,
+        ...onlineU,
+        dbId: onlineU.dbId ?? existing?.dbId ?? null,
+        sourceTable: existing?.sourceTable || onlineU.sourceTable || 'public.users',
+        isOnline: true
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+      return (b.loginTimestamp || b.lastActiveTimestamp || 0) - (a.loginTimestamp || a.lastActiveTimestamp || 0);
+    });
+  }, [allUsersPresence, mergedOnlineUsers]);
+
+  // Authentic Monthly Growth Series grouped directly from Supabase created_at and audit_logs.timestamp (zero synthetic multipliers)
+  const monthlyTrendData = React.useMemo(() => {
+    if (Array.isArray(monthlyGrowthSeries) && monthlyGrowthSeries.length > 0) {
+      return monthlyGrowthSeries;
+    }
+    const nowD = new Date();
+    const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return [
+      {
+        name: `${mNames[nowD.getMonth()]} ${String(nowD.getFullYear()).slice(2)}`,
+        records: totalDemoRecords,
+        newRecords: totalDemoRecords,
+        logins: recentLogins.length
+      }
+    ];
+  }, [monthlyGrowthSeries, totalDemoRecords, recentLogins.length]);
 
   const compositionData = [
-    { name: 'Students', value: countStudents, color: '#6366f1' },
-    { name: 'Attendance', value: countAttendance, color: '#10b981' },
-    { name: 'Results', value: countResults, color: '#f59e0b' },
-    { name: 'Reports', value: countReports, color: '#8b5cf6' },
-    { name: 'SMS Logs', value: countSms, color: '#06b6d4' },
-    { name: 'eVotes', value: countPolls + countCandidates + countVotes, color: '#ec4899' },
-    { name: 'Stock', value: countInventory, color: '#14b8a6' },
-    { name: 'Expenses', value: countExpenses, color: '#f43f5e' },
+    { name: 'Classes', value: countClasses, color: '#6366f1' },
+    { name: 'Subjects', value: countSubjects, color: '#8b5cf6' },
+    { name: 'Users', value: countUsers, color: '#10b981' },
+    { name: 'Teachers', value: countTeachers, color: '#06b6d4' },
+    { name: 'Audit Logs', value: countAuditLogs, color: '#f59e0b' },
+    { name: 'Students', value: countStudents, color: '#3b82f6' },
+    { name: 'Attendance', value: countAttendance, color: '#14b8a6' },
+    { name: 'Results', value: countResults, color: '#ec4899' }
   ];
 
   // Group sections by Category
@@ -768,7 +1002,7 @@ Elena / Akoko Solutions (Vendor System Creator)`;
               <Sparkles className="w-5 h-5 text-white animate-spin" />
             </div>
             <div>
-              <span className="text-xs font-bold block uppercase tracking-wider text-indigo-400">Elena's Portal</span>
+              <span className="text-xs font-bold block uppercase tracking-wider text-indigo-400">SchoolSphere Creator</span>
               <span className="text-[10px] text-slate-400 font-bold uppercase block tracking-widest leading-none">V2 MASTER CONTROL</span>
             </div>
           </div>
@@ -835,7 +1069,7 @@ Elena / Akoko Solutions (Vendor System Creator)`;
                 <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-indigo-400" />
-                    <span className="font-bold text-xs uppercase tracking-wider text-white">Elena Master Hub</span>
+                    <span className="font-bold text-xs uppercase tracking-wider text-white">SchoolSphere Master Hub</span>
                   </div>
                   <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-white">
                     <X className="w-5 h-5" />
@@ -894,51 +1128,53 @@ Elena / Akoko Solutions (Vendor System Creator)`;
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
         {/* Header */}
-        <header className="bg-white border-b border-slate-200 h-16 shrink-0 flex items-center justify-between px-6 print:hidden">
-          <div className="flex items-center gap-3">
+        <header className="bg-white border-b border-slate-200 h-14 sm:h-16 shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 min-w-0 print:hidden">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
             <button
+              type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="p-1.5 text-slate-500 hover:text-slate-800 lg:hidden"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors lg:hidden shrink-0 cursor-pointer"
+              title="Open Creator Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2 text-slate-400 text-xs font-medium">
-              <span>Creator Console</span>
-              <ChevronRight className="w-3 h-3" />
-              <span className="font-bold text-slate-700">{activeSectionObj?.label}</span>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500 min-w-0">
+              <span className="hidden sm:inline whitespace-nowrap">Creator Console</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden sm:inline shrink-0" />
+              <span className="font-bold text-slate-800 text-xs sm:text-sm truncate">
+                {activeSectionObj?.label || 'Dashboard'}
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => setActivePanel('frontend_test_runner')}
-              className={cn(
-                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap',
-                activePanel === 'frontend_test_runner'
-                  ? 'bg-[#1c4a59] text-white shadow-xs'
-                  : 'bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e]'
-              )}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>Frontend Test Suite</span>
-            </button>
-            <span className="hidden sm:inline-flex px-2.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-md tracking-wider">
-              Environment: Live Sandbox
-            </span>
-            <div className="text-right">
-              <span className="text-xs font-bold text-slate-800 block">{user?.fullName || user?.username || 'Platform Creator'}</span>
-              <span className="text-[10px] text-[#06D6A0] font-black uppercase block tracking-wider leading-none mt-0.5">{user?.role?.replace('_', ' ') || 'Creator'}</span>
+          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-slate-900 text-indigo-400 border border-slate-800 flex items-center justify-center font-bold text-xs shrink-0">
+                {(user?.fullName || user?.username || 'C')[0]?.toUpperCase()}
+              </div>
+              <div className="hidden sm:block text-left min-w-0">
+                <span className="text-xs font-bold text-slate-800 block leading-tight truncate max-w-[150px]">
+                  {user?.fullName || user?.username || 'Platform Creator'}
+                </span>
+                <span className="text-[10px] text-emerald-600 font-semibold capitalize block leading-none mt-0.5">
+                  {user?.role?.replace('_', ' ') || 'Creator'}
+                </span>
+              </div>
             </div>
+
             {onExit && (
-              <button
-                onClick={onExit}
-                className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-700 text-xs font-bold rounded-xl transition duration-150 cursor-pointer"
-                title="Log Out"
-              >
-                <LogOut className="w-3.5 h-3.5 rotate-180" />
-                <span className="hidden xs:inline">Log Out</span>
-              </button>
+              <>
+                <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+                <button
+                  type="button"
+                  onClick={onExit}
+                  className="flex items-center gap-1.5 h-9 px-3 bg-slate-100 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+                  title="Log Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Log Out</span>
+                </button>
+              </>
             )}
           </div>
         </header>
@@ -991,6 +1227,13 @@ Elena / Akoko Solutions (Vendor System Creator)`;
                   setSysCurrentTerm={setSysCurrentTerm}
                   sysCurrency={sysCurrency}
                   setSysCurrency={setSysCurrency}
+                  onlineUsers={mergedOnlineUsers}
+                  recentLogins={recentLogins}
+                  allUsersPresence={mergedAllUsers}
+                  isRealtimeConnected={isRealtimeConnected}
+                  lastTelemetrySyncAt={lastTelemetrySyncAt}
+                  isRefreshingTelemetry={isRefreshingTelemetry}
+                  onRefreshTelemetry={() => fetchCreatorTelemetry(true)}
                 />
               )}
 

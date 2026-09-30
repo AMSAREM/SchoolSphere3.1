@@ -268,7 +268,7 @@ export function buildLicenseEmailHtml(params: SendLicenseEmailParams, magicLinkU
               </div>
 
               <p style="font-size: 12px; line-height: 18px; color: #94a3b8; margin: 0;">
-                If you have any questions or require deployment assistance, reply directly to this email or contact support at support@schoolsphere.academy.
+                If you have any questions or require deployment assistance, reply directly to this email or contact SchoolSphere Support at <a href="mailto:amoakoemmanuel@hotmail.com" style="color: #4f46e5;">amoakoemmanuel@hotmail.com</a> or Tel: 0551187045 / 0554234590.
               </p>
             </td>
           </tr>
@@ -456,7 +456,8 @@ export function buildLicensePlainText(params: {
     `${modulesList}`,
     ``,
     `Best regards,`,
-    `SchoolSphere Cloud Administration`
+    `SchoolSphere Team / Emmanuel Amoako`,
+    `Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`
   ].join('\n');
 }
 

@@ -597,11 +597,21 @@ export default function GetStarted({
                 <p>
                   Need administrative serial keys, customized reports, or dedicated server deployment setups? Our engineering team is active and ready to assist you.
                 </p>
-                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Direct Support</span>
-                  <a href="mailto:akokosolutions24@gmail.com" className="text-indigo-600 dark:text-indigo-400 font-extrabold text-xs hover:underline">
-                    akokosolutions24@gmail.com
-                  </a>
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">SchoolSphere Team / Emmanuel Amoako</span>
+                    <a href="mailto:amoakoemmanuel@hotmail.com" className="text-indigo-600 dark:text-indigo-400 font-extrabold text-xs hover:underline block">
+                      amoakoemmanuel@hotmail.com
+                    </a>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200/70 dark:border-slate-700">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Direct Support Hotlines</span>
+                    <div className="flex flex-wrap items-center gap-2 font-extrabold text-xs text-slate-800 dark:text-slate-200">
+                      <a href="tel:0551187045" className="text-indigo-600 dark:text-indigo-400 hover:underline">0551187045</a>
+                      <span className="text-slate-400">/</span>
+                      <a href="tel:0554234590" className="text-indigo-600 dark:text-indigo-400 hover:underline">0554234590</a>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="mt-6">
@@ -1016,7 +1026,7 @@ export default function GetStarted({
                             value={setupAdminName}
                             onChange={(e) => setSetupAdminName(e.target.value)}
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
-                            placeholder="e.g. Principal Elena Mensah"
+                            placeholder="e.g. Principal Emmanuel Mensah"
                             required
                           />
                         </div>
@@ -1469,7 +1479,7 @@ export default function GetStarted({
                               <label className="text-[9px] font-black uppercase tracking-wider text-slate-500">Head Admin Full Name</label>
                               <input
                                 type="text"
-                                placeholder="e.g. Principal Elena Mensah"
+                                placeholder="e.g. Principal Emmanuel Mensah"
                                 value={setupAdminName}
                                 onChange={(e) => setSetupAdminName(e.target.value)}
                                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
@@ -1627,11 +1637,21 @@ export default function GetStarted({
             <p>
               Need administrative serial keys, customized reports, or dedicated server deployment setups? Our engineering team is active and ready to assist you.
             </p>
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Direct Support</span>
-              <a href="mailto:akokosolutions24@gmail.com" className="text-indigo-600 font-extrabold text-xs hover:underline">
-                akokosolutions24@gmail.com
-              </a>
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">SchoolSphere Team / Emmanuel Amoako</span>
+                <a href="mailto:amoakoemmanuel@hotmail.com" className="text-indigo-600 font-extrabold text-xs hover:underline block">
+                  amoakoemmanuel@hotmail.com
+                </a>
+              </div>
+              <div className="pt-2 border-t border-slate-200/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Direct Support Hotlines</span>
+                <div className="flex flex-wrap items-center gap-2 font-extrabold text-xs text-slate-800">
+                  <a href="tel:0551187045" className="text-indigo-600 hover:underline">0551187045</a>
+                  <span className="text-slate-400">/</span>
+                  <a href="tel:0554234590" className="text-indigo-600 hover:underline">0554234590</a>
+                </div>
+              </div>
             </div>
           </div>
           <div className="mt-6">
@@ -1760,7 +1780,7 @@ export default function GetStarted({
           Instance ID: schoolsphere-academy-live-prod
         </span>
         <span>
-          Licensing support: <a href="mailto:akokosolutions24@gmail.com" className="text-indigo-600 hover:underline">akokosolutions24@gmail.com</a>
+          Licensing &amp; Support: <a href="mailto:amoakoemmanuel@hotmail.com" className="text-indigo-600 hover:underline">amoakoemmanuel@hotmail.com</a> • Tel: <a href="tel:0551187045" className="text-indigo-600 hover:underline">0551187045</a> / <a href="tel:0554234590" className="text-indigo-600 hover:underline">0554234590</a>
         </span>
       </div>
 

@@ -64,8 +64,8 @@ export default function SecuritySuite({
   const [operatorName, setOperatorName] = useState('');
   const [operatorRole, setOperatorRole] = useState('Operator');
   const [operatorsList, setOperatorsList] = useState<any[]>([
-    { id: '1', name: 'Elena Master', role: 'Super Admin', status: 'Active', lastActive: 'Just Now' },
-    { id: '2', name: 'Akoko Support', role: 'Operator', status: 'Active', lastActive: '2 Hours Ago' },
+    { id: '1', name: 'Emmanuel Amoako', role: 'Super Admin', status: 'Active', lastActive: 'Just Now' },
+    { id: '2', name: 'SchoolSphere Support', role: 'Operator', status: 'Active', lastActive: '2 Hours Ago' },
     { id: '3', name: 'Field Deployer', role: 'Operator', status: 'Idle', lastActive: '3 Days Ago' }
   ]);
 
@@ -98,7 +98,7 @@ export default function SecuritySuite({
       // Simulate/Trigger a local prompt completion or backend call
       const res = await fetch('/api/health'); // mock check or call backend
       setTimeout(() => {
-        setAiGeneratedOutput(`Elena AI Remarks Output:
+        setAiGeneratedOutput(`SchoolSphere AI Remarks Output:
 "Throughout this academic term, the student has demonstrated substantial dedication and academic growth, maintaining a high attendance rate of 92%. Their active leadership roles in class projects have significantly contributed to a collaborative environment. With an average score of 74%, they show great potential for academic excellence. Recommended to maintain this excellent momentum next session."`);
         setAiTesting(false);
       }, 1500);
@@ -110,7 +110,7 @@ export default function SecuritySuite({
 
   // Local state for API Management
   const [apiKeys, setApiKeys] = useState<any[]>([
-    { id: 'key-1', name: 'Twilio SMS Integration Gateway', token: 'sk_live_sms_884291_akoko', status: 'Active' },
+    { id: 'key-1', name: 'Twilio SMS Integration Gateway', token: 'sk_live_sms_884291_schoolsphere', status: 'Active' },
     { id: 'key-2', name: 'Paystack Hook Gateway', token: 'sk_paystack_9221_july', status: 'Active' }
   ]);
   const [newKeyName, setNewKeyName] = useState('');
@@ -337,7 +337,7 @@ export default function SecuritySuite({
 
   if (activePanel === 'integrations') {
     const systemsList = [
-      { name: 'Vercel Edge Frontend', category: 'Frontend Web Hosting', status: 'Linked (200 OK)', rate: 'https://esepa-school-portal.vercel.app' },
+      { name: 'Vercel Edge Frontend', category: 'Frontend Web Hosting', status: 'Linked (200 OK)', rate: 'https://schoolsphere-portal.vercel.app' },
       { name: 'Supabase Cloud PostgreSQL DB', category: 'Database & Licensing Sync', status: 'Linked (PostgreSQL RLS)', rate: 'https://niavmonyfwqlryppgksy.supabase.co' },
       { name: 'Arkesel SMS Gateway API', category: 'Communications', status: 'Linked (200 OK)', rate: '₵ 0.025 / SMS' },
       { name: 'Paystack Payment Terminal', category: 'Finance Gateway', status: 'Standby mode', rate: '1.9% Commission' }
@@ -653,11 +653,15 @@ export default function SecuritySuite({
             <div className="space-y-2 text-xs">
               <div>
                 <span className="text-slate-400 font-bold block">DEVELOPER NAME</span>
-                <span className="font-bold text-slate-800">Elena Akoko / Akoko Solutions</span>
+                <span className="font-bold text-slate-800">SchoolSphere Team / Emmanuel Amoako</span>
               </div>
               <div>
                 <span className="text-slate-400 font-bold block">SUPPORT DISPATCH EMAIL</span>
-                <span className="font-bold text-slate-800 select-all">akokosolutions24@gmail.com</span>
+                <span className="font-bold text-slate-800 select-all">amoakoemmanuel@hotmail.com</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold block">SUPPORT HOTLINES</span>
+                <span className="font-bold text-slate-800 select-all">0551187045 / 0554234590</span>
               </div>
               <div>
                 <span className="text-slate-400 font-bold block">ACCESS PERMISSION LEVEL</span>

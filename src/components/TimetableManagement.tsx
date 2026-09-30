@@ -113,7 +113,7 @@ export default function TimetableManagement() {
 
   // Settings & DB queries
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
   const bellScheduleSetting = settings.find(s => s.key === 'bellSchedule');
   const periodBells: any[] = useMemo(() => {
     if (Array.isArray(remoteBells) && remoteBells.length > 0) return remoteBells;

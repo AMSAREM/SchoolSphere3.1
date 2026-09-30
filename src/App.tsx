@@ -64,7 +64,6 @@ import InventoryManagement from './components/InventoryManagement';
 import CreatorHub from './components/CreatorHub';
 import SchoolManagement from './components/SchoolManagement';
 import TenantSwitcher from './components/TenantSwitcher';
-import FrontendTestRunner from './components/FrontendTestRunner';
 import LessonNotes from './components/LessonNotes';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -80,7 +79,7 @@ import { DoodleBackground } from './components/DoodleBackground';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management' | 'test_runner';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
 const ALL_DEFAULT_MODULES = [
   'students',
@@ -874,10 +873,8 @@ function AppContent() {
       baseItems.push({ id: 'school_management', label: 'Tenants & Schools', icon: Building });
     }
 
-    baseItems.push({ id: 'test_runner', label: 'Frontend Test Suite', icon: Activity });
-
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management', 'test_runner'].includes(item.id);
+      const isCore = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1462,15 +1459,6 @@ function AppContent() {
                       setShowGetStarted(true);
                       setActiveView('dashboard');
                     }} 
-                  />
-                )}
-                {activeView === 'test_runner' && (
-                  <FrontendTestRunner
-                    onNavigateView={(target) => {
-                      if (navItems.some(i => i.id === target)) {
-                        setActiveView(target as View);
-                      }
-                    }}
                   />
                 )}
               </ErrorBoundary>

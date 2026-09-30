@@ -46,19 +46,44 @@ export interface StaffProfile {
 
 export interface UserLoginActivity {
   id: string;
+  user_id?: string | number;
   auth_user_id?: string;
   organization_id?: string;
+  school_name?: string;
+  full_name?: string;
+  username?: string;
+  role?: string;
   email: string;
   ip_address?: string;
   user_agent?: string;
   status: string;
   login_timestamp: number;
+  last_active_timestamp?: number;
+}
+
+export interface ActiveUserSession {
+  sessionKey: string;
+  userId?: string | number;
+  authUserId?: string;
+  username: string;
+  fullName: string;
+  email: string;
+  role: string;
+  schoolId?: string | null;
+  schoolName: string;
+  isOnline: boolean;
+  loginTimestamp: number;
+  lastActiveTimestamp: number;
+  authStatus: string;
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 // In-memory persistent caches for high reliability across operations
 const invitationsStore = new Map<string, WorkerInvitation>();
 const staffProfilesStore = new Map<string, StaffProfile>();
 const loginActivitiesStore: UserLoginActivity[] = [];
+const activeUserSessionsStore = new Map<string, ActiveUserSession>();
 
 export function getInMemoryStaffProfiles(): StaffProfile[] {
   return Array.from(staffProfilesStore.values());
@@ -679,30 +704,326 @@ export async function listOrganizationWorkers(orgId: string) {
   };
 }
 
+function buildSessionKey(params: {
+  userId?: string | number | null;
+  authUserId?: string | null;
+  email?: string | null;
+  username?: string | null;
+  schoolId?: string | null;
+}): string {
+  if (params.authUserId && String(params.authUserId).trim() && String(params.authUserId) !== '00000000-0000-0000-0000-000000000000') {
+    return `auth:${String(params.authUserId).trim().toLowerCase()}`;
+  }
+  if (params.userId !== undefined && params.userId !== null && String(params.userId).trim()) {
+    return `uid:${String(params.userId).trim().toLowerCase()}`;
+  }
+  if (params.email && String(params.email).trim()) {
+    return `email:${String(params.email).trim().toLowerCase()}`;
+  }
+  const uname = String(params.username || 'user').trim().toLowerCase();
+  const sch = String(params.schoolId || 'global').trim().toLowerCase();
+  return `user:${uname}@${sch}`;
+}
+
+export function recordUserSessionHeartbeat(input: {
+  userId?: string | number | null;
+  authUserId?: string | null;
+  username?: string | null;
+  fullName?: string | null;
+  email?: string | null;
+  role?: string | null;
+  schoolId?: string | null;
+  schoolName?: string | null;
+  authStatus?: string | null;
+  loginTimestamp?: number | null;
+  ipAddress?: string;
+  userAgent?: string;
+  isOnline?: boolean;
+}): ActiveUserSession {
+  const now = Date.now();
+  const key = buildSessionKey({
+    userId: input.userId,
+    authUserId: input.authUserId,
+    email: input.email,
+    username: input.username,
+    schoolId: input.schoolId
+  });
+
+  const existing = activeUserSessionsStore.get(key);
+  const roleClean = String(input.role || existing?.role || 'admin').trim().toLowerCase();
+  const resolvedSchoolName =
+    input.schoolName ||
+    existing?.schoolName ||
+    (roleClean === 'creator' || roleClean === 'super_admin' ? 'Platform Global Scope' : 'SchoolSphere Portal');
+
+  const session: ActiveUserSession = {
+    sessionKey: key,
+    userId: input.userId ?? existing?.userId,
+    authUserId: input.authUserId || existing?.authUserId || undefined,
+    username: String(input.username || existing?.username || (input.email ? input.email.split('@')[0] : 'user')).trim(),
+    fullName: String(input.fullName || existing?.fullName || input.username || (input.email ? input.email.split('@')[0] : 'User')).trim(),
+    email: String(input.email || existing?.email || '').trim().toLowerCase(),
+    role: roleClean,
+    schoolId: input.schoolId !== undefined ? input.schoolId : existing?.schoolId,
+    schoolName: resolvedSchoolName,
+    isOnline: input.isOnline !== undefined ? input.isOnline : true,
+    loginTimestamp: Number(input.loginTimestamp || existing?.loginTimestamp || now),
+    lastActiveTimestamp: now,
+    authStatus: String(input.authStatus || existing?.authStatus || 'Authenticated'),
+    ipAddress: input.ipAddress || existing?.ipAddress,
+    userAgent: input.userAgent || existing?.userAgent
+  };
+
+  activeUserSessionsStore.set(key, session);
+  return session;
+}
+
+function toValidNumericUserId(val: any): number | null {
+  if (typeof val === 'number' && Number.isFinite(val) && val > 0 && val < 1000000000) {
+    return val;
+  }
+  if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+    const n = Number(val.trim());
+    if (n > 0 && n < 1000000000) return n;
+  }
+  return null;
+}
+
+function toValidSchoolUuid(val: any): string | null {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) &&
+    s !== '00000000-0000-0000-0000-000000000000' &&
+    s !== '00000000-0000-0000-0000-000000000001'
+  ) {
+    return s;
+  }
+  return null;
+}
+
+export function markUserSessionOffline(input: {
+  userId?: string | number | null;
+  authUserId?: string | null;
+  email?: string | null;
+  username?: string | null;
+  schoolId?: string | null;
+  ipAddress?: string;
+}) {
+  const now = Date.now();
+  const targetKey = buildSessionKey(input);
+  const existing = activeUserSessionsStore.get(targetKey);
+  if (existing) {
+    existing.isOnline = false;
+    existing.lastActiveTimestamp = now;
+    existing.authStatus = 'Logged Out';
+    activeUserSessionsStore.set(targetKey, existing);
+  }
+
+  let matchedSession: ActiveUserSession | null = existing || null;
+
+  for (const [k, sess] of activeUserSessionsStore.entries()) {
+    const matchUid = input.userId !== undefined && input.userId !== null && String(sess.userId) === String(input.userId);
+    const matchAuth = input.authUserId && sess.authUserId && String(sess.authUserId) === String(input.authUserId);
+    const matchEmail = input.email && sess.email && sess.email.toLowerCase() === String(input.email).trim().toLowerCase();
+    const matchUser = input.username && sess.username && sess.username.toLowerCase() === String(input.username).trim().toLowerCase();
+    if (matchUid || matchAuth || matchEmail || matchUser) {
+      sess.isOnline = false;
+      sess.lastActiveTimestamp = now;
+      sess.authStatus = 'Logged Out';
+      activeUserSessionsStore.set(k, sess);
+      if (!matchedSession) matchedSession = sess;
+    }
+  }
+
+  // Persist logout event to Supabase public.audit_logs
+  (async () => {
+    try {
+      const admin = getSupabaseAdmin();
+      let numericUid = toValidNumericUserId(input.userId ?? matchedSession?.userId);
+      let validSchoolId = toValidSchoolUuid(input.schoolId ?? matchedSession?.schoolId);
+      const emailLookup = String(input.email || matchedSession?.email || '').trim().toLowerCase();
+      const userLookup = String(input.username || matchedSession?.username || '').trim().toLowerCase();
+
+      if (!numericUid && (emailLookup || userLookup)) {
+        const filters = [
+          emailLookup ? `email.ilike.${emailLookup}` : '',
+          userLookup ? `username.ilike.${userLookup}` : ''
+        ].filter(Boolean);
+        if (filters.length > 0) {
+          const { data: uRow } = await admin
+            .from('users')
+            .select('id, school_id')
+            .or(filters.join(','))
+            .limit(1)
+            .maybeSingle();
+          if (uRow?.id) numericUid = toValidNumericUserId(uRow.id);
+          if (!validSchoolId && uRow?.school_id) validSchoolId = toValidSchoolUuid(uRow.school_id);
+        }
+      }
+
+      await admin.from('audit_logs').insert([
+        {
+          school_id: validSchoolId,
+          user_id: numericUid,
+          action: 'USER_LOGOUT',
+          entity_type: 'USER',
+          entity_id: String(numericUid || input.username || input.email || matchedSession?.username || 'user'),
+          details: {
+            username: input.username || matchedSession?.username || 'user',
+            fullName: matchedSession?.fullName || input.username || 'User',
+            email: input.email || matchedSession?.email || '',
+            role: matchedSession?.role || 'admin',
+            schoolName: matchedSession?.schoolName || 'SchoolSphere Portal',
+            authStatus: 'Logged Out'
+          },
+          ip_address: input.ipAddress || matchedSession?.ipAddress || '127.0.0.1',
+          timestamp: now
+        }
+      ]);
+    } catch {}
+  })();
+}
+
+export function getActiveUserSessions(onlineWindowMs = 120000): ActiveUserSession[] {
+  const now = Date.now();
+  const result: ActiveUserSession[] = [];
+  for (const sess of activeUserSessionsStore.values()) {
+    const isFresh = sess.isOnline && now - sess.lastActiveTimestamp <= onlineWindowMs;
+    result.push({
+      ...sess,
+      isOnline: isFresh
+    });
+  }
+  return result.sort((a, b) => b.lastActiveTimestamp - a.lastActiveTimestamp);
+}
+
 /**
- * Record user login telemetry
+ * Record user login telemetry directly into Supabase public.audit_logs & public.users.last_login
  */
 export function recordUserLoginActivity(activity: UserLoginActivity) {
-  loginActivitiesStore.unshift(activity);
+  const now = activity.login_timestamp || Date.now();
+  const enriched: UserLoginActivity = {
+    ...activity,
+    id: activity.id || crypto.randomUUID(),
+    login_timestamp: now,
+    last_active_timestamp: activity.last_active_timestamp || now
+  };
+
+  const isFailed =
+    String(enriched.status || '').toLowerCase().includes('fail') ||
+    String(enriched.status || '').toLowerCase().includes('error');
+
+  // Deduplicate rapid identical login events within 5 seconds for the same email/username
+  const recentDup = loginActivitiesStore.find((item) => {
+    const itemFailed =
+      String(item.status || '').toLowerCase().includes('fail') ||
+      String(item.status || '').toLowerCase().includes('error');
+    const sameIdentity =
+      (item.email && enriched.email && item.email.toLowerCase() === enriched.email.toLowerCase()) ||
+      (item.username && enriched.username && item.username.toLowerCase() === enriched.username.toLowerCase());
+    return sameIdentity && Math.abs(item.login_timestamp - enriched.login_timestamp) < 5000 && itemFailed === isFailed;
+  });
+  if (recentDup) {
+    return;
+  }
+
+  loginActivitiesStore.unshift(enriched);
   if (loginActivitiesStore.length > 500) {
     loginActivitiesStore.pop();
   }
 
-  // Attempt to write to Supabase user_login_activities
-  const admin = getSupabaseAdmin();
-  Promise.resolve(
-    admin
-      .from('user_login_activities')
-      .insert([activity])
-  )
-    .then(() => {})
-    .catch(() => {});
+  if (!isFailed) {
+    recordUserSessionHeartbeat({
+      userId: enriched.user_id,
+      authUserId: enriched.auth_user_id,
+      username: enriched.username || (enriched.email ? enriched.email.split('@')[0] : 'user'),
+      fullName: enriched.full_name || enriched.username || (enriched.email ? enriched.email.split('@')[0] : 'User'),
+      email: enriched.email,
+      role: enriched.role || 'admin',
+      schoolId: enriched.organization_id || null,
+      schoolName: enriched.school_name || undefined,
+      authStatus: 'Authenticated',
+      loginTimestamp: enriched.login_timestamp,
+      ipAddress: enriched.ip_address,
+      userAgent: enriched.user_agent,
+      isOnline: true
+    });
+  }
+
+  // Persist login event to authoritative Supabase public.audit_logs and update public.users.last_login
+  (async () => {
+    try {
+      const admin = getSupabaseAdmin();
+      let numericUid = toValidNumericUserId(enriched.user_id);
+      let validSchoolId = toValidSchoolUuid(enriched.organization_id);
+      let resolvedFullName = enriched.full_name || enriched.username || (enriched.email ? enriched.email.split('@')[0] : 'User');
+      let resolvedRole = enriched.role || 'admin';
+
+      if (!numericUid) {
+        const emailLookup = String(enriched.email || '').trim().toLowerCase();
+        const userLookup = String(enriched.username || '').trim().toLowerCase();
+        const authUidLookup = toValidSchoolUuid(enriched.auth_user_id);
+        const filters = [
+          authUidLookup ? `auth_user_id.eq.${authUidLookup}` : '',
+          emailLookup ? `email.ilike.${emailLookup}` : '',
+          userLookup ? `username.ilike.${userLookup}` : ''
+        ].filter(Boolean);
+
+        if (filters.length > 0) {
+          const { data: uRow } = await admin
+            .from('users')
+            .select('id, school_id, full_name, role')
+            .or(filters.join(','))
+            .limit(1)
+            .maybeSingle();
+          if (uRow?.id) numericUid = toValidNumericUserId(uRow.id);
+          if (!validSchoolId && uRow?.school_id) validSchoolId = toValidSchoolUuid(uRow.school_id);
+          if (uRow?.full_name) resolvedFullName = uRow.full_name;
+          if (uRow?.role) resolvedRole = uRow.role;
+        }
+      }
+
+      await admin.from('audit_logs').insert([
+        {
+          school_id: validSchoolId,
+          user_id: numericUid,
+          action: isFailed ? 'USER_LOGIN_FAILED' : 'USER_LOGIN',
+          entity_type: 'USER',
+          entity_id: String(numericUid || enriched.username || enriched.email || 'user'),
+          details: {
+            username: enriched.username || (enriched.email ? enriched.email.split('@')[0] : 'user'),
+            fullName: resolvedFullName,
+            email: enriched.email,
+            role: resolvedRole,
+            schoolName:
+              enriched.school_name ||
+              (resolvedRole === 'creator' || resolvedRole === 'super_admin'
+                ? 'Platform Global Scope'
+                : 'SchoolSphere Portal'),
+            authStatus: isFailed ? 'Failed Attempt' : 'Authenticated',
+            authUserId: enriched.auth_user_id || null,
+            userAgent: enriched.user_agent || null
+          },
+          ip_address: enriched.ip_address || '127.0.0.1',
+          timestamp: enriched.login_timestamp
+        }
+      ]);
+
+      if (!isFailed && numericUid) {
+        await admin
+          .from('users')
+          .update({ last_login: enriched.login_timestamp })
+          .eq('id', numericUid);
+      }
+    } catch {}
+  })();
 }
 
 /**
  * Query recent login activities
  */
 export function getRecentLoginActivities(orgId?: string) {
-  if (!orgId) return loginActivitiesStore.slice(0, 50);
-  return loginActivitiesStore.filter(a => a.organization_id === orgId).slice(0, 50);
+  if (!orgId) return loginActivitiesStore.slice(0, 100);
+  return loginActivitiesStore.filter(a => a.organization_id === orgId).slice(0, 100);
 }

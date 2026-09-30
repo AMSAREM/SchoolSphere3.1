@@ -90,10 +90,10 @@ function renderVectorReportCardPage(pdf: any, data: VectorReportCardPayload) {
   const { student, results, term, academicYear, termReport, schoolProfile, academicConfig } = data;
 
   const profile = {
-    schoolName: schoolProfile?.schoolName || 'ESEPA INTERNATIONAL SCHOOL',
+    schoolName: schoolProfile?.schoolName || 'SCHOOLSPHERE PORTAL',
     schoolAddress: schoolProfile?.schoolAddress || 'Accra, Ghana',
-    schoolPhone: schoolProfile?.schoolPhone || '+233 24 000 0000',
-    schoolEmail: schoolProfile?.schoolEmail || 'info@esepa.edu.gh',
+    schoolPhone: schoolProfile?.schoolPhone || '0551187045 / 0554234590',
+    schoolEmail: schoolProfile?.schoolEmail || 'amoakoemmanuel@hotmail.com',
   };
 
   const normalizedResults = (results || []).map((r) => {
@@ -605,7 +605,7 @@ function renderVectorReportCardPage(pdf: any, data: VectorReportCardPayload) {
   pdf.setFont('courier', 'normal');
   pdf.setFontSize(6.8);
   pdf.setTextColor(71, 85, 105);
-  pdf.text('ESEPA ACADEMIC INFORMATION MANAGEMENT SYSTEM (AIMS)', 15, footerRuleY + 7.8);
+  pdf.text('SCHOOLSPHERE ACADEMIC INFORMATION MANAGEMENT SYSTEM (AIMS)', 15, footerRuleY + 7.8);
 
   const genStamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
   pdf.setFont('courier', 'bold');
@@ -696,7 +696,7 @@ export async function exportBroadsheetVectorPDF(payload: VectorBroadsheetPayload
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.text(String(payload.schoolName || 'ESEPA INTERNATIONAL SCHOOL').toUpperCase(), pageW - margin, 16, {
+    pdf.text(String(payload.schoolName || 'SCHOOLSPHERE PORTAL').toUpperCase(), pageW - margin, 16, {
       align: 'right',
     });
 
@@ -835,7 +835,7 @@ export async function exportFeeStatementVectorPDF(payload: VectorFeeStatementPay
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(16);
   pdf.setTextColor(15, 23, 42);
-  pdf.text(String(schoolName || 'ESEPA INTERNATIONAL SCHOOL').toUpperCase(), 105, 28, { align: 'center' });
+  pdf.text(String(schoolName || 'SCHOOLSPHERE PORTAL').toUpperCase(), 105, 28, { align: 'center' });
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(9);

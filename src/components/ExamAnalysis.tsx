@@ -131,7 +131,7 @@ export default function ExamAnalysis() {
   const [formExamType, setFormExamType] = useState<'BECE' | 'WASSCE'>('WASSCE');
   const [formYear, setFormYear] = useState<number>(new Date().getFullYear());
   const [formIndexNo, setFormIndexNo] = useState('');
-  const [formSchool, setFormSchool] = useState('ESEPA ACADEMY');
+  const [formSchool, setFormSchool] = useState('SCHOOLSPHERE PORTAL');
   const [formSubjects, setFormSubjects] = useState<Array<{ subjectName: string, score: number, grade: string, isCore: boolean }>>([]);
   
   // Multi-Record Viewer PDF modal
@@ -402,7 +402,7 @@ export default function ExamAnalysis() {
     setSelectedRecordId(null);
     setFormStudentId('');
     setFormIndexNo('');
-    setFormSchool('ESEPA ACADEMY');
+    setFormSchool('SCHOOLSPHERE PORTAL');
     setFormExamType('WASSCE');
     setFormYear(new Date().getFullYear());
   };
@@ -496,7 +496,7 @@ export default function ExamAnalysis() {
         studentName: `${st.firstName} ${st.lastName}`,
         examType: type as 'BECE' | 'WASSCE',
         year: currentYear,
-        schoolName: 'ESEPA HIGHER ACADEMY',
+        schoolName: 'SCHOOLSPHERE PORTAL',
         indexNumber: indexNum,
         subjects: gradeSubjects,
         aggregate,
@@ -1336,7 +1336,7 @@ export default function ExamAnalysis() {
               {/* Header Certificate */}
               <div className="text-center space-y-1 pb-4 border-b-2 border-slate-800 relative z-10">
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
-                  {previewRecord.schoolName || 'ESEPA SECONDARY SCHOOL'}
+                  {previewRecord.schoolName || 'SCHOOLSPHERE PORTAL'}
                 </h2>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">WAEC Terminal Grade & Suitability Analysis</p>
                 <span className="inline-block mt-2 px-3 py-1 bg-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-widest">

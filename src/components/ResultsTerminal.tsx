@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, calculateGrade, type Result, type Student, type ClassAssessmentItem } from '../db/schema';
 import {
@@ -72,7 +72,7 @@ export default function ResultsTerminal() {
 
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolProfile = useMemo(() =>
-    settings.find(s => s.key === 'schoolProfile')?.value || { schoolName: 'ESEPA INTERNATIONAL SCHOOL' },
+    settings.find(s => s.key === 'schoolProfile')?.value || { schoolName: 'SCHOOLSPHERE PORTAL' },
     [settings]
   );
 

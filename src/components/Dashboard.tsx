@@ -79,7 +79,7 @@ interface InAppNotification {
 export default function Dashboard({ onViewChange }: DashboardProps) {
   const { user } = useAuth();
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
-  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'ESEPA INTERNATIONAL SCHOOL';
+  const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
 
   const studentCount = useLiveQuery(() => db.students.count());
   const teacherCount = useLiveQuery(() => db.teachers.count());

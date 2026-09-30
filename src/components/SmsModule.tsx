@@ -57,7 +57,7 @@ const SMS_TEMPLATES: SmsTemplate[] = [
     id: 'fee_reminder',
     name: 'School Fees Reminder',
     category: 'Fee Reminder',
-    text: 'Dear {parentName}, this is a gentle reminder that school fees for your ward {studentName} ({className}) is outstanding. Total balance: J$ {feesOwed}. Kindly settle before holidays. Thank you, ESEPA ACADEMY.'
+    text: 'Dear {parentName}, this is a gentle reminder that school fees for your ward {studentName} ({className}) is outstanding. Total balance: J$ {feesOwed}. Kindly settle before holidays. Thank you, SCHOOLSPHERE PORTAL.'
   },
   {
     id: 'absentee_alert',
@@ -69,7 +69,7 @@ const SMS_TEMPLATES: SmsTemplate[] = [
     id: 'exam_report',
     name: 'Academic Report Card',
     category: 'Exam Report',
-    text: 'Hello {parentName}, Terminal academic reports for {studentName} are now finalized. Ward achieved {totalSubjects} subjects graded. Current balance is updated. Report cards can be picked up at the administrative office, ESEPA ACADEMY.'
+    text: 'Hello {parentName}, Terminal academic reports for {studentName} are now finalized. Ward achieved {totalSubjects} subjects graded. Current balance is updated. Report cards can be picked up at the administrative office, SCHOOLSPHERE PORTAL.'
   },
   {
     id: 'pta_invite',
@@ -81,13 +81,13 @@ const SMS_TEMPLATES: SmsTemplate[] = [
     id: 'emergency_siren',
     name: 'School Safety Siren Alert',
     category: 'Siren Emergency',
-    text: 'IMPORTANT SAFETY SIREN: Dear Guardians and Staff, This is an automatic safety broadcast from ESEPA incident logger. Please remain calm. Safe lock-down drill has been initiated. Further notices will follow shortly.'
+    text: 'IMPORTANT SAFETY SIREN: Dear Guardians and Staff, This is an automatic safety broadcast from SchoolSphere incident logger. Please remain calm. Safe lock-down drill has been initiated. Further notices will follow shortly.'
   },
   {
     id: 'holiday_notice',
     name: 'Vacation / Holiday Notice',
     category: 'Notification',
-    text: 'Dear Parents, please note that school closes for vacation on {date} and resumes on {nextDate}. Ensure JHS/SHS candidates study during holidays. Wishing you safe travels. Management, ESEPA.'
+    text: 'Dear Parents, please note that school closes for vacation on {date} and resumes on {nextDate}. Ensure JHS/SHS candidates study during holidays. Wishing you safe travels. Management, SchoolSphere.'
   }
 ];
 
@@ -104,7 +104,7 @@ export default function SmsModule() {
 
   // Virtual credits state (simulated, loaded from db.settings or standard default)
   const [smsCredits, setSmsCredits] = useState<number>(3450);
-  const [senderId, setSenderId] = useState<string>('ESEPA_ACAD');
+  const [senderId, setSenderId] = useState<string>('SCHOOLSPHR');
   const [selectedGateway, setSelectedGateway] = useState<'simulation' | 'arkesel' | 'hubtel' | 'twilio'>('simulation');
   const [serverArkeselConfig, setServerArkeselConfig] = useState<{ hasApiKey: boolean; apiKeyAbbrev: string; apiKey?: string; senderId: string } | null>(null);
   const [balanceLoading, setBalanceLoading] = useState<boolean>(false);
@@ -440,7 +440,7 @@ export default function SmsModule() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              sender: senderId || 'ESEPA_ACAD',
+              sender: senderId || 'SCHOOLSPHR',
               message: interpolated,
               recipients: [rec.phone]
             })
@@ -491,7 +491,7 @@ export default function SmsModule() {
               },
               mode: "cors",
               body: JSON.stringify({
-                sender: (senderId || 'ESEPA_ACAD').slice(0, 11),
+                sender: (senderId || 'SCHOOLSPHR').slice(0, 11),
                 message: interpolated,
                 recipients: [targetPhone],
                 sandbox: false
@@ -518,7 +518,7 @@ export default function SmsModule() {
               console.warn("[Browser Direct V2 API] Failed/CORS blocked. Retrying with legacy HTTP GET query parameters (no-cors)...");
               
               // Secondary fallback: Old V1 highly permissive API with no-cors parameters
-              const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(serverArkeselConfig.apiKey)}&to=${encodeURIComponent(targetPhone)}&from=${encodeURIComponent((senderId || 'ESEPA_ACAD').slice(0, 11))}&sms=${encodeURIComponent(interpolated)}`;
+              const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(serverArkeselConfig.apiKey)}&to=${encodeURIComponent(targetPhone)}&from=${encodeURIComponent((senderId || 'SCHOOLSPHR').slice(0, 11))}&sms=${encodeURIComponent(interpolated)}`;
               await fetch(v1Url, { mode: "no-cors" });
               
               status = 'Delivered';
@@ -528,7 +528,7 @@ export default function SmsModule() {
           } catch (directErr: any) {
             console.error('[Browser Direct API] Client proxy fell through. Trying legacy GET params as ultimate fallback...', directErr);
             try {
-              const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(serverArkeselConfig.apiKey)}&to=${encodeURIComponent(targetPhone)}&from=${encodeURIComponent((senderId || 'ESEPA_ACAD').slice(0, 11))}&sms=${encodeURIComponent(interpolated)}`;
+              const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(serverArkeselConfig.apiKey)}&to=${encodeURIComponent(targetPhone)}&from=${encodeURIComponent((senderId || 'SCHOOLSPHR').slice(0, 11))}&sms=${encodeURIComponent(interpolated)}`;
               await fetch(v1Url, { mode: "no-cors" });
               
               status = 'Delivered';
@@ -700,8 +700,8 @@ export default function SmsModule() {
 
     const ws = XLSX.utils.json_to_sheet(xlRecords);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'ESEPA SMS Logs');
-    XLSX.writeFile(wb, `Esepa_SMS_Ledger_Log_${Date.now()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'SchoolSphere SMS Logs');
+    XLSX.writeFile(wb, `SchoolSphere_SMS_Ledger_Log_${Date.now()}.xlsx`);
     showToast('Downloaded SMS report worksheet.', 'success');
   };
 
@@ -908,7 +908,7 @@ export default function SmsModule() {
                     <input
                       type="text"
                       maxLength={11}
-                      placeholder="ESEPA_ACAD"
+                      placeholder="SCHOOLSPHR"
                       value={senderId}
                       onChange={e => {
                         setSenderId(e.target.value.toUpperCase());
@@ -1204,7 +1204,7 @@ export default function SmsModule() {
                       AC
                     </div>
                     <div>
-                      <p className="text-xs font-black tracking-tight leading-none">{senderId || 'ESEPA_ACAD'}</p>
+                      <p className="text-xs font-black tracking-tight leading-none">{senderId || 'SCHOOLSPHR'}</p>
                       <p className="text-[9px] text-emerald-400 mt-0.5 leading-none font-bold">Via virtual Gateway</p>
                     </div>
                   </div>
@@ -1230,7 +1230,7 @@ export default function SmsModule() {
                       {/* Greenish SMS balloon chat */}
                       <div className="p-3 bg-zinc-800 border border-zinc-700/55 rounded-2xl rounded-tl-none mr-4 text-xs font-semibold leading-relaxed text-zinc-100 shadow-md">
                         {activePreviewText}
-                        <p className="text-[8.5px] text-right font-mono text-zinc-400 mt-2 font-bold uppercase">ESEPA Communicate Portal</p>
+                        <p className="text-[8.5px] text-right font-mono text-zinc-400 mt-2 font-bold uppercase">SchoolSphere Communicate Portal</p>
                       </div>
                     </div>
                   )}

@@ -98,7 +98,7 @@ export default function ReportTerminal() {
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
 
   const schoolProfile = useMemo(() => 
-    settings.find(s => s.key === 'schoolProfile')?.value || { schoolName: 'ESEPA INTERNATIONAL SCHOOL' }, 
+    settings.find(s => s.key === 'schoolProfile')?.value || { schoolName: 'SCHOOLSPHERE PORTAL' }, 
     [settings]
   );
   
@@ -242,7 +242,7 @@ export default function ReportTerminal() {
       } else if (elementId === 'broadsheet-content') {
         await exportBroadsheetVectorPDF(
           {
-            schoolName: schoolProfile?.schoolName || 'ESEPA INTERNATIONAL SCHOOL',
+            schoolName: schoolProfile?.schoolName || 'SCHOOLSPHERE PORTAL',
             selectedClass,
             selectedTerm,
             academicYear,
@@ -257,7 +257,7 @@ export default function ReportTerminal() {
       } else if (elementId === 'bill-reminder-content' && selectedBillStudent) {
         await exportFeeStatementVectorPDF(
           {
-            schoolName: schoolProfile?.schoolName || 'ESEPA INTERNATIONAL SCHOOL',
+            schoolName: schoolProfile?.schoolName || 'SCHOOLSPHERE PORTAL',
             student: selectedBillStudent,
           },
           filename

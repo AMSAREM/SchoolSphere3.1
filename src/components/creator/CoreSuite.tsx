@@ -80,6 +80,13 @@ interface CoreSuiteProps {
   sysCurrency: string;
   setSysCurrency: (currency: string) => void;
   onLicenseChange?: () => void;
+  onlineUsers?: any[];
+  recentLogins?: any[];
+  allUsersPresence?: any[];
+  isRealtimeConnected?: boolean;
+  lastTelemetrySyncAt?: number;
+  isRefreshingTelemetry?: boolean;
+  onRefreshTelemetry?: () => void;
 }
 
 export default function CoreSuite({
@@ -101,9 +108,18 @@ export default function CoreSuite({
   setSysCurrentTerm,
   sysCurrency,
   setSysCurrency,
-  onLicenseChange
+  onLicenseChange,
+  onlineUsers = [],
+  recentLogins = [],
+  allUsersPresence = [],
+  isRealtimeConnected = true,
+  lastTelemetrySyncAt = Date.now(),
+  isRefreshingTelemetry = false,
+  onRefreshTelemetry
 }: CoreSuiteProps) {
   const { showToast, confirm } = useNotifications();
+  const [sessionViewFilter, setSessionViewFilter] = useState<'online' | 'recent' | 'all'>('online');
+  const [sessionSearchQuery, setSessionSearchQuery] = useState<string>('');
   const [isManaging, setIsManaging] = useState<string | null>(null);
   const [selectedManageSchool, setSelectedManageSchool] = useState<any | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<'health' | 'config' | 'actions'>('health');
@@ -361,29 +377,97 @@ export default function CoreSuite({
   const activeSchoolsCount = licensesList.filter((lic) => lic.status === 'active').length;
 
   if (activePanel === 'dashboard') {
-    const activeSchoolsBaseline = Math.max(3, activeSchoolsCount);
+    const formatTimestamp = (ts?: number | null) => {
+      if (!ts || ts <= 0) return '—';
+      const d = new Date(Number(ts));
+      if (isNaN(d.getTime())) return '—';
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const sec = String(d.getSeconds()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd} ${hh}:${min}:${sec}`;
+    };
+
+    const formatRelativeTime = (ts?: number | null) => {
+      if (!ts || ts <= 0) return 'No recent activity';
+      const diffSec = Math.max(0, Math.floor((Date.now() - Number(ts)) / 1000));
+      if (diffSec < 15) return 'Active just now';
+      if (diffSec < 60) return `${diffSec}s ago`;
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr}h ago`;
+      const diffDays = Math.floor(diffHr / 24);
+      return `${diffDays}d ago`;
+    };
+
+    const formatRoleLabel = (role?: string) => {
+      const r = String(role || 'admin').toLowerCase();
+      if (r === 'creator') return 'Platform Creator';
+      if (r === 'super_admin') return 'Super Admin';
+      if (r === 'headteacher') return 'Headteacher';
+      if (r === 'accountant') return 'Accountant';
+      if (r === 'teacher') return 'Teacher';
+      if (r === 'student') return 'Student';
+      return 'School Admin';
+    };
+
+    const sourceList =
+      sessionViewFilter === 'online'
+        ? onlineUsers
+        : sessionViewFilter === 'recent'
+          ? recentLogins
+          : allUsersPresence;
+
+    const filteredSessionRows = sourceList.filter((item) => {
+      if (!sessionSearchQuery.trim()) return true;
+      const q = sessionSearchQuery.trim().toLowerCase();
+      const name = String(item.fullName || item.full_name || '').toLowerCase();
+      const uname = String(item.username || '').toLowerCase();
+      const email = String(item.email || '').toLowerCase();
+      const role = String(item.role || '').toLowerCase();
+      const school = String(item.schoolName || item.school_name || '').toLowerCase();
+      const status = String(item.authStatus || item.status || '').toLowerCase();
+      return (
+        name.includes(q) ||
+        uname.includes(q) ||
+        email.includes(q) ||
+        role.includes(q) ||
+        school.includes(q) ||
+        status.includes(q)
+      );
+    });
+
+    const syncTimeFormatted = new Date(lastTelemetrySyncAt).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
     return (
       <div className="space-y-6">
         {/* Statistics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs transition hover:border-slate-300">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Active School Portals</span>
-            <div className="text-2xl font-black text-slate-900 mt-2 flex items-baseline gap-2">
+            <div className="text-2xl font-black text-slate-900 mt-2 flex items-baseline gap-2 font-mono tabular-nums">
               <span>{activeSchoolsCount}</span>
-              <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">● Live</span>
+              <span className="text-xs font-sans text-emerald-600 font-semibold">· Live in Supabase</span>
             </div>
           </div>
           <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs transition hover:border-slate-300">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Cumulative Sync Records</span>
-            <div className="text-2xl font-black text-slate-900 mt-2">
+            <div className="text-2xl font-black text-slate-900 mt-2 font-mono tabular-nums">
               {totalDemoRecords.toLocaleString()}
             </div>
           </div>
           <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs transition hover:border-slate-300">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">System CPU Load</span>
-            <div className="text-2xl font-black text-slate-900 mt-2 flex items-baseline gap-2">
-              <span>1.24%</span>
-              <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">Optimal</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Users Logged In Now</span>
+            <div className="text-2xl font-black text-slate-900 mt-2 flex items-baseline gap-2 font-mono tabular-nums">
+              <span>{onlineUsers.length}</span>
+              <span className="text-xs font-sans text-emerald-600 font-semibold">· {recentLogins.length} recent logins</span>
             </div>
           </div>
           <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs transition hover:border-slate-300">
@@ -394,31 +478,79 @@ export default function CoreSuite({
           </div>
         </div>
 
-        {/* Charts & Graphs Panel */}
-        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-xs space-y-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+        {/* Charts & Real-Time Presence / Login Stream Panel */}
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-8 shadow-xs space-y-8">
+          {/* Card Header with Live Supabase Realtime Status & Controls */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
                 <Activity className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-900">Platform Sync & Active Logins Real-Time Dashboard</h2>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="text-base font-bold text-slate-900">
+                    Platform Sync & Active Logins Real-Time Dashboard
+                  </h2>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                    <span className="relative flex h-2 w-2">
+                      <span
+                        className={cn(
+                          'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
+                          isRealtimeConnected ? 'bg-emerald-400' : 'bg-amber-400'
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'relative inline-flex rounded-full h-2 w-2',
+                          isRealtimeConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                        )}
+                      />
+                    </span>
+                    <span>{isRealtimeConnected ? 'Supabase Realtime Connected' : 'Supabase Live Polling'}</span>
+                  </span>
+                </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Monitoring cloud synchronization pipelines, active license login rates, and record densities.
+                  Monitoring live Supabase database synchronization, active user presence, and real-time login telemetry across all school portals.
                 </p>
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
+                <span>Online: <strong className="text-slate-900">{onlineUsers.length}</strong></span>
+                <span aria-hidden="true">·</span>
+                <span>Logins: <strong className="text-slate-900">{recentLogins.length}</strong></span>
+                <span aria-hidden="true">·</span>
+                <span>Synced {syncTimeFormatted}</span>
+              </div>
+              {onRefreshTelemetry && (
+                <button
+                  type="button"
+                  onClick={onRefreshTelemetry}
+                  disabled={isRefreshingTelemetry}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+                  title="Refresh live Supabase telemetry and active sessions"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5 text-indigo-600', isRefreshingTelemetry && 'animate-spin')} />
+                  <span>Sync Now</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-            <div className="xl:col-span-7 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-indigo-600" />
-                  Growth Trend (6-Month Cumulative Projection)
+          {/* Top Row: Real-Time Charts */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8">
+            <div className="xl:col-span-7 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>Growth Trend (Cumulative Synced Records & Active Logins)</span>
+                </span>
+                <span className="text-xs text-slate-500 font-mono tabular-nums">
+                  {totalDemoRecords.toLocaleString()} records · {recentLogins.length} login events
                 </span>
               </div>
-              <div className="h-[280px] w-full bg-slate-50/40 p-3 rounded-2xl border border-slate-100">
+              <div className="h-[260px] sm:h-[280px] w-full bg-slate-50/40 p-3 rounded-2xl border border-slate-100">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={monthlyTrendData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                     <defs>
@@ -444,18 +576,21 @@ export default function CoreSuite({
               </div>
             </div>
 
-            <div className="xl:col-span-5 space-y-4 bg-slate-50/60 p-5 rounded-2xl border border-slate-200/70 flex flex-col justify-between">
+            <div className="xl:col-span-5 space-y-3 bg-slate-50/60 p-5 rounded-2xl border border-slate-200/70 flex flex-col justify-between">
               <div>
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
-                  <BarChart3 className="w-4 h-4 text-indigo-600" />
-                  Live Sync Composition
-                </span>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>Live Supabase Sync Composition</span>
+                  </span>
+                  <span className="text-xs text-emerald-600 font-medium">Real-Time</span>
+                </div>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Real-time reactive counts stored in the client-side persistent storage container.
+                  Authoritative table record distribution streamed from Supabase PostgreSQL.
                 </p>
               </div>
 
-              <div className="h-[230px] w-full my-2">
+              <div className="h-[230px] w-full my-1">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={compositionData} layout="vertical" margin={{ top: 0, right: 15, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
@@ -470,6 +605,278 @@ export default function CoreSuite({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+
+          {/* Bottom Section: Live Presence Roster & Supabase Audit Login Stream */}
+          <div className="pt-6 border-t border-slate-200/80 space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>Live User Presence & Supabase Audit Feed</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Authoritative real-time feed from <code className="font-mono text-[11px] text-slate-700">public.users</code>, <code className="font-mono text-[11px] text-slate-700">public.audit_logs</code>, and <code className="font-mono text-[11px] text-slate-700">public.teachers</code>.
+                </p>
+              </div>
+
+              {/* Filter & Search Controls */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setSessionViewFilter('online')}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5',
+                      sessionViewFilter === 'online'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                    <span>Online Now</span>
+                    <span className="font-mono tabular-nums text-slate-500">({onlineUsers.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionViewFilter('recent')}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5',
+                      sessionViewFilter === 'recent'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
+                  >
+                    <span>Recent Logins</span>
+                    <span className="font-mono tabular-nums text-slate-500">({recentLogins.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionViewFilter('all')}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5',
+                      sessionViewFilter === 'all'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
+                  >
+                    <span>All Accounts</span>
+                    <span className="font-mono tabular-nums text-slate-500">({allUsersPresence.length})</span>
+                  </button>
+                </div>
+
+                <div className="relative min-w-[220px] sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={sessionSearchQuery}
+                    onChange={(e) => setSessionSearchQuery(e.target.value)}
+                    placeholder="Search user, role, or school..."
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                  />
+                  {sessionSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSessionSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Sessions & Logins Table */}
+            <div className="overflow-x-auto border border-slate-200/80 rounded-2xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-500">
+                    <th className="py-3 px-4">User & Role</th>
+                    <th className="py-3 px-4">School Tenant</th>
+                    <th className="py-3 px-4">Live Presence & Heartbeat</th>
+                    <th className="py-3 px-4 text-right">Login Timestamp & Supabase Source</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSessionRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-10 px-4 text-center text-slate-500">
+                        <div className="max-w-sm mx-auto space-y-1">
+                          <p className="font-semibold text-slate-700">
+                            {sessionSearchQuery
+                              ? 'No matching user sessions or login events found'
+                              : sessionViewFilter === 'online'
+                                ? 'No active user sessions detected at this moment'
+                                : 'No login events recorded in public.audit_logs yet'}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {sessionSearchQuery
+                              ? 'Try clearing your search query or switching between Online Now, Recent Logins, and All Accounts.'
+                              : 'As users sign in across school portals, their live presence and public.audit_logs timestamps appear here automatically.'}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSessionRows.slice(0, 30).map((entry, idx) => {
+                      const displayName = entry.fullName || entry.full_name || entry.username || 'User';
+                      const displayHandle = entry.email || entry.username || '—';
+                      const roleLabel = formatRoleLabel(entry.role);
+                      const schoolName =
+                        entry.schoolName ||
+                        entry.school_name ||
+                        (entry.role === 'creator' || entry.role === 'super_admin'
+                          ? 'Platform Global Scope'
+                          : 'SchoolSphere Portal');
+                      const isOnline = Boolean(entry.isOnline);
+                      const loginMs = Number(entry.loginTimestamp || 0);
+                      const lastActiveMs = Number(entry.lastActiveTimestamp || loginMs || 0);
+                      const hasEverLoggedIn = loginMs > 0;
+                      const rawStatus = String(
+                        entry.authStatus ||
+                          entry.status ||
+                          (isOnline ? 'Online · Authenticated' : hasEverLoggedIn ? 'Session Recorded' : 'Never Logged In')
+                      );
+                      const isFailed = rawStatus.toLowerCase().includes('fail') || rawStatus.toLowerCase().includes('error');
+                      const isNeverLoggedIn = !isOnline && (!hasEverLoggedIn || rawStatus.toLowerCase().includes('never'));
+                      const sourceTable =
+                        entry.sourceTable ||
+                        (sessionViewFilter === 'recent' ? 'public.audit_logs' : 'public.users');
+                      const recordIdLabel =
+                        entry.auditLogId
+                          ? `log #${entry.auditLogId}`
+                          : entry.dbId
+                            ? `id #${entry.dbId}`
+                            : typeof entry.id === 'number' && entry.id < 1000000000
+                              ? `id #${entry.id}`
+                              : null;
+
+                      return (
+                        <tr
+                          key={`${entry.id || entry.username || 'row'}-${loginMs}-${idx}`}
+                          className="hover:bg-slate-50/70 transition-colors"
+                        >
+                          {/* User & Role */}
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className={cn(
+                                  'w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border',
+                                  isFailed
+                                    ? 'bg-rose-50 text-rose-600 border-rose-200'
+                                    : isOnline
+                                      ? 'bg-indigo-50 text-indigo-600 border-indigo-200/80'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                )}
+                              >
+                                {String(displayName).charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-slate-900 truncate">{displayName}</span>
+                                  <span className="text-slate-300" aria-hidden="true">·</span>
+                                  <span className="text-[11px] font-medium text-indigo-600">{roleLabel}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono truncate">
+                                  {displayHandle}
+                                  {entry.username && entry.email && entry.username !== entry.email ? ` (${entry.username})` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* School Tenant */}
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-800">{schoolName}</div>
+                            <div className="text-[11px] text-slate-400">
+                              {entry.role === 'creator' || entry.role === 'super_admin'
+                                ? 'Master Control Console'
+                                : 'Tenant Portal'}
+                            </div>
+                          </td>
+
+                          {/* Live Presence & Heartbeat */}
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              {isOnline ? (
+                                <span className="relative flex h-2 w-2 shrink-0">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-full h-2 w-2 bg-slate-300 shrink-0" />
+                              )}
+                              <span
+                                className={cn(
+                                  'font-semibold',
+                                  isOnline ? 'text-emerald-700' : 'text-slate-500'
+                                )}
+                              >
+                                {isOnline ? 'Online Now' : 'Offline'}
+                              </span>
+                              <span className="text-slate-300" aria-hidden="true">·</span>
+                              <span className="text-slate-500 font-mono tabular-nums">
+                                {isOnline
+                                  ? formatRelativeTime(lastActiveMs)
+                                  : hasEverLoggedIn
+                                    ? `Last seen ${formatRelativeTime(lastActiveMs)}`
+                                    : 'No session yet'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                              {isOnline
+                                ? `Last heartbeat: ${formatTimestamp(lastActiveMs)}`
+                                : hasEverLoggedIn
+                                  ? `Last active: ${formatTimestamp(lastActiveMs)}`
+                                  : 'last_login: null in Supabase'}
+                            </div>
+                          </td>
+
+                          {/* Login Timestamp & Supabase Source */}
+                          <td className="py-3 px-4 text-right">
+                            <div
+                              className={cn(
+                                'font-mono tabular-nums font-semibold',
+                                isNeverLoggedIn ? 'text-amber-700' : 'text-slate-800'
+                              )}
+                            >
+                              {hasEverLoggedIn ? formatTimestamp(loginMs) : 'Never Logged In'}
+                            </div>
+                            <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                              {isFailed ? (
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              ) : isNeverLoggedIn ? (
+                                <Info className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              ) : (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              )}
+                              <span
+                                className={cn(
+                                  'text-[11px] font-medium',
+                                  isFailed
+                                    ? 'text-rose-600'
+                                    : isNeverLoggedIn
+                                      ? 'text-amber-700'
+                                      : 'text-emerald-700'
+                                )}
+                              >
+                                {rawStatus}
+                              </span>
+                              <span className="text-slate-300" aria-hidden="true">·</span>
+                              <span className="text-[11px] font-mono text-slate-400">
+                                {sourceTable}{recordIdLabel ? ` (${recordIdLabel})` : ''}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
