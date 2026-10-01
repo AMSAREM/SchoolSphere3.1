@@ -40,7 +40,9 @@ import {
   Key,
   Sparkles,
   Activity,
-  ClipboardCheck
+  ClipboardCheck,
+  UserCheck,
+  Wallet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -65,6 +67,8 @@ import CreatorHub from './components/CreatorHub';
 import SchoolManagement from './components/SchoolManagement';
 import TenantSwitcher from './components/TenantSwitcher';
 import LessonNotes from './components/LessonNotes';
+import DutyRosterManagement from './components/DutyRosterManagement';
+import PayrollManagement from './components/PayrollManagement';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -78,13 +82,19 @@ import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
 import { DoodleBackground } from './components/DoodleBackground';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
+import { ClientTrialBanner } from './components/ClientTrialBanner';
+import { ClientSupportWidget } from './components/ClientSupportWidget';
+import { getPageIdentity } from './lib/pageMetadata';
+import { PageHeaderBanner } from './components/PageHeaderBanner';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
 const ALL_DEFAULT_MODULES = [
   'students',
   'academic',
   'timetable',
+  'duty_roster',
+  'payroll',
   'lesson_notes',
   'attendance',
   'results',
@@ -115,6 +125,11 @@ function AppContent() {
   const [isLicensed, setIsLicensed] = useState<boolean>(true);
   const [checkingLicense, setCheckingLicense] = useState<boolean>(true);
   const [licenseKey, setLicenseKey] = useState<string>('');
+  const [licenseTier, setLicenseTier] = useState<string>('Standard');
+  const [licenseDurationMonths, setLicenseDurationMonths] = useState<string | number | null>(null);
+  const [licenseExpiryDate, setLicenseExpiryDate] = useState<number | null>(null);
+  const [licenseCreatedAt, setLicenseCreatedAt] = useState<number | null>(null);
+  const [isTrialLicense, setIsTrialLicense] = useState<boolean>(false);
   const [lockAnnouncement, setLockAnnouncement] = useState<string>('');
   const [activeModules, setActiveModules] = useState<string[]>(ALL_DEFAULT_MODULES);
 
@@ -147,6 +162,11 @@ function AppContent() {
       if (data) {
         setIsLicensed(Boolean(data.active));
         setLicenseKey(data.licenseKey || '');
+        setLicenseTier(data.tier || 'Standard');
+        setLicenseDurationMonths(data.durationMonths ?? null);
+        setLicenseExpiryDate(data.expiryDate ? Number(data.expiryDate) : null);
+        setLicenseCreatedAt(data.createdAt ? Number(data.createdAt) : null);
+        setIsTrialLicense(Boolean(data.isTrial));
         setLockAnnouncement(data.lockAnnouncement || data.announcement || '');
         if (data.activeModules && Array.isArray(data.activeModules) && data.activeModules.length > 0) {
           setActiveModules(data.activeModules);
@@ -226,6 +246,37 @@ function AppContent() {
   );
   const schoolName = schoolProfile.schoolName;
   const schoolLogo = schoolProfile.logo || '/sch sphere logo1.png';
+
+  const academicConfig = useMemo(() => {
+    return settings.find(s => s.key === 'academicConfig')?.value;
+  }, [settings]);
+
+  const currentAcademicYear =
+    academicConfig?.academicYear ||
+    schoolProfile?.academic_year ||
+    (school as any)?.academic_year ||
+    '2026/2027';
+
+  const currentTermName =
+    academicConfig?.currentTerm ||
+    schoolProfile?.current_term ||
+    (school as any)?.current_term ||
+    'Term 1';
+
+  const activePageMeta = useMemo(
+    () => getPageIdentity(activeView, user?.role),
+    [activeView, user?.role]
+  );
+
+  useEffect(() => {
+    if (showGetStarted && !user) {
+      document.title = 'Welcome & Portal Access — SchoolSphere Management System';
+    } else if (!user) {
+      document.title = 'Sign In & Institutional Onboarding — SchoolSphere Management System';
+    } else {
+      document.title = `${activePageMeta.title} — ${schoolName} | SchoolSphere`;
+    }
+  }, [activePageMeta.title, schoolName, showGetStarted, user]);
 
   // Uniform design tokens for SchoolSphere palette (#f6f8f7 canvas background, #1c4a59 institutional surface, #faae57 CTA)
   useEffect(() => {
@@ -763,12 +814,14 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+        { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -781,12 +834,14 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+        { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -799,12 +854,14 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+        { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -816,11 +873,13 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes & Vetting', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
+        { id: 'payroll', label: 'My Payslips', icon: Wallet },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
@@ -829,11 +888,13 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
+        { id: 'payroll', label: 'My Payslips', icon: Wallet },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
@@ -842,6 +903,7 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+        { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
       ];
@@ -874,7 +936,7 @@ function AppContent() {
     }
 
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
+      const isCore = ['dashboard', 'duty_roster', 'payroll', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1172,6 +1234,20 @@ function AppContent() {
           </motion.div>
         )}
 
+        {/* Client Trial & Approaching Expiry Top Banner */}
+        {!isCreator && activeView !== 'creator' && (
+          <ClientTrialBanner
+            schoolId={school?.id || user?.school_id || null}
+            schoolName={schoolName}
+            licenseTier={licenseTier}
+            durationMonths={licenseDurationMonths}
+            expiryDate={licenseExpiryDate}
+            createdAt={licenseCreatedAt}
+            isTrial={isTrialLicense}
+            onActivationSuccess={checkLicenseStatus}
+          />
+        )}
+
         {/* Header */}
         {activeView !== 'creator' && (
           <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/70 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs min-w-0 max-w-full">
@@ -1209,10 +1285,17 @@ function AppContent() {
                     }}
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
-                  <div className="hidden md:flex items-center gap-2 shrink-0">
+                  <div className="hidden md:flex items-center gap-1.5 shrink-0 min-w-0">
                     <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                    <span className="text-xs font-semibold text-[#6a7f84] capitalize whitespace-nowrap">
-                      {activeView.replace(/_/g, ' ').replace(/-/g, ' ')}
+                    <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
+                      {activePageMeta.category}
+                    </span>
+                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                    <span
+                      data-testid="header-page-name"
+                      className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap truncate max-w-[260px]"
+                    >
+                      {activePageMeta.title}
                     </span>
                   </div>
                 </div>
@@ -1223,14 +1306,28 @@ function AppContent() {
                       <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
                     </div>
                   )}
-                  <h1 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight">
-                    {schoolName}
-                  </h1>
-                  <div className="hidden md:flex items-center gap-2 shrink-0">
-                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                    <span className="text-xs font-semibold text-[#6a7f84] capitalize whitespace-nowrap">
-                      {activeView.replace(/_/g, ' ').replace(/-/g, ' ')}
-                    </span>
+                  <div className="min-w-0 flex flex-col justify-center">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h2 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight">
+                        {schoolName}
+                      </h2>
+                      <div className="hidden md:flex items-center gap-1.5 shrink-0">
+                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                        <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
+                          {activePageMeta.category}
+                        </span>
+                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                        <span
+                          data-testid="header-page-name"
+                          className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap"
+                        >
+                          {activePageMeta.title}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="md:hidden text-[10px] font-bold text-[#6a7f84] truncate leading-tight">
+                      {activePageMeta.category} › <span className="text-[#1c4a59] font-extrabold">{activePageMeta.title}</span>
+                    </p>
                   </div>
                 </div>
               )}
@@ -1394,11 +1491,22 @@ function AppContent() {
                 activeView === 'creator' ? "h-full w-full" : "min-h-full max-w-7xl mx-auto w-full pb-4 lg:pb-0"
               )}
             >
+              {activeView !== 'creator' && (
+                <PageHeaderBanner
+                  viewId={activeView}
+                  userRole={user?.role}
+                  schoolName={schoolName}
+                  academicYear={currentAcademicYear}
+                  currentTerm={currentTermName}
+                  onNavigateHome={() => setActiveView('dashboard')}
+                />
+              )}
               <ErrorBoundary key={activeView}>
                 {activeView === 'dashboard' && <Dashboard onViewChange={setActiveView} />}
                 {activeView === 'students' && <StudentManagement />}
                 {activeView === 'academic' && <AcademicManagement />}
                 {activeView === 'timetable' && <TimetableManagement />}
+                {activeView === 'duty_roster' && <DutyRosterManagement />}
                 {activeView === 'lesson_notes' && (
                   <LessonNotes
                     showToast={showToast}
@@ -1411,6 +1519,7 @@ function AppContent() {
                 {activeView === 'exam_analysis' && <ExamAnalysis />}
                 {activeView === 'reports' && <ReportTerminal />}
                 {activeView === 'fees' && <FeeManagement />}
+                {activeView === 'payroll' && <PayrollManagement />}
                 {activeView === 'siren' && <SirenTerminal />}
                 {activeView === 'users' && (
                   <PermissionGuard permission="users:create" onNavigateHome={() => setActiveView('dashboard')}>
@@ -1483,6 +1592,16 @@ function AppContent() {
         isOpen={isSecurityModalOpen} 
         onClose={() => setIsSecurityModalOpen(false)} 
       />
+
+      {/* Floating Support & Issue Ticketing Desk for Client Staff & Admins */}
+      {!isCreator && activeView !== 'creator' && (
+        <ClientSupportWidget
+          user={user}
+          schoolId={school?.id || user?.school_id || null}
+          schoolName={schoolName}
+          onNotify={(msg, type) => showToast(msg, type || 'info')}
+        />
+      )}
 
       {/* Connectivity & Offline Status Indicator */}
       <OfflineIndicator />

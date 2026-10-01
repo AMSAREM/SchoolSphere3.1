@@ -364,6 +364,81 @@ export interface LessonNote {
   updatedAt: number;
 }
 
+export interface StaffSalaryProfileRecord {
+  id: string;
+  schoolId?: string;
+  staffId: string;
+  staffName: string;
+  designation: string;
+  phone?: string;
+  email?: string;
+  ssnitNumber: string;
+  tinNumber: string;
+  paymentMethod: 'Bank Transfer' | 'Mobile Money' | 'Cash';
+  bankOrNetwork: string;
+  accountNumber: string;
+  basicSalary: number;
+  responsibilityAllowance: number;
+  transportAllowance: number;
+  otherAllowance: number;
+  ssnitEnabled: boolean;
+  payeEnabled: boolean;
+  manualTaxOverride?: number | null;
+  updatedAt: number;
+}
+
+export interface PayslipDBRecord {
+  id: string;
+  schoolId?: string;
+  payrollMonth: string;
+  periodLabel: string;
+  staffId: string;
+  staffName: string;
+  designation: string;
+  ssnitNumber: string;
+  tinNumber: string;
+  paymentMethod: 'Bank Transfer' | 'Mobile Money' | 'Cash';
+  bankOrNetwork: string;
+  accountNumber: string;
+  basicSalary: number;
+  responsibilityAllowance: number;
+  transportAllowance: number;
+  otherAllowance: number;
+  totalAllowances: number;
+  bonusAmount: number;
+  grossPay: number;
+  ssnitEmployee: number;
+  ssnitEmployer: number;
+  taxableIncome: number;
+  payeTax: number;
+  loanDeduction: number;
+  otherDeduction: number;
+  totalDeductions: number;
+  netPay: number;
+  status: 'draft' | 'approved' | 'paid';
+  paidAt?: number | null;
+  receiptRef: string;
+  notes?: string;
+  updatedAt: number;
+}
+
+export interface SalaryAdvanceDBRecord {
+  id: string;
+  schoolId?: string;
+  staffId: string;
+  staffName: string;
+  designation: string;
+  type: 'Salary Advance' | 'Staff Loan';
+  principalAmount: number;
+  monthlyInstallment: number;
+  remainingBalance: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'completed' | 'declined';
+  requestedAt: number;
+  approvedBy?: string | null;
+  approvedAt?: number | null;
+}
+
 export class SchoolDB extends Dexie {
   students!: Table<Student>;
   attendance!: Table<Attendance>;
@@ -384,6 +459,9 @@ export class SchoolDB extends Dexie {
   expenses!: Table<SchoolExpense>;
   lessonNotes!: Table<LessonNote>;
   feeTransactions!: Table<FeeTransaction>;
+  salaryProfiles!: Table<StaffSalaryProfileRecord>;
+  payslips!: Table<PayslipDBRecord>;
+  salaryAdvances!: Table<SalaryAdvanceDBRecord>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -552,6 +630,30 @@ export class SchoolDB extends Dexie {
       expenses: '++id, category, date, inventoryItemId',
       lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
       feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date'
+    });
+    this.version(17).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date',
+      salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
+      payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
+      salaryAdvances: 'id, schoolId, staffId, status, requestedAt'
     });
   }
 }

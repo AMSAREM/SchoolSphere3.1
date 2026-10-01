@@ -380,22 +380,59 @@ export function AuthScreens({
     }
   };
 
+  const authPageMeta = useMemo(() => {
+    switch (activeTab) {
+      case 'register_org':
+        return {
+          title: 'Register Client School',
+          category: 'Institutional Onboarding',
+          subtitle: 'Provision a new campus workspace and primary administrator account.'
+        };
+      case 'join_invite':
+        return {
+          title: 'Join School via Invite Token',
+          category: 'Staff & Student Onboarding',
+          subtitle: 'Accept an official school invitation token to activate your portal account.'
+        };
+      case 'forgot':
+        return {
+          title: 'Account Password Recovery',
+          category: 'Security & Access',
+          subtitle: 'Request password recovery instructions for your institutional account.'
+        };
+      case 'signin':
+      default:
+        return {
+          title: 'Portal Sign In & Authentication',
+          category: 'Portal Access',
+          subtitle: 'Sign in with your institutional credentials or license key.'
+        };
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    document.title = `${authPageMeta.title} — SchoolSphere Management System`;
+  }, [authPageMeta.title]);
+
   return (
     <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">
       <DoodleBackground opacity={0.06} />
 
       {/* Main Centered Auth Form Container */}
       <div className="w-full max-w-md mx-auto my-auto relative z-10">
-        {/* Top Navigation: Return to Homepage */}
-        <div className="mb-4 flex items-center justify-between">
+        {/* Top Navigation: Return to Homepage + Breadcrumb */}
+        <div className="mb-4 flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={handleReturnToHomepage}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-transparent border-0 border-none h-[44px] w-[174.094px] text-xs font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 transition-all active:scale-[0.97] min-h-[44px] cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-transparent border-0 border-none h-[44px] text-xs font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 transition-all active:scale-[0.97] min-h-[44px] cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Return to Homepage</span>
           </button>
+          <span className="text-[11px] font-bold text-[#6a7f84] truncate">
+            {authPageMeta.category} › <span className="text-[#1c4a59]">{authPageMeta.title}</span>
+          </span>
         </div>
         
         {/* Brand Header */}
@@ -408,13 +445,16 @@ export function AuthScreens({
             />
           </div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-[#1c4a59]">SchoolSphere</h1>
+            <span className="text-sm font-extrabold uppercase tracking-wider text-[#1c4a59]">SchoolSphere</span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#e1c594] text-[#1f2a2e] border border-[#e4ae67]">
               3.1
             </span>
           </div>
-          <p className="text-xs text-[#6a7f84] font-medium mt-1">
-            Enterprise Academic & Campus Management Suite
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#1f2a2e] mt-1">
+            {authPageMeta.title}
+          </h1>
+          <p className="text-xs text-[#6a7f84] font-medium mt-1 max-w-sm">
+            {authPageMeta.subtitle}
           </p>
         </div>
 

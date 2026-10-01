@@ -1,73 +1,81 @@
-# SchoolSphere Contact Details & Complete Rebranding Implementation Plan
+# Unified Page Title, Subtitle & Breadcrumb Identity System
 
-## 1. Executive Summary
-This plan updates the official application contact email to `amoakoemmanuel@hotmail.com`, adds the official support phone numbers `0551187045` and `0554234590`, updates creator/vendor attribution to **SchoolSphere Team / Emmanuel Amoako**, and replaces all remaining **Esepa / ESEPA** branding across the frontend, PDF/Excel exports, SMS templates, and backend services with **SchoolSphere** (`SCHOOLSPHERE PORTAL` and `SCHOOLSPHR` SMS Sender ID), while strictly preserving all `ESEPA-*` license key formats and internal storage keys that prevent data loss.
+Ensure every page across the SchoolSphere portal prominently displays its official **Page Name**, **Module Subtitle**, and **Breadcrumb Path** at the top of the page view, inside the **Top Navigation Header Bar** (on both mobile and desktop), and in the **Browser Tab Title (`document.title`)**.
 
----
+## User Review & Critical Decisions
 
-## 2. Official Contact Address, Phone Numbers & Creator Attribution
+> [!IMPORTANT]
+> This plan incorporates your confirmed choices from the clarification questions.
 
-### A. Support Modals, Landing Page & Onboarding (`src/components/GetStarted.tsx`, `src/components/LandingPage.tsx`)
-- **Institutional Support & Get in Touch Modals (`src/components/GetStarted.tsx`)**:
-  - Replace `akokosolutions24@gmail.com` with `amoakoemmanuel@hotmail.com` (`mailto:amoakoemmanuel@hotmail.com`).
-  - Add clickable support phone links: `0551187045` (`tel:0551187045`) and `0554234590` (`tel:0554234590`).
-  - Update the bottom licensing support bar to display:
-    `Licensing & Support: amoakoemmanuel@hotmail.com • Tel: 0551187045 / 0554234590`.
-- **Landing Page Footer (`src/components/LandingPage.tsx`)**:
-  - Add direct contact details under the SchoolSphere brand column (`amoakoemmanuel@hotmail.com` and `0551187045 / 0554234590`) alongside the Institutional Support modal trigger.
+- **Confirmed Decision 1 (Placement Across Every Surface)**:
+  1. **Top of Every Page View**: A dedicated, high-clarity **Page Identity Header** rendered above the active view's workspace.
+  2. **Top Navigation Header Bar**: Displays the active Page Name alongside the school name across both mobile and desktop viewports (replacing raw snake-case strings like `exam_analysis` with proper titles like `BECE & WASSCE Exam Analysis`).
+  3. **Browser Tab Title (`document.title`)**: Dynamically updates to `{Page Title} — {School Name} | SchoolSphere` on every navigation change.
+- **Confirmed Decision 2 (Page Context & Breadcrumb Trail)**: Every page header includes a clickable **Breadcrumb Path** (`Portal / {Department Category} / {Page Title}`), the bold **Page Title**, a concise **Module Subtitle**, and the active **Academic Year & Term** metadata.
 
-### B. Creator Hub & Suite Attribution (`src/components/CreatorHub.tsx`, `src/components/creator/SecuritySuite.tsx`, `src/components/creator/ServicesSuite.tsx`, `src/components/creator/SalesSuite.tsx`)
-- **Creator Hub (`src/components/CreatorHub.tsx`)**:
-  - Update proposal signature from `Elena / Akoko Solutions (Vendor System Creator)` to:
-    `SchoolSphere Team / Emmanuel Amoako — amoakoemmanuel@hotmail.com | 0551187045 / 0554234590`.
-  - Update header/sidebar badges from `Elena's Portal` and `Elena Master Hub` to `SchoolSphere Creator` and `SchoolSphere Master Hub`.
-- **Security Suite (`src/components/creator/SecuritySuite.tsx`)**:
-  - Update Super Admin Identity card:
-    - **Developer Name**: `SchoolSphere Team / Emmanuel Amoako`
-    - **Support Dispatch Email**: `amoakoemmanuel@hotmail.com`
-    - **Support Hotlines**: `0551187045 / 0554234590`
-- **Services Suite (`src/components/creator/ServicesSuite.tsx`)**:
-  - Update lock screen notice placeholder and default support contact to reference `SchoolSphere Support (amoakoemmanuel@hotmail.com / 0551187045 / 0554234590)`.
+## 1. Overview & Core Concept
 
-### C. Legal, Compliance & Auth Footers (`src/components/legal/PrivacyPolicyModal.tsx`, `src/components/legal/TermsOfServiceModal.tsx`, `src/components/auth/AuthScreens.tsx`, `src/lib/gmailService.ts`)
-- **Privacy Policy (`src/components/legal/PrivacyPolicyModal.tsx`)**:
-  - Replace `Akoko Solutions Legal & Privacy Office` and `privacy@schoolsphere.xyz` with **SchoolSphere Team / Emmanuel Amoako**, Email: `amoakoemmanuel@hotmail.com`, Tel: `0551187045 / 0554234590`.
-- **Terms of Service (`src/components/legal/TermsOfServiceModal.tsx`)**:
-  - Replace `Akoko Solutions` references with **SchoolSphere Team / Emmanuel Amoako** and include official contact details (`amoakoemmanuel@hotmail.com`, `0551187045 / 0554234590`).
-- **Authentication Footer (`src/components/auth/AuthScreens.tsx`)**:
-  - Update footer attribution to `© 2026 SchoolSphere 3.1 • SchoolSphere Team / Emmanuel Amoako` and display support contact info (`amoakoemmanuel@hotmail.com • 0551187045 / 0554234590`).
-- **Automated License Dispatch Emails (`src/lib/gmailService.ts` & `server.ts`)**:
-  - Ensure email templates and fallback support contact lines show `amoakoemmanuel@hotmail.com` and `0551187045 / 0554234590`.
+- **What It Does**: Establishes a single, authoritative metadata registry for all 19 portal pages (`dashboard`, `students`, `academic`, `timetable`, `duty_roster`, `payroll`, `lesson_notes`, `attendance`, `results`, `exam_analysis`, `reports`, `fees`, `siren`, `evoting`, `inventory`, `users`, `settings`, `creator`, and `school_management`) with role-aware titles (e.g., *My Payslips & Salary Advances* for teachers vs. *Staff Payroll & Compensation* for bursars/admins).
+- **Target Audience / Persona**: All portal users (Administrators, Headteachers, HODs, Teachers, Accountants, Students, and Parents) navigating across modules on desktop, tablet, or mobile.
+- **Key Value**: Eliminates disorientation when switching modules, provides immediate context on every screen and printed sheet, and keeps the browser tab title and top header synchronized.
 
----
+## 2. User Experience & Visual Design
 
-## 3. Complete Replacement of "Esepa" with "SchoolSphere" (Preserving License Keys)
+- **Key User Flows**:
+  1. **Top Navigation Header Bar (Desktop & Mobile)**:
+     - Displays the School Logo and School Name followed by the clean breadcrumb separator (`/`) and the human-readable **Active Page Name** on desktop, plus a compact subtitle line on mobile so mobile users always see both their school and current page name.
+  2. **Top-of-Page Identity Banner (`PageHeaderBanner`)**:
+     - Appears at the top of every portal view with:
+       - **Breadcrumb Trail**: Clickable `Dashboard` root link `›` Category (e.g., *Academic Operations*, *Finance & Bursary*, *Campus Governance*) `›` Current Page Name.
+       - **Primary Page Heading (`<h1>`)**: Crisp, high-contrast title with the module's functional icon.
+       - **Brief Module Subtitle**: 1-sentence description of what the user can accomplish on the current page.
+       - **Academic Session Metadata**: Clean unboxed metadata (`Academic Year · Current Term · Role Scope`) on the right.
+  3. **Dynamic Browser Tab Title Synchronization**:
+     - Switching to any view immediately updates `document.title` (e.g., `Teachers Duty Roster — ACCRA ACADEMY | SchoolSphere`).
+- **Visual Identity & Theme**:
+  - *Aesthetic Direction*: Clean institutional editorial header with subtle 1px border (`border-[#bac4c6]/80`), deep teal typography (`#1c4a59`), warm gold accents (`#faae57`), and zero-pill unboxed metadata separated by middots (`·`).
 
-### A. Default School Fallback Name (`SCHOOLSPHERE PORTAL`)
-Replace all fallback occurrences of `'ESEPA INTERNATIONAL SCHOOL'` and `'ESEPA ACADEMY'` with `'SCHOOLSPHERE PORTAL'` across:
-- `src/components/Dashboard.tsx`
-- `src/components/AcademicManagement.tsx`
-- `src/components/ResultsTerminal.tsx`
-- `src/components/ReportTerminal.tsx`
-- `src/components/TimetableManagement.tsx`
-- `src/components/InventoryManagement.tsx`
-- `src/components/FeeManagement.tsx` (also replace `Esepa School Treasury Account` with `SchoolSphere Treasury Account` and `admin@esepa.school` with `amoakoemmanuel@hotmail.com`)
-- `src/lib/utils.ts` (also replace `'info@esepa.edu.gh'` with `'amoakoemmanuel@hotmail.com'` and `'ESEPA ACADEMIC INFORMATION MANAGEMENT SYSTEM (AIMS)'` with `'SCHOOLSPHERE ACADEMIC INFORMATION MANAGEMENT SYSTEM (AIMS)'`)
+## 3. Key Product Decisions & Trade-Offs
 
-### B. SMS Broadcasts & 11-Character Arkesel Sender ID (`SCHOOLSPHR`)
-- **`src/components/SmsModule.tsx` & `server.ts`**:
-  - Replace default SMS Sender ID `'ESEPA_ACAD'` with `'SCHOOLSPHR'` (10 characters, compliant with Arkesel's 11-character alphanumeric limit).
-  - Replace `'ESEPA ACADEMY'`, `'ESEPA incident logger'`, and `'Management, ESEPA'` in SMS quick templates with `'SCHOOLSPHERE PORTAL'`, `'SchoolSphere incident logger'`, and `'Management, SchoolSphere'`.
-  - Update Excel sheet and file export names from `'ESEPA SMS Logs'` / `'Esepa_SMS_Ledger_Log_...'` to `'SchoolSphere SMS Logs'` / `'SchoolSphere_SMS_Ledger_Log_...'`.
-  - Update preview footer from `'ESEPA Communicate Portal'` to `'SchoolSphere Communicate Portal'`.
+- **Decision 1: Centralized View Metadata Registry with Role Awareness**
+  - *Chosen Approach*: Define a structured `VIEW_METADATA` registry mapping every `View` key to its `title`, `shortTitle`, `category`, `subtitle`, and optional role-specific overrides (such as `teacher`, `student`, or `parent` variations).
+  - *Why*: Guarantees that adding or switching to any view automatically renders the exact same authoritative page name in the top bar, the page content header, print headers, and the browser tab.
 
-### C. E-Voting, Settings & Cloud Export Scripts
-- **`src/components/EVoting.tsx` & `server.ts`**:
-  - Replace `Esepa Digital E-Voting Suite` with `SchoolSphere Digital E-Voting Suite`.
-  - Replace `Esepa E-Voting Station:` in voting confirmation SMS with `SchoolSphere E-Voting Station:`.
-- **`src/components/Settings.tsx` & `server.ts`**:
-  - Replace `-- ESEPA SCHOOL SPHERE - GENERATED DATA EXPORT SCRIPT (MYSQL)` with `-- SCHOOLSPHERE PORTAL - GENERATED DATA EXPORT SCRIPT (MYSQL)`.
-  - Replace fallback portal URL `esepa-school-portal.vercel.app` with `schoolsphere-portal.vercel.app`.
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### D. License Key Preservation Guarantee
-- All license key generation, validation, prefix checks, and master keys (`ESEPA-...`, `ESEPA-MASTER-...`, and license regex validators in `server.ts`, `CreatorHub.tsx`, `SalesSuite.tsx`, and `GetStarted.tsx`) will remain **100% untouched**.
+- **Architecture & Component Diagram**:
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    VIEW_METADATA Registry (All 19 Views)                    │
+│  • Maps view ID + userRole -> { title, shortTitle, category, subtitle }     │
+└───────────────┬─────────────────────────────┬───────────────────────────────┘
+                │                             │
+                ▼                             ▼
+┌───────────────────────────────┐ ┌───────────────────────────────────────────┐
+│   Top Navigation Header Bar   │ │      Main Viewport PageHeaderBanner       │
+│  • School Name / Page Title   │ │  • Clickable Breadcrumb (Dashboard › ...) │
+│  • Visible on Mobile & Desktop│ │  • Page Title (h1) + Module Subtitle      │
+│  • Updates document.title     │ │  • Active Academic Year · Current Term    │
+└───────────────────────────────┘ └───────────────────────────────────────────┘
+```
+
+- **Complete Page Name Mapping**:
+  - `dashboard` → **Executive Campus Dashboard** (*Portal Overview & Analytics*)
+  - `students` → **Student Directory & Admissions** (*Enrollment & Student Records*)
+  - `academic` → **Academic & Staff Management** (*Teachers, Classes, Subjects & Duty Roster*)
+  - `timetable` → **Master School Timetable** (*Class & Teacher Period Scheduling*)
+  - `duty_roster` → **Teachers Duty Roster & Logbook** (*Weekly Staff Supervision & Occurrence Book*)
+  - `lesson_notes` → **NaCCA Lesson Notes & Vetting** (*Weekly Teacher Lesson Plans & HOD Endorsement*)
+  - `attendance` → **Daily Attendance Terminal** (*Student Roll Call & Punctuality Tracking*)
+  - `results` → **Academic Results Terminal** (*Continuous Assessment & Examination Grading*)
+  - `exam_analysis` → **BECE & WASSCE Exam Analysis** (*External Examination Aggregates & Subject Performance*)
+  - `reports` → **Terminal Reports & Broadsheets** (*Official Student Report Cards & Class Broadsheets*)
+  - `fees` → **Fees, Billing & Payments Ledger** (*Student Tuition, Invoices & Receipting*)
+  - `payroll` → **Staff Payroll & Compensation** (*Monthly Salary Run, SSNIT, GRA PAYE & Payslips*)
+  - `siren` → **Automated Campus Siren Console** (*Bell Schedules, Emergency Alerts & PA Broadcasts*)
+  - `evoting` → **Student E-Voting Portal** (*Electoral Polls, Candidates & Live Balloting*)
+  - `inventory` → **Campus Inventory & Expense Registry** (*Storehouse Stock, Issuance & School Expenditure*)
+  - `users` → **User Accounts & Role Permissions** (*Staff, Student & Parent Portal Access Control*)
+  - `settings` → **School Profile & System Settings** (*Institutional Branding, Grading & Term Configuration*)
+  - `creator` → **Creator Command Console** (*Platform Licensing, CRM, Support & Telemetry*)
+  - `school_management` → **Multi-Tenant Schools Registry** (*Client School Provisioning & License Control*)

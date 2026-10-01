@@ -29,7 +29,10 @@ export interface TenantLicenseStatusResponse {
   schoolName?: string;
   schoolSlug?: string;
   tier?: string;
+  durationMonths?: string | number | null;
   expiryDate?: string | number | null;
+  createdAt?: number | null;
+  isTrial?: boolean;
   activeModules: string[];
   lockAnnouncement?: string;
   announcement?: string;
@@ -129,7 +132,10 @@ export async function fetchTenantLicenseStatus(
           schoolName: data.schoolName || '',
           schoolSlug: data.schoolSlug || '',
           tier: data.tier || 'Standard',
+          durationMonths: data.durationMonths || null,
           expiryDate: data.expiryDate || null,
+          createdAt: data.createdAt ? Number(data.createdAt) : null,
+          isTrial: Boolean(data.isTrial),
           activeModules: Array.isArray(data.activeModules) ? data.activeModules : [],
           lockAnnouncement: data.lockAnnouncement || data.announcement || '',
           announcement: data.announcement || data.lockAnnouncement || '',

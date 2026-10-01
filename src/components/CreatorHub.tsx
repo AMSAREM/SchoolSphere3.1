@@ -54,6 +54,7 @@ import SalesSuite from './creator/SalesSuite';
 import ServicesSuite from './creator/ServicesSuite';
 import SecuritySuite from './creator/SecuritySuite';
 import FrontendTestRunner from './FrontendTestRunner';
+import { getCreatorPanelIdentity } from '../lib/pageMetadata';
 
 const AVAILABLE_MODULES = [
   { id: 'students', label: 'Students Records', description: 'Student profile directories & biodata' },
@@ -991,6 +992,12 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
   }, {} as Record<string, typeof SECTIONS>);
 
   const activeSectionObj = SECTIONS.find(s => s.id === activePanel);
+  const activeCreatorIdentity = getCreatorPanelIdentity(activePanel);
+  const ActiveSectionIcon = activeSectionObj?.icon || LayoutDashboard;
+
+  useEffect(() => {
+    document.title = `${activeCreatorIdentity.title} — Creator Command Console | SchoolSphere`;
+  }, [activeCreatorIdentity.title]);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden select-none text-slate-800">
@@ -1139,10 +1146,12 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-xs font-medium text-slate-500 min-w-0">
-              <span className="hidden sm:inline whitespace-nowrap">Creator Console</span>
+              <span className="hidden sm:inline whitespace-nowrap font-semibold text-slate-600">Creator Console</span>
               <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden sm:inline shrink-0" />
+              <span className="hidden md:inline whitespace-nowrap text-slate-500">{activeCreatorIdentity.category}</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden md:inline shrink-0" />
               <span className="font-bold text-slate-800 text-xs sm:text-sm truncate">
-                {activeSectionObj?.label || 'Dashboard'}
+                {activeCreatorIdentity.title}
               </span>
             </div>
           </div>
@@ -1181,6 +1190,58 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
 
         {/* Content Container */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6 print:block print:h-auto print:overflow-visible print:p-0">
+          {/* Creator Sub-Page Identity Banner */}
+          <section
+            aria-label="Creator Page Identity Header"
+            className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-2xs print:hidden"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <nav
+                  aria-label="Creator Breadcrumb"
+                  className="flex items-center flex-wrap gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActivePanel('dashboard')}
+                    className="text-indigo-600 hover:text-indigo-700 font-bold cursor-pointer"
+                  >
+                    Creator Console
+                  </button>
+                  <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+                  <span>{activeCreatorIdentity.category}</span>
+                  <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+                  <span className="text-slate-900 font-bold" aria-current="page">
+                    {activeCreatorIdentity.title}
+                  </span>
+                </nav>
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-900 text-indigo-400 flex items-center justify-center shrink-0">
+                    <ActiveSectionIcon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h1
+                      data-testid="creator-active-page-title"
+                      className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug"
+                    >
+                      {activeCreatorIdentity.title}
+                    </h1>
+                    <p className="text-xs text-slate-600 font-medium mt-0.5">
+                      {activeCreatorIdentity.subtitle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5 shrink-0">
+                <span className="font-bold text-indigo-600 uppercase tracking-wider">{activeCreatorIdentity.category}</span>
+                <span className="text-slate-300">·</span>
+                <span className="font-mono font-bold text-slate-700">{sysAcademicYear}</span>
+                <span className="text-slate-300">·</span>
+                <span className="font-bold text-slate-700">{sysCurrentTerm}</span>
+              </div>
+            </div>
+          </section>
+
           {/* Active Sub-Suite Rendering */}
           <AnimatePresence mode="wait">
             <motion.div

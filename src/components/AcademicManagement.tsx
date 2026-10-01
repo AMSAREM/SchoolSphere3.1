@@ -2,15 +2,16 @@ import { useState } from 'react';
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Teacher, type Subject, type ClassInfo } from '../db/schema';
-import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X, Download, Upload, CheckSquare, Square } from 'lucide-react';
+import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X, Download, Upload, CheckSquare, Square, UserCheck } from 'lucide-react';
 import Papa from 'papaparse';
 import { motion } from 'motion/react';
 import { cn, triggerPrint } from '../lib/utils';
 import { teachersApi, classesApi, subjectsApi } from '../lib/api';
 import { useNotifications } from '../contexts/NotificationContext';
+import DutyRosterManagement from './DutyRosterManagement';
 
 export default function AcademicManagement() {
-  const [activeTab, setActiveTab] = useState<'teachers' | 'classes' | 'subjects'>('teachers');
+  const [activeTab, setActiveTab] = useState<'teachers' | 'classes' | 'subjects' | 'duty_roster'>('teachers');
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
 
@@ -23,20 +24,22 @@ export default function AcademicManagement() {
   return (
     <div className="space-y-3.5 sm:space-y-5 text-[#1f2a2e] min-w-0">
       {/* Print Only Header */}
-      <div className="only-print">
-        <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
-        <div className="mt-2 text-sm font-bold text-slate-600 uppercase tracking-widest flex items-center justify-center gap-4">
-          <span>Academic Resources & Staff Records</span>
-          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
-          <span>Active View: {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
-          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
-          <span>Generated: {new Date().toLocaleDateString()}</span>
+      {activeTab !== 'duty_roster' && (
+        <div className="only-print">
+          <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter text-center">{schoolName}</h1>
+          <div className="mt-2 text-sm font-bold text-slate-600 uppercase tracking-widest flex items-center justify-center gap-4">
+            <span>Academic Resources & Staff Records</span>
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+            <span>Active View: {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+            <span>Generated: {new Date().toLocaleDateString()}</span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Responsive Equal-Width 3-Tab Bar + Compact Print Action */}
+      {/* Responsive 4-Tab Bar + Compact Print Action */}
       <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-        <div className="flex-1 grid grid-cols-3 sm:flex sm:flex-initial">
+        <div className="flex-1 grid grid-cols-4 sm:flex sm:flex-initial">
           <button
             type="button"
             onClick={() => setActiveTab('teachers')}
@@ -76,18 +79,33 @@ export default function AcademicManagement() {
             <Book className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'subjects' ? "text-[#faae57]" : "text-[#6a7f84]")} />
             <span>Subjects</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('duty_roster')}
+            className={cn(
+              "px-2 sm:px-5 py-2.5 sm:py-3 font-bold text-xs sm:text-sm transition-all border-b-2 whitespace-nowrap text-center flex items-center justify-center gap-1.5 cursor-pointer",
+              activeTab === 'duty_roster'
+                ? "border-[#1c4a59] text-[#1c4a59]"
+                : "border-transparent text-[#6a7f84] hover:text-[#1f2a2e]"
+            )}
+          >
+            <UserCheck className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'duty_roster' ? "text-[#faae57]" : "text-[#6a7f84]")} />
+            <span>Duty Roster</span>
+          </button>
         </div>
         
-        <button 
-          type="button"
-          onClick={triggerPrint}
-          title="Print Active List"
-          className="print:hidden flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 text-[#1c4a59] hover:text-[#1f2a2e] bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] rounded-xl transition-colors text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.98]"
-        >
-          <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
-          <span className="hidden sm:inline">Print List</span>
-          <span className="sm:hidden">Print</span>
-        </button>
+        {activeTab !== 'duty_roster' && (
+          <button 
+            type="button"
+            onClick={triggerPrint}
+            title="Print Active List"
+            className="print:hidden flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 text-[#1c4a59] hover:text-[#1f2a2e] bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] rounded-xl transition-colors text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.98]"
+          >
+            <Printer className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+            <span className="hidden sm:inline">Print List</span>
+            <span className="sm:hidden">Print</span>
+          </button>
+        )}
       </div>
 
       {/* Selected Element: Active Tab Content Container (div:nth-of-type(3)) */}
@@ -101,6 +119,7 @@ export default function AcademicManagement() {
         {activeTab === 'teachers' && <TeacherList />}
         {activeTab === 'classes' && <ClassList />}
         {activeTab === 'subjects' && <SubjectList />}
+        {activeTab === 'duty_roster' && <DutyRosterManagement embedded />}
       </motion.div>
     </div>
   );

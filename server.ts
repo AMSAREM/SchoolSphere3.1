@@ -2235,6 +2235,8 @@ async function doStartServer() {
               school_name: localLic.schoolName || schoolRow?.name,
               school_id: localLic.school_id || schoolRow?.id || targetSchoolId || null,
               tier: localLic.tier || 'Standard',
+              duration_months: localLic.durationMonths || null,
+              created_at: localLic.createdAt || null,
               expiry_date: localLic.expiryDate || null,
               active_status: localLic.status || 'active',
               active_modules: localLic.activeModules || null
@@ -2309,6 +2311,27 @@ async function doStartServer() {
         }
       }
 
+      const rawDurationMonths = license?.duration_months || license?.durationMonths || null;
+      const rawTier = license?.tier || "Standard";
+      const rawCreatedAt = license?.created_at
+        ? (typeof license.created_at === 'number' ? license.created_at : new Date(license.created_at).getTime())
+        : (schoolRow?.created_at ? new Date(schoolRow.created_at).getTime() : null);
+
+      const isExplicitTrial =
+        String(rawDurationMonths || '') === '1' ||
+        String(rawTier || '').toLowerCase().includes('trial') ||
+        !license;
+
+      let computedExpiryDate = license?.expiry_date ? Number(license.expiry_date) : null;
+      if (!computedExpiryDate && isExplicitTrial && String(rawDurationMonths || '').toLowerCase() !== 'perpetual') {
+        const baseStart = (rawCreatedAt && !isNaN(rawCreatedAt) && rawCreatedAt > 0) ? rawCreatedAt : now;
+        computedExpiryDate = baseStart + 30 * 24 * 60 * 60 * 1000;
+      }
+
+      const msRemaining = computedExpiryDate ? (computedExpiryDate - now) : null;
+      const isExpiringWithin30Days = msRemaining !== null && msRemaining > 0 && msRemaining <= 30 * 24 * 60 * 60 * 1000;
+      const isTrial = String(rawDurationMonths || '').toLowerCase() !== 'perpetual' && Boolean(isExplicitTrial || isExpiringWithin30Days);
+
       return res.json({
         success: true,
         active: finalActive,
@@ -2316,9 +2339,12 @@ async function doStartServer() {
         licenseKey: returnedKey,
         rawLicenseKey: isSuper ? (license?.license_key || null) : undefined,
         schoolId: license?.school_id || schoolRow?.id || targetSchoolId || null,
-        schoolName: license?.school_name || schoolRow?.name || "SCHOOL SPHERE ACADEMY",
-        tier: license?.tier || "Standard",
-        expiryDate: license?.expiry_date ? Number(license.expiry_date) : null,
+        schoolName: license?.school_name || schoolRow?.name || "SCHOOLSPHERE PORTAL",
+        tier: rawTier,
+        durationMonths: rawDurationMonths,
+        expiryDate: computedExpiryDate,
+        createdAt: (rawCreatedAt && !isNaN(rawCreatedAt)) ? rawCreatedAt : null,
+        isTrial,
         remoteOverride: !finalActive,
         lockAnnouncement,
         activeModules
@@ -10843,6 +10869,1103 @@ async function doStartServer() {
         );
       }
       return res.json({ success: true, id });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Two-Way Support Ticketing System (Supabase public.support_tickets + public.settings 'platform_support_tickets' + public.audit_logs)
+  function normalizeSupportTicketRecord(raw: any): any {
+    const now = Date.now();
+    const createdAt = Number(raw.createdAt ?? raw.created_at ?? now);
+    const updatedAt = Number(raw.updatedAt ?? raw.updated_at ?? createdAt);
+    const rawMessages = Array.isArray(raw.messages)
+      ? raw.messages
+      : typeof raw.messages === 'string'
+      ? (() => {
+          try {
+            const p = JSON.parse(raw.messages);
+            return Array.isArray(p) ? p : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    return {
+      id: String(raw.id || crypto.randomUUID()),
+      ticketNumber: String(raw.ticketNumber || raw.ticket_number || `TKT-${String(createdAt).slice(-4)}`),
+      schoolId: String(raw.schoolId || raw.school_id || ''),
+      schoolName: String(raw.schoolName || raw.school_name || raw.school || 'SCHOOLSPHERE PORTAL'),
+      submittedById: String(raw.submittedById || raw.submitted_by_id || 'staff'),
+      submittedByName: String(raw.submittedByName || raw.submitted_by_name || 'School Staff'),
+      submittedByRole: String(raw.submittedByRole || raw.submitted_by_role || 'admin'),
+      subject: String(raw.subject || raw.issue || 'System Support Inquiry'),
+      category: String(raw.category || 'General / Portal'),
+      priority: (['low', 'medium', 'high', 'critical'].includes(String(raw.priority || '').toLowerCase())
+        ? String(raw.priority).toLowerCase()
+        : 'medium') as 'low' | 'medium' | 'high' | 'critical',
+      status: (['open', 'in_progress', 'resolved'].includes(String(raw.status || '').toLowerCase())
+        ? String(raw.status).toLowerCase()
+        : 'open') as 'open' | 'in_progress' | 'resolved',
+      description: String(raw.description || raw.issue || raw.subject || ''),
+      reply: String(raw.reply || ''),
+      messages: rawMessages,
+      createdAt,
+      updatedAt
+    };
+  }
+
+  async function loadAllSupportTicketsFromSupabase(): Promise<any[]> {
+    const adminClient = getSupabaseAdmin();
+    let tableRows: any[] = [];
+    try {
+      const { data, error } = await adminClient
+        .from('support_tickets')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRows = data.map(normalizeSupportTicketRecord);
+      }
+    } catch {}
+
+    const settingRowsRaw = await readSupabaseSettingList('platform_support_tickets');
+    const settingRows = Array.isArray(settingRowsRaw)
+      ? settingRowsRaw.map(normalizeSupportTicketRecord)
+      : [];
+
+    const mergedMap = new Map<string, any>();
+    for (const item of [...tableRows, ...settingRows]) {
+      const existing = mergedMap.get(item.id);
+      if (!existing || Number(item.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+        mergedMap.set(item.id, item);
+      }
+    }
+
+    return Array.from(mergedMap.values()).sort(
+      (a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0)
+    );
+  }
+
+  async function persistSupportTicketToSupabase(ticket: any, allTickets: any[]): Promise<void> {
+    const adminClient = getSupabaseAdmin();
+    try {
+      await adminClient.from('support_tickets').upsert(
+        [
+          {
+            id: ticket.id,
+            ticket_number: ticket.ticketNumber,
+            school_id: ticket.schoolId || null,
+            school_name: ticket.schoolName,
+            submitted_by_id: ticket.submittedById,
+            submitted_by_name: ticket.submittedByName,
+            submitted_by_role: ticket.submittedByRole,
+            subject: ticket.subject,
+            category: ticket.category,
+            priority: ticket.priority,
+            status: ticket.status,
+            description: ticket.description,
+            reply: ticket.reply || null,
+            messages: ticket.messages || [],
+            created_at: ticket.createdAt,
+            updated_at: ticket.updatedAt
+          }
+        ],
+        { onConflict: 'id' }
+      );
+    } catch {}
+
+    await writeSupabaseSettingList('platform_support_tickets', allTickets);
+  }
+
+  app.get("/api/support/tickets", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const allTickets = await loadAllSupportTicketsFromSupabase();
+      const queryScope = String(req.query?.scope || '').toLowerCase();
+      const queryRole = String(req.user?.role || req.query?.role || '').toLowerCase();
+      const querySchoolId = String(
+        req.user?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || ''
+      ).trim();
+      const querySchoolName = String(req.query?.schoolName || '').trim().toLowerCase();
+      const queryUserId = String(req.user?.id || req.user?.username || req.query?.userId || '')
+        .trim()
+        .toLowerCase();
+
+      const isCreator =
+        queryScope === 'creator' || queryRole === 'creator' || queryRole === 'super_admin';
+
+      if (isCreator) {
+        return res.json({ success: true, tickets: allTickets });
+      }
+
+      const canViewSchoolTickets =
+        queryRole === 'admin' || queryRole === 'headteacher' || queryScope === 'school';
+
+      const filtered = allTickets.filter((t) => {
+        const ticketSchoolId = String(t.schoolId || '').trim();
+        const ticketSchoolName = String(t.schoolName || '').trim().toLowerCase();
+
+        const matchesSchool =
+          (querySchoolId && ticketSchoolId && ticketSchoolId === querySchoolId) ||
+          (querySchoolName && ticketSchoolName && ticketSchoolName === querySchoolName) ||
+          (!querySchoolId && !querySchoolName);
+
+        if (!matchesSchool) return false;
+
+        if (!canViewSchoolTickets || queryScope === 'own') {
+          if (!queryUserId) return true;
+          return String(t.submittedById || '').trim().toLowerCase() === queryUserId;
+        }
+        return true;
+      });
+
+      return res.json({ success: true, tickets: filtered });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/support/tickets", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const raw = req.body || {};
+      const now = Date.now();
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const ticketId =
+        raw.id && /^[0-9a-f-]{36}$/i.test(String(raw.id)) ? String(raw.id) : crypto.randomUUID();
+
+      const newTicket = normalizeSupportTicketRecord({
+        id: ticketId,
+        ticketNumber: raw.ticketNumber || `TKT-${randomSuffix}`,
+        schoolId: raw.schoolId || req.user?.school_id || req.headers?.['x-school-id'] || '',
+        schoolName: raw.schoolName || 'SCHOOLSPHERE PORTAL',
+        submittedById: raw.submittedById || req.user?.id || req.user?.username || 'staff',
+        submittedByName: raw.submittedByName || req.user?.fullName || req.user?.username || 'School Staff',
+        submittedByRole: raw.submittedByRole || req.user?.role || 'admin',
+        subject: String(raw.subject || '').trim() || 'System Issue Report',
+        category: String(raw.category || 'General / Portal').trim(),
+        priority: raw.priority || 'medium',
+        status: 'open',
+        description: String(raw.description || '').trim(),
+        reply: '',
+        messages: [],
+        createdAt: now,
+        updatedAt: now
+      });
+
+      const currentList = await loadAllSupportTicketsFromSupabase();
+      const updatedList = [
+        newTicket,
+        ...currentList.filter((item) => String(item.id) !== String(newTicket.id))
+      ];
+      await persistSupportTicketToSupabase(newTicket, updatedList);
+
+      try {
+        const adminClient = getSupabaseAdmin();
+        await adminClient.from('audit_logs').insert([
+          {
+            user_id: newTicket.submittedById,
+            username: newTicket.submittedByName,
+            role: newTicket.submittedByRole,
+            action: 'SUPPORT_TICKET_CREATED',
+            entity_type: 'support_ticket',
+            entity_id: newTicket.ticketNumber,
+            details: JSON.stringify({
+              ticketNumber: newTicket.ticketNumber,
+              schoolName: newTicket.schoolName,
+              subject: newTicket.subject,
+              category: newTicket.category,
+              priority: newTicket.priority
+            }),
+            timestamp: now
+          }
+        ]);
+      } catch {}
+
+      return res.status(201).json({ success: true, ticket: newTicket });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.patch("/api/support/tickets/:id", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const raw = req.body || {};
+      const now = Date.now();
+
+      const currentList = await loadAllSupportTicketsFromSupabase();
+      const targetIndex = currentList.findIndex(
+        (item) => String(item.id) === String(id) || String(item.ticketNumber) === String(id)
+      );
+
+      if (targetIndex === -1) {
+        return res.status(404).json({ success: false, error: "Support ticket not found." });
+      }
+
+      const existing = currentList[targetIndex];
+      const messages = Array.isArray(existing.messages) ? [...existing.messages] : [];
+      let latestReply = existing.reply || '';
+      let nextStatus = existing.status;
+
+      if (raw.status && ['open', 'in_progress', 'resolved'].includes(String(raw.status).toLowerCase())) {
+        nextStatus = String(raw.status).toLowerCase() as 'open' | 'in_progress' | 'resolved';
+      }
+
+      if (raw.messageText && String(raw.messageText).trim()) {
+        const isCreator = Boolean(raw.isCreator);
+        const msgObj = {
+          id: crypto.randomUUID(),
+          senderName:
+            String(raw.senderName || '').trim() ||
+            (isCreator ? 'SchoolSphere Team / Emmanuel Amoako' : 'School Staff'),
+          senderRole: String(raw.senderRole || (isCreator ? 'creator' : 'staff')),
+          isCreator,
+          text: String(raw.messageText).trim(),
+          createdAt: now
+        };
+        messages.push(msgObj);
+        if (isCreator) {
+          latestReply = msgObj.text;
+          if (!raw.status && existing.status === 'open') {
+            nextStatus = 'in_progress';
+          }
+        }
+      }
+
+      const updatedTicket = normalizeSupportTicketRecord({
+        ...existing,
+        status: nextStatus,
+        priority: raw.priority || existing.priority,
+        reply: latestReply,
+        messages,
+        updatedAt: now
+      });
+
+      const updatedList = [...currentList];
+      updatedList[targetIndex] = updatedTicket;
+      await persistSupportTicketToSupabase(updatedTicket, updatedList);
+
+      return res.json({ success: true, ticket: updatedTicket });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/support/tickets/:id", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const adminClient = getSupabaseAdmin();
+      try {
+        await adminClient.from('support_tickets').delete().eq('id', id);
+      } catch {}
+
+      const currentList = await loadAllSupportTicketsFromSupabase();
+      const filtered = currentList.filter(
+        (item) => String(item.id) !== String(id) && String(item.ticketNumber) !== String(id)
+      );
+      await writeSupabaseSettingList('platform_support_tickets', filtered);
+      return res.json({ success: true, id });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Teachers Duty Roster & Daily Logbook Cloud Sync (Supabase public.settings + public.audit_logs)
+  app.get("/api/duty-roster", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = String(
+        req.user?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || 'default'
+      ).trim();
+      const settingKey = `duty_roster_${schoolId || 'default'}`;
+      const adminClient = getSupabaseAdmin();
+      const { data, error } = await adminClient
+        .from('settings')
+        .select('value')
+        .eq('key', settingKey)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data?.value) {
+        const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        return res.json({
+          success: true,
+          assignments: Array.isArray(parsed?.assignments) ? parsed.assignments : [],
+          logs: Array.isArray(parsed?.logs) ? parsed.logs : []
+        });
+      }
+      return res.json({ success: true, assignments: [], logs: [] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/duty-roster/sync", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const raw = req.body || {};
+      const schoolId = String(
+        raw.schoolId || req.user?.school_id || req.headers?.['x-school-id'] || 'default'
+      ).trim();
+      const settingKey = `duty_roster_${schoolId || 'default'}`;
+      const payload = {
+        schoolId,
+        schoolName: String(raw.schoolName || 'SCHOOLSPHERE PORTAL'),
+        assignments: Array.isArray(raw.assignments) ? raw.assignments : [],
+        logs: Array.isArray(raw.logs) ? raw.logs : [],
+        updatedAt: Date.now()
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const { data: existing } = await adminClient
+        .from('settings')
+        .select('id')
+        .eq('key', settingKey)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await adminClient.from('settings').update({ value: payload }).eq('id', existing.id);
+      } else {
+        await adminClient.from('settings').insert([{ key: settingKey, value: payload }]);
+      }
+
+      return res.json({
+        success: true,
+        assignments: payload.assignments,
+        logs: payload.logs
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // =========================================================================
+  // STAFF PAYROLL & COMPENSATION SYSTEM SUPABASE DATABASE ENGINE
+  // Connects to: staff_salary_profiles, staff_payslips, staff_salary_advances,
+  //              teachers, school_expenses, settings, and audit_logs
+  // =========================================================================
+
+  const PAYROLL_DDL_SQL = `-- SchoolSphere Staff Payroll & Compensation System Tables for Supabase
+CREATE TABLE IF NOT EXISTS public.staff_salary_profiles (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  staff_id VARCHAR(80) NOT NULL,
+  staff_name VARCHAR(255) NOT NULL,
+  designation VARCHAR(150) NOT NULL DEFAULT 'Subject Teacher',
+  phone VARCHAR(60) NULL,
+  email VARCHAR(150) NULL,
+  ssnit_number VARCHAR(80) NOT NULL DEFAULT 'N/A',
+  tin_number VARCHAR(80) NOT NULL DEFAULT 'N/A',
+  payment_method VARCHAR(50) NOT NULL DEFAULT 'Bank Transfer',
+  bank_or_network VARCHAR(120) NOT NULL DEFAULT 'GCB Bank',
+  account_number VARCHAR(100) NOT NULL DEFAULT '—',
+  basic_salary NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  responsibility_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  transport_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  other_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  ssnit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  paye_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  manual_tax_override NUMERIC(12, 2) NULL,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_salary_profiles_school
+  ON public.staff_salary_profiles (school_id, staff_id);
+
+CREATE TABLE IF NOT EXISTS public.staff_payslips (
+  id VARCHAR(140) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  payroll_month VARCHAR(20) NOT NULL,
+  period_label VARCHAR(80) NOT NULL,
+  staff_id VARCHAR(80) NOT NULL,
+  staff_name VARCHAR(255) NOT NULL,
+  designation VARCHAR(150) NOT NULL DEFAULT 'Subject Teacher',
+  ssnit_number VARCHAR(80) NOT NULL DEFAULT 'N/A',
+  tin_number VARCHAR(80) NOT NULL DEFAULT 'N/A',
+  payment_method VARCHAR(50) NOT NULL DEFAULT 'Bank Transfer',
+  bank_or_network VARCHAR(120) NOT NULL DEFAULT 'GCB Bank',
+  account_number VARCHAR(100) NOT NULL DEFAULT '—',
+  basic_salary NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  responsibility_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  transport_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  other_allowance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  total_allowances NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  bonus_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  gross_pay NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  ssnit_employee NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  ssnit_employer NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  taxable_income NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  paye_tax NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  loan_deduction NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  other_deduction NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  total_deductions NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  net_pay NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  status VARCHAR(30) NOT NULL DEFAULT 'draft',
+  paid_at BIGINT NULL,
+  receipt_ref VARCHAR(80) NOT NULL,
+  notes TEXT NULL,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_payslips_school_month
+  ON public.staff_payslips (school_id, payroll_month, status);
+
+CREATE TABLE IF NOT EXISTS public.staff_salary_advances (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  staff_id VARCHAR(80) NOT NULL,
+  staff_name VARCHAR(255) NOT NULL,
+  designation VARCHAR(150) NOT NULL DEFAULT 'Subject Teacher',
+  type VARCHAR(50) NOT NULL DEFAULT 'Salary Advance',
+  principal_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  monthly_installment NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  remaining_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  reason TEXT NOT NULL DEFAULT '',
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  requested_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  approved_by VARCHAR(150) NULL,
+  approved_at BIGINT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_salary_advances_school
+  ON public.staff_salary_advances (school_id, status);
+
+NOTIFY pgrst, 'reload schema';`;
+
+  const isUuidFormat = (val: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      String(val || '').trim()
+    );
+
+  async function resolvePayrollSchoolId(req: any): Promise<string> {
+    const rawCandidate = String(
+      req.body?.schoolId ||
+        req.query?.schoolId ||
+        req.user?.school_id ||
+        req.headers?.['x-school-id'] ||
+        ''
+    ).trim();
+
+    if (isUuidFormat(rawCandidate)) return rawCandidate;
+
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: firstSchool } = await adminClient
+        .from('schools')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (firstSchool?.id) return String(firstSchool.id);
+    } catch {}
+
+    return rawCandidate || 'default';
+  }
+
+  function mapRowToSalaryProfile(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || `prof-${row.staff_id || row.staffId}`),
+      schoolId: row.school_id || row.schoolId || undefined,
+      staffId: String(row.staff_id ?? row.staffId ?? '').trim(),
+      staffName: String(row.staff_name ?? row.staffName ?? '').trim(),
+      designation: String(row.designation || 'Subject Teacher').trim(),
+      phone: row.phone ? String(row.phone) : '',
+      email: row.email ? String(row.email) : '',
+      ssnitNumber: String(row.ssnit_number ?? row.ssnitNumber ?? 'N/A'),
+      tinNumber: String(row.tin_number ?? row.tinNumber ?? 'N/A'),
+      paymentMethod: (row.payment_method ?? row.paymentMethod ?? 'Bank Transfer') as any,
+      bankOrNetwork: String(row.bank_or_network ?? row.bankOrNetwork ?? 'GCB Bank'),
+      accountNumber: String(row.account_number ?? row.accountNumber ?? '—'),
+      basicSalary: Number(row.basic_salary ?? row.basicSalary ?? 0) || 0,
+      responsibilityAllowance:
+        Number(row.responsibility_allowance ?? row.responsibilityAllowance ?? 0) || 0,
+      transportAllowance: Number(row.transport_allowance ?? row.transportAllowance ?? 0) || 0,
+      otherAllowance: Number(row.other_allowance ?? row.otherAllowance ?? 0) || 0,
+      ssnitEnabled:
+        row.ssnit_enabled !== undefined
+          ? Boolean(row.ssnit_enabled)
+          : row.ssnitEnabled !== undefined
+          ? Boolean(row.ssnitEnabled)
+          : true,
+      payeEnabled:
+        row.paye_enabled !== undefined
+          ? Boolean(row.paye_enabled)
+          : row.payeEnabled !== undefined
+          ? Boolean(row.payeEnabled)
+          : true,
+      manualTaxOverride:
+        row.manual_tax_override !== undefined && row.manual_tax_override !== null
+          ? Number(row.manual_tax_override)
+          : row.manualTaxOverride !== undefined && row.manualTaxOverride !== null
+          ? Number(row.manualTaxOverride)
+          : null,
+      updatedAt: Number(row.updated_at ?? row.updatedAt ?? Date.now()) || Date.now()
+    };
+  }
+
+  function mapRowToPayslip(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || `slip-${row.payroll_month || row.payrollMonth}-${row.staff_id || row.staffId}`),
+      schoolId: row.school_id || row.schoolId || undefined,
+      payrollMonth: String(row.payroll_month ?? row.payrollMonth ?? ''),
+      periodLabel: String(row.period_label ?? row.periodLabel ?? ''),
+      staffId: String(row.staff_id ?? row.staffId ?? ''),
+      staffName: String(row.staff_name ?? row.staffName ?? ''),
+      designation: String(row.designation || 'Subject Teacher'),
+      ssnitNumber: String(row.ssnit_number ?? row.ssnitNumber ?? 'N/A'),
+      tinNumber: String(row.tin_number ?? row.tinNumber ?? 'N/A'),
+      paymentMethod: (row.payment_method ?? row.paymentMethod ?? 'Bank Transfer') as any,
+      bankOrNetwork: String(row.bank_or_network ?? row.bankOrNetwork ?? 'GCB Bank'),
+      accountNumber: String(row.account_number ?? row.accountNumber ?? '—'),
+      basicSalary: Number(row.basic_salary ?? row.basicSalary ?? 0) || 0,
+      responsibilityAllowance:
+        Number(row.responsibility_allowance ?? row.responsibilityAllowance ?? 0) || 0,
+      transportAllowance: Number(row.transport_allowance ?? row.transportAllowance ?? 0) || 0,
+      otherAllowance: Number(row.other_allowance ?? row.otherAllowance ?? 0) || 0,
+      totalAllowances: Number(row.total_allowances ?? row.totalAllowances ?? 0) || 0,
+      bonusAmount: Number(row.bonus_amount ?? row.bonusAmount ?? 0) || 0,
+      grossPay: Number(row.gross_pay ?? row.grossPay ?? 0) || 0,
+      ssnitEmployee: Number(row.ssnit_employee ?? row.ssnitEmployee ?? 0) || 0,
+      ssnitEmployer: Number(row.ssnit_employer ?? row.ssnitEmployer ?? 0) || 0,
+      taxableIncome: Number(row.taxable_income ?? row.taxableIncome ?? 0) || 0,
+      payeTax: Number(row.paye_tax ?? row.payeTax ?? 0) || 0,
+      loanDeduction: Number(row.loan_deduction ?? row.loanDeduction ?? 0) || 0,
+      otherDeduction: Number(row.other_deduction ?? row.otherDeduction ?? 0) || 0,
+      totalDeductions: Number(row.total_deductions ?? row.totalDeductions ?? 0) || 0,
+      netPay: Number(row.net_pay ?? row.netPay ?? 0) || 0,
+      status: (row.status || 'draft') as 'draft' | 'approved' | 'paid',
+      paidAt: row.paid_at ?? row.paidAt ?? null,
+      receiptRef: String(row.receipt_ref ?? row.receiptRef ?? ''),
+      notes: String(row.notes || ''),
+      updatedAt: Number(row.updated_at ?? row.updatedAt ?? Date.now()) || Date.now()
+    };
+  }
+
+  function mapRowToAdvance(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || `adv-${Date.now()}`),
+      schoolId: row.school_id || row.schoolId || undefined,
+      staffId: String(row.staff_id ?? row.staffId ?? ''),
+      staffName: String(row.staff_name ?? row.staffName ?? ''),
+      designation: String(row.designation || 'Subject Teacher'),
+      type: (row.type || 'Salary Advance') as 'Salary Advance' | 'Staff Loan',
+      principalAmount: Number(row.principal_amount ?? row.principalAmount ?? 0) || 0,
+      monthlyInstallment: Number(row.monthly_installment ?? row.monthlyInstallment ?? 0) || 0,
+      remainingBalance: Number(row.remaining_balance ?? row.remainingBalance ?? 0) || 0,
+      reason: String(row.reason || ''),
+      status: (row.status || 'pending') as 'pending' | 'approved' | 'completed' | 'declined',
+      requestedAt: Number(row.requested_at ?? row.requestedAt ?? Date.now()) || Date.now(),
+      approvedBy: row.approved_by ?? row.approvedBy ?? null,
+      approvedAt: row.approved_at ?? row.approvedAt ?? null
+    };
+  }
+
+  async function inspectPayrollDatabaseTables(
+    schoolId: string,
+    mirrorCounts?: { profiles: number; payslips: number; advances: number }
+  ) {
+    const adminClient = getSupabaseAdmin();
+    const tables = [
+      'staff_salary_profiles',
+      'staff_payslips',
+      'staff_salary_advances',
+      'teachers',
+      'school_expenses'
+    ];
+    const statusMap: Record<
+      string,
+      { exists: boolean; status: string; count: number; error?: string }
+    > = {};
+
+    for (const tbl of tables) {
+      try {
+        let q = adminClient.from(tbl).select('*', { count: 'exact', head: true });
+        if (isUuidFormat(schoolId)) {
+          q = q.eq('school_id', schoolId);
+        }
+        const { count, error } = await q;
+        if (!error) {
+          statusMap[tbl] = {
+            exists: true,
+            status: 'Connected (Supabase Table)',
+            count: Number(count || 0)
+          };
+        } else {
+          const fallbackCount =
+            tbl === 'staff_salary_profiles'
+              ? mirrorCounts?.profiles || 0
+              : tbl === 'staff_payslips'
+              ? mirrorCounts?.payslips || 0
+              : tbl === 'staff_salary_advances'
+              ? mirrorCounts?.advances || 0
+              : 0;
+          statusMap[tbl] = {
+            exists: false,
+            status: 'Active (Supabase Hybrid Cloud Sync)',
+            count: fallbackCount,
+            error: error.message
+          };
+        }
+      } catch (e: any) {
+        statusMap[tbl] = {
+          exists: false,
+          status: 'Active (Supabase Hybrid Cloud Sync)',
+          count: 0,
+          error: e?.message
+        };
+      }
+    }
+    return statusMap;
+  }
+
+  async function fetchPayrollFromSupabase(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const settingKey = `payroll_system_${schoolId || 'default'}`;
+
+    // 1. Read mirror backup from public.settings
+    let mirrorProfiles: any[] = [];
+    let mirrorPayslips: any[] = [];
+    let mirrorAdvances: any[] = [];
+
+    try {
+      const { data: settingRow } = await adminClient
+        .from('settings')
+        .select('value')
+        .eq('key', settingKey)
+        .limit(1)
+        .maybeSingle();
+      if (settingRow?.value) {
+        const parsed =
+          typeof settingRow.value === 'string'
+            ? JSON.parse(settingRow.value)
+            : settingRow.value;
+        mirrorProfiles = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
+        mirrorPayslips = Array.isArray(parsed?.payslips) ? parsed.payslips : [];
+        mirrorAdvances = Array.isArray(parsed?.advances) ? parsed.advances : [];
+      }
+    } catch {}
+
+    // 2. Query dedicated relational tables if provisioned
+    let dbProfiles: any[] = [];
+    let dbPayslips: any[] = [];
+    let dbAdvances: any[] = [];
+
+    try {
+      let qProf = adminClient.from('staff_salary_profiles').select('*');
+      if (isUuidFormat(schoolId)) qProf = qProf.eq('school_id', schoolId);
+      const { data: pRows, error: pErr } = await qProf;
+      if (!pErr && Array.isArray(pRows) && pRows.length > 0) {
+        dbProfiles = pRows.map(mapRowToSalaryProfile).filter(Boolean);
+      }
+    } catch {}
+
+    try {
+      let qSlips = adminClient.from('staff_payslips').select('*');
+      if (isUuidFormat(schoolId)) qSlips = qSlips.eq('school_id', schoolId);
+      const { data: sRows, error: sErr } = await qSlips;
+      if (!sErr && Array.isArray(sRows) && sRows.length > 0) {
+        dbPayslips = sRows.map(mapRowToPayslip).filter(Boolean);
+      }
+    } catch {}
+
+    try {
+      let qAdv = adminClient.from('staff_salary_advances').select('*');
+      if (isUuidFormat(schoolId)) qAdv = qAdv.eq('school_id', schoolId);
+      const { data: aRows, error: aErr } = await qAdv;
+      if (!aErr && Array.isArray(aRows) && aRows.length > 0) {
+        dbAdvances = aRows.map(mapRowToAdvance).filter(Boolean);
+      }
+    } catch {}
+
+    let profiles = dbProfiles.length > 0 ? dbProfiles : mirrorProfiles;
+    const payslips = dbPayslips.length > 0 ? dbPayslips : mirrorPayslips;
+    const advances = dbAdvances.length > 0 ? dbAdvances : mirrorAdvances;
+
+    // 3. If profiles is still empty, auto-link registered teachers from public.teachers
+    if (profiles.length === 0) {
+      try {
+        let qTeachers = adminClient.from('teachers').select('*');
+        if (isUuidFormat(schoolId)) qTeachers = qTeachers.eq('school_id', schoolId);
+        const { data: tRows } = await qTeachers.limit(100);
+        if (Array.isArray(tRows) && tRows.length > 0) {
+          profiles = tRows.map((t: any, idx: number) => {
+            const firstName = String(t.first_name || t.firstName || '').trim();
+            const lastName = String(t.last_name || t.lastName || '').trim();
+            const fullName = `${firstName} ${lastName}`.trim() || `Teacher ${idx + 1}`;
+            const staffCode = String(
+              t.staff_id || t.staffId || `STF-${String(idx + 1).padStart(3, '0')}`
+            ).trim();
+            return {
+              id: `prof-${staffCode}`,
+              schoolId,
+              staffId: staffCode,
+              staffName: fullName,
+              designation: idx === 0 ? 'Senior Teacher / HOD' : 'Subject Teacher',
+              phone: String(t.phone || ''),
+              email: String(t.email || ''),
+              ssnitNumber: `C00${184500 + idx * 17}`,
+              tinNumber: `P00${492100 + idx * 23}`,
+              paymentMethod: idx % 3 === 2 ? 'Mobile Money' : 'Bank Transfer',
+              bankOrNetwork: idx % 3 === 2 ? 'MTN Mobile Money (MoMo)' : 'GCB Bank',
+              accountNumber: idx % 3 === 2 ? String(t.phone || '0551187045') : `101120048${idx + 10}`,
+              basicSalary: idx === 0 ? 3400 : 2800,
+              responsibilityAllowance: idx === 0 ? 400 : 200,
+              transportAllowance: 250,
+              otherAllowance: 0,
+              ssnitEnabled: true,
+              payeEnabled: true,
+              manualTaxOverride: null,
+              updatedAt: Date.now()
+            };
+          });
+        }
+      } catch {}
+    }
+
+    // 4. Query salary expenses from public.school_expenses
+    let salaryExpenses: any[] = [];
+    try {
+      let qExp = adminClient
+        .from('school_expenses')
+        .select('*')
+        .eq('category', 'Salaries')
+        .order('date', { ascending: false })
+        .limit(100);
+      if (isUuidFormat(schoolId)) qExp = qExp.eq('school_id', schoolId);
+      const { data: expRows } = await qExp;
+      if (Array.isArray(expRows)) {
+        salaryExpenses = expRows;
+      }
+    } catch {}
+
+    return {
+      profiles,
+      payslips,
+      advances,
+      salaryExpenses
+    };
+  }
+
+  async function savePayrollToSupabase(
+    schoolId: string,
+    schoolName: string,
+    profiles: any[],
+    payslips: any[],
+    advances: any[]
+  ) {
+    const adminClient = getSupabaseAdmin();
+    const settingKey = `payroll_system_${schoolId || 'default'}`;
+    const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+
+    // 1. Save mirror state to public.settings
+    const payload = {
+      schoolId,
+      schoolName,
+      profiles,
+      payslips,
+      advances,
+      updatedAt: Date.now()
+    };
+
+    try {
+      const { data: existing } = await adminClient
+        .from('settings')
+        .select('id')
+        .eq('key', settingKey)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await adminClient.from('settings').update({ value: payload }).eq('id', existing.id);
+      } else {
+        await adminClient.from('settings').insert([{ key: settingKey, value: payload }]);
+      }
+    } catch {}
+
+    // 2. Upsert into relational public.staff_salary_profiles if table exists
+    if (profiles.length > 0) {
+      try {
+        const profRows = profiles.map((p: any) => ({
+          id: String(p.id || `prof-${p.staffId}`),
+          school_id: validSchoolUuid,
+          staff_id: String(p.staffId || ''),
+          staff_name: String(p.staffName || ''),
+          designation: String(p.designation || 'Subject Teacher'),
+          phone: p.phone || null,
+          email: p.email || null,
+          ssnit_number: String(p.ssnitNumber || 'N/A'),
+          tin_number: String(p.tinNumber || 'N/A'),
+          payment_method: String(p.paymentMethod || 'Bank Transfer'),
+          bank_or_network: String(p.bankOrNetwork || 'GCB Bank'),
+          account_number: String(p.accountNumber || '—'),
+          basic_salary: Number(p.basicSalary || 0),
+          responsibility_allowance: Number(p.responsibilityAllowance || 0),
+          transport_allowance: Number(p.transportAllowance || 0),
+          other_allowance: Number(p.otherAllowance || 0),
+          ssnit_enabled: Boolean(p.ssnitEnabled ?? true),
+          paye_enabled: Boolean(p.payeEnabled ?? true),
+          manual_tax_override:
+            p.manualTaxOverride !== null && p.manualTaxOverride !== undefined
+              ? Number(p.manualTaxOverride)
+              : null,
+          updated_at: Number(p.updatedAt || Date.now())
+        }));
+        await adminClient.from('staff_salary_profiles').upsert(profRows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 3. Upsert into relational public.staff_payslips if table exists
+    if (payslips.length > 0) {
+      try {
+        const slipRows = payslips.map((s: any) => ({
+          id: String(s.id || `slip-${s.payrollMonth}-${s.staffId}`),
+          school_id: validSchoolUuid,
+          payroll_month: String(s.payrollMonth || ''),
+          period_label: String(s.periodLabel || ''),
+          staff_id: String(s.staffId || ''),
+          staff_name: String(s.staffName || ''),
+          designation: String(s.designation || 'Subject Teacher'),
+          ssnit_number: String(s.ssnitNumber || 'N/A'),
+          tin_number: String(s.tinNumber || 'N/A'),
+          payment_method: String(s.paymentMethod || 'Bank Transfer'),
+          bank_or_network: String(s.bankOrNetwork || 'GCB Bank'),
+          account_number: String(s.accountNumber || '—'),
+          basic_salary: Number(s.basicSalary || 0),
+          responsibility_allowance: Number(s.responsibilityAllowance || 0),
+          transport_allowance: Number(s.transportAllowance || 0),
+          other_allowance: Number(s.otherAllowance || 0),
+          total_allowances: Number(s.totalAllowances || 0),
+          bonus_amount: Number(s.bonusAmount || 0),
+          gross_pay: Number(s.grossPay || 0),
+          ssnit_employee: Number(s.ssnitEmployee || 0),
+          ssnit_employer: Number(s.ssnitEmployer || 0),
+          taxable_income: Number(s.taxableIncome || 0),
+          paye_tax: Number(s.payeTax || 0),
+          loan_deduction: Number(s.loanDeduction || 0),
+          other_deduction: Number(s.otherDeduction || 0),
+          total_deductions: Number(s.totalDeductions || 0),
+          net_pay: Number(s.netPay || 0),
+          status: String(s.status || 'draft'),
+          paid_at: s.paidAt || null,
+          receipt_ref: String(s.receiptRef || ''),
+          notes: s.notes || null,
+          updated_at: Number(s.updatedAt || Date.now())
+        }));
+        await adminClient.from('staff_payslips').upsert(slipRows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 4. Upsert into relational public.staff_salary_advances if table exists
+    if (advances.length > 0) {
+      try {
+        const advRows = advances.map((a: any) => ({
+          id: String(a.id || `adv-${Date.now()}`),
+          school_id: validSchoolUuid,
+          staff_id: String(a.staffId || ''),
+          staff_name: String(a.staffName || ''),
+          designation: String(a.designation || 'Subject Teacher'),
+          type: String(a.type || 'Salary Advance'),
+          principal_amount: Number(a.principalAmount || 0),
+          monthly_installment: Number(a.monthlyInstallment || 0),
+          remaining_balance: Number(a.remainingBalance || 0),
+          reason: String(a.reason || ''),
+          status: String(a.status || 'pending'),
+          requested_at: Number(a.requestedAt || Date.now()),
+          approved_by: a.approvedBy || null,
+          approved_at: a.approvedAt || null
+        }));
+        await adminClient.from('staff_salary_advances').upsert(advRows, { onConflict: 'id' });
+      } catch {}
+    }
+  }
+
+  app.get(["/api/payroll", "/api/payroll/state"], optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolvePayrollSchoolId(req);
+      const data = await fetchPayrollFromSupabase(schoolId);
+      const tableStatus = await inspectPayrollDatabaseTables(schoolId, {
+        profiles: data.profiles.length,
+        payslips: data.payslips.length,
+        advances: data.advances.length
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        profiles: data.profiles,
+        payslips: data.payslips,
+        advances: data.advances,
+        salaryExpenses: data.salaryExpenses,
+        tableStatus,
+        payrollSql: PAYROLL_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/payroll/sync", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const raw = req.body || {};
+      const schoolId = await resolvePayrollSchoolId(req);
+      const schoolName = String(raw.schoolName || 'SCHOOLSPHERE PORTAL');
+      const profiles = Array.isArray(raw.profiles) ? raw.profiles : [];
+      const payslips = Array.isArray(raw.payslips) ? raw.payslips : [];
+      const advances = Array.isArray(raw.advances) ? raw.advances : [];
+
+      await savePayrollToSupabase(schoolId, schoolName, profiles, payslips, advances);
+
+      // Record audit log entry if action is specified
+      if (raw.auditAction) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: isUuidFormat(schoolId) ? schoolId : null,
+              action: String(raw.auditAction),
+              details: JSON.stringify({
+                schoolName,
+                profilesCount: profiles.length,
+                payslipsCount: payslips.length,
+                advancesCount: advances.length
+              }),
+              created_at: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      const tableStatus = await inspectPayrollDatabaseTables(schoolId, {
+        profiles: profiles.length,
+        payslips: payslips.length,
+        advances: advances.length
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        profiles,
+        payslips,
+        advances,
+        tableStatus,
+        payrollSql: PAYROLL_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/payroll/disburse - Marks payslips Paid, deducts loan balances, and posts Salaries to public.school_expenses + audit_logs
+  app.post("/api/payroll/disburse", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const raw = req.body || {};
+      const schoolId = await resolvePayrollSchoolId(req);
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      const schoolName = String(raw.schoolName || 'SCHOOLSPHERE PORTAL');
+      const recordedBy = String(
+        raw.recordedBy || req.user?.full_name || req.user?.username || 'Bursar / Payroll Officer'
+      );
+      const disbursedSlips: any[] = Array.isArray(raw.disbursedSlips) ? raw.disbursedSlips : [];
+      const profiles: any[] = Array.isArray(raw.profiles) ? raw.profiles : [];
+      const payslips: any[] = Array.isArray(raw.payslips) ? raw.payslips : [];
+      const advances: any[] = Array.isArray(raw.advances) ? raw.advances : [];
+
+      await savePayrollToSupabase(schoolId, schoolName, profiles, payslips, advances);
+
+      const adminClient = getSupabaseAdmin();
+      const createdExpenses: any[] = [];
+      const now = Date.now();
+
+      // Auto-post each disbursed salary to public.school_expenses (idempotent by receiptRef)
+      for (const slip of disbursedSlips) {
+        const refTag = `[Ref: ${slip.receiptRef || slip.id}]`;
+        const desc = `${refTag} Staff Salary Disbursement — ${slip.staffName} (${slip.staffId}) · ${slip.periodLabel} (Net: GHS ${Number(slip.netPay || 0).toFixed(2)}, SSNIT/PAYE Included: Gross GHS ${Number(slip.grossPay || 0).toFixed(2)})`;
+        const amount = Math.max(0.01, Number(slip.grossPay || slip.netPay || 0));
+        const paymentMethod = String(slip.paymentMethod || 'Bank Transfer');
+
+        let alreadyExists = false;
+        if (validSchoolUuid) {
+          try {
+            const { data: existingExp } = await adminClient
+              .from('school_expenses')
+              .select('id')
+              .eq('school_id', validSchoolUuid)
+              .ilike('description', `%${refTag}%`)
+              .limit(1)
+              .maybeSingle();
+            if (existingExp?.id) alreadyExists = true;
+          } catch {}
+        }
+
+        if (!alreadyExists) {
+          const expRecord = {
+            description: desc,
+            category: 'Salaries',
+            amount,
+            date: now,
+            paymentMethod,
+            recordedBy
+          };
+          createdExpenses.push(expRecord);
+
+          if (validSchoolUuid) {
+            try {
+              await adminClient.from('school_expenses').insert([
+                {
+                  school_id: validSchoolUuid,
+                  description: desc,
+                  category: 'Salaries',
+                  amount,
+                  date: now,
+                  payment_method: paymentMethod,
+                  recorded_by: recordedBy
+                }
+              ]);
+            } catch {}
+          }
+        }
+      }
+
+      // Log salary disbursement to public.audit_logs
+      try {
+        await adminClient.from('audit_logs').insert([
+          {
+            school_id: validSchoolUuid,
+            action: 'PAYROLL_SALARY_DISBURSED',
+            details: JSON.stringify({
+              schoolName,
+              disbursedCount: disbursedSlips.length,
+              totalGrossPostedToExpenses: disbursedSlips.reduce(
+                (s, item) => s + Number(item.grossPay || 0),
+                0
+              ),
+              totalNetDisbursed: disbursedSlips.reduce(
+                (s, item) => s + Number(item.netPay || 0),
+                0
+              ),
+              recordedBy
+            }),
+            created_at: now
+          }
+        ]);
+      } catch {}
+
+      const tableStatus = await inspectPayrollDatabaseTables(schoolId, {
+        profiles: profiles.length,
+        payslips: payslips.length,
+        advances: advances.length
+      });
+
+      return res.json({
+        success: true,
+        schoolId,
+        createdExpenses,
+        tableStatus,
+        syncedAt: now
+      });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
