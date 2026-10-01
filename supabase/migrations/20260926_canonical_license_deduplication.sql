@@ -90,35 +90,41 @@ RETURNS TABLE (
   client_email TEXT,
   contact_person TEXT
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
+
+  RETURN QUERY
   SELECT
     s.id,
-    s.name,
-    s.slug,
-    s.theme,
-    s.logo_url,
-    s.email,
-    s.phone,
-    s.address,
-    s.academic_year,
-    s.current_term,
+    s.name::TEXT,
+    s.slug::TEXT,
+    s.theme::TEXT,
+    s.logo_url::TEXT,
+    s.email::TEXT,
+    s.phone::TEXT,
+    s.address::TEXT,
+    s.academic_year::TEXT,
+    s.current_term::TEXT,
     CASE
       WHEN sl.active_status IN ('suspended', 'revoked') THEN 'suspended'
       WHEN sl.active_status = 'expired' THEN 'expired'
       ELSE COALESCE(s.status, 'active')
-    END AS status,
+    END::TEXT AS status,
     COALESCE(s.license_id, sl.id) AS license_id,
-    sl.license_key,
-    COALESCE(sl.tier, 'Enterprise') AS tier,
+    sl.license_key::TEXT,
+    COALESCE(sl.tier, 'Enterprise')::TEXT AS tier,
     sl.expiry_date,
     COALESCE(sl.active_modules, '["students","academic","timetable","attendance","results","reports","fees"]'::jsonb) AS active_modules,
     COALESCE(sl.used, (sl.activated_at IS NOT NULL AND sl.activated_at > 0)) AS used,
     sl.activated_at,
-    COALESCE(sl.client_email, s.email) AS client_email,
-    sl.contact_person
+    COALESCE(sl.client_email, s.email)::TEXT AS client_email,
+    sl.contact_person::TEXT
   FROM public.schools s
   LEFT JOIN LATERAL (
     SELECT l.*
@@ -133,9 +139,11 @@ AS $$
     LIMIT 1
   ) sl ON TRUE
   ORDER BY s.name ASC;
+END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_schools_directory() TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.get_schools_directory() FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_schools_directory() TO authenticated, service_role;
 
 -- 6. Upgrade sync_school_license() to enforce 1-to-1 canonical school_licenses row per school
 CREATE OR REPLACE FUNCTION public.sync_school_license(
@@ -168,6 +176,9 @@ DECLARE
   v_school_status TEXT;
   v_now BIGINT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   v_now := (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
   v_clean_name := UPPER(TRIM(COALESCE(p_school_name, 'SCHOOL SPHERE ACADEMY')));
   v_slug := TRIM(BOTH '-' FROM REGEXP_REPLACE(LOWER(v_clean_name), '[^a-z0-9]+', '-', 'g'));
@@ -320,6 +331,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) TO authenticated, service_role;
 
 COMMIT;

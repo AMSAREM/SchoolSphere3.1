@@ -920,6 +920,9 @@ DECLARE
   v_status TEXT;
   v_school_status TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   v_clean_name := TRIM(p_school_name);
   v_clean_key := TRIM(UPPER(p_license_key));
   v_tier := COALESCE(p_tier, 'Standard');
@@ -1006,7 +1009,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.sync_school_license TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.set_school_tenant_status(
   p_school_id UUID DEFAULT NULL,
@@ -1025,6 +1029,9 @@ DECLARE
   v_status TEXT := LOWER(TRIM(COALESCE(p_status, 'suspended')));
   v_school_status TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'deactivated', 'pending_activation') THEN
     v_status := 'suspended';
   END IF;
@@ -1077,7 +1084,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.set_school_tenant_status TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- ==============================================================================
 -- 19. SUPABASE AUTH <-> PUBLIC.USERS AUTO-LINKING & RLS ALIASES
@@ -1106,6 +1114,7 @@ DECLARE
   v_role TEXT;
   v_username TEXT;
   v_full_name TEXT;
+  v_matched_id BIGINT;
 BEGIN
   BEGIN
     v_school_id := NULLIF(NEW.raw_user_meta_data ->> 'school_id', '')::UUID;
@@ -1114,18 +1123,30 @@ BEGIN
   END;
 
   v_role := COALESCE(NULLIF(LOWER(NEW.raw_user_meta_data ->> 'role'), ''), 'admin');
+  IF v_role IN ('creator', 'super_admin') THEN
+    v_role := 'admin';
+  END IF;
   v_username := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'username', ''), SPLIT_PART(NEW.email, '@', 1));
   v_full_name := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'full_name', ''), v_username);
 
-  -- Link existing public.users record if matched by email or (school_id, username)
+  -- 1. If a row is already linked to this auth_user_id, keep its email synchronized with auth.users.email
   UPDATE public.users
-  SET auth_user_id = NEW.id,
+  SET email = LOWER(NEW.email),
+      full_name = COALESCE(NULLIF(public.users.full_name, ''), v_full_name),
       updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-  WHERE auth_user_id IS NULL
-    AND (
-      LOWER(email) = LOWER(NEW.email)
-      OR (v_school_id IS NOT NULL AND school_id = v_school_id AND LOWER(username) = LOWER(v_username))
-    );
+  WHERE auth_user_id = NEW.id
+  RETURNING id INTO v_matched_id;
+
+  -- 2. Otherwise, ONLY link an existing unlinked public.users row if its email strictly matches NEW.email
+  IF v_matched_id IS NULL AND NEW.email IS NOT NULL THEN
+    UPDATE public.users
+    SET auth_user_id = NEW.id,
+        email = LOWER(NEW.email),
+        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE auth_user_id IS NULL
+      AND LOWER(email) = LOWER(NEW.email)
+    RETURNING id INTO v_matched_id;
+  END IF;
 
   RETURN NEW;
 END;
@@ -1152,7 +1173,8 @@ CREATE TABLE IF NOT EXISTS public.school_settings (
 ALTER TABLE public.school_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for school_settings" ON public.school_settings;
 CREATE POLICY "Tenant isolation for school_settings" ON public.school_settings
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 CREATE TABLE IF NOT EXISTS public.broadcasts (
   id BIGSERIAL PRIMARY KEY,
@@ -1173,7 +1195,8 @@ CREATE INDEX IF NOT EXISTS idx_broadcasts_school_status
 ALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for broadcasts" ON public.broadcasts;
 CREATE POLICY "Tenant isolation for broadcasts" ON public.broadcasts
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 CREATE TABLE IF NOT EXISTS public.siren_schedules (
   id BIGSERIAL PRIMARY KEY,
@@ -1195,7 +1218,8 @@ CREATE INDEX IF NOT EXISTS idx_siren_schedules_school_time
 ALTER TABLE public.siren_schedules ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_schedules" ON public.siren_schedules;
 CREATE POLICY "Tenant isolation for siren_schedules" ON public.siren_schedules
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 CREATE TABLE IF NOT EXISTS public.siren_recordings (
   id BIGSERIAL PRIMARY KEY,
@@ -1218,7 +1242,8 @@ CREATE INDEX IF NOT EXISTS idx_siren_recordings_school_created
 ALTER TABLE public.siren_recordings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_recordings" ON public.siren_recordings;
 CREATE POLICY "Tenant isolation for siren_recordings" ON public.siren_recordings
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 CREATE TABLE IF NOT EXISTS public.siren_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -1240,7 +1265,8 @@ CREATE INDEX IF NOT EXISTS idx_siren_logs_school_timestamp
 ALTER TABLE public.siren_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_logs" ON public.siren_logs;
 CREATE POLICY "Tenant isolation for siren_logs" ON public.siren_logs
-  FOR ALL USING (true) WITH CHECK (true);
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('siren-audio', 'siren-audio', true, 15728640)

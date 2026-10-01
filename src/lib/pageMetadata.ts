@@ -3,10 +3,12 @@ export interface PageIdentityOverride {
   shortTitle?: string;
   category?: string;
   subtitle?: string;
+  path?: string;
 }
 
 export interface PageIdentityMeta {
   id: string;
+  path: string;
   title: string;
   shortTitle: string;
   category: string;
@@ -17,6 +19,7 @@ export interface PageIdentityMeta {
 export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   dashboard: {
     id: 'dashboard',
+    path: '/dashboard',
     title: 'Executive Campus Dashboard',
     shortTitle: 'Dashboard',
     category: 'Portal Home',
@@ -56,6 +59,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   students: {
     id: 'students',
+    path: '/students',
     title: 'Student Directory & Admissions',
     shortTitle: 'Students',
     category: 'Student Affairs',
@@ -63,6 +67,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   academic: {
     id: 'academic',
+    path: '/academic',
     title: 'Academic & Staff Management',
     shortTitle: 'Academics',
     category: 'Academic Operations',
@@ -70,6 +75,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   timetable: {
     id: 'timetable',
+    path: '/timetable',
     title: 'Master School Timetable',
     shortTitle: 'Timetable',
     category: 'Academic Operations',
@@ -91,6 +97,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   duty_roster: {
     id: 'duty_roster',
+    path: '/duty-roster',
     title: 'Teachers Duty Roster & Logbook',
     shortTitle: 'Duty Roster',
     category: 'Academic Operations',
@@ -98,6 +105,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   lesson_notes: {
     id: 'lesson_notes',
+    path: '/lesson-notes',
     title: 'NaCCA Lesson Notes & Vetting',
     shortTitle: 'Lesson Notes',
     category: 'Academic Operations',
@@ -105,6 +113,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   attendance: {
     id: 'attendance',
+    path: '/attendance',
     title: 'Daily Attendance Terminal',
     shortTitle: 'Attendance',
     category: 'Academic Operations',
@@ -126,6 +135,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   results: {
     id: 'results',
+    path: '/results',
     title: 'Academic Results Terminal',
     shortTitle: 'Results',
     category: 'Assessments & Grading',
@@ -147,6 +157,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   exam_analysis: {
     id: 'exam_analysis',
+    path: '/exam-analysis',
     title: 'BECE & WASSCE Exam Analysis',
     shortTitle: 'Exam Analysis',
     category: 'Assessments & Grading',
@@ -154,6 +165,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   reports: {
     id: 'reports',
+    path: '/reports',
     title: 'Terminal Reports & Broadsheets',
     shortTitle: 'Reports',
     category: 'Assessments & Grading',
@@ -175,6 +187,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   fees: {
     id: 'fees',
+    path: '/fees',
     title: 'Fees, Billing & Payments Ledger',
     shortTitle: 'Fees & Billing',
     category: 'Finance & Bursary',
@@ -196,6 +209,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   payroll: {
     id: 'payroll',
+    path: '/payroll',
     title: 'Staff Payroll & Compensation',
     shortTitle: 'Payroll',
     category: 'Finance & Bursary',
@@ -205,18 +219,21 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
         title: 'My Payslips & Salary Advances',
         shortTitle: 'My Payslips',
         category: 'Staff Self-Service',
-        subtitle: 'Personal monthly salary slips, SSNIT & GRA PAYE breakdown, and staff salary advance requests.'
+        subtitle: 'Personal monthly salary slips, SSNIT & GRA PAYE breakdown, and staff salary advance requests.',
+        path: '/my-payslips'
       },
       hod: {
         title: 'My Payslips & Salary Advances',
         shortTitle: 'My Payslips',
         category: 'Staff Self-Service',
-        subtitle: 'Personal monthly salary slips, SSNIT & GRA PAYE breakdown, and staff salary advance requests.'
+        subtitle: 'Personal monthly salary slips, SSNIT & GRA PAYE breakdown, and staff salary advance requests.',
+        path: '/my-payslips'
       }
     }
   },
   siren: {
     id: 'siren',
+    path: '/siren',
     title: 'Automated Campus Siren Console',
     shortTitle: 'Siren Console',
     category: 'Campus Governance',
@@ -224,6 +241,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   evoting: {
     id: 'evoting',
+    path: '/evoting',
     title: 'Student E-Voting Portal',
     shortTitle: 'E-Voting',
     category: 'Campus Governance',
@@ -231,6 +249,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   inventory: {
     id: 'inventory',
+    path: '/inventory',
     title: 'Campus Inventory & Expense Registry',
     shortTitle: 'Inventory & Expenses',
     category: 'Finance & Bursary',
@@ -238,6 +257,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   users: {
     id: 'users',
+    path: '/users',
     title: 'User Accounts & Role Permissions',
     shortTitle: 'Users & Roles',
     category: 'System Administration',
@@ -245,6 +265,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   settings: {
     id: 'settings',
+    path: '/settings',
     title: 'School Profile & System Settings',
     shortTitle: 'Settings',
     category: 'System Administration',
@@ -252,6 +273,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   creator: {
     id: 'creator',
+    path: '/creator',
     title: 'Creator Command Console',
     shortTitle: 'Creator Console',
     category: 'Platform Control',
@@ -259,6 +281,7 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   },
   school_management: {
     id: 'school_management',
+    path: '/schools',
     title: 'Multi-Tenant Schools Registry',
     shortTitle: 'Schools Registry',
     category: 'Platform Control',
@@ -266,136 +289,162 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
   }
 };
 
-export const CREATOR_PANEL_METADATA: Record<string, { title: string; category: string; subtitle: string }> = {
+export const CREATOR_PANEL_METADATA: Record<string, { title: string; category: string; subtitle: string; path: string }> = {
   dashboard: {
     title: 'Creator Executive Overview',
     category: 'Core Suite',
-    subtitle: 'Global multi-tenant platform metrics, active user presence, database record distribution, and revenue health.'
+    subtitle: 'Global multi-tenant platform metrics, active user presence, database record distribution, and revenue health.',
+    path: '/creator/dashboard'
   },
   frontend_test_runner: {
     title: 'Automated Frontend Test Suite',
     category: 'Core Suite',
-    subtitle: 'Interactive component verification, API contract diagnostics, and browser runtime integrity checks.'
+    subtitle: 'Interactive component verification, API contract diagnostics, and browser runtime integrity checks.',
+    path: '/creator/frontend-test-suite'
   },
   school_management: {
     title: 'Multi-Tenant School Management',
     category: 'Core Suite',
-    subtitle: 'Provision client schools, manage institutional tenant isolation, and switch active administrative context.'
+    subtitle: 'Provision client schools, manage institutional tenant isolation, and switch active administrative context.',
+    path: '/creator/school-management'
   },
   reports_analytics: {
     title: 'Platform Reports & Analytics',
     category: 'Core Suite',
-    subtitle: 'Cross-tenant adoption metrics, monthly database growth trajectories, and module utilization benchmarks.'
+    subtitle: 'Cross-tenant adoption metrics, monthly database growth trajectories, and module utilization benchmarks.',
+    path: '/creator/reports-analytics'
   },
   feature_management: {
     title: 'Tenant Feature & Module Entitlements',
     category: 'Core Suite',
-    subtitle: 'Enable or restrict specific portal modules dynamically across licensed school deployments.'
+    subtitle: 'Enable or restrict specific portal modules dynamically across licensed school deployments.',
+    path: '/creator/feature-management'
   },
   system_configuration: {
     title: 'Global System Configuration',
     category: 'Core Suite',
-    subtitle: 'Master academic year defaults, global lockout announcements, and clean client handover utilities.'
+    subtitle: 'Master academic year defaults, global lockout announcements, and clean client handover utilities.',
+    path: '/creator/system-configuration'
   },
   subscription_billing: {
     title: 'Subscription Plans & Tenant Billing',
     category: 'Sales Suite',
-    subtitle: 'Manage institutional subscription tiers, renewal cycles, and commercial pricing calculators.'
+    subtitle: 'Manage institutional subscription tiers, renewal cycles, and commercial pricing calculators.',
+    path: '/creator/subscription-billing'
   },
   crm: {
     title: 'Institutional Sales CRM & Leads',
     category: 'Sales Suite',
-    subtitle: 'Track prospective client schools, onboarding pipelines, commercial proposals, and follow-up tasks.'
+    subtitle: 'Track prospective client schools, onboarding pipelines, commercial proposals, and follow-up tasks.',
+    path: '/creator/crm'
   },
   finance: {
     title: 'Platform Revenue & Finance Ledger',
     category: 'Sales Suite',
-    subtitle: 'Monitor software license collections, setup fees, annual recurring revenue (ARR), and invoices.'
+    subtitle: 'Monitor software license collections, setup fees, annual recurring revenue (ARR), and invoices.',
+    path: '/creator/finance'
   },
   marketing: {
     title: 'Growth & Institutional Marketing',
     category: 'Sales Suite',
-    subtitle: 'Outreach campaigns, commercial proposal templates, and school onboarding conversion tracking.'
+    subtitle: 'Outreach campaigns, commercial proposal templates, and school onboarding conversion tracking.',
+    path: '/creator/marketing'
   },
   license_management: {
     title: 'Cryptographic License Management',
     category: 'Sales Suite',
-    subtitle: 'Generate, activate, extend, or revoke tenant software license keys and trial periods.'
+    subtitle: 'Generate, activate, extend, or revoke tenant software license keys and trial periods.',
+    path: '/creator/license-management'
   },
   customer_support: {
     title: 'Client Support & Helpdesk Tickets',
     category: 'Services Suite',
-    subtitle: 'Respond to school administrator support requests, bug reports, and live assistance threads.'
+    subtitle: 'Respond to school administrator support requests, bug reports, and live assistance threads.',
+    path: '/creator/customer-support'
   },
   notifications: {
     title: 'Global Broadcast & Notifications',
     category: 'Services Suite',
-    subtitle: 'Dispatch system-wide announcements, maintenance alerts, and targeted tenant notifications.'
+    subtitle: 'Dispatch system-wide announcements, maintenance alerts, and targeted tenant notifications.',
+    path: '/creator/notifications'
   },
   cms: {
     title: 'Landing Page & Portal CMS',
     category: 'Services Suite',
-    subtitle: 'Customize public portal landing copy, institutional onboarding guides, and documentation.'
+    subtitle: 'Customize public portal landing copy, institutional onboarding guides, and documentation.',
+    path: '/creator/cms'
   },
   mobile_app_management: {
     title: 'PWA & Mobile App Distribution',
     category: 'Services Suite',
-    subtitle: 'Configure Progressive Web App manifests, offline caching policies, and mobile install prompts.'
+    subtitle: 'Configure Progressive Web App manifests, offline caching policies, and mobile install prompts.',
+    path: '/creator/mobile-app-management'
   },
   user_management: {
     title: 'Global User Directory & Presence',
     category: 'Security Suite',
-    subtitle: 'Monitor real-time online sessions, inspect cross-tenant user accounts, and manage role privileges.'
+    subtitle: 'Monitor real-time online sessions, inspect cross-tenant user accounts, and manage role privileges.',
+    path: '/creator/user-management'
   },
   ai_administration: {
     title: 'AI Engine & Prompt Administration',
     category: 'Security Suite',
-    subtitle: 'Configure AI lesson note vetting parameters, model quotas, and academic assistant guardrails.'
+    subtitle: 'Configure AI lesson note vetting parameters, model quotas, and academic assistant guardrails.',
+    path: '/creator/ai-administration'
   },
   api_management: {
     title: 'API Gateway & Webhook Management',
     category: 'Security Suite',
-    subtitle: 'Inspect REST endpoint health, rate limits, external webhook keys, and service latencies.'
+    subtitle: 'Inspect REST endpoint health, rate limits, external webhook keys, and service latencies.',
+    path: '/creator/api-management'
   },
   integrations: {
     title: 'Third-Party Cloud Integrations',
     category: 'Security Suite',
-    subtitle: 'Manage Supabase PostgreSQL, Google Workspace OAuth, Arkesel SMS gateway, and payment connectors.'
+    subtitle: 'Manage Supabase PostgreSQL, Google Workspace OAuth, Arkesel SMS gateway, and payment connectors.',
+    path: '/creator/integrations'
   },
   database_diagnostics: {
     title: 'Supabase & IndexedDB Diagnostics',
     category: 'Security Suite',
-    subtitle: 'Verify relational table schemas, run live connectivity checks, and inspect sync queues.'
+    subtitle: 'Verify relational table schemas, run live connectivity checks, and inspect sync queues.',
+    path: '/creator/database-diagnostics'
   },
   backup_recovery: {
     title: 'Cloud Backup & Disaster Recovery',
     category: 'Security Suite',
-    subtitle: 'Export full institutional snapshots, restore point-in-time backups, and verify data durability.'
+    subtitle: 'Export full institutional snapshots, restore point-in-time backups, and verify data durability.',
+    path: '/creator/backup-recovery'
   },
   security_center: {
     title: 'Platform Security & Access Control',
     category: 'Security Suite',
-    subtitle: 'Enforce authentication policies, session timeouts, tenant RLS boundaries, and threat protection.'
+    subtitle: 'Enforce authentication policies, session timeouts, tenant RLS boundaries, and threat protection.',
+    path: '/creator/security-center'
   },
   audit_logs: {
     title: 'Immutable System Audit Logs',
     category: 'Security Suite',
-    subtitle: 'Trace chronological administrative actions, login events, grade modifications, and payroll runs.'
+    subtitle: 'Trace chronological administrative actions, login events, grade modifications, and payroll runs.',
+    path: '/creator/audit-logs'
   },
   developer_console: {
     title: 'Developer Telemetry & SQL Console',
     category: 'Security Suite',
-    subtitle: 'Low-level runtime diagnostics, environment inspection, and schema migration verification.'
+    subtitle: 'Low-level runtime diagnostics, environment inspection, and schema migration verification.',
+    path: '/creator/developer-console'
   },
   creator_profile: {
     title: 'Master Creator Profile & Credentials',
     category: 'Security Suite',
-    subtitle: 'Manage platform owner identity, contact channels, security keys, and administrative preferences.'
+    subtitle: 'Manage platform owner identity, contact channels, security keys, and administrative preferences.',
+    path: '/creator/creator-profile'
   }
 };
 
 export function getPageIdentity(viewId: string, userRole?: string | null): {
   id: string;
+  path: string;
   title: string;
   shortTitle: string;
   category: string;
@@ -411,6 +460,7 @@ export function getPageIdentity(viewId: string, userRole?: string | null): {
       .replace(/\b\w/g, (char) => char.toUpperCase());
     return {
       id: normalizedView,
+      path: `/${normalizedView.replace(/_/g, '-')}`,
       title: fallbackTitle,
       shortTitle: fallbackTitle,
       category: 'Portal Module',
@@ -421,6 +471,7 @@ export function getPageIdentity(viewId: string, userRole?: string | null): {
   const override = normalizedRole && base.roleOverrides ? base.roleOverrides[normalizedRole] : undefined;
   return {
     id: base.id,
+    path: override?.path || base.path,
     title: override?.title || base.title,
     shortTitle: override?.shortTitle || base.shortTitle,
     category: override?.category || base.category,
@@ -430,6 +481,7 @@ export function getPageIdentity(viewId: string, userRole?: string | null): {
 
 export function getCreatorPanelIdentity(panelId: string): {
   id: string;
+  path: string;
   title: string;
   category: string;
   subtitle: string;
@@ -447,8 +499,56 @@ export function getCreatorPanelIdentity(panelId: string): {
     .replace(/\b\w/g, (char) => char.toUpperCase());
   return {
     id: normalized,
+    path: `/creator/${normalized.replace(/_/g, '-')}`,
     title: fallbackTitle,
     category: 'Creator Console',
     subtitle: `Manage platform-wide ${fallbackTitle.toLowerCase()} settings and operations.`
   };
+}
+
+export function resolveViewFromPathname(pathname: string): string | null {
+  const clean = String(pathname || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, '');
+
+  if (!clean || clean === '' || clean === '/' || clean === '/welcome') {
+    return null;
+  }
+
+  if (clean.startsWith('/creator')) {
+    return 'creator';
+  }
+
+  if (clean === '/my-payslips') {
+    return 'payroll';
+  }
+
+  for (const [viewKey, meta] of Object.entries(VIEW_METADATA)) {
+    if (meta.path.toLowerCase() === clean || `/${viewKey}` === clean || `/${viewKey.replace(/_/g, '-')}` === clean) {
+      return viewKey;
+    }
+  }
+
+  return null;
+}
+
+export function resolveCreatorPanelFromPathname(pathname: string): string | null {
+  const clean = String(pathname || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, '');
+
+  if (!clean.startsWith('/creator/')) {
+    return null;
+  }
+
+  const subSlug = clean.replace('/creator/', '');
+  for (const [panelId, meta] of Object.entries(CREATOR_PANEL_METADATA)) {
+    if (meta.path.toLowerCase() === clean || panelId === subSlug || panelId.replace(/_/g, '-') === subSlug) {
+      return panelId;
+    }
+  }
+
+  return null;
 }

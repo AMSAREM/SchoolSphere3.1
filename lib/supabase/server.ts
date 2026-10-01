@@ -10,29 +10,61 @@ function getEnvVar(name: string): string {
   return '';
 }
 
+export function getSupabaseUrlStrict(): string {
+  const supabaseUrl =
+    getEnvVar('SUPABASE_URL') ||
+    getEnvVar('VITE_SUPABASE_URL') ||
+    getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
+
+  if (!supabaseUrl) {
+    throw new Error(
+      'FATAL: SUPABASE_URL (or VITE_SUPABASE_URL) environment variable is not set. Refusing to start without an explicit Supabase project URL.'
+    );
+  }
+  if (supabaseUrl.includes('vwmahpuzthyxnzrohfxw')) {
+    throw new Error(
+      'FATAL: SUPABASE_URL points to decommissioned project vwmahpuzthyxnzrohfxw. Configure live project niavmonyfwqlryppgksy.'
+    );
+  }
+  return supabaseUrl;
+}
+
 export function getSupabaseAdmin() {
-  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://niavmonyfwqlryppgksy.supabase.co';
-
+  const supabaseUrl = getSupabaseUrlStrict();
   const targetRef = supabaseUrl.replace(/^https?:\/\//, '').split('.')[0];
-  const matchingKey = getEnvVar('SUPABASE_ANON_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
-  let serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || matchingKey;
 
-  // Verify that key matches target ref if it's a JWT
-  if (serviceRoleKey && serviceRoleKey.startsWith('ey')) {
+  const serviceRoleKey =
+    getEnvVar('SUPABASE_SERVICE_ROLE_KEY') ||
+    getEnvVar('SUPABASE_SECRET_KEY');
+
+  if (!serviceRoleKey) {
+    throw new Error(
+      'FATAL: SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) is not set. Refusing to silently downgrade server admin client to anon.'
+    );
+  }
+
+  // Verify JWT role & project ref when a JWT key is supplied
+  if (serviceRoleKey.startsWith('ey')) {
     try {
       const parts = serviceRoleKey.split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
-        if (payload && payload.ref && payload.ref !== targetRef) {
-          // If the configured key belongs to a different project ref, fall back to matching key for targetRef
-          serviceRoleKey = matchingKey;
+        if (payload?.ref && payload.ref !== targetRef) {
+          throw new Error(
+            `FATAL: SUPABASE_SERVICE_ROLE_KEY project ref "${payload.ref}" does not match target project "${targetRef}".`
+          );
+        }
+        if (payload?.role && payload.role === 'anon') {
+          throw new Error(
+            'FATAL: SUPABASE_SERVICE_ROLE_KEY contains an "anon" role token. A privileged service_role key is required for server administration.'
+          );
         }
       }
-    } catch {}
-  }
-
-  if (!serviceRoleKey) {
-    serviceRoleKey = matchingKey;
+    } catch (err: any) {
+      if (err?.message?.startsWith('FATAL:')) {
+        throw err;
+      }
+    }
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
@@ -44,8 +76,18 @@ export function getSupabaseAdmin() {
 }
 
 export function createAuthenticatedSupabaseClient(accessToken?: string | null) {
-  const supabaseUrl = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL') || getEnvVar('NEXT_PUBLIC_SUPABASE_URL') || 'https://niavmonyfwqlryppgksy.supabase.co';
-  const anonKey = getEnvVar('SUPABASE_ANON_KEY') || getEnvVar('VITE_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pYXZtb255ZndxbHJ5cHBna3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU2OTg3MDIsImV4cCI6MjEwMTI3NDcwMn0.JtZL7wwDN48z6_8K5uK-RYK3CKNQx8a6N4Rfh50hX_U';
+  const supabaseUrl = getSupabaseUrlStrict();
+  const anonKey =
+    getEnvVar('SUPABASE_ANON_KEY') ||
+    getEnvVar('VITE_SUPABASE_ANON_KEY') ||
+    getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY') ||
+    getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!anonKey) {
+    throw new Error(
+      'FATAL: SUPABASE_ANON_KEY / VITE_SUPABASE_ANON_KEY is not configured. Cannot initialize Supabase client.'
+    );
+  }
 
   return createClient(supabaseUrl, anonKey, {
     auth: {
@@ -74,29 +116,11 @@ export async function getCreatorAuthenticatedClient() {
 
   const admin = getSupabaseAdmin();
   try {
-    const creatorEmail = 'creator@schoolsphere.app';
-    let linkRes = await admin.auth.admin.generateLink({
+    const creatorEmail = getEnvVar('CREATOR_EMAIL') || 'creator@schoolsphere.app';
+    const linkRes = await admin.auth.admin.generateLink({
       type: 'magiclink',
       email: creatorEmail,
     });
-
-    if (linkRes.error || !linkRes.data?.properties?.hashed_token) {
-      await admin.auth.admin.createUser({
-        email: creatorEmail,
-        password: process.env.CREATOR_PASSWORD || 'july94bab',
-        email_confirm: true,
-        user_metadata: {
-          full_name: 'Platform Creator',
-          username: 'creator',
-          role: 'creator',
-          school_id: null,
-        },
-      });
-      linkRes = await admin.auth.admin.generateLink({
-        type: 'magiclink',
-        email: creatorEmail,
-      });
-    }
 
     const hashedToken = linkRes.data?.properties?.hashed_token;
     if (hashedToken) {
@@ -139,7 +163,7 @@ export async function getOrCreateSchoolBySlugOrName(schoolName: string, licenseK
       return existing;
     }
 
-    // 2. Fallback: Check via SECURITY DEFINER RPC get_schools_directory (read-only)
+    // 2. Fallback: Check via SECURITY DEFINER RPC get_schools_directory (service_role)
     try {
       const { data: dirSchools } = await admin.rpc('get_schools_directory');
       if (Array.isArray(dirSchools) && dirSchools.length > 0) {
@@ -167,4 +191,3 @@ export async function getOrCreateSchoolBySlugOrName(schoolName: string, licenseK
 
   return null;
 }
-

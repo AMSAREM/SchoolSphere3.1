@@ -113,6 +113,9 @@ export const PageHeaderBanner: React.FC<PageHeaderBannerProps> = ({
             >
               {pageMeta.title}
             </span>
+            <span className="hidden sm:inline-block font-mono text-[10px] font-bold text-[#6a7f84] bg-[#f6f8f7] border border-[#bac4c6]/60 rounded px-1.5 py-0.2 ml-1">
+              {pageMeta.path}
+            </span>
           </nav>
 
           {/* Page Title & Functional Icon */}

@@ -47,24 +47,28 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
-// Restrictive CORS middleware - permits trusted domains and local development with credentials
-const ALLOWED_ORIGIN_PATTERNS = [
-  /^https?:\/\/localhost(:[0-9]+)?$/,
-  /^https?:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-  /^https:\/\/(.*\.)?schoolsphere\.app$/,
-  /^https:\/\/(.*\.)?schoolsphere\.xyz$/,
-  /^https:\/\/(.*\.)?run\.app$/,
-  /^https:\/\/(.*\.)?web\.app$/
-];
+// Strict explicit CORS allow-list - permits only verified frontend origins with credentials
+const EXPLICIT_ALLOWED_ORIGINS = new Set<string>(
+  [
+    "https://ais-dev-2m4lcq44pyuwmghy2bv5zn-689154690670.europe-west2.run.app",
+    "https://ais-pre-2m4lcq44pyuwmghy2bv5zn-689154690670.europe-west2.run.app",
+    "https://schoolsphere.app",
+    "https://www.schoolsphere.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    ...(process.env.APP_URL ? [process.env.APP_URL.trim().replace(/\/+$/, "")] : []),
+    ...(process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean)
+      : []),
+  ].filter(Boolean)
+);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    const isAllowed = ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
-    if (isAllowed) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
+  const origin = req.headers.origin ? req.headers.origin.trim().replace(/\/+$/, "") : "";
+  res.setHeader("Vary", "Origin");
+  if (origin && EXPLICIT_ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-School-Id, Accept");
@@ -315,17 +319,15 @@ async function ensureUserSupabaseAuthIdentity(params: {
   const role = String(params.role || 'teacher').trim().toLowerCase();
   const schoolId = (role === 'creator' || role === 'super_admin') ? null : (params.schoolId || null);
 
-  let rawEmail = String(params.email || '').trim().toLowerCase();
-  // Avoid legacy broken GoTrue email row for creator
-  if (role === 'creator' || role === 'super_admin' || rawEmail === 'amoakoemmanuel@hotmail.com') {
-    rawEmail = 'creator@schoolsphere.app';
-  }
+  const rawEmail = String(params.email || '').trim().toLowerCase();
   const authEmail = (rawEmail && rawEmail.includes('@') && rawEmail.includes('.'))
     ? rawEmail
-    : `${cleanBaseUser}@${cleanSlug}.edu.gh`;
+    : (role === 'creator' || role === 'super_admin'
+        ? 'creator@schoolsphere.app'
+        : `${cleanBaseUser}@${cleanSlug}.edu.gh`);
 
   const rawPass = params.rawPassword ? String(params.rawPassword).trim() : '';
-  const authPassword = rawPass.length >= 6 ? rawPass : `${rawPass || 'Pass'}#2026`;
+  const authPassword = rawPass.length >= 6 ? rawPass : (rawPass ? `${rawPass}#2026` : '');
 
   const userMetaPayload = {
     full_name: String(params.fullName || cleanBaseUser).trim(),
@@ -351,14 +353,14 @@ async function ensureUserSupabaseAuthIdentity(params: {
     if (resolvedAuthUid && adminClient.auth?.admin?.getUserById) {
       const { data: existingAuth, error: getErr } = await adminClient.auth.admin.getUserById(resolvedAuthUid);
       if (!getErr && existingAuth?.user?.id) {
-        resolvedEmail = existingAuth.user.email || authEmail;
+        resolvedEmail = String(existingAuth.user.email || authEmail).trim().toLowerCase();
         await adminClient.auth.admin.updateUserById(resolvedAuthUid, {
           email_confirm: true,
           user_metadata: {
             ...(existingAuth.user.user_metadata || {}),
             ...userMetaPayload
           },
-          ...(rawPass ? { password: authPassword } : {})
+          ...(authPassword ? { password: authPassword } : {})
         });
       } else {
         resolvedAuthUid = null;
@@ -366,17 +368,22 @@ async function ensureUserSupabaseAuthIdentity(params: {
     }
 
     if (!resolvedAuthUid && adminClient.auth?.admin) {
-      // Try creating the user in Supabase Auth first
-      const { data: createdAuth, error: createErr } = await adminClient.auth.admin.createUser({
-        email: resolvedEmail,
-        password: authPassword,
-        email_confirm: true,
-        user_metadata: userMetaPayload
-      });
+      // Try creating the user in Supabase Auth first (only if a password or valid email is present)
+      if (authPassword) {
+        const { data: createdAuth, error: createErr } = await adminClient.auth.admin.createUser({
+          email: resolvedEmail,
+          password: authPassword,
+          email_confirm: true,
+          user_metadata: userMetaPayload
+        });
 
-      if (!createErr && createdAuth?.user?.id) {
-        resolvedAuthUid = createdAuth.user.id;
-      } else {
+        if (!createErr && createdAuth?.user?.id) {
+          resolvedAuthUid = createdAuth.user.id;
+          resolvedEmail = String(createdAuth.user.email || resolvedEmail).trim().toLowerCase();
+        }
+      }
+
+      if (!resolvedAuthUid) {
         // User email already exists in auth.users — resolve via generateLink
         const { data: linkData, error: linkErr } = await adminClient.auth.admin.generateLink({
           type: 'magiclink',
@@ -384,66 +391,37 @@ async function ensureUserSupabaseAuthIdentity(params: {
         });
         if (!linkErr && linkData?.user?.id) {
           resolvedAuthUid = linkData.user.id;
+          resolvedEmail = String(linkData.user.email || resolvedEmail).trim().toLowerCase();
           await adminClient.auth.admin.updateUserById(resolvedAuthUid, {
             email_confirm: true,
             user_metadata: {
               ...(linkData.user.user_metadata || {}),
               ...userMetaPayload
             },
-            ...(rawPass ? { password: authPassword } : {})
+            ...(authPassword ? { password: authPassword } : {})
           });
-        } else if (cleanSlug) {
-          const fallbackScopedEmail = `${cleanBaseUser}.${cleanSlug}@schoolsphere.edu.gh`;
-          const { data: retryCreated } = await adminClient.auth.admin.createUser({
-            email: fallbackScopedEmail,
-            password: authPassword,
-            email_confirm: true,
-            user_metadata: userMetaPayload
-          });
-          if (retryCreated?.user?.id) {
-            resolvedAuthUid = retryCreated.user.id;
-            resolvedEmail = fallbackScopedEmail;
-          } else {
-            const { data: retryLink } = await adminClient.auth.admin.generateLink({
-              type: 'magiclink',
-              email: fallbackScopedEmail
-            });
-            if (retryLink?.user?.id) {
-              resolvedAuthUid = retryLink.user.id;
-              resolvedEmail = fallbackScopedEmail;
-              await adminClient.auth.admin.updateUserById(resolvedAuthUid, {
-                email_confirm: true,
-                user_metadata: userMetaPayload,
-                ...(rawPass ? { password: authPassword } : {})
-              });
-            }
-          }
         }
       }
     }
 
-    // Persist resolvedAuthUid back into public.users only if auth_user_id actually changed (never overwrite updated_at on startup reconciliation)
+    // Keep public.users.auth_user_id and public.users.email strictly synchronized with canonical auth.users
     if (
       resolvedAuthUid &&
-      resolvedAuthUid !== params.existingAuthUserId &&
       params.userId !== undefined &&
       params.userId !== null &&
       typeof params.userId === 'number' &&
       params.userId < 1000000000
     ) {
       try {
-        // Remove any duplicate trigger-created row with the same auth_user_id before linking
+        const syncFields: Record<string, any> = {
+          email: resolvedEmail.toLowerCase()
+        };
+        if (resolvedAuthUid !== params.existingAuthUserId) {
+          syncFields.auth_user_id = resolvedAuthUid;
+        }
         await adminClient
           .from('users')
-          .delete()
-          .eq('auth_user_id', resolvedAuthUid)
-          .neq('id', params.userId);
-
-        await adminClient
-          .from('users')
-          .update({
-            auth_user_id: resolvedAuthUid
-          })
+          .update(syncFields)
           .eq('id', params.userId);
       } catch {}
     }
@@ -1163,37 +1141,28 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           }
         }
 
-        if (error && table === "users") {
-          try {
-            const rpcRes = await adminClient.rpc('get_tenant_users', {
-              p_school_id: targetSchoolId && /^[0-9a-f-]{36}$/i.test(String(targetSchoolId)) ? targetSchoolId : null
-            });
-            if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-              rows = rpcRes.data;
-              error = null;
-            }
-          } catch {}
-        }
+        if (error) {
+          const errCode = String((error as any).code || '');
+          const errMsg = String(error.message || error);
+          const isOptionalUnprovisionedTable =
+            (errCode === '42P01' || errCode === 'PGRST205' || errMsg.includes('Could not find the table')) &&
+            ['licenses', 'expenses', 'inventory', 'promotion_history', 'sms_logs', 'lesson_notes'].includes(targetTable);
 
-        const fbRows = error ? getFromFallback(table, targetSchoolId) : [];
-        const combinedRows: any[] = Array.isArray(rows) ? [...rows] : [];
-        if (error && Array.isArray(fbRows) && fbRows.length > 0) {
-          for (const fb of fbRows) {
-            const alreadyPresent = combinedRows.some((r: any) =>
-              (fb.id && r.id === fb.id) ||
-              (table === 'users' && fb.username && String(r.username || '').toLowerCase() === String(fb.username || '').toLowerCase() && (r.school_id || r.schoolId) === (fb.school_id || fb.schoolId)) ||
-              (table === 'students' && (fb.studentId || fb.student_id) && (r.studentId || r.student_id) === (fb.studentId || fb.student_id)) ||
-              (table === 'teachers' && (fb.staffId || fb.staff_id) && (r.staffId || r.staff_id) === (fb.staffId || fb.staff_id))
+          console.error(
+            `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId || 'global'}" code="${errCode}" message="${errMsg}"`
+          );
+
+          if (!isOptionalUnprovisionedTable) {
+            throw new Error(
+              `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
             );
-            if (!alreadyPresent) {
-              combinedRows.push(fb);
-            }
           }
         }
 
+        const safeRows: any[] = Array.isArray(rows) ? rows : [];
         const filteredRows = table === "users"
-          ? combinedRows.filter((u: any) => u.role !== "creator" && u.role !== "super_admin")
-          : combinedRows;
+          ? safeRows.filter((u: any) => u.role !== "creator" && u.role !== "super_admin")
+          : safeRows;
 
         data[table] = filteredRows.map((row: any) => {
           let item = { ...row };
@@ -1833,16 +1802,16 @@ async function doStartServer() {
     let scopedUsername = cleanBaseUser.includes('@') ? cleanBaseUser : `${cleanBaseUser}@${cleanSlug}`;
     const fullName = (params.contactPerson || 'Head Administrator').trim();
 
-    const rawPassword = params.adminPassword || params.licenseKey || 'admin123';
+    const rawPassword = params.adminPassword || params.licenseKey || '';
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(String(rawPassword).trim(), salt);
+    const passwordHash = rawPassword ? await bcrypt.hash(String(rawPassword).trim(), salt) : '';
 
     let savedUserId: any = Date.now();
     let finalUsername = cleanBaseUser;
     let authUserId: string | null = null;
     let finalPasswordHash = passwordHash;
 
-    // 1. Check if THIS school already has a matching admin user in Supabase public.users (or via SECURITY DEFINER RPC)
+    // 1. Check if THIS school already has a matching admin user in Supabase public.users
     try {
       let schoolUsers: any[] | null = null;
       const { data: directSchoolUsers, error: directSelErr } = await adminClient
@@ -1852,13 +1821,6 @@ async function doStartServer() {
 
       if (!directSelErr && Array.isArray(directSchoolUsers)) {
         schoolUsers = directSchoolUsers;
-      } else if (schoolId && /^[0-9a-f-]{36}$/i.test(String(schoolId))) {
-        try {
-          const rpcUsers = await adminClient.rpc('get_tenant_users', { p_school_id: schoolId });
-          if (!rpcUsers.error && Array.isArray(rpcUsers.data)) {
-            schoolUsers = rpcUsers.data;
-          }
-        } catch {}
       }
 
       const existingForSchool = (schoolUsers || []).find((u: any) =>
@@ -1878,34 +1840,27 @@ async function doStartServer() {
           finalPasswordHash = existingForSchool.password_hash;
         }
 
+        // Preserve canonical auth.users email if auth_user_id is already linked; never overwrite public.users.email out of sync with auth.users
+        let canonicalExistingEmail = existingForSchool.email || targetEmail;
+        if (authUserId && adminClient.auth?.admin?.getUserById) {
+          try {
+            const { data: au } = await adminClient.auth.admin.getUserById(authUserId);
+            if (au?.user?.email) {
+              canonicalExistingEmail = au.user.email.trim().toLowerCase();
+            }
+          } catch {}
+        }
+
         const updatePayload: any = {
           full_name: params.contactPerson ? fullName : (existingForSchool.full_name || fullName),
-          email: (rawClientEmail && rawClientEmail.includes('@')) ? rawClientEmail : (existingForSchool.email || targetEmail),
+          email: canonicalExistingEmail,
           role: 'admin',
           status: 'active',
           school_id: schoolId,
           updated_at: Date.now()
         };
-        if (!params.preserveExistingPassword || !existingForSchool.password_hash) {
-          updatePayload.password_hash = finalPasswordHash;
-        }
 
-        const { error: updErr } = await adminClient.from('users').update(updatePayload).eq('id', existingForSchool.id);
-        if (updErr && schoolId && /^[0-9a-f-]{36}$/i.test(String(schoolId))) {
-          try {
-            await adminClient.rpc('provision_tenant_user', {
-              p_school_id: schoolId,
-              p_username: finalUsername,
-              p_password_hash: finalPasswordHash,
-              p_full_name: updatePayload.full_name,
-              p_role: 'admin',
-              p_status: 'active',
-              p_email: updatePayload.email,
-              p_phone: null,
-              p_auth_user_id: authUserId
-            });
-          } catch {}
-        }
+        await adminClient.from('users').update(updatePayload).eq('id', existingForSchool.id);
       } else {
         // Check if cleanBaseUser is already taken by ANOTHER school in public.users
         const { data: globalUserCollision } = await adminClient
@@ -3143,12 +3098,12 @@ async function doStartServer() {
     try {
       const { licenseKey, key, schoolId, school_id, schoolName, creatorPassword } = req.body || {};
       const userRole = String(req.user?.role || '').toLowerCase();
+      const envCreatorPass = (process.env.CREATOR_PASSWORD || '').trim();
       const isAuthorized =
         userRole === 'creator' ||
         userRole === 'super_admin' ||
         userRole === 'admin' ||
-        creatorPassword === 'creator_override_9922_july' ||
-        creatorPassword === (process.env.CREATOR_PASSWORD || 'july94bab');
+        (Boolean(envCreatorPass) && creatorPassword === envCreatorPass);
 
       if (!isAuthorized) {
         return res.status(403).json({ success: false, error: "Insufficient permissions to deactivate school license." });
@@ -3226,12 +3181,7 @@ async function doStartServer() {
       }
       const rawPasswordStr = String(password).trim();
       const rawPasswordUpper = rawPasswordStr.toUpperCase();
-      const isStandardOnboardingPass =
-        rawPasswordStr === "admin123" ||
-        rawPasswordStr === "password" ||
-        rawPasswordStr === "school123" ||
-        rawPasswordStr === "admin" ||
-        rawPasswordStr === "123456";
+      const isStandardOnboardingPass = false;
 
       const rawUsernameInput = String(username).trim().toLowerCase();
       const strippedUsernameInput = rawUsernameInput.replace(/^@+/, '').trim();
@@ -3400,48 +3350,7 @@ async function doStartServer() {
         };
       }
 
-      // Helper function to securely verify password candidate against stored hash, plain text, Base64 (btoa), or school license key
-      const verifyPassword = async (
-        candidatePass: string,
-        storedHashOrPass: string | null | undefined,
-        candidateLicenseKey?: string | null
-      ): Promise<boolean> => {
-        if (!candidatePass) return false;
-        const trimmedCand = String(candidatePass).trim();
-
-        // Check license key match if provided for this tenant
-        if (candidateLicenseKey && String(candidateLicenseKey).trim().toUpperCase() === trimmedCand.toUpperCase()) {
-          return true;
-        }
-
-        if (!storedHashOrPass) return false;
-        const trimmedStored = String(storedHashOrPass).trim();
-
-        // 1. Bcrypt comparison
-        if (trimmedStored.startsWith('$2a$') || trimmedStored.startsWith('$2b$') || trimmedStored.startsWith('$2y$')) {
-          try {
-            const match = await bcrypt.compare(trimmedCand, trimmedStored);
-            if (match) return true;
-          } catch (e) {}
-        } else {
-          try {
-            const match = await bcrypt.compare(trimmedCand, trimmedStored);
-            if (match) return true;
-          } catch (e) {}
-        }
-
-        // 2. Direct match fallback for legacy pre-migration passwords
-        if (trimmedStored === trimmedCand) return true;
-        if (trimmedStored.toUpperCase() === trimmedCand.toUpperCase() && trimmedCand.startsWith('ESEPA-')) return true;
-
-        // 3. Base64 (btoa) comparison for users created with client-side btoa encoding
-        try {
-          const base64Cand = Buffer.from(trimmedCand, 'utf-8').toString('base64');
-          if (trimmedStored === base64Cand) return true;
-        } catch (e) {}
-
-        return false;
-      };
+      // Supabase Auth is the single source of truth for password verification (legacy bcrypt verifyPassword removed)
 
       // Helper to look up active license key for a schoolId or schoolName (strictly read-only)
       const getLicenseKeyForSchool = async (schId?: string | null, schName?: string | null, userEmail?: string | null): Promise<string | null> => {
@@ -3525,10 +3434,10 @@ async function doStartServer() {
         return null;
       };
 
-      // 1. Authoritative Server-Side Creator Verification
+      // 1. Authoritative Server-Side Creator Verification via Supabase Auth
       const configuredCreatorUser = (process.env.CREATOR_USERNAME || 'creator').trim().toLowerCase();
       const configuredCreatorEmail = (process.env.CREATOR_EMAIL || 'creator@schoolsphere.app').trim().toLowerCase();
-      const serverCreatorPassword = process.env.CREATOR_PASSWORD || 'july94bab';
+      const serverCreatorPassword = (process.env.CREATOR_PASSWORD || '').trim();
 
       const isCreatorLogin = (
         userClean === configuredCreatorUser || 
@@ -3539,35 +3448,56 @@ async function doStartServer() {
 
       let isCreatorPasswordValid = false;
       let dbCreatorRow: any = null;
+      let verifiedCreatorSession: any = null;
       if (isCreatorLogin) {
         try {
           const { data: dbCreator } = await adminClient
             .from('users')
-            .select('id, auth_user_id, username, email, role, password_hash')
+            .select('id, auth_user_id, username, email, role')
             .or(`username.ilike.${configuredCreatorUser},email.ilike.${configuredCreatorEmail},role.eq.creator`)
             .limit(1)
             .maybeSingle();
           if (dbCreator) dbCreatorRow = dbCreator;
         } catch {}
-        if (serverCreatorPassword && password === serverCreatorPassword) {
-          isCreatorPasswordValid = true;
-        } else if (dbCreatorRow?.password_hash && (await verifyPassword(password, dbCreatorRow.password_hash))) {
+
+        const canonicalCreatorEmail = String(dbCreatorRow?.email || configuredCreatorEmail).trim().toLowerCase();
+        try {
+          const authClient = createAuthenticatedSupabaseClient();
+          const { data: signRes, error: signErr } = await authClient.auth.signInWithPassword({
+            email: canonicalCreatorEmail,
+            password: rawPasswordStr
+          });
+          if (!signErr && signRes?.user?.id) {
+            isCreatorPasswordValid = true;
+            verifiedCreatorSession = signRes.session || null;
+          }
+        } catch {}
+
+        if (!isCreatorPasswordValid && serverCreatorPassword && rawPasswordStr === serverCreatorPassword) {
           isCreatorPasswordValid = true;
         }
       }
 
       if (isCreatorLogin && isCreatorPasswordValid) {
-        const creatorAuth = await ensureUserSupabaseAuthIdentity({
-          userId: dbCreatorRow?.id || null,
-          existingAuthUserId: dbCreatorRow?.auth_user_id || null,
-          username: configuredCreatorUser,
-          email: configuredCreatorEmail,
-          fullName: 'Platform Creator',
-          role: 'creator',
-          schoolId: null,
-          rawPassword: String(password).trim(),
-          issueSession: true
-        });
+        const creatorAuth = verifiedCreatorSession
+          ? {
+              authUserId: verifiedCreatorSession.user?.id || dbCreatorRow?.auth_user_id || null,
+              authEmail: verifiedCreatorSession.user?.email || dbCreatorRow?.email || configuredCreatorEmail,
+              accessToken: verifiedCreatorSession.access_token || null,
+              refreshToken: verifiedCreatorSession.refresh_token || null,
+              session: verifiedCreatorSession
+            }
+          : await ensureUserSupabaseAuthIdentity({
+              userId: dbCreatorRow?.id || null,
+              existingAuthUserId: dbCreatorRow?.auth_user_id || null,
+              username: configuredCreatorUser,
+              email: dbCreatorRow?.email || configuredCreatorEmail,
+              fullName: 'Platform Creator',
+              role: 'creator',
+              schoolId: null,
+              rawPassword: rawPasswordStr,
+              issueSession: true
+            });
 
         const creatorUser = {
           id: dbCreatorRow?.id || '00000000-0000-0000-0000-000000000000',
@@ -3836,45 +3766,58 @@ async function doStartServer() {
             const candSchoolId = cand.school_id || cand.schoolId || cand.schools?.id || null;
             const candSchoolName = cand.schools?.name || cand.schoolName || null;
             const candLicenseKey = cand.licenseKey || (await getLicenseKeyForSchool(candSchoolId, candSchoolName, cand.email));
-            const storedHash = cand.password_hash || cand.passwordHash || cand.password;
 
-            let isPasswordValid = await verifyPassword(password, storedHash, candLicenseKey);
-
-            // Also check customUserPasswords in-memory map for recently updated/provisioned passwords
-            if (!isPasswordValid) {
-              const candBase = String(cand.baseUsername || (cand.username?.includes('@') ? cand.username.split('@')[0] : cand.username) || '').toLowerCase();
-              const customKeys = [
-                cand.scopedUsername ? String(cand.scopedUsername).toLowerCase() : '',
-                cand.email ? String(cand.email).toLowerCase() : '',
-                candBase && candSchoolId ? `${candBase}::${candSchoolId}` : '',
-                cand.username ? String(cand.username).toLowerCase() : ''
-              ].filter(Boolean);
-
-              for (const ck of customKeys) {
-                const mem = customUserPasswords.get(ck);
-                if (mem?.passwordHash && (await verifyPassword(password, mem.passwordHash, candLicenseKey))) {
-                  isPasswordValid = true;
-                  break;
+            // Resolve canonical email from auth.users (if auth_user_id is linked) or public.users.email
+            let canonicalEmail = String(cand.email || '').trim().toLowerCase();
+            let linkedAuthUser: any = null;
+            if (cand.auth_user_id && adminClient.auth?.admin?.getUserById) {
+              try {
+                const { data: au } = await adminClient.auth.admin.getUserById(cand.auth_user_id);
+                if (au?.user) {
+                  linkedAuthUser = au.user;
+                  if (au.user.email) {
+                    canonicalEmail = au.user.email.trim().toLowerCase();
+                  }
                 }
-              }
+              } catch {}
             }
 
-            // If user onboarded via passwordless magic link or license key, also allow standard onboarding password or license key
+            // Keep public.users.email synchronized with canonical auth.users.email if mismatched
+            if (cand._source === 'supabase' && cand.id && canonicalEmail && String(cand.email || '').trim().toLowerCase() !== canonicalEmail) {
+              try {
+                await adminClient.from('users').update({ email: canonicalEmail, updated_at: Date.now() }).eq('id', cand.id);
+                cand.email = canonicalEmail;
+              } catch {}
+            }
+
+            // Single-Source Password Verification via Supabase Auth (signInWithPassword)
+            let isPasswordValid = false;
+            let verifiedSupabaseSession: any = null;
+            let mustChangePassword = Boolean(linkedAuthUser?.user_metadata?.must_change_password);
+
+            if (canonicalEmail && canonicalEmail.includes('@')) {
+              try {
+                const authClient = createAuthenticatedSupabaseClient();
+                const { data: signRes, error: signErr } = await authClient.auth.signInWithPassword({
+                  email: canonicalEmail,
+                  password: rawPasswordStr
+                });
+                if (!signErr && signRes?.user?.id) {
+                  isPasswordValid = true;
+                  verifiedSupabaseSession = signRes.session || null;
+                  mustChangePassword = Boolean(signRes.user.user_metadata?.must_change_password);
+                }
+              } catch {}
+            }
+
+            // Initial License-Key Activation: if user signs in with their active school license key, synchronize into Supabase Auth and require password change on first login
             if (
               !isPasswordValid &&
               candLicenseKey &&
               rawPasswordUpper === String(candLicenseKey).trim().toUpperCase()
             ) {
               isPasswordValid = true;
-            }
-
-            if (
-              !isPasswordValid &&
-              isStandardOnboardingPass &&
-              candLicenseKey &&
-              (await verifyPassword(candLicenseKey, storedHash))
-            ) {
-              isPasswordValid = true;
+              mustChangePassword = true;
             }
 
             if (isPasswordValid) {
@@ -3900,12 +3843,12 @@ async function doStartServer() {
                 });
               }
 
-              // Strictly update only last_login timestamp — NEVER overwrite password_hash or school_id on login!
+              // Strictly update only last_login timestamp
               try {
                 if (cand._source === 'supabase' && cand.id) {
                   await adminClient
                     .from('users')
-                    .update({ last_login: Date.now() })
+                    .update({ last_login: Date.now(), ...(canonicalEmail ? { email: canonicalEmail } : {}) })
                     .eq('id', cand.id);
                 }
               } catch (upErr: any) {}
@@ -3918,7 +3861,7 @@ async function doStartServer() {
                 theme: userSchool.theme || 'indigo',
                 logo_url: userSchool.logo_url || userSchool.logo || '',
                 logo: userSchool.logo_url || userSchool.logo || '',
-                email: userSchool.email || cand.email || '',
+                email: userSchool.email || canonicalEmail || '',
                 phone: userSchool.phone || cand.phone || '',
                 address: userSchool.address || '',
                 academic_year: userSchool.academic_year || '2026/2027',
@@ -3926,18 +3869,27 @@ async function doStartServer() {
                 status: userSchool.status || 'active'
               };
 
-              const effectiveEmail = cand.email || `${userClean}@${formattedSchool.slug || 'schoolsphere'}.edu.gh`;
-              const authIdentity = await ensureUserSupabaseAuthIdentity({
-                userId: cand.id,
-                email: effectiveEmail,
-                username: cand.username || userClean,
-                scopedUsername: cand.scopedUsername || `${userClean}@${formattedSchool.slug}`,
-                fullName: cand.full_name || cand.fullName || cand.username || userClean,
-                role: cand.role || 'admin',
-                schoolId: formattedSchool.id,
-                existingAuthUserId: cand.auth_user_id || null,
-                issueSession: true
-              });
+              const effectiveEmail = canonicalEmail || `${userClean}@${formattedSchool.slug || 'schoolsphere'}.edu.gh`;
+              const authIdentity = verifiedSupabaseSession
+                ? {
+                    authUserId: verifiedSupabaseSession.user?.id || cand.auth_user_id || null,
+                    authEmail: (verifiedSupabaseSession.user?.email || effectiveEmail).toLowerCase(),
+                    accessToken: verifiedSupabaseSession.access_token || null,
+                    refreshToken: verifiedSupabaseSession.refresh_token || null,
+                    session: verifiedSupabaseSession
+                  }
+                : await ensureUserSupabaseAuthIdentity({
+                    userId: cand.id,
+                    email: effectiveEmail,
+                    username: cand.username || userClean,
+                    scopedUsername: cand.scopedUsername || `${userClean}@${formattedSchool.slug}`,
+                    fullName: cand.full_name || cand.fullName || cand.username || userClean,
+                    role: cand.role || 'admin',
+                    schoolId: formattedSchool.id,
+                    existingAuthUserId: cand.auth_user_id || null,
+                    rawPassword: rawPasswordStr,
+                    issueSession: true
+                  });
 
               const userObj = {
                 id: cand.id,
@@ -3945,7 +3897,7 @@ async function doStartServer() {
                 username: cand.username || userClean,
                 scopedUsername: cand.scopedUsername || `${userClean}@${formattedSchool.slug}`,
                 fullName: cand.full_name || cand.fullName || cand.username || userClean,
-                email: effectiveEmail,
+                email: authIdentity.authEmail || effectiveEmail,
                 phone: cand.phone || '',
                 role: cand.role || 'admin',
                 status: 'active',
@@ -3954,6 +3906,7 @@ async function doStartServer() {
                 organization_id: formattedSchool.id,
                 schoolName: formattedSchool.name,
                 rlsAuthenticated: true,
+                mustChangePassword,
                 createdAt: cand.created_at || cand.createdAt || Date.now(),
                 lastLogin: Date.now()
               };
@@ -3981,6 +3934,7 @@ async function doStartServer() {
                 success: true,
                 token,
                 refreshToken,
+                mustChangePassword,
                 supabaseAccessToken: authIdentity.accessToken || undefined,
                 supabaseRefreshToken: authIdentity.refreshToken || undefined,
                 supabaseSession: authIdentity.session || undefined,
@@ -3994,7 +3948,7 @@ async function doStartServer() {
         console.warn("Supabase auth login query notice:", err.message);
       }
 
-      // 3. Check Teachers table in Supabase
+      // 3. Check Teachers table in Supabase (verified strictly via Supabase Auth signInWithPassword)
       try {
         const { data: dbTeachers } = await adminClient
           .from('teachers')
@@ -4003,26 +3957,50 @@ async function doStartServer() {
 
         if (Array.isArray(dbTeachers) && dbTeachers.length > 0) {
           for (const teacher of dbTeachers) {
-            const isPasswordValid = await verifyPassword(password, teacher.password || teacher.password_hash);
+            const teacherSchool = teacher.schools || (teacher.school_id ? await resolveSchoolRecord(teacher.school_id) : null) || defaultSchoolObj;
+            const tEmail = String(teacher.email || `${userClean}@${teacherSchool.slug || 'schoolsphere'}.edu.gh`).trim().toLowerCase();
+            const tUsername = teacher.email ? teacher.email.split('@')[0] : userClean;
+
+            let isPasswordValid = false;
+            let verifiedTeacherSession: any = null;
+            if (tEmail && tEmail.includes('@')) {
+              try {
+                const authClient = createAuthenticatedSupabaseClient();
+                const { data: signRes, error: signErr } = await authClient.auth.signInWithPassword({
+                  email: tEmail,
+                  password: rawPasswordStr
+                });
+                if (!signErr && signRes?.user?.id) {
+                  isPasswordValid = true;
+                  verifiedTeacherSession = signRes.session || null;
+                }
+              } catch {}
+            }
+
             if (isPasswordValid) {
-              const teacherSchool = teacher.schools || (teacher.school_id ? await resolveSchoolRecord(teacher.school_id) : null) || defaultSchoolObj;
-              const tEmail = teacher.email || `${userClean}@schoolsphere.edu.gh`;
-              const tUsername = teacher.email ? teacher.email.split('@')[0] : userClean;
-              const authIdentity = await ensureUserSupabaseAuthIdentity({
-                userId: teacher.user_id || null,
-                email: tEmail,
-                username: tUsername,
-                fullName: teacher.name || teacher.fullName || 'Teacher',
-                role: 'teacher',
-                schoolId: teacherSchool.id,
-                issueSession: true
-              });
+              const authIdentity = verifiedTeacherSession
+                ? {
+                    authUserId: verifiedTeacherSession.user?.id || teacher.auth_user_id || null,
+                    authEmail: (verifiedTeacherSession.user?.email || tEmail).toLowerCase(),
+                    accessToken: verifiedTeacherSession.access_token || null,
+                    refreshToken: verifiedTeacherSession.refresh_token || null,
+                    session: verifiedTeacherSession
+                  }
+                : await ensureUserSupabaseAuthIdentity({
+                    userId: teacher.user_id || null,
+                    email: tEmail,
+                    username: tUsername,
+                    fullName: teacher.name || teacher.fullName || 'Teacher',
+                    role: 'teacher',
+                    schoolId: teacherSchool.id,
+                    issueSession: true
+                  });
               const teacherUser = {
                 id: teacher.user_id || teacher.id || Date.now(),
                 auth_user_id: authIdentity.authUserId || null,
                 username: tUsername,
                 fullName: teacher.name || teacher.fullName || 'Teacher',
-                email: tEmail,
+                email: authIdentity.authEmail || tEmail,
                 phone: teacher.phone || '',
                 role: 'teacher',
                 status: 'active',
@@ -4325,47 +4303,104 @@ async function doStartServer() {
     }
   });
 
-  // Verify Supabase Auth Session / Magic Link Callback and link to public.users
+  // Verify Supabase Auth Session / Magic Link Callback and securely link to public.users
+  // Security Guard: Always verifies the caller's Supabase accessToken via adminClient.auth.getUser()
+  // and NEVER trusts unverified email or supabaseUserId fields from req.body.
   app.post("/api/auth/verify", async (req: Request, res: Response) => {
     try {
-      const { email, supabaseUserId, accessToken } = req.body || {};
-      const cleanEmail = String(email || '').trim().toLowerCase();
-      if (!cleanEmail && !supabaseUserId) {
-        return res.status(400).json({ verified: false, error: "Email or supabaseUserId is required" });
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const rawAccessToken = String(req.body?.accessToken || bearerToken || "").trim();
+
+      if (!rawAccessToken) {
+        return res.status(401).json({
+          verified: false,
+          error: "A valid Supabase Auth accessToken is required to verify session identity."
+        });
       }
+
       const adminClient = getSupabaseAdmin();
-      let dbUser: any = null;
-      if (supabaseUserId) {
-        const { data: byUid } = await adminClient
-          .from('users')
-          .select('*, schools(*)')
-          .eq('auth_user_id', supabaseUserId)
-          .maybeSingle();
-        if (byUid) dbUser = byUid;
+      const { data: verifiedAuth, error: verifyErr } = await adminClient.auth.getUser(rawAccessToken);
+      if (verifyErr || !verifiedAuth?.user?.id || !verifiedAuth?.user?.email) {
+        return res.status(401).json({
+          verified: false,
+          error: "Invalid or expired Supabase Auth session token."
+        });
       }
-      if (!dbUser && cleanEmail) {
+
+      const verifiedUserId = verifiedAuth.user.id;
+      const verifiedEmail = verifiedAuth.user.email.trim().toLowerCase();
+
+      // Reject if caller passed a mismatched supabaseUserId or email in req.body
+      if (req.body?.supabaseUserId && String(req.body.supabaseUserId).trim() !== verifiedUserId) {
+        return res.status(403).json({
+          verified: false,
+          error: "Access denied: supplied supabaseUserId does not match authenticated token subject."
+        });
+      }
+      if (req.body?.email && String(req.body.email).trim().toLowerCase() !== verifiedEmail) {
+        return res.status(403).json({
+          verified: false,
+          error: "Access denied: supplied email does not match authenticated token email."
+        });
+      }
+
+      let dbUser: any = null;
+      const { data: byUid } = await adminClient
+        .from('users')
+        .select('*, schools(*)')
+        .eq('auth_user_id', verifiedUserId)
+        .maybeSingle();
+      if (byUid) {
+        dbUser = byUid;
+      }
+
+      if (!dbUser) {
+        // Only match an unlinked row (or row with matching email) when email strictly equals verifiedEmail
         const { data: byEmail } = await adminClient
           .from('users')
           .select('*, schools(*)')
-          .ilike('email', cleanEmail)
+          .ilike('email', verifiedEmail)
           .maybeSingle();
-        if (byEmail) dbUser = byEmail;
+
+        if (byEmail) {
+          if (byEmail.auth_user_id && byEmail.auth_user_id !== verifiedUserId) {
+            return res.status(403).json({
+              verified: false,
+              error: "Account link conflict: this profile is already bound to a different authentication identity."
+            });
+          }
+          dbUser = byEmail;
+        }
       }
+
       if (!dbUser) {
-        return res.status(404).json({ verified: false, error: "No matching school user found for this Supabase session." });
+        return res.status(404).json({ verified: false, error: "No matching school user found for this verified Supabase session." });
       }
-      if (supabaseUserId && dbUser.auth_user_id !== supabaseUserId) {
+
+      // Synchronize auth_user_id and canonical email in public.users
+      if (dbUser.auth_user_id !== verifiedUserId || String(dbUser.email || '').trim().toLowerCase() !== verifiedEmail) {
         try {
-          await adminClient.from('users').update({ auth_user_id: supabaseUserId, last_login: Date.now() }).eq('id', dbUser.id);
-          dbUser.auth_user_id = supabaseUserId;
+          await adminClient
+            .from('users')
+            .update({
+              auth_user_id: verifiedUserId,
+              email: verifiedEmail,
+              last_login: Date.now(),
+              updated_at: Date.now()
+            })
+            .eq('id', dbUser.id);
+          dbUser.auth_user_id = verifiedUserId;
+          dbUser.email = verifiedEmail;
         } catch {}
       }
+
       const userObj = {
         id: dbUser.id,
-        auth_user_id: dbUser.auth_user_id || supabaseUserId || null,
+        auth_user_id: verifiedUserId,
         username: dbUser.username,
         fullName: dbUser.full_name || dbUser.fullName || dbUser.username,
-        email: dbUser.email || cleanEmail,
+        email: verifiedEmail,
         role: dbUser.role || 'admin',
         status: dbUser.status || 'active',
         schoolId: dbUser.school_id,
@@ -4377,7 +4412,7 @@ async function doStartServer() {
       return res.json({
         verified: true,
         token,
-        supabaseAccessToken: accessToken || undefined,
+        supabaseAccessToken: rawAccessToken,
         user: userObj,
         school: dbUser.schools || null
       });
@@ -4753,12 +4788,18 @@ async function doStartServer() {
 
         const { data: existingUser } = await adminClient
           .from('users')
-          .select('id, username')
+          .select('id, username, email, auth_user_id')
           .or(`username.ilike.${targetUsername || 'none'},email.ilike.${targetEmail || 'none'}`)
           .maybeSingle();
 
         if (existingUser) {
           await adminClient.from('users').update(updatePayload).eq('id', existingUser.id);
+          if (existingUser.auth_user_id && adminClient.auth?.admin?.updateUserById) {
+            await adminClient.auth.admin.updateUserById(existingUser.auth_user_id, {
+              password: newPassword,
+              user_metadata: { must_change_password: false }
+            });
+          }
         } else {
           // If user wasn't in DB yet, create full profile with new password hash
           const DEMO_USERS: Record<string, { role: string, fullName: string, email: string }> = {
@@ -5573,7 +5614,7 @@ async function doStartServer() {
       const adminClient = getSupabaseAdmin();
       const { data: dbUser, error } = await adminClient
         .from('users')
-        .select('id, username, password_hash')
+        .select('id, auth_user_id, username, email')
         .eq('id', authUser.id)
         .maybeSingle();
 
@@ -5581,19 +5622,31 @@ async function doStartServer() {
         return res.status(404).json({ success: false, error: "User record not found in database" });
       }
 
-      let isCurrentValid = false;
-      if (dbUser.password_hash) {
+      let canonicalEmail = String(dbUser.email || '').trim().toLowerCase();
+      if (dbUser.auth_user_id && adminClient.auth?.admin?.getUserById) {
         try {
-          isCurrentValid = await bcrypt.compare(currentPassword, dbUser.password_hash);
-        } catch (e) {
-          isCurrentValid = (currentPassword === dbUser.password_hash);
-        }
-      } else if (currentPassword === 'july94bab' || currentPassword === 'admin123' || currentPassword === 'demo123') {
-        isCurrentValid = true;
+          const { data: au } = await adminClient.auth.admin.getUserById(dbUser.auth_user_id);
+          if (au?.user?.email) {
+            canonicalEmail = au.user.email.trim().toLowerCase();
+          }
+        } catch {}
+      }
+
+      let isCurrentValid = false;
+      if (canonicalEmail) {
+        try {
+          const verifyClient = createAuthenticatedSupabaseClient();
+          const { data: signRes, error: signErr } = await verifyClient.auth.signInWithPassword({
+            email: canonicalEmail,
+            password: String(currentPassword)
+          });
+          if (!signErr && signRes?.user?.id) {
+            isCurrentValid = true;
+          }
+        } catch {}
       }
 
       if (!isCurrentValid) {
-        // Audit log for failed password change attempt
         createAuditLog({
           userId: authUser.id,
           schoolId: authUser.school_id,
@@ -5607,13 +5660,25 @@ async function doStartServer() {
         return res.status(400).json({ success: false, error: "Current password does not match our records." });
       }
 
-      const salt = await bcrypt.genSalt(10);
-      const newHash = await bcrypt.hash(newPassword, salt);
+      if (!dbUser.auth_user_id) {
+        return res.status(400).json({ success: false, error: "User account is not linked to a Supabase Auth identity." });
+      }
+
+      const { error: authUpdErr } = await adminClient.auth.admin.updateUserById(dbUser.auth_user_id, {
+        password: String(newPassword),
+        user_metadata: {
+          must_change_password: false
+        }
+      });
+
+      if (authUpdErr) {
+        return res.status(500).json({ success: false, error: authUpdErr.message });
+      }
 
       const { error: updateErr } = await adminClient
         .from('users')
         .update({
-          password_hash: newHash,
+          email: canonicalEmail || dbUser.email,
           updated_at: Date.now()
         })
         .eq('id', dbUser.id);
@@ -7077,12 +7142,13 @@ async function doStartServer() {
         try {
           const authUpdates: any = {};
           if (rawPasswordStr && rawPasswordStr.length >= 6) authUpdates.password = rawPasswordStr;
-          if (updateData.email) authUpdates.email = updateData.email;
-          if (updateData.full_name || updateData.role || updateData.status) {
+          if (updateData.email) authUpdates.email = String(updateData.email).trim().toLowerCase();
+          if (updateData.full_name || updateData.role || updateData.status || rawPasswordStr) {
             authUpdates.user_metadata = {
               ...(updateData.full_name ? { full_name: updateData.full_name } : {}),
               ...(updateData.role ? { role: updateData.role } : {}),
-              ...(updateData.status ? { status: updateData.status } : {})
+              ...(updateData.status ? { status: updateData.status } : {}),
+              ...(rawPasswordStr ? { must_change_password: false } : {})
             };
           }
           if (Object.keys(authUpdates).length > 0) {
@@ -8257,16 +8323,6 @@ async function doStartServer() {
       const aRecords = await dns.promises.resolve(domainPart).catch(() => []);
       if (aRecords && aRecords.length > 0) {
         return { isValid: true, domain: domainPart, suggestion };
-      }
-      // DNS-over-HTTPS fallback
-      const dohRes = await fetch(`https://1.1.1.1/dns-query?name=${encodeURIComponent(domainPart)}&type=MX`, {
-        headers: { 'accept': 'application/dns-json' }
-      }).catch(() => null);
-      if (dohRes && dohRes.ok) {
-        const dohData = await dohRes.json() as any;
-        if (dohData?.Answer && dohData.Answer.length > 0) {
-          return { isValid: true, domain: domainPart, suggestion };
-        }
       }
     } catch (e: any) {
       console.warn("DNS check exception for domain:", domainPart, e?.message);
@@ -13973,28 +14029,15 @@ NOTIFY pgrst, 'reload schema';`;
         console.warn("Notice persisting key to .env file:", fsErr);
       }
 
-      // Seed Creator / Super Admin into public.users in Supabase database
+      // Ensure Creator record in public.users is present without hardcoded passwords
       try {
-        const salt = await bcrypt.genSalt(10);
-        const passHash = await bcrypt.hash('july94bab', salt);
         await testClient.from('users').upsert([
           {
-            username: 'super_admin',
-            email: 'creator@schoolsphere.xyz',
-            full_name: 'Super Administrator',
-            role: 'super_admin',
-            status: 'active',
-            password_hash: passHash,
-            created_at: Date.now(),
-            updated_at: Date.now()
-          },
-          {
             username: 'creator',
-            email: 'creator@schoolsphere.xyz',
+            email: (process.env.CREATOR_EMAIL || 'creator@schoolsphere.app').trim().toLowerCase(),
             full_name: 'Platform Creator',
-            role: 'super_admin',
+            role: 'creator',
             status: 'active',
-            password_hash: passHash,
             created_at: Date.now(),
             updated_at: Date.now()
           }
@@ -20948,15 +20991,15 @@ CREATE TABLE IF NOT EXISTS public.siren_logs (
 
 ALTER TABLE public.siren_schedules ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_schedules" ON public.siren_schedules;
-CREATE POLICY "Tenant isolation for siren_schedules" ON public.siren_schedules FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Tenant isolation for siren_schedules" ON public.siren_schedules FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin()) WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 ALTER TABLE public.siren_recordings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_recordings" ON public.siren_recordings;
-CREATE POLICY "Tenant isolation for siren_recordings" ON public.siren_recordings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Tenant isolation for siren_recordings" ON public.siren_recordings FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin()) WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 ALTER TABLE public.siren_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Tenant isolation for siren_logs" ON public.siren_logs;
-CREATE POLICY "Tenant isolation for siren_logs" ON public.siren_logs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Tenant isolation for siren_logs" ON public.siren_logs FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin()) WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('siren-audio', 'siren-audio', true, 15728640)

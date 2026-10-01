@@ -386,33 +386,43 @@ export function AuthScreens({
         return {
           title: 'Register Client School',
           category: 'Institutional Onboarding',
-          subtitle: 'Provision a new campus workspace and primary administrator account.'
+          subtitle: 'Provision a new campus workspace and primary administrator account.',
+          path: '/register-school'
         };
       case 'join_invite':
         return {
           title: 'Join School via Invite Token',
           category: 'Staff & Student Onboarding',
-          subtitle: 'Accept an official school invitation token to activate your portal account.'
+          subtitle: 'Accept an official school invitation token to activate your portal account.',
+          path: '/join-invite'
         };
       case 'forgot':
         return {
           title: 'Account Password Recovery',
           category: 'Security & Access',
-          subtitle: 'Request password recovery instructions for your institutional account.'
+          subtitle: 'Request password recovery instructions for your institutional account.',
+          path: '/password-recovery'
         };
       case 'signin':
       default:
         return {
           title: 'Portal Sign In & Authentication',
           category: 'Portal Access',
-          subtitle: 'Sign in with your institutional credentials or license key.'
+          subtitle: 'Sign in with your institutional credentials or license key.',
+          path: '/sign-in'
         };
     }
   }, [activeTab]);
 
   useEffect(() => {
     document.title = `${authPageMeta.title} — SchoolSphere Management System`;
-  }, [authPageMeta.title]);
+    if (typeof window !== 'undefined') {
+      const searchAndHash = `${window.location.search || ''}${window.location.hash || ''}`;
+      if (window.location.pathname !== authPageMeta.path) {
+        window.history.replaceState({ authTab: activeTab }, '', `${authPageMeta.path}${searchAndHash}`);
+      }
+    }
+  }, [authPageMeta.title, authPageMeta.path, activeTab]);
 
   return (
     <div className="min-h-screen bg-[#f6f8f7] flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 font-sans selection:bg-[#faae57] selection:text-[#1f2a2e] relative overflow-hidden">

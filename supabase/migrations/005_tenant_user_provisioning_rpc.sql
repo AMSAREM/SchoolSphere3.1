@@ -51,10 +51,18 @@ RETURNS TABLE (
   school_name TEXT,
   school_slug TEXT
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    IF auth.uid() IS NULL OR p_school_id IS NULL OR p_school_id <> public.get_auth_school_id() THEN
+      RAISE EXCEPTION 'Access denied: unauthorized tenant user directory query.';
+    END IF;
+  END IF;
+
+  RETURN QUERY
   SELECT
     u.id,
     u.auth_user_id,
@@ -75,9 +83,11 @@ AS $$
   WHERE u.role NOT IN ('creator', 'super_admin')
     AND (p_school_id IS NULL OR u.school_id = p_school_id)
   ORDER BY u.created_at DESC NULLS LAST, u.id DESC;
+END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_tenant_users(UUID) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.get_tenant_users(UUID) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_tenant_users(UUID) TO authenticated, service_role;
 
 -- 3. SECURITY DEFINER RPC: Provision Tenant User (public.users + auth.users + role profile)
 CREATE OR REPLACE FUNCTION public.provision_tenant_user(
@@ -108,6 +118,9 @@ DECLARE
   v_first_name TEXT;
   v_last_name TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() AND NOT public.is_school_admin(p_school_id) THEN
+    RAISE EXCEPTION 'Access denied: school administrator or platform administrator required.';
+  END IF;
   IF v_role IN ('creator', 'super_admin') THEN
     v_role := 'admin';
   END IF;
@@ -302,7 +315,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO authenticated, service_role;
 
 -- Backwards-compatible alias for upsert_tenant_user
 CREATE OR REPLACE FUNCTION public.upsert_tenant_user(
@@ -334,7 +348,8 @@ AS $$
   );
 $$;
 
-GRANT EXECUTE ON FUNCTION public.upsert_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.upsert_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO authenticated, service_role;
 
 -- 4. SECURITY DEFINER RPC: Update Tenant User (status, role, password reset)
 CREATE OR REPLACE FUNCTION public.update_tenant_user(
@@ -356,6 +371,9 @@ DECLARE
   v_row public.users%ROWTYPE;
   v_now BIGINT := (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() AND NOT public.is_school_admin(p_school_id) THEN
+    RAISE EXCEPTION 'Access denied: school administrator or platform administrator required.';
+  END IF;
   UPDATE public.users SET
     full_name = COALESCE(NULLIF(TRIM(p_full_name), ''), full_name),
     role = CASE
@@ -392,7 +410,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.update_tenant_user(BIGINT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.update_tenant_user(BIGINT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.update_tenant_user(BIGINT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- 5. SECURITY DEFINER RPC: Delete Tenant User
 CREATE OR REPLACE FUNCTION public.delete_tenant_user(
@@ -408,6 +427,9 @@ DECLARE
   v_deleted_id BIGINT;
   v_auth_uid UUID;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() AND NOT public.is_school_admin(p_school_id) THEN
+    RAISE EXCEPTION 'Access denied: school administrator or platform administrator required.';
+  END IF;
   DELETE FROM public.users
   WHERE id = p_user_id
     AND (p_school_id IS NULL OR school_id = p_school_id)
@@ -426,7 +448,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.delete_tenant_user(BIGINT, UUID) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.delete_tenant_user(BIGINT, UUID) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_tenant_user(BIGINT, UUID) TO authenticated, service_role;
 
 -- 6. Overloaded 15-parameter signature for provision_tenant_user (supports extended staff/student metadata)
 CREATE OR REPLACE FUNCTION public.provision_tenant_user(
@@ -464,10 +487,11 @@ AS $$
   );
 $$;
 
-GRANT EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.provision_tenant_user(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.users TO anon, authenticated, service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.teachers TO anon, authenticated, service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.students TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.users TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.teachers TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.students TO authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
 

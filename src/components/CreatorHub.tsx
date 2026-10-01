@@ -54,7 +54,7 @@ import SalesSuite from './creator/SalesSuite';
 import ServicesSuite from './creator/ServicesSuite';
 import SecuritySuite from './creator/SecuritySuite';
 import FrontendTestRunner from './FrontendTestRunner';
-import { getCreatorPanelIdentity } from '../lib/pageMetadata';
+import { getCreatorPanelIdentity, resolveCreatorPanelFromPathname } from '../lib/pageMetadata';
 
 const AVAILABLE_MODULES = [
   { id: 'students', label: 'Students Records', description: 'Student profile directories & biodata' },
@@ -152,6 +152,8 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const { user } = useAuth();
   const { showToast, confirm } = useNotifications();
   const [activePanel, setActivePanel] = useState<string>(() => {
+    const fromUrl = typeof window !== 'undefined' ? resolveCreatorPanelFromPathname(window.location.pathname) : null;
+    if (fromUrl) return fromUrl;
     return localStorage.getItem('esepa_creator_active_panel') || 'dashboard';
   });
 
@@ -160,6 +162,17 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   useEffect(() => {
     localStorage.setItem('esepa_creator_active_panel', activePanel);
   }, [activePanel]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const matched = resolveCreatorPanelFromPathname(window.location.pathname);
+      if (matched) {
+        setActivePanel(matched);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // License status and generated lists
   const [licenseInfo, setLicenseInfo] = useState<{
@@ -997,7 +1010,17 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
 
   useEffect(() => {
     document.title = `${activeCreatorIdentity.title} — Creator Command Console | SchoolSphere`;
-  }, [activeCreatorIdentity.title]);
+    if (typeof window !== 'undefined') {
+      const searchAndHash = `${window.location.search || ''}${window.location.hash || ''}`;
+      if (window.location.pathname !== activeCreatorIdentity.path) {
+        window.history.pushState(
+          { view: 'creator', panel: activePanel },
+          '',
+          `${activeCreatorIdentity.path}${searchAndHash}`
+        );
+      }
+    }
+  }, [activeCreatorIdentity.title, activeCreatorIdentity.path, activePanel]);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden select-none text-slate-800">
@@ -1213,6 +1236,9 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
                   <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
                   <span className="text-slate-900 font-bold" aria-current="page">
                     {activeCreatorIdentity.title}
+                  </span>
+                  <span className="hidden sm:inline-block font-mono text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 ml-1">
+                    {activeCreatorIdentity.path}
                   </span>
                 </nav>
                 <div className="flex items-start sm:items-center gap-3">

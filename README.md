@@ -1,152 +1,72 @@
-# School Sphere 🏫
+# SchoolSphere 3.1 — Multi-Tenant School Management System
 
-**School Sphere** is a lightweight school administration and management system designed for Ghanaian schools and academic institutions. 
-
-Built on a robust, highly optimized web architecture, teachers, accountants, and administrators can log grades, take attendance, and collect fees with zero friction and zero lag. 
-
-Data synchronizes with a remote server database or structured cloud endpoints, enabling real-time continuity across multiple administrators.
+SchoolSphere 3.1 is a multi-tenant school management platform powered by **Supabase PostgreSQL** (`niavmonyfwqlryppgksy`), **Supabase Auth**, **Express**, and **React + Vite + Tailwind CSS**.
 
 ---
 
-## 🎨 Professional Design & Visual Concept
+## Architecture & Security Model
 
-- **Aesthetic Pairings**: Polished modern tracking typography (Inter for standard UI, JetBrains Mono for system indicators, tables, and grades).
-- **Responsive Fluid Density**: Adapts effortlessly from desktop administration views down to touch-friendly mobile terminal screens (with touch goals $\ge$ 44px).
-- **Purposeful Micro-interactions**: Elegant state transition curves powered by `motion` for instant feedback on tabs, report card previews, and terminal controls.
+### 1. Single-Source Authentication (Supabase Auth)
+- **Canonical Identity Store**: All user authentication is verified exclusively through **Supabase Auth (`auth.users`)** via `signInWithPassword` and verified session tokens (`adminClient.auth.getUser(accessToken)`).
+- **Username Handle Resolution**: Users may sign in using either their canonical email address (e.g., `admin@joyce.edu.gh`, `eamoako@joyce.edu.gh`) or their tenant-scoped username handle (e.g., `admin@joyce`, `eamoako`, `creator`). The backend resolves the handle to the user's canonical `auth.users.email` and authenticates credentials strictly against Supabase Auth.
+- **Email & Profile Synchronization**: `auth.users.email` is the canonical email source of truth. Database triggers (`on_auth_user_created` and `on_auth_user_email_updated`) and server-side verification routes keep `public.users.email` and `public.users.auth_user_id` strictly synchronized and require exact email verification before linking an unlinked profile.
+- **First-Login Password Rotation**: When a tenant administrator activates a school using an initial license key or temporary credential, `mustChangePassword` is enforced on first login.
+- **Onboarding & Credentials**: No default admin usernames or passwords are stored in source code or documentation. **See [`SUPABASE_AUTH_ONBOARDING_GUIDE.md`](./SUPABASE_AUTH_ONBOARDING_GUIDE.md)** for tenant onboarding, user provisioning, and password recovery procedures.
 
----
+### 2. Multi-Tenant Row-Level Security (RLS) & RPC Access Control
+- **Tenant Isolation**: Every tenant-scoped table (`students`, `teachers`, `classes`, `subjects`, `results`, `attendance`, `fee_structures`, `fee_payments`, `timetables`, `academic_calendar`, `events`, `siren_schedules`, etc.) enforces Row-Level Security using `school_id = public.get_auth_school_id()` or `public.is_super_admin()`.
+- **Locked-Down `SECURITY DEFINER` RPCs**:
+  - Platform administration functions (`get_schools_directory`, `set_school_tenant_status`, `sync_school_license`, `create_school_with_license`) enforce `IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN RAISE EXCEPTION 'Access denied: platform administrators only.'; END IF;` and have `EXECUTE` revoked from `anon`.
+  - Tenant user management RPCs (`get_tenant_users`, `provision_tenant_user`, `upsert_tenant_user`, `update_tenant_user`, `delete_tenant_user`) enforce tenant/admin authorization guards and have `EXECUTE` revoked from `anon`.
+- **Fail-Fast Admin Client**: `getSupabaseAdmin()` in `lib/supabase/server.ts` requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) at startup and refuses to downgrade to an `anon` key.
 
-## 🎯 Modular Architecture & Core Components
-
-1. **📊 Comprehensive Dashboard Logs**: Real-time business intelligence metrics including student enrollment trajectory, average quarterly attendance, overall fee balance tallies, and SMS billing credits.
-2. **👥 Student Management**: Complete profiles with digital letterhead photo uploads, parent/guardian phone directory, and customizable pricing models.
-3. **💵 Fees & Revenue Management**: Live invoicing ledger, instant print/PDF transaction receipts, and payment status parameters.
-4. **📝 Attendance Terminal**: Fast single-click class checks with status registers (Present, Absent, Late).
-5. **🏆 Results & Academic Reports**: Automated Ghanaian BECE or WASSCE continuous class-assessments (30%) and exams (70%) grading structures, average class rankings, and instant terminal report cards.
-6. **📈 Exam Placement Analytics**: Detailed high-performance tracker for national level candidates (BECE / WASSCE) with dynamic analysis.
-7. **🚨 Emergency Siren Console**: Broadcaster console triggers urgent broadcast scripts for incidents.
-8. **💬 SMS Communicator Portal**: Predefined SMS letterhead templates (Fee Reminders, Student Absences, PTA Invitations) with custom template placeholder interpolations (`{parentName}`, `{studentName}`, etc.) and momo virtual gateway.
-9. **⚙️ App Preferences**: Academic calendar semesters, class streams, subject lists, and custom grade boundary configuration.
-10. **🛡️ Role-Based Access Control**: Fully isolated views customized for **Administrators**, **Teachers**, and **Accountants**.
+### 3. Leaked-Password Protection (HaveIBeenPwned)
+- Enable **Leaked Password Protection** in the Supabase Dashboard under **Authentication → Providers → Email** (or **Authentication → Security / Policies**) for project `niavmonyfwqlryppgksy` so Supabase Auth automatically rejects passwords found in HaveIBeenPwned breach corpuses.
 
 ---
 
-## 🔒 Initial Administrator Setup & Authentication
+## Local Development Setup
 
-SchoolSphere utilizes enterprise role-based access control backed by Supabase Authentication and server-side JWT session tokens.
+### Prerequisites
+- Node.js 20+
+- Active Supabase project (`niavmonyfwqlryppgksy`)
 
-To initialize the primary administrator account for a new deployment:
+### Environment Variables
+Copy `.env.example` to `.env` and configure the required keys (never commit `.env` or secret keys to version control):
 
-1. Launch the application and click **Get Started** on the welcome screen.
-2. Complete the institution registration wizard by providing your school name, institutional domain/slug, and establishing your unique, secure master administrator credentials.
-3. If provisioning via Supabase directly, create an initial user record in the `users` table or invoke the `POST /api/auth/register` endpoint with your organization details.
-
-> ⚠️ **Security Notice**: No default credentials are pre-seeded in the public repository. All administrative accounts must use strong, unique passwords with mandatory rotation enabled. For self-hosted instances, configure `JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` in your `.env` file prior to starting the service.
-
----
-
-## 🛠️ Technology Stack
-
-- **Client Runtime**: React 18, TypeScript, Tailwind CSS, Dexie.js (client IndexedDB offline cache), Lucide Icons, Recharts (institutional analytics).
-- **Backend Service**: Express.js (v4), Node.js 22, tsx runner, JWT session authentication, and REST API proxy.
-- **Data Tier**: 
-  - **Cloud Database (Single Source of Truth)**: Supabase PostgreSQL with Multi-Tenant Row Level Security (RLS) policies.
-  - **Client Resilience Layer**: IndexedDB local cache via Dexie.js for transparent offline-first usability and bidirectional sync.
-
----
-
-## ⚙️ Environment Configuration (`.env`)
-
-Declare a `.env` file in the root workspace folder to configure your deployment. A template is provided in `.env.example`:
-
-```env
-# Server Binding Port
-PORT=3000
-
-# Server Host Address
-HOST=0.0.0.0
-
-# Supabase Database & Auth (Single Source of Truth)
-SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# JWT Session Secret (Mandatory in production)
-JWT_SECRET=your_strong_random_jwt_secret_here
-
-# Outbound App URL for web routing
-APP_URL=https://schoolsphere.app
-```
-
----
-
-## 🚀 Installation & Setup Procedure
-
-Ready to transition to development or production deployment? Follow these systematic instructions:
-
-### 📥 Prerequisites
-- **Node.js**: Version 20.x or 22.x (LTS recommended).
-- **npm**: v9.x or above (delivered automatically with Node.js).
-- **Supabase Project**: With PostgreSQL 15+ and schema migrated from `supabase/schema_master.sql`.
-
----
-
-### 💻 Step 1: Clone and Set Up Directory
-Extract your code bundle or clone the project files directly to your target deployment environment:
 ```bash
-cd school-sphere
+cp .env.example .env
 ```
 
----
+Required variables:
+- `SUPABASE_URL` / `VITE_SUPABASE_URL`: Your live Supabase project URL (`https://niavmonyfwqlryppgksy.supabase.co`)
+- `SUPABASE_SERVICE_ROLE_KEY`: Server-side `service_role` secret key (used only in backend routes)
+- `VITE_SUPABASE_ANON_KEY`: Public `anon` key for browser Supabase Auth client
+- `JWT_SECRET`: Secret key for signing application session tokens
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed frontend origins for CORS
 
-### 📦 Step 2: Install Dependencies
-Run the standard installer tool to fetch official dependencies:
+### Install & Run
 ```bash
 npm install
-```
-
----
-
-### 🛠️ Step 3: Local Development Sandbox (Run Dev Server)
-Boot the application inside the development environment. This automatically launches Express on port `3000`, setting up a development asset pipeline:
-```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your web browser to initialize the setup.
 
----
-
-### 🚀 Step 4: Production Build & Asset Compiling
-To compile the application for a fast, production-ready server environment, perform the single bundle build instruction:
+### Production Build
 ```bash
 npm run build
+npm start
 ```
-This single unified process executes two crucial functions:
-1. Compiles frontend assets into highly optimized, minified HTML/CSS/JS bundles in `/dist`.
-2. Bundles the Express TypeScript backend via `esbuild` into a self-contained, high-speed CJS module at `/dist/server.cjs`.
 
 ---
 
-### 🏁 Step 5: Start Production Server
-Launch your optimized, compiled production build using standard Node.js execution rules:
-```bash
-npm run start
-```
-The server binds to port `3000` on host `0.0.0.0` for high-performance scale.
+## Database Migrations
+SQL migrations are located in [`supabase/migrations/`](./supabase/migrations/):
+- `001_multi_tenant_rls_and_auth.sql` — Core multi-tenant RLS policies and helper functions
+- `002_fix_auth_triggers_and_rls.sql` — Auth triggers and RLS refinements
+- `003_grants_creator_and_school_creation.sql` — Platform creator and school provisioning RPC
+- `004_sync_school_and_license_procedure.sql` — Atomic school & license synchronization RPC
+- `005_tenant_user_provisioning_rpc.sql` — Tenant user management RPCs with admin guards
+- `20260926_canonical_license_deduplication.sql` — Canonical 1-to-1 school-license deduplication
+- `20261001_security_hardening_rpc_and_auth.sql` — Production RPC access control lockdown & `auth.users` ↔ `public.users` email parity triggers
 
----
-
-## 💾 Cloud Persistence & Data Architecture
-
-SchoolSphere uses Supabase PostgreSQL as its single source of truth:
-- **Tenant Isolation**: Every academic table (`students`, `classes`, `subjects`, `teachers`, `attendance`, `results`, `fees`) is protected with Row Level Security (RLS) policies scoped strictly to `school_id`.
-- **Client Offline Cache**: The browser maintains an IndexedDB cache via Dexie.js for instant UI responsiveness and offline read availability. All writes are committed directly to Supabase first.
-- **Fail-Fast Connectivity**: The server checks Supabase connectivity at startup and fails fast with actionable diagnostics if credentials are missing or unreachable.
-
----
-
-## 🧹 Maintenance & Logging Out
-
-- **Cache Wipes**: If you wish to wipe the IndexedDB cache clear and seed default dummy records into the client database, click the **Reset Database & Start Fresh** action located on the login screen footer.
-- **Data Portability**: Easily import or export CSV/Excel sheets for academic transcripts, student registers, and financial history records.
+For complete onboarding instructions, see **[`SUPABASE_AUTH_ONBOARDING_GUIDE.md`](./SUPABASE_AUTH_ONBOARDING_GUIDE.md)**.

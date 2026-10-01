@@ -84,7 +84,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licenseSync';
 import { ClientTrialBanner } from './components/ClientTrialBanner';
 import { ClientSupportWidget } from './components/ClientSupportWidget';
-import { getPageIdentity } from './lib/pageMetadata';
+import { getPageIdentity, resolveViewFromPathname } from './lib/pageMetadata';
 import { PageHeaderBanner } from './components/PageHeaderBanner';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
@@ -112,6 +112,8 @@ function AppContent() {
   const { user, school, logout, isLoading: authLoading, switchRole, login, register } = useAuth();
   const { showToast } = useNotifications();
   const [activeView, setActiveView] = useState<View>(() => {
+    const fromUrl = typeof window !== 'undefined' ? resolveViewFromPathname(window.location.pathname) : null;
+    if (fromUrl) return fromUrl as View;
     return (localStorage.getItem('esepa_active_view') as View) || 'dashboard';
   });
 
@@ -277,6 +279,44 @@ function AppContent() {
       document.title = `${activePageMeta.title} — ${schoolName} | SchoolSphere`;
     }
   }, [activePageMeta.title, schoolName, showGetStarted, user]);
+
+  // Synchronize Browser Address Bar URL (window.location.pathname) with active page
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const searchAndHash = `${window.location.search || ''}${window.location.hash || ''}`;
+
+    if (showGetStarted && !user) {
+      if (window.location.pathname !== '/' && window.location.pathname !== '/welcome') {
+        window.history.replaceState({ view: 'welcome' }, '', `/${searchAndHash}`);
+      }
+      return;
+    }
+
+    if (!user) {
+      return;
+    }
+
+    if (activeView === 'creator' && window.location.pathname.startsWith('/creator/')) {
+      return;
+    }
+
+    const targetPath = activePageMeta.path || `/${activeView.replace(/_/g, '-')}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ view: activeView }, '', `${targetPath}${searchAndHash}`);
+    }
+  }, [activeView, activePageMeta.path, showGetStarted, user]);
+
+  // Support Browser Back / Forward buttons via popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      const matchedView = resolveViewFromPathname(window.location.pathname);
+      if (matchedView) {
+        setActiveView(matchedView as View);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Uniform design tokens for SchoolSphere palette (#f6f8f7 canvas background, #1c4a59 institutional surface, #faae57 CTA)
   useEffect(() => {

@@ -7,11 +7,24 @@ import {
   signOut,
   User 
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+const env = (import.meta as any)?.env || {};
+const firebaseConfig = {
+  projectId: env.VITE_FIREBASE_PROJECT_ID || '',
+  appId: env.VITE_FIREBASE_APP_ID || '',
+  apiKey: env.VITE_FIREBASE_API_KEY || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || '',
+  oAuthClientId: env.VITE_GOOGLE_OAUTH_CLIENT_ID || '',
+  recaptchaSiteKey: env.VITE_FIREBASE_RECAPTCHA_SITE_KEY || ''
+};
 
-// Initialize Firebase App
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+// Initialize Firebase App only when an API key is configured
+const app = firebaseConfig.apiKey
+  ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApp())
+  : null;
+const auth = app ? getAuth(app) : null;
 
 // Configure Google Provider with Gmail Send Scope
 const googleProvider = new GoogleAuthProvider();
@@ -48,6 +61,10 @@ export const initGoogleAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
+  if (!auth) {
+    if (onAuthFailure) onAuthFailure();
+    return () => {};
+  }
   return onAuthStateChanged(auth, async (user: User | null) => {
     const validToken = getGoogleAccessToken();
     if (user && validToken) {
@@ -65,6 +82,10 @@ export const initGoogleAuth = (
  * Sign in with Google using popup to obtain Gmail OAuth access token.
  */
 export const signInWithGoogle = async (): Promise<{ user: User; accessToken: string } | null> => {
+  if (!auth) {
+    console.warn('Google Sign-in unavailable: VITE_FIREBASE_API_KEY is not configured.');
+    return null;
+  }
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, googleProvider);
@@ -117,7 +138,7 @@ export const getGoogleAccessToken = (): string | null => {
  */
 export const signOutGoogle = async () => {
   try {
-    await signOut(auth);
+    if (auth) await signOut(auth);
     clearGoogleAccessToken();
   } catch (e) {
     console.error('Google Sign out error:', e);
@@ -128,7 +149,7 @@ export const signOutGoogle = async () => {
  * Gets current authenticated Google user.
  */
 export const getCurrentGoogleUser = (): User | null => {
-  return auth.currentUser;
+  return auth ? auth.currentUser : null;
 };
 
 export interface SendLicenseEmailParams {

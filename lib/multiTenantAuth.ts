@@ -166,11 +166,6 @@ export async function registerOrganization(input: RegisterOrgInput) {
     console.warn('[Register Org] Notice inserting school into Supabase:', insertErr?.message);
   }
 
-  // 2. Hash admin password
-  const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash(password, salt);
-
-  const authUserId = crypto.randomUUID();
   const baseHandle = cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'admin';
   let username = baseHandle;
 
@@ -187,29 +182,56 @@ export async function registerOrganization(input: RegisterOrgInput) {
     }
   } catch (e) {}
 
-  // Also create/update in Supabase Auth (auth.users) so email+password login works natively
+  // 2. Provision user in Supabase Auth (auth.users) as the single source of truth and capture real auth_user_id + canonical email
+  let authUserId: string | null = null;
+  let canonicalEmail = cleanEmail.toLowerCase();
   try {
-    await admin.auth.admin.createUser({
-      email: cleanEmail,
+    const { data: createdAuth, error: createAuthErr } = await admin.auth.admin.createUser({
+      email: canonicalEmail,
       password: password,
       email_confirm: true,
       user_metadata: {
         full_name: adminFullName.trim(),
+        username,
         role: 'admin',
         school_id: newOrg.id,
         organization_id: newOrg.id
       }
     });
+    if (!createAuthErr && createdAuth?.user?.id) {
+      authUserId = createdAuth.user.id;
+      canonicalEmail = (createdAuth.user.email || canonicalEmail).toLowerCase();
+    } else {
+      const { data: linkRes } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: canonicalEmail
+      });
+      if (linkRes?.user?.id) {
+        authUserId = linkRes.user.id;
+        canonicalEmail = (linkRes.user.email || canonicalEmail).toLowerCase();
+        await admin.auth.admin.updateUserById(authUserId, {
+          password,
+          email_confirm: true,
+          user_metadata: {
+            ...(linkRes.user.user_metadata || {}),
+            full_name: adminFullName.trim(),
+            username,
+            role: 'admin',
+            school_id: newOrg.id,
+            organization_id: newOrg.id
+          }
+        });
+      }
+    }
   } catch (e) {}
 
-  // 3. Insert Admin into 'users' table
-  const userRecord = {
+  // 3. Insert or update Admin in 'users' table keeping email and auth_user_id in strict lockstep
+  const userRecord: Record<string, any> = {
     auth_user_id: authUserId,
     school_id: newOrg.id,
     username: username,
-    password_hash: passwordHash,
     full_name: adminFullName.trim(),
-    email: cleanEmail,
+    email: canonicalEmail,
     phone: phone || '',
     role: 'admin',
     status: 'active',
@@ -217,7 +239,7 @@ export async function registerOrganization(input: RegisterOrgInput) {
     updated_at: Date.now()
   };
 
-  let insertedUserId: string | number = authUserId;
+  let insertedUserId: string | number = authUserId || username;
   try {
     const { data: createdUser, error: userError } = await admin
       .from('users')
@@ -248,22 +270,20 @@ export async function registerOrganization(input: RegisterOrgInput) {
   const profileId = crypto.randomUUID();
   const staffProfile: StaffProfile = {
     id: profileId,
-    auth_user_id: authUserId,
+    auth_user_id: authUserId || profileId,
     organization_id: newOrg.id,
     full_name: adminFullName.trim(),
-    email: cleanEmail,
+    email: canonicalEmail,
     phone: phone || '',
     role: 'admin',
     status: 'active',
-    password_hash: passwordHash,
     created_at: Date.now(),
     updated_at: Date.now()
   };
 
   // Try writing to staff_profiles in Supabase
   try {
-    const { password_hash: _ph, ...dbStaffProfile } = staffProfile;
-    await admin.from('staff_profiles').insert([dbStaffProfile]);
+    await admin.from('staff_profiles').insert([staffProfile]);
   } catch (spErr) {
     // If table not present yet, stored in memory cache
   }
@@ -276,7 +296,7 @@ export async function registerOrganization(input: RegisterOrgInput) {
       license_key: generatedKey,
       school_name: organizationName.trim(),
       school_id: newOrg.id,
-      client_email: cleanEmail,
+      client_email: canonicalEmail,
       contact_person: adminFullName.trim(),
       tier: 'Enterprise',
       active_status: 'active',
@@ -292,7 +312,7 @@ export async function registerOrganization(input: RegisterOrgInput) {
   const authPayload: Omit<AuthJwtPayload, 'iat' | 'exp'> = {
     id: insertedUserId,
     username: username,
-    email: cleanEmail,
+    email: canonicalEmail,
     role: 'admin',
     school_id: newOrg.id,
     schoolId: newOrg.id,
@@ -305,9 +325,9 @@ export async function registerOrganization(input: RegisterOrgInput) {
   // 7. Record login telemetry
   recordUserLoginActivity({
     id: crypto.randomUUID(),
-    auth_user_id: authUserId,
+    auth_user_id: authUserId || undefined,
     organization_id: newOrg.id,
-    email: cleanEmail,
+    email: canonicalEmail,
     status: 'organization_registered',
     login_timestamp: Date.now()
   });
@@ -315,13 +335,12 @@ export async function registerOrganization(input: RegisterOrgInput) {
   return {
     organization: newOrg,
     licenseKey: generatedKey,
-    passwordHash,
     user: {
       id: insertedUserId,
       authUserId,
       username,
       fullName: adminFullName.trim(),
-      email: cleanEmail,
+      email: canonicalEmail,
       role: 'admin',
       organizationId: newOrg.id,
       schoolId: newOrg.id,
@@ -505,11 +524,6 @@ export async function joinWithInvitation(input: {
   const designatedRole = verification.invitation.role || 'teacher';
   const admin = getSupabaseAdmin();
 
-  // Hash password
-  const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash(password, salt);
-
-  const authUserId = crypto.randomUUID();
   const baseHandle = cleanEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'staff';
   let username = baseHandle;
   try {
@@ -519,14 +533,56 @@ export async function joinWithInvitation(input: {
     }
   } catch (e) {}
 
-  // Insert into 'users' table
-  const userRecord = {
+  // Provision user in Supabase Auth (auth.users) first and capture real auth_user_id + canonical email
+  let authUserId: string | null = null;
+  let canonicalEmail = cleanEmail.toLowerCase();
+  try {
+    const { data: createdAuth, error: createAuthErr } = await admin.auth.admin.createUser({
+      email: canonicalEmail,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName.trim(),
+        username,
+        role: designatedRole,
+        school_id: orgId,
+        organization_id: orgId
+      }
+    });
+    if (!createAuthErr && createdAuth?.user?.id) {
+      authUserId = createdAuth.user.id;
+      canonicalEmail = (createdAuth.user.email || canonicalEmail).toLowerCase();
+    } else {
+      const { data: linkRes } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: canonicalEmail
+      });
+      if (linkRes?.user?.id) {
+        authUserId = linkRes.user.id;
+        canonicalEmail = (linkRes.user.email || canonicalEmail).toLowerCase();
+        await admin.auth.admin.updateUserById(authUserId, {
+          password,
+          email_confirm: true,
+          user_metadata: {
+            ...(linkRes.user.user_metadata || {}),
+            full_name: fullName.trim(),
+            username,
+            role: designatedRole,
+            school_id: orgId,
+            organization_id: orgId
+          }
+        });
+      }
+    }
+  } catch (e) {}
+
+  // Insert into 'users' table keeping email and auth_user_id synchronized with auth.users
+  const userRecord: Record<string, any> = {
     auth_user_id: authUserId,
     school_id: orgId,
     username: username,
-    password_hash: passwordHash,
     full_name: fullName.trim(),
-    email: cleanEmail,
+    email: canonicalEmail,
     phone: phone || '',
     role: designatedRole,
     status: 'active',
@@ -534,7 +590,7 @@ export async function joinWithInvitation(input: {
     updated_at: Date.now()
   };
 
-  let insertedUserId: string | number = authUserId;
+  let insertedUserId: string | number = authUserId || username;
   try {
     const { data: createdUser } = await admin
       .from('users')
@@ -551,21 +607,19 @@ export async function joinWithInvitation(input: {
   const profileId = crypto.randomUUID();
   const staffProfile: StaffProfile = {
     id: profileId,
-    auth_user_id: authUserId,
+    auth_user_id: authUserId || profileId,
     organization_id: orgId,
     full_name: fullName.trim(),
-    email: cleanEmail,
+    email: canonicalEmail,
     phone: phone || '',
     role: designatedRole,
     status: 'active',
-    password_hash: passwordHash,
     created_at: Date.now(),
     updated_at: Date.now()
   };
 
   try {
-    const { password_hash: _ph, ...dbStaffProfile } = staffProfile;
-    await admin.from('staff_profiles').insert([dbStaffProfile]);
+    await admin.from('staff_profiles').insert([staffProfile]);
   } catch (e) {}
   staffProfilesStore.set(profileId, staffProfile);
 
@@ -586,7 +640,7 @@ export async function joinWithInvitation(input: {
   const tokenPayload: Omit<AuthJwtPayload, 'iat' | 'exp'> = {
     id: insertedUserId,
     username,
-    email: cleanEmail,
+    email: canonicalEmail,
     role: designatedRole,
     school_id: orgId,
     schoolId: orgId,
@@ -599,22 +653,21 @@ export async function joinWithInvitation(input: {
   // Record login activity
   recordUserLoginActivity({
     id: crypto.randomUUID(),
-    auth_user_id: authUserId,
+    auth_user_id: authUserId || undefined,
     organization_id: orgId,
-    email: cleanEmail,
+    email: canonicalEmail,
     status: 'invite_accepted',
     login_timestamp: Date.now()
   });
 
   return {
     organization: verification.organization,
-    passwordHash,
     user: {
       id: insertedUserId,
       authUserId,
       username,
       fullName: fullName.trim(),
-      email: cleanEmail,
+      email: canonicalEmail,
       role: designatedRole,
       organizationId: orgId,
       schoolId: orgId,
