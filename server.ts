@@ -1096,17 +1096,17 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
       const adminClient = getSupabaseAdmin();
       const tables = [
         "students", "attendance", "results", "subjects",
-        "classes", "teachers", "termReports", "settings", "users",
+        "classes", "teachers", "termReports", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
-        "promotionHistory", "inventory", "expenses", "licenses", "schools",
+        "promotionHistory", "licenses", "schools",
         "lessonNotes", "feeTransactions"
       ];
       
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
-        "classes", "teachers", "termReports", "settings",
-        "examAnalysis", "promotionHistory", "inventory", "expenses",
-        "users", "polls", "candidates", "votes", "lessonNotes",
+        "classes", "teachers", "termReports",
+        "examAnalysis", "promotionHistory",
+        "users", "polls", "lessonNotes",
         "feeTransactions", "smsLogs"
       ]);
 
@@ -1116,12 +1116,53 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         smsLogs: 'sms_logs',
         promotionHistory: 'promotion_history',
         lessonNotes: 'lesson_notes',
-        feeTransactions: 'fee_transactions'
+        feeTransactions: 'fee_transactions',
+        licenses: 'school_licenses'
       };
 
-      const data: any = {};
+      const isUuidSyntax = (val?: string | null) =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val).trim()));
+
+      const data: any = {
+        settings: [],
+        inventory: [],
+        expenses: []
+      };
+
       for (const table of tables) {
         const targetTable = tableMap[table] || table;
+        if (targetSchoolId && (tenantScopedTables.has(table) || table === "candidates" || table === "votes") && !isUuidSyntax(targetSchoolId)) {
+          data[table] = [];
+          continue;
+        }
+
+        // Scope candidates and votes via the tenant's poll IDs (since candidates & votes link via poll_id)
+        if (targetSchoolId && (table === "candidates" || table === "votes")) {
+          const tenantPollIds = Array.isArray(data.polls)
+            ? data.polls.map((p: any) => p?.id).filter((id: any) => id !== undefined && id !== null)
+            : [];
+          if (tenantPollIds.length === 0) {
+            data[table] = [];
+            continue;
+          }
+          const { data: pollScopedRows, error: pollScopedErr } = await adminClient
+            .from(targetTable)
+            .select('*')
+            .in('poll_id', tenantPollIds);
+          if (pollScopedErr) {
+            const errCode = String((pollScopedErr as any).code || '');
+            const errMsg = String(pollScopedErr.message || pollScopedErr);
+            console.error(
+              `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId}" code="${errCode}" message="${errMsg}"`
+            );
+            throw new Error(
+              `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
+            );
+          }
+          data[table] = Array.isArray(pollScopedRows) ? pollScopedRows : [];
+          continue;
+        }
+
         let query = adminClient.from(targetTable).select('*');
         if (targetSchoolId && tenantScopedTables.has(table)) {
           // Pull records belonging strictly to this tenant
@@ -1129,24 +1170,13 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         }
 
         let { data: rows, error } = await query;
-        if (error && targetTable !== table) {
-          // Try fallback to unmapped table name
-          const fallbackQuery = adminClient.from(table).select('*');
-          const altRes = targetSchoolId && tenantScopedTables.has(table)
-            ? await fallbackQuery.eq("school_id", targetSchoolId)
-            : await fallbackQuery;
-          if (!altRes.error && altRes.data) {
-            rows = altRes.data;
-            error = null;
-          }
-        }
 
         if (error) {
           const errCode = String((error as any).code || '');
           const errMsg = String(error.message || error);
           const isOptionalUnprovisionedTable =
             (errCode === '42P01' || errCode === 'PGRST205' || errMsg.includes('Could not find the table')) &&
-            ['licenses', 'expenses', 'inventory', 'promotion_history', 'sms_logs', 'lesson_notes'].includes(targetTable);
+            ['school_licenses', 'promotion_history', 'sms_logs', 'lesson_notes'].includes(targetTable);
 
           console.error(
             `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId || 'global'}" code="${errCode}" message="${errMsg}"`
@@ -1241,119 +1271,145 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         });
       }
 
-      // Enrich pulled results, lessonNotes, and feeTransactions from public.school_settings
-      if (targetSchoolId) {
-        try {
-          const { data: schSet } = await adminClient
-            .from('school_settings')
-            .select('streams')
-            .eq('school_id', targetSchoolId)
-            .limit(1)
-            .maybeSingle();
-          const caLedger = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
-            ? (schSet.streams as any).continuous_assessment
-            : null;
-          if (caLedger && typeof caLedger === 'object') {
-            if (Array.isArray(data.results)) {
-              data.results = data.results.map((r: any) => {
-                const key = `${String(r.class || '').trim()}::${String(r.subject || '').trim()}::${String(r.term || '').trim()}`;
-                const entry = caLedger[key];
-                const stuId = String(r.studentId || r.student_id || '').trim();
-                const stuBreak = entry?.studentScores?.[stuId];
-                return {
-                  ...r,
-                  exerciseColumns: (Array.isArray(r.exerciseColumns) && r.exerciseColumns.length > 0)
-                    ? r.exerciseColumns
-                    : (Array.isArray(entry?.columns) ? entry.columns : r.exerciseColumns),
-                  exerciseScores: (r.exerciseScores && Object.keys(r.exerciseScores).length > 0)
-                    ? r.exerciseScores
-                    : (stuBreak?.scores || r.exerciseScores),
-                  rawCaScore: r.rawCaScore ?? stuBreak?.rawCaScore,
-                  rawCaMax: r.rawCaMax ?? stuBreak?.rawCaMax
-                };
-              });
-            }
-          }
+      // Enrich pulled settings, inventory, expenses, results, lessonNotes, and feeTransactions from public.school_settings
+      if (targetSchoolId && isUuidSyntax(targetSchoolId)) {
+        const { data: schSet, error: schSetErr } = await adminClient
+          .from('school_settings')
+          .select('school_id, grade_boundaries, terms, streams')
+          .eq('school_id', targetSchoolId)
+          .limit(1)
+          .maybeSingle();
 
-          // Reconcile lesson_notes from school_settings.streams.lesson_notes alongside public.lesson_notes
-          const streamLessonNotes = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
-            ? (schSet.streams as any).lesson_notes
-            : null;
-          if (Array.isArray(streamLessonNotes) && streamLessonNotes.length > 0) {
-            const existingNotes = Array.isArray(data.lessonNotes) ? [...data.lessonNotes] : [];
-            const noteMap = new Map<string, any>();
-            for (const n of existingNotes) {
-              const nid = String(n.noteId || n.note_id || n.id || '').trim();
-              if (nid) noteMap.set(nid, n);
-            }
-            for (const sn of streamLessonNotes) {
-              const nid = String(sn.noteId || sn.note_id || sn.id || '').trim();
-              if (!nid) continue;
-              const prev = noteMap.get(nid);
-              if (!prev || (Number(sn.updatedAt || sn.updated_at || 0) >= Number(prev.updatedAt || prev.updated_at || 0))) {
-                noteMap.set(nid, { ...(prev || {}), ...sn });
-              }
-            }
-            data.lessonNotes = Array.from(noteMap.values());
-          }
+        if (schSetErr) {
+          const errCode = String((schSetErr as any).code || '');
+          const errMsg = String(schSetErr.message || schSetErr);
+          console.error(
+            `[Supabase pullData Table Error] table="school_settings" (logical="settings") school_id="${targetSchoolId}" code="${errCode}" message="${errMsg}"`
+          );
+          throw new Error(
+            `Supabase read failed on table "school_settings" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
+          );
+        }
 
-          // Reconcile fee_transactions from school_settings.streams.fee_transactions alongside public.fee_transactions
-          const streamFeeTx = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
-            ? (schSet.streams as any).fee_transactions
-            : null;
-          if (Array.isArray(streamFeeTx) && streamFeeTx.length > 0) {
-            const existingTx = Array.isArray(data.feeTransactions) ? [...data.feeTransactions] : [];
-            const txMap = new Map<string, any>();
-            for (const tx of existingTx) {
-              const rcp = String(tx.receiptNumber || tx.receipt_number || tx.id || '').trim().toUpperCase();
-              if (rcp) txMap.set(rcp, normalizeServerFeeTransactionRecord(tx, targetSchoolId));
-            }
-            for (const stx of streamFeeTx) {
-              const norm = normalizeServerFeeTransactionRecord(stx, targetSchoolId);
-              const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
-              if (!rcp) continue;
-              if (!txMap.has(rcp)) {
-                txMap.set(rcp, norm);
-              } else {
-                txMap.set(rcp, { ...norm, ...txMap.get(rcp) });
-              }
-            }
-            data.feeTransactions = Array.from(txMap.values()).sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
-          }
+        const streamsObj = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
+          ? (schSet.streams as Record<string, any>)
+          : {};
 
-          // Reconcile Siren Console state from school_settings.streams.siren_console into data.settings
-          const streamSiren = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
-            ? (schSet.streams as any).siren_console
-            : null;
-          if (streamSiren && typeof streamSiren === 'object') {
-            const existingSettings = Array.isArray(data.settings) ? [...data.settings] : [];
-            const upsertSettingEntry = (key: string, value: any) => {
-              if (value === undefined) return;
-              const idx = existingSettings.findIndex((s: any) => s && s.key === key);
-              if (idx >= 0) {
-                existingSettings[idx] = { ...existingSettings[idx], key, value, school_id: targetSchoolId };
-              } else {
-                existingSettings.push({ key, value, school_id: targetSchoolId });
-              }
+        // 1. Reconcile general key-value settings from school_settings.streams.settings_kv
+        const existingSettings = Array.isArray(data.settings) ? [...data.settings] : [];
+        const upsertSettingEntry = (key: string, value: any) => {
+          if (value === undefined) return;
+          const idx = existingSettings.findIndex((s: any) => s && s.key === key);
+          if (idx >= 0) {
+            existingSettings[idx] = { ...existingSettings[idx], key, value, school_id: targetSchoolId };
+          } else {
+            existingSettings.push({ key, value, school_id: targetSchoolId });
+          }
+        };
+
+        if (streamsObj.settings_kv && typeof streamsObj.settings_kv === 'object' && !Array.isArray(streamsObj.settings_kv)) {
+          for (const [k, v] of Object.entries(streamsObj.settings_kv)) {
+            upsertSettingEntry(k, v);
+          }
+        }
+        if (streamsObj.duty_roster) {
+          upsertSettingEntry('dutyRosterData', streamsObj.duty_roster);
+        }
+
+        // 2. Reconcile inventory and expenses from school_settings.streams
+        if (Array.isArray(streamsObj.inventory?.items)) {
+          data.inventory = streamsObj.inventory.items;
+        } else if (Array.isArray(streamsObj.inventory)) {
+          data.inventory = streamsObj.inventory;
+        }
+        if (Array.isArray(streamsObj.expenses)) {
+          data.expenses = streamsObj.expenses;
+        }
+
+        // 3. Reconcile Continuous Assessment scores into data.results
+        const caLedger = streamsObj.continuous_assessment;
+        if (caLedger && typeof caLedger === 'object' && Array.isArray(data.results)) {
+          data.results = data.results.map((r: any) => {
+            const key = `${String(r.class || '').trim()}::${String(r.subject || '').trim()}::${String(r.term || '').trim()}`;
+            const entry = caLedger[key];
+            const stuId = String(r.studentId || r.student_id || '').trim();
+            const stuBreak = entry?.studentScores?.[stuId];
+            return {
+              ...r,
+              exerciseColumns: (Array.isArray(r.exerciseColumns) && r.exerciseColumns.length > 0)
+                ? r.exerciseColumns
+                : (Array.isArray(entry?.columns) ? entry.columns : r.exerciseColumns),
+              exerciseScores: (r.exerciseScores && Object.keys(r.exerciseScores).length > 0)
+                ? r.exerciseScores
+                : (stuBreak?.scores || r.exerciseScores),
+              rawCaScore: r.rawCaScore ?? stuBreak?.rawCaScore,
+              rawCaMax: r.rawCaMax ?? stuBreak?.rawCaMax
             };
-            if (streamSiren.activeSirenBroadcast !== undefined) {
-              upsertSettingEntry('activeSirenBroadcast', streamSiren.activeSirenBroadcast);
-            }
-            if (Array.isArray(streamSiren.bellSchedule)) {
-              upsertSettingEntry('bellSchedule', streamSiren.bellSchedule);
-            }
-            if (Array.isArray(streamSiren.recordedAudioList)) {
-              upsertSettingEntry('recordedAudioList', streamSiren.recordedAudioList);
-            }
-            if (streamSiren.acousticVolume !== undefined) {
-              upsertSettingEntry('acousticVolume', Number(streamSiren.acousticVolume));
-            }
-            if (Array.isArray(streamSiren.sirenLogs)) {
-              upsertSettingEntry('sirenLogs', streamSiren.sirenLogs);
-            }
-            data.settings = existingSettings;
+          });
+        }
+
+        // 4. Reconcile lesson_notes from school_settings.streams.lesson_notes alongside public.lesson_notes
+        const streamLessonNotes = streamsObj.lesson_notes;
+        if (Array.isArray(streamLessonNotes) && streamLessonNotes.length > 0) {
+          const existingNotes = Array.isArray(data.lessonNotes) ? [...data.lessonNotes] : [];
+          const noteMap = new Map<string, any>();
+          for (const n of existingNotes) {
+            const nid = String(n.noteId || n.note_id || n.id || '').trim();
+            if (nid) noteMap.set(nid, n);
           }
-        } catch {}
+          for (const sn of streamLessonNotes) {
+            const nid = String(sn.noteId || sn.note_id || sn.id || '').trim();
+            if (!nid) continue;
+            const prev = noteMap.get(nid);
+            if (!prev || (Number(sn.updatedAt || sn.updated_at || 0) >= Number(prev.updatedAt || prev.updated_at || 0))) {
+              noteMap.set(nid, { ...(prev || {}), ...sn });
+            }
+          }
+          data.lessonNotes = Array.from(noteMap.values());
+        }
+
+        // 5. Reconcile fee_transactions from school_settings.streams.fee_transactions alongside public.fee_transactions
+        const streamFeeTx = streamsObj.fee_transactions;
+        if (Array.isArray(streamFeeTx) && streamFeeTx.length > 0) {
+          const existingTx = Array.isArray(data.feeTransactions) ? [...data.feeTransactions] : [];
+          const txMap = new Map<string, any>();
+          for (const tx of existingTx) {
+            const rcp = String(tx.receiptNumber || tx.receipt_number || tx.id || '').trim().toUpperCase();
+            if (rcp) txMap.set(rcp, normalizeServerFeeTransactionRecord(tx, targetSchoolId));
+          }
+          for (const stx of streamFeeTx) {
+            const norm = normalizeServerFeeTransactionRecord(stx, targetSchoolId);
+            const rcp = String(norm.receiptNumber || '').trim().toUpperCase();
+            if (!rcp) continue;
+            if (!txMap.has(rcp)) {
+              txMap.set(rcp, norm);
+            } else {
+              txMap.set(rcp, { ...norm, ...txMap.get(rcp) });
+            }
+          }
+          data.feeTransactions = Array.from(txMap.values()).sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
+        }
+
+        // 6. Reconcile Siren Console state from school_settings.streams.siren_console into data.settings
+        const streamSiren = streamsObj.siren_console;
+        if (streamSiren && typeof streamSiren === 'object') {
+          if (streamSiren.activeSirenBroadcast !== undefined) {
+            upsertSettingEntry('activeSirenBroadcast', streamSiren.activeSirenBroadcast);
+          }
+          if (Array.isArray(streamSiren.bellSchedule)) {
+            upsertSettingEntry('bellSchedule', streamSiren.bellSchedule);
+          }
+          if (Array.isArray(streamSiren.recordedAudioList)) {
+            upsertSettingEntry('recordedAudioList', streamSiren.recordedAudioList);
+          }
+          if (streamSiren.acousticVolume !== undefined) {
+            upsertSettingEntry('acousticVolume', Number(streamSiren.acousticVolume));
+          }
+          if (Array.isArray(streamSiren.sirenLogs)) {
+            upsertSettingEntry('sirenLogs', streamSiren.sirenLogs);
+          }
+        }
+        data.settings = existingSettings;
       }
 
       resultData = data;
@@ -1569,58 +1625,70 @@ async function pushData(data: any, targetSchoolId?: string | null) {
               await adminClient.from('sms_logs').insert(formattedLogs);
             } catch (e) {}
           }
-        } else if (table === 'settings') {
-          // Persist Siren Console settings into public.school_settings.streams.siren_console as well
-          if (resolvedSchoolId && Array.isArray(records) && records.length > 0) {
+        } else if (table === 'settings' || table === 'inventory' || table === 'expenses') {
+          // Persist settings, inventory, and expenses into public.school_settings.streams
+          if (
+            resolvedSchoolId &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(resolvedSchoolId)) &&
+            String(resolvedSchoolId) !== '00000000-0000-0000-0000-000000000001' &&
+            Array.isArray(records) &&
+            records.length > 0
+          ) {
             try {
-              const sirenKeys = new Set(['activeSirenBroadcast', 'bellSchedule', 'recordedAudioList', 'acousticVolume', 'sirenLogs', 'isGloballyMuted']);
-              const sirenPatch: Record<string, any> = {};
-              for (const rec of records) {
-                if (rec && sirenKeys.has(String(rec.key))) {
-                  sirenPatch[String(rec.key)] = rec.value;
+              const { data: existingSet } = await adminClient
+                .from('school_settings')
+                .select('*')
+                .eq('school_id', resolvedSchoolId)
+                .limit(1)
+                .maybeSingle();
+
+              const prevStreams = (existingSet?.streams && typeof existingSet.streams === 'object' && !Array.isArray(existingSet.streams))
+                ? { ...(existingSet.streams as Record<string, any>) }
+                : {};
+
+              if (table === 'settings') {
+                const sirenKeys = new Set(['activeSirenBroadcast', 'bellSchedule', 'recordedAudioList', 'acousticVolume', 'sirenLogs', 'isGloballyMuted']);
+                const sirenPatch: Record<string, any> = {};
+                const kvPatch: Record<string, any> = {
+                  ...(prevStreams.settings_kv && typeof prevStreams.settings_kv === 'object' ? prevStreams.settings_kv : {})
+                };
+                for (const rec of records) {
+                  if (!rec || !rec.key) continue;
+                  const k = String(rec.key);
+                  kvPatch[k] = rec.value;
+                  if (sirenKeys.has(k)) {
+                    sirenPatch[k] = rec.value;
+                  }
                 }
-              }
-              if (Object.keys(sirenPatch).length > 0) {
-                const { data: existingSet } = await adminClient
-                  .from('school_settings')
-                  .select('*')
-                  .eq('school_id', resolvedSchoolId)
-                  .limit(1)
-                  .maybeSingle();
-                const prevStreams = (existingSet?.streams && typeof existingSet.streams === 'object' && !Array.isArray(existingSet.streams))
-                  ? existingSet.streams
-                  : {};
-                const prevSiren = (prevStreams as any).siren_console && typeof (prevStreams as any).siren_console === 'object'
-                  ? (prevStreams as any).siren_console
-                  : {};
-                const nextStreams = {
-                  ...prevStreams,
-                  siren_console: {
+                prevStreams.settings_kv = kvPatch;
+                if (Object.keys(sirenPatch).length > 0) {
+                  const prevSiren = prevStreams.siren_console && typeof prevStreams.siren_console === 'object'
+                    ? prevStreams.siren_console
+                    : {};
+                  prevStreams.siren_console = {
                     ...prevSiren,
                     ...sirenPatch,
                     updatedAt: Date.now()
-                  }
+                  };
+                }
+              } else if (table === 'inventory') {
+                prevStreams.inventory = {
+                  ...(prevStreams.inventory && typeof prevStreams.inventory === 'object' && !Array.isArray(prevStreams.inventory) ? prevStreams.inventory : {}),
+                  items: records,
+                  updatedAt: Date.now()
                 };
-                await adminClient.from('school_settings').upsert([{
-                  school_id: resolvedSchoolId,
-                  grade_boundaries: existingSet?.grade_boundaries || [],
-                  terms: existingSet?.terms || [],
-                  streams: nextStreams,
-                  updated_at: Date.now()
-                }], { onConflict: 'school_id' });
+              } else if (table === 'expenses') {
+                prevStreams.expenses = records;
               }
+
+              await adminClient.from('school_settings').upsert([{
+                school_id: resolvedSchoolId,
+                grade_boundaries: existingSet?.grade_boundaries || [],
+                terms: existingSet?.terms || [],
+                streams: prevStreams,
+                updated_at: Date.now()
+              }], { onConflict: 'school_id' });
             } catch {}
-          }
-          // Generic settings upsert fallback
-          const genericRecords = records.map((r: any) => {
-            const item = { ...r };
-            if (resolvedSchoolId) item.school_id = item.school_id || resolvedSchoolId;
-            delete item.schoolId;
-            return item;
-          });
-          for (let i = 0; i < genericRecords.length; i += 100) {
-            const chunk = genericRecords.slice(i, i + 100);
-            try { await adminClient.from(targetTable).upsert(chunk); } catch {}
           }
         } else {
           // Generic batch upsert
@@ -10588,41 +10656,55 @@ async function doStartServer() {
     }
   });
 
-  // Helper to read/write auxiliary JSON arrays in Supabase public.settings when a dedicated table is not yet migrated
+  // Helper to read/write auxiliary JSON arrays in memory + public.school_settings.streams
+  const inMemoryAuxiliarySettings = new Map<string, any[]>();
+
   async function readSupabaseSettingList(settingKey: string): Promise<any[]> {
+    if (inMemoryAuxiliarySettings.has(settingKey)) {
+      return inMemoryAuxiliarySettings.get(settingKey) || [];
+    }
     try {
       const adminClient = getSupabaseAdmin();
-      const { data, error } = await adminClient
-        .from('settings')
-        .select('value')
-        .eq('key', settingKey)
-        .limit(1)
-        .maybeSingle();
-      if (!error && data?.value) {
-        const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-        if (Array.isArray(parsed)) return parsed;
+      const { data } = await adminClient
+        .from('school_settings')
+        .select('streams')
+        .limit(50);
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          const val = (row?.streams as any)?.settings_kv?.[settingKey] ?? (row?.streams as any)?.[settingKey];
+          if (Array.isArray(val)) {
+            inMemoryAuxiliarySettings.set(settingKey, val);
+            return val;
+          }
+        }
       }
     } catch {}
     return [];
   }
 
   async function writeSupabaseSettingList(settingKey: string, list: any[]): Promise<void> {
+    inMemoryAuxiliarySettings.set(settingKey, Array.isArray(list) ? list : []);
     try {
       const adminClient = getSupabaseAdmin();
       const { data: existing } = await adminClient
-        .from('settings')
-        .select('id')
-        .eq('key', settingKey)
+        .from('school_settings')
+        .select('school_id, grade_boundaries, terms, streams')
         .limit(1)
         .maybeSingle();
-      if (existing?.id) {
-        await adminClient.from('settings').update({ value: list }).eq('id', existing.id);
-      } else {
-        await adminClient.from('settings').insert([{ key: settingKey, value: list }]);
+      if (existing?.school_id) {
+        const prevStreams = (existing.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams))
+          ? { ...(existing.streams as Record<string, any>) }
+          : {};
+        prevStreams.settings_kv = {
+          ...(prevStreams.settings_kv && typeof prevStreams.settings_kv === 'object' ? prevStreams.settings_kv : {}),
+          [settingKey]: list
+        };
+        await adminClient
+          .from('school_settings')
+          .update({ streams: prevStreams, updated_at: Date.now() })
+          .eq('school_id', existing.school_id);
       }
-    } catch (e: any) {
-      console.warn(`Notice persisting ${settingKey} in Supabase settings:`, e?.message);
-    }
+    } catch {}
   }
 
   // Sales Suite CRM Leads CRUD (Supabase public.crm_leads + public.settings fallback)
@@ -11227,29 +11309,37 @@ async function doStartServer() {
   });
 
   // Teachers Duty Roster & Daily Logbook Cloud Sync (Supabase public.settings + public.audit_logs)
+  const inMemoryDutyRosters = new Map<string, { assignments: any[]; logs: any[] }>();
+
   app.get("/api/duty-roster", optionalAuthenticateToken, async (req: any, res) => {
     try {
       const schoolId = String(
         req.user?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || 'default'
       ).trim();
-      const settingKey = `duty_roster_${schoolId || 'default'}`;
-      const adminClient = getSupabaseAdmin();
-      const { data, error } = await adminClient
-        .from('settings')
-        .select('value')
-        .eq('key', settingKey)
-        .limit(1)
-        .maybeSingle();
-
-      if (!error && data?.value) {
-        const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-        return res.json({
-          success: true,
-          assignments: Array.isArray(parsed?.assignments) ? parsed.assignments : [],
-          logs: Array.isArray(parsed?.logs) ? parsed.logs : []
-        });
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolId) && schoolId !== '00000000-0000-0000-0000-000000000001';
+      if (isUuid) {
+        const adminClient = getSupabaseAdmin();
+        const { data } = await adminClient
+          .from('school_settings')
+          .select('streams')
+          .eq('school_id', schoolId)
+          .limit(1)
+          .maybeSingle();
+        const dr = (data?.streams as any)?.duty_roster || (data?.streams as any)?.settings_kv?.dutyRosterData;
+        if (dr && typeof dr === 'object') {
+          return res.json({
+            success: true,
+            assignments: Array.isArray(dr.assignments) ? dr.assignments : [],
+            logs: Array.isArray(dr.logs) ? dr.logs : []
+          });
+        }
       }
-      return res.json({ success: true, assignments: [], logs: [] });
+      const cached = inMemoryDutyRosters.get(schoolId);
+      return res.json({
+        success: true,
+        assignments: cached?.assignments || [],
+        logs: cached?.logs || []
+      });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
@@ -11261,7 +11351,6 @@ async function doStartServer() {
       const schoolId = String(
         raw.schoolId || req.user?.school_id || req.headers?.['x-school-id'] || 'default'
       ).trim();
-      const settingKey = `duty_roster_${schoolId || 'default'}`;
       const payload = {
         schoolId,
         schoolName: String(raw.schoolName || 'SCHOOLSPHERE PORTAL'),
@@ -11269,19 +11358,28 @@ async function doStartServer() {
         logs: Array.isArray(raw.logs) ? raw.logs : [],
         updatedAt: Date.now()
       };
+      inMemoryDutyRosters.set(schoolId, { assignments: payload.assignments, logs: payload.logs });
 
-      const adminClient = getSupabaseAdmin();
-      const { data: existing } = await adminClient
-        .from('settings')
-        .select('id')
-        .eq('key', settingKey)
-        .limit(1)
-        .maybeSingle();
-
-      if (existing?.id) {
-        await adminClient.from('settings').update({ value: payload }).eq('id', existing.id);
-      } else {
-        await adminClient.from('settings').insert([{ key: settingKey, value: payload }]);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolId) && schoolId !== '00000000-0000-0000-0000-000000000001';
+      if (isUuid) {
+        const adminClient = getSupabaseAdmin();
+        const { data: existing } = await adminClient
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', schoolId)
+          .limit(1)
+          .maybeSingle();
+        const prevStreams = (existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams))
+          ? { ...(existing.streams as Record<string, any>) }
+          : {};
+        prevStreams.duty_roster = payload;
+        await adminClient.from('school_settings').upsert([{
+          school_id: schoolId,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: prevStreams,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
       }
 
       return res.json({
@@ -11579,26 +11677,25 @@ NOTIFY pgrst, 'reload schema';`;
     const adminClient = getSupabaseAdmin();
     const settingKey = `payroll_system_${schoolId || 'default'}`;
 
-    // 1. Read mirror backup from public.settings
+    // 1. Read mirror backup from public.school_settings.streams.payroll_system
     let mirrorProfiles: any[] = [];
     let mirrorPayslips: any[] = [];
     let mirrorAdvances: any[] = [];
 
     try {
-      const { data: settingRow } = await adminClient
-        .from('settings')
-        .select('value')
-        .eq('key', settingKey)
-        .limit(1)
-        .maybeSingle();
-      if (settingRow?.value) {
-        const parsed =
-          typeof settingRow.value === 'string'
-            ? JSON.parse(settingRow.value)
-            : settingRow.value;
-        mirrorProfiles = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
-        mirrorPayslips = Array.isArray(parsed?.payslips) ? parsed.payslips : [];
-        mirrorAdvances = Array.isArray(parsed?.advances) ? parsed.advances : [];
+      if (isUuidFormat(schoolId)) {
+        const { data: schSet } = await adminClient
+          .from('school_settings')
+          .select('streams')
+          .eq('school_id', schoolId)
+          .limit(1)
+          .maybeSingle();
+        const parsed = (schSet?.streams as any)?.payroll_system || (schSet?.streams as any)?.settings_kv?.[settingKey];
+        if (parsed && typeof parsed === 'object') {
+          mirrorProfiles = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
+          mirrorPayslips = Array.isArray(parsed?.payslips) ? parsed.payslips : [];
+          mirrorAdvances = Array.isArray(parsed?.advances) ? parsed.advances : [];
+        }
       }
     } catch {}
 
@@ -11714,7 +11811,7 @@ NOTIFY pgrst, 'reload schema';`;
     const settingKey = `payroll_system_${schoolId || 'default'}`;
     const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
 
-    // 1. Save mirror state to public.settings
+    // 1. Save mirror state to public.school_settings.streams.payroll_system
     const payload = {
       schoolId,
       schoolName,
@@ -11725,17 +11822,24 @@ NOTIFY pgrst, 'reload schema';`;
     };
 
     try {
-      const { data: existing } = await adminClient
-        .from('settings')
-        .select('id')
-        .eq('key', settingKey)
-        .limit(1)
-        .maybeSingle();
-
-      if (existing?.id) {
-        await adminClient.from('settings').update({ value: payload }).eq('id', existing.id);
-      } else {
-        await adminClient.from('settings').insert([{ key: settingKey, value: payload }]);
+      if (validSchoolUuid) {
+        const { data: existing } = await adminClient
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', validSchoolUuid)
+          .limit(1)
+          .maybeSingle();
+        const prevStreams = (existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams))
+          ? { ...(existing.streams as Record<string, any>) }
+          : {};
+        prevStreams.payroll_system = payload;
+        await adminClient.from('school_settings').upsert([{
+          school_id: validSchoolUuid,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: prevStreams,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
       }
     } catch {}
 
@@ -12533,12 +12637,27 @@ NOTIFY pgrst, 'reload schema';`;
     try {
       const adminClient = getSupabaseAdmin();
       const schoolId = req.user?.school_id;
-      if (schoolId) {
-        await adminClient.from('settings').upsert({
-          key: 'license_lock_announcement',
-          value: message || 'System license validation required. Please contact vendor.',
-          school_id: schoolId
-        });
+      if (schoolId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(schoolId))) {
+        const { data: existing } = await adminClient
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', schoolId)
+          .limit(1)
+          .maybeSingle();
+        const prevStreams = (existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams))
+          ? { ...(existing.streams as Record<string, any>) }
+          : {};
+        prevStreams.settings_kv = {
+          ...(prevStreams.settings_kv && typeof prevStreams.settings_kv === 'object' ? prevStreams.settings_kv : {}),
+          license_lock_announcement: message || 'System license validation required. Please contact vendor.'
+        };
+        await adminClient.from('school_settings').upsert([{
+          school_id: schoolId,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: prevStreams,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
       }
       res.json({ success: true, message: "Announcement message updated successfully." });
     } catch (err: any) {

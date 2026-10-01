@@ -85,7 +85,6 @@ import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licens
 import { ClientTrialBanner } from './components/ClientTrialBanner';
 import { ClientSupportWidget } from './components/ClientSupportWidget';
 import { getPageIdentity, resolveViewFromPathname } from './lib/pageMetadata';
-import { PageHeaderBanner } from './components/PageHeaderBanner';
 
 type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
@@ -1325,19 +1324,6 @@ function AppContent() {
                     }}
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
-                  <div className="hidden md:flex items-center gap-1.5 shrink-0 min-w-0">
-                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                    <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
-                      {activePageMeta.category}
-                    </span>
-                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                    <span
-                      data-testid="header-page-name"
-                      className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap truncate max-w-[260px]"
-                    >
-                      {activePageMeta.title}
-                    </span>
-                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
@@ -1347,27 +1333,9 @@ function AppContent() {
                     </div>
                   )}
                   <div className="min-w-0 flex flex-col justify-center">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <h2 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight">
-                        {schoolName}
-                      </h2>
-                      <div className="hidden md:flex items-center gap-1.5 shrink-0">
-                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                        <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
-                          {activePageMeta.category}
-                        </span>
-                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                        <span
-                          data-testid="header-page-name"
-                          className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap"
-                        >
-                          {activePageMeta.title}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="md:hidden text-[10px] font-bold text-[#6a7f84] truncate leading-tight">
-                      {activePageMeta.category} › <span className="text-[#1c4a59] font-extrabold">{activePageMeta.title}</span>
-                    </p>
+                    <h2 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight">
+                      {schoolName}
+                    </h2>
                   </div>
                 </div>
               )}
@@ -1531,16 +1499,6 @@ function AppContent() {
                 activeView === 'creator' ? "h-full w-full" : "min-h-full max-w-7xl mx-auto w-full pb-4 lg:pb-0"
               )}
             >
-              {activeView !== 'creator' && (
-                <PageHeaderBanner
-                  viewId={activeView}
-                  userRole={user?.role}
-                  schoolName={schoolName}
-                  academicYear={currentAcademicYear}
-                  currentTerm={currentTermName}
-                  onNavigateHome={() => setActiveView('dashboard')}
-                />
-              )}
               <ErrorBoundary key={activeView}>
                 {activeView === 'dashboard' && <Dashboard onViewChange={setActiveView} />}
                 {activeView === 'students' && <StudentManagement />}
