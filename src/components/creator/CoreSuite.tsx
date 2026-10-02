@@ -39,8 +39,8 @@ import {
 } from '../../lib/licenseSync';
 import { getApiHeaders } from '../../lib/api';
 import { getQuickActionsForRole, QuickActionItem } from '../../lib/quickActions';
+import { SafeResponsiveContainer as ResponsiveContainer } from '../ui/SafeResponsiveContainer';
 import {
-  ResponsiveContainer,
   AreaChart,
   Area,
   BarChart,
@@ -628,7 +628,7 @@ export default function CoreSuite({
 
           {/* Top Row: Real-Time Charts */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sm:gap-8">
-            <div className="xl:col-span-7 space-y-3">
+            <div className="xl:col-span-7 space-y-3 min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                   <TrendingUp className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -638,8 +638,8 @@ export default function CoreSuite({
                   {totalDemoRecords.toLocaleString()} records · {recentLogins.length} login events
                 </span>
               </div>
-              <div className="h-[260px] sm:h-[280px] w-full bg-slate-50/40 p-3 rounded-2xl border border-slate-100">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[260px] sm:h-[280px] min-h-[240px] w-full min-w-0 bg-slate-50/40 p-3 rounded-2xl border border-slate-100">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={200}>
                   <AreaChart data={monthlyTrendData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorRecords" x1="0" y1="0" x2="0" y2="1">
@@ -664,7 +664,7 @@ export default function CoreSuite({
               </div>
             </div>
 
-            <div className="xl:col-span-5 space-y-3 bg-slate-50/60 p-5 rounded-2xl border border-slate-200/70 flex flex-col justify-between">
+            <div className="xl:col-span-5 space-y-3 bg-slate-50/60 p-5 rounded-2xl border border-slate-200/70 flex flex-col justify-between min-w-0">
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
@@ -678,8 +678,8 @@ export default function CoreSuite({
                 </p>
               </div>
 
-              <div className="h-[230px] w-full my-1">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[230px] min-h-[200px] w-full min-w-0 my-1">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={180}>
                   <BarChart data={compositionData} layout="vertical" margin={{ top: 0, right: 15, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                     <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />

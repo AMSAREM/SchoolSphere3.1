@@ -36,7 +36,8 @@ import * as XLSX from 'xlsx';
 import { ReportCard } from './ReportCard';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { SafeResponsiveContainer as ResponsiveContainer } from './ui/SafeResponsiveContainer';
 
 type ReportType = 'class-summary' | 'terminal-report' | 'batch-reports' | 'fee-collection' | 'debtor-list' | 'class-financials';
 

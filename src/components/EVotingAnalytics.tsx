@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Poll, Candidate, Vote, Student } from '../db/schema';
 import { triggerPrint } from '../lib/utils';
+import { SafeResponsiveContainer as ResponsiveContainer } from './ui/SafeResponsiveContainer';
 import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,

@@ -2,6 +2,72 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        function isBenignDevError(msg) {
+          if (typeof msg !== 'string') return false;
+          return (
+            msg.indexOf('WebSocket closed without opened') !== -1 ||
+            msg.indexOf('failed to connect to websocket') !== -1 ||
+            msg.indexOf('width(0) and height(0) of chart should be greater than 0') !== -1 ||
+            msg.indexOf('The width(-1) and height(-1) of chart should be greater than 0') !== -1
+          );
+        }
+
+        window.addEventListener(
+          'unhandledrejection',
+          function (event) {
+            var reason = event && event.reason;
+            var msg =
+              typeof reason === 'string'
+                ? reason
+                : (reason && (reason.message || String(reason))) || '';
+            if (isBenignDevError(msg)) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
+          },
+          true
+        );
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            var msg =
+              (event && event.message) ||
+              (event && event.error && event.error.message) ||
+              '';
+            if (isBenignDevError(msg)) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
+          },
+          true
+        );
+
+        var origError = console.error;
+        console.error = function () {
+          var firstArg = arguments[0];
+          var msg =
+            typeof firstArg === 'string'
+              ? firstArg
+              : (firstArg && firstArg.message) || '';
+          if (isBenignDevError(msg)) return;
+          return origError.apply(console, arguments);
+        };
+
+        var origWarn = console.warn;
+        console.warn = function () {
+          var firstArg = arguments[0];
+          var msg =
+            typeof firstArg === 'string'
+              ? firstArg
+              : (firstArg && firstArg.message) || '';
+          if (isBenignDevError(msg)) return;
+          return origWarn.apply(console, arguments);
+        };
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>School Sphere</title>
     <meta name="description" content="A School Management System (School Sphere) designed for Ghanaian schools with logo upload, high-performance results entry and automated sync." />

@@ -29,8 +29,8 @@ import {
   BookOpen,
   DollarSign
 } from 'lucide-react';
+import { SafeResponsiveContainer as ResponsiveContainer } from './ui/SafeResponsiveContainer';
 import { 
-  ResponsiveContainer, 
   BarChart, 
   Bar, 
   XAxis, 

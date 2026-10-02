@@ -36,9 +36,9 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer
+  Tooltip
 } from 'recharts';
+import { SafeResponsiveContainer as ResponsiveContainer } from './ui/SafeResponsiveContainer';
 import { formatCurrency, triggerPrint, cn } from '../lib/utils';
 import { getQuickActionsForRole, getPortalRoleLabel, QuickActionItem } from '../lib/quickActions';
 
@@ -1005,7 +1005,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Main Analytics Chart */}
-        <div className="bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden lg:col-span-2">
+        <div className="bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden lg:col-span-2 min-w-0">
           {user?.role === 'teacher' || (user?.role as string) === 'hod' || user?.role === 'student' || user?.role === 'parent' ? (
             // Teacher, HOD, Student, or Parent specific: Classroom scores or ward performance
             <>
@@ -1034,8 +1034,8 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 </div>
                 <span className="text-slate-400 text-xs font-bold">Performance Breakdown</span>
               </div>
-              <div className="h-[250px] sm:h-[300px] w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[250px] sm:h-[300px] min-h-[250px] w-full min-w-0 relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={220}>
                   <BarChart data={
                     user?.role === 'student' ? studentChartData :
                     user?.role === 'parent' ? selectedWardChartData :
@@ -1091,8 +1091,8 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                   )}
                 </div>
               </div>
-              <div className="h-[250px] sm:h-[300px] w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[250px] sm:h-[300px] min-h-[250px] w-full min-w-0 relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={220}>
                   <BarChart data={[
                     { month: 'Jan', amount: 4500 },
                     { month: 'Feb', amount: 5200 },
