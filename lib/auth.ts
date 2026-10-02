@@ -1,13 +1,14 @@
 /**
  * Server-Side Authentication & Authorization Helpers
- * Strictly verifies Supabase Auth JWTs (GoTrue sessions) and enforces RBAC + Tenant Isolation.
+ * Strictly verifies Supabase Auth sessions via adminClient.auth.getUser(accessToken)
+ * (and cryptographic SUPABASE_JWT_SECRET verification when configured) and enforces RBAC + Tenant Isolation.
  * Custom HMAC JWT generation and fallback secrets have been completely removed.
  */
 
 import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
-import { getSupabaseUrlStrict } from './supabase/server.ts';
+import { getSupabaseAdmin, getSupabaseUrlStrict } from './supabase/server.ts';
 
 dotenv.config();
 
@@ -44,37 +45,85 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthJwtPayload;
 }
 
+const verifiedTokenCache = new Map<string, { payload: AuthJwtPayload; expiresAt: number }>();
+const VERIFIED_TOKEN_CACHE_TTL_MS = 30_000;
+
+function buildPayloadFromClaims(claims: {
+  sub: string;
+  email?: string;
+  user_metadata?: Record<string, any>;
+  app_metadata?: Record<string, any>;
+  iat?: number;
+  exp?: number;
+}): AuthJwtPayload {
+  const meta = claims.user_metadata || {};
+  const appMeta = claims.app_metadata || {};
+  const schoolId =
+    meta.school_id ||
+    meta.organization_id ||
+    appMeta.school_id ||
+    appMeta.organization_id ||
+    null;
+  const email = String(claims.email || meta.email || '').trim().toLowerCase();
+  const isCreatorIdentity =
+    email === 'creator@schoolsphere.app' ||
+    meta.role === 'creator' ||
+    meta.role === 'super_admin' ||
+    appMeta.role === 'creator' ||
+    appMeta.role === 'super_admin';
+  const role = isCreatorIdentity
+    ? (meta.role || appMeta.role || 'creator')
+    : (meta.role || appMeta.role || 'admin');
+  const username =
+    meta.username ||
+    meta.scoped_username ||
+    (email ? email.split('@')[0] : String(claims.sub));
+
+  return {
+    id: meta.user_id || claims.sub,
+    sub: claims.sub,
+    auth_user_id: claims.sub,
+    authUserId: claims.sub,
+    username,
+    email,
+    role,
+    school_id: isCreatorIdentity ? null : schoolId,
+    schoolId: isCreatorIdentity ? null : schoolId,
+    organization_id: isCreatorIdentity ? null : schoolId,
+    fullName: meta.full_name || username,
+    iat: claims.iat,
+    exp: claims.exp,
+  };
+}
+
 /**
- * Verify and decode a Supabase Auth JWT (`access_token`).
- * Rejects any custom/non-Supabase tokens, expired tokens, or tokens from a different Supabase project.
+ * Synchronous token verifier using cached `adminClient.auth.getUser()` sessions
+ * or cryptographic `SUPABASE_JWT_SECRET` verification.
+ * Never falls back to unverified `jwt.decode()`.
  */
 export function verifyAuthToken(token: string): AuthJwtPayload | null {
   if (!token || typeof token !== 'string') return null;
 
+  const nowMs = Date.now();
+  const cached = verifiedTokenCache.get(token);
+  if (cached && cached.expiresAt > nowMs) {
+    return cached.payload;
+  }
+
   try {
     const supabaseUrl = getSupabaseUrlStrict().replace(/\/+$/, '');
     const expectedIssuer = `${supabaseUrl}/auth/v1`;
-    const supabaseJwtSecret = cleanEnvVal(process.env.SUPABASE_JWT_SECRET);
+    const supabaseJwtSecret =
+      cleanEnvVal(process.env.SUPABASE_JWT_SECRET) ||
+      (process.env.NODE_ENV === 'test' ? cleanEnvVal(process.env.JWT_SECRET) : '');
 
-    let decoded: any = null;
-    if (supabaseJwtSecret) {
-      try {
-        decoded = jwt.verify(token, supabaseJwtSecret, {
-          issuer: expectedIssuer,
-        });
-      } catch {
-        // If SUPABASE_JWT_SECRET is asymmetric/JWKS or rotated, verify structural claims and expiration below
-        decoded = null;
-      }
+    if (!supabaseJwtSecret) {
+      return null;
     }
 
-    if (!decoded) {
-      const headerAndPayload = token.split('.');
-      if (headerAndPayload.length !== 3 || !headerAndPayload[2] || headerAndPayload[2].length < 20) {
-        return null;
-      }
-      decoded = jwt.decode(token) as any;
-    }
+    const decoded = jwt.verify(token, supabaseJwtSecret, {
+      issuer: expectedIssuer,
+    }) as any;
 
     if (
       !decoded ||
@@ -88,101 +137,122 @@ export function verifyAuthToken(token: string): AuthJwtPayload | null {
       return null;
     }
 
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = Math.floor(nowMs / 1000);
     if (typeof decoded.exp === 'number' && decoded.exp < nowSec) {
       return null;
     }
 
-    const meta = decoded.user_metadata || {};
-    const appMeta = decoded.app_metadata || {};
-    const schoolId =
-      meta.school_id ||
-      meta.organization_id ||
-      appMeta.school_id ||
-      appMeta.organization_id ||
-      null;
-    const email = String(decoded.email || meta.email || '').trim().toLowerCase();
-    const isCreatorIdentity =
-      email === 'creator@schoolsphere.app' ||
-      meta.role === 'creator' ||
-      meta.role === 'super_admin' ||
-      appMeta.role === 'creator' ||
-      appMeta.role === 'super_admin';
-    const role = isCreatorIdentity
-      ? (meta.role || appMeta.role || 'creator')
-      : (meta.role || appMeta.role || 'admin');
-    const username =
-      meta.username ||
-      meta.scoped_username ||
-      (email ? email.split('@')[0] : String(decoded.sub));
-
-    return {
-      id: meta.user_id || decoded.sub,
-      sub: decoded.sub,
-      auth_user_id: decoded.sub,
-      authUserId: decoded.sub,
-      username,
-      email,
-      role,
-      school_id: isCreatorIdentity ? null : schoolId,
-      schoolId: isCreatorIdentity ? null : schoolId,
-      organization_id: isCreatorIdentity ? null : schoolId,
-      fullName: meta.full_name || username,
-      iat: decoded.iat,
-      exp: decoded.exp,
-    };
+    const payload = buildPayloadFromClaims(decoded);
+    const expMs = typeof decoded.exp === 'number' ? decoded.exp * 1000 : nowMs + VERIFIED_TOKEN_CACHE_TTL_MS;
+    verifiedTokenCache.set(token, {
+      payload,
+      expiresAt: Math.min(expMs, nowMs + VERIFIED_TOKEN_CACHE_TTL_MS),
+    });
+    return payload;
   } catch {
     return null;
   }
 }
 
 /**
- * Express Middleware: Authenticates the request via Supabase Auth Bearer JWT in headers.
+ * Asynchronous Supabase Auth session verifier via `adminClient.auth.getUser(accessToken)`.
+ * Uses cryptographic `verifyAuthToken` first when `SUPABASE_JWT_SECRET` is configured,
+ * and otherwise verifies directly against Supabase Auth (`auth.users`).
  */
-export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+export async function verifySupabaseSessionToken(token: string): Promise<AuthJwtPayload | null> {
+  if (!token || typeof token !== 'string') return null;
 
-  if (!token) {
-    const queryToken = req.query.token as string;
-    if (queryToken) {
-      const decoded = verifyAuthToken(queryToken);
-      if (decoded) {
-        req.user = decoded;
-        return next();
-      }
-    }
-    return res.status(401).json({
-      success: false,
-      error: 'Authentication required. Please provide a valid Supabase Auth session token.',
-    });
+  const syncVerified = verifyAuthToken(token);
+  if (syncVerified) {
+    return syncVerified;
   }
 
-  const decoded = verifyAuthToken(token);
-  if (!decoded) {
+  try {
+    const adminClient = getSupabaseAdmin();
+    if (typeof adminClient?.auth?.getUser !== 'function') {
+      return null;
+    }
+
+    const { data, error } = await adminClient.auth.getUser(token);
+    if (error || !data?.user?.id) {
+      return null;
+    }
+
+    const authUser = data.user;
+    const payload = buildPayloadFromClaims({
+      sub: authUser.id,
+      email: authUser.email,
+      user_metadata: authUser.user_metadata,
+      app_metadata: authUser.app_metadata,
+    });
+
+    verifiedTokenCache.set(token, {
+      payload,
+      expiresAt: Date.now() + VERIFIED_TOKEN_CACHE_TTL_MS,
+    });
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Express Middleware: Authenticates the request via Supabase Auth Bearer token (`adminClient.auth.getUser(accessToken)`).
+ */
+export async function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+
+    if (!token) {
+      const queryToken = req.query.token as string;
+      if (queryToken) {
+        const decoded = await verifySupabaseSessionToken(queryToken);
+        if (decoded) {
+          req.user = decoded;
+          return next();
+        }
+      }
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. Please provide a valid Supabase Auth session token.',
+      });
+    }
+
+    const decoded = await verifySupabaseSessionToken(token);
+    if (!decoded) {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid or expired Supabase session token. Please log in again.',
+      });
+    }
+
+    req.user = decoded;
+    next();
+  } catch {
     return res.status(403).json({
       success: false,
       error: 'Invalid or expired Supabase session token. Please log in again.',
     });
   }
-
-  req.user = decoded;
-  next();
 }
 
 /**
- * Optional Authentication Middleware: Attaches req.user if a valid Supabase Auth token is present.
+ * Optional Authentication Middleware: Attaches req.user if a valid Supabase Auth session token is present.
  */
-export function optionalAuthenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+export async function optionalAuthenticateToken(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
 
-  if (token) {
-    const decoded = verifyAuthToken(token);
-    if (decoded) {
-      req.user = decoded;
+    if (token) {
+      const decoded = await verifySupabaseSessionToken(token);
+      if (decoded) {
+        req.user = decoded;
+      }
     }
-  }
+  } catch {}
   next();
 }
 

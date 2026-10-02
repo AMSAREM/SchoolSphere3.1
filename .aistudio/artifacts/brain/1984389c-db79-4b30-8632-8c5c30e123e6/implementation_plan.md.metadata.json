@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan to remove the selected breadcrumb span element in the top navigation bar of the authentication screen (AuthScreens).",
-  "updatedAt":  "2026-10-02T00:07:10.025881122Z",
+  "summary":  "Implementation plan and line-by-line pre-modification audit for server.ts, lib/auth.ts, lib/supabase/server.ts, and .env.example covering bcryptjs/password_hash verification, DNS/TLS cleanup, strict service-role startup enforcement, complete pgPool/direct-SQL removal, pullData per-table error surfacing, ALLOWED_ORIGINS CORS allow-list, Supabase Auth getUser() consolidation, and project ref verification.",
+  "updatedAt":  "2026-10-02T00:31:21.853853441Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

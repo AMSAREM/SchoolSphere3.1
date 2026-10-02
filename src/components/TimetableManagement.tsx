@@ -2262,7 +2262,7 @@ export default function TimetableManagement() {
             currentList = [...currentList.filter(s => s.id !== savedSlot.id), savedSlot];
           }
           setRemoteSlots(currentList);
-          setRemotePeriods(currentList);
+          setRemotePeriods(currentList as any);
           await persistLocalTimetableCache(currentList, suggestions);
           setSyncState('synced');
           showToast(`Successfully imported ${validSlots.length} timetable period(s) from CSV!`, 'success');
@@ -2298,7 +2298,7 @@ export default function TimetableManagement() {
         }).catch(() => null);
       }
       setRemoteSlots(updatedList);
-      setRemotePeriods(updatedList);
+      setRemotePeriods(updatedList as any);
       await persistLocalTimetableCache(updatedList, suggestions);
       setSyncState('synced');
       showToast(
@@ -2333,7 +2333,7 @@ export default function TimetableManagement() {
       }
       const remaining = slots.filter(s => !selectedSlotIds.includes(s.id));
       setRemoteSlots(remaining);
-      setRemotePeriods(remaining);
+      setRemotePeriods(remaining as any);
       await persistLocalTimetableCache(remaining, suggestions);
       setSelectedSlotIds([]);
       setSyncState('synced');

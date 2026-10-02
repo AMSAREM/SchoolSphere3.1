@@ -1,12 +1,11 @@
 import express from "express";
 import path from "path";
-import pg from "pg";
 import fs from "fs";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import dns from "dns";
 import nodemailer from "nodemailer";
-import { getSupabaseAdmin, createAuthenticatedSupabaseClient, getCreatorAuthenticatedClient } from "./lib/supabase/server.ts";
+import { getSupabaseAdmin, getSupabaseUrlStrict, createAuthenticatedSupabaseClient, getCreatorAuthenticatedClient } from "./lib/supabase/server.ts";
 import { authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, type AuthenticatedRequest } from "./lib/auth.ts";
 import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.ts";
 import type { Request, Response, NextFunction } from 'express';
@@ -36,10 +35,8 @@ import {
 dotenv.config();
 
 function getResolvedSupabaseUrl(): string {
-  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co';
+  return getSupabaseUrlStrict();
 }
-
-const pgPool: any = null;
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -701,12 +698,13 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
 }
 
 // Safely initialize the database connection - Supabase single source of truth
+// Throws a clear startup error immediately if SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing
 async function initDatabase() {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co';
+  const supabaseUrl = getSupabaseUrlStrict();
+  const adminClient = getSupabaseAdmin();
 
   console.log(`[Database Init] Connecting to Supabase at ${supabaseUrl}...`);
   try {
-    const adminClient = getSupabaseAdmin();
     // Active connectivity health check (read-only) with 3s timeout so cold starts never stall
     const pingPromise = adminClient.from('schools').select('id').limit(1);
     const timeoutPromise = new Promise<{ error: any }>((resolve) =>
@@ -1128,17 +1126,23 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
       const isUuidSyntax = (val?: string | null) =>
         Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val).trim()));
 
+      const tableErrors: Record<string, string> = {};
       const data: any = {
         settings: [],
         inventory: [],
-        expenses: []
+        expenses: [],
+        _tableErrors: tableErrors
       };
 
       for (const table of tables) {
         const targetTable = tableMap[table] || table;
         if (targetSchoolId && (tenantScopedTables.has(table) || table === "candidates" || table === "votes") && !isUuidSyntax(targetSchoolId)) {
-          data[table] = [];
-          continue;
+          const invalidUuidMsg = `Invalid non-UUID school_id "${targetSchoolId}" supplied when reading tenant-scoped table "${targetTable}"`;
+          console.error(`[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId}" message="${invalidUuidMsg}"`);
+          tableErrors[table] = invalidUuidMsg;
+          const errObj: any = new Error(`Supabase read failed on table "${targetTable}": ${invalidUuidMsg}`);
+          errObj.tableErrors = tableErrors;
+          throw errObj;
         }
 
         // Scope candidates and votes via the tenant's poll IDs (since candidates & votes link via poll_id)
@@ -1160,9 +1164,12 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
             console.error(
               `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId}" code="${errCode}" message="${errMsg}"`
             );
-            throw new Error(
+            tableErrors[table] = `${errCode ? `[${errCode}] ` : ''}${errMsg}`;
+            const errObj: any = new Error(
               `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
             );
+            errObj.tableErrors = tableErrors;
+            throw errObj;
           }
           data[table] = Array.isArray(pollScopedRows) ? pollScopedRows : [];
           continue;
@@ -1183,10 +1190,13 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           console.error(
             `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId || 'global'}" code="${errCode}" message="${errMsg}"`
           );
+          tableErrors[table] = `${errCode ? `[${errCode}] ` : ''}${errMsg}`;
 
-          throw new Error(
+          const errObj: any = new Error(
             `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
           );
+          errObj.tableErrors = tableErrors;
+          throw errObj;
         }
 
         const safeRows: any[] = Array.isArray(rows) ? rows : [];
@@ -1286,9 +1296,12 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
           console.error(
             `[Supabase pullData Table Error] table="school_settings" (logical="settings") school_id="${targetSchoolId}" code="${errCode}" message="${errMsg}"`
           );
-          throw new Error(
+          tableErrors.settings = `${errCode ? `[${errCode}] ` : ''}${errMsg}`;
+          const errObj: any = new Error(
             `Supabase read failed on table "school_settings" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
           );
+          errObj.tableErrors = tableErrors;
+          throw errObj;
         }
 
         const streamsObj = (schSet?.streams && typeof schSet.streams === 'object' && !Array.isArray(schSet.streams))
@@ -1415,7 +1428,11 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
       resultData = data;
     } catch (err: any) {
       console.error("[Supabase pullData Error]:", err.message || err);
-      throw new Error(`Failed to load data from Supabase: ${err.message || err}`);
+      const wrappedErr: any = new Error(`Failed to load data from Supabase: ${err.message || err}`);
+      if (err?.tableErrors) {
+        wrappedErr.tableErrors = err.tableErrors;
+      }
+      throw wrappedErr;
     }
   }
 
@@ -3379,7 +3396,7 @@ async function doStartServer() {
         };
       }
 
-      // Supabase Auth is the single source of truth for password verification (legacy bcrypt verifyPassword removed)
+      // Supabase Auth is the single source of truth for password verification
 
       // Helper to look up active license key for a schoolId or schoolName (strictly read-only)
       const getLicenseKeyForSchool = async (schId?: string | null, schName?: string | null, userEmail?: string | null): Promise<string | null> => {
@@ -14205,11 +14222,20 @@ NOTIFY pgrst, 'reload schema';`;
       const data = await pullData(isFresh, schoolId || null);
       res.setHeader("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
       addSyncLog("Pull Local Storage", true, data);
-      res.json({ success: true, data, cached: !isFresh && !schoolId && !!dbCacheStore });
+      res.json({
+        success: true,
+        data,
+        tableErrors: data?._tableErrors || {},
+        cached: !isFresh && !schoolId && !!dbCacheStore
+      });
     } catch (err: any) {
       console.error("Sync pull failed:", err);
       addSyncLog("Pull Local Storage", false, null, err.message);
-      res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+      res.status(500).json({
+        success: false,
+        error: sanitizeErrorMessage(err),
+        tableErrors: err?.tableErrors || {}
+      });
     }
   });
 
@@ -14532,30 +14558,6 @@ NOTIFY pgrst, 'reload schema';`;
         }
       }
 
-      // 3. If direct Postgres pgPool is available and not yet inserted, try direct SQL
-      if (!insertedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `INSERT INTO students ("studentId", "firstName", "lastName", "class", "dateOfBirth", "gender", "guardianName", "guardianPhone", "feesPaid", "totalFees", "createdAt", "school_id", "feeBreakdown", "feePaidBreakdown", "house", "department", "photo")
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-             RETURNING *`,
-            [
-              cleanObj.studentId, cleanObj.firstName, cleanObj.lastName, cleanObj.class,
-              cleanObj.dateOfBirth, cleanObj.gender, cleanObj.guardianName, cleanObj.guardianPhone,
-              cleanObj.feesPaid, cleanObj.totalFees, cleanObj.createdAt, cleanObj.school_id || null,
-              cleanObj.feeBreakdown ? JSON.stringify(cleanObj.feeBreakdown) : null,
-              cleanObj.feePaidBreakdown ? JSON.stringify(cleanObj.feePaidBreakdown) : null,
-              cleanObj.house || null, cleanObj.department || null, cleanObj.photo || null
-            ]
-          );
-          if (resSql.rows && resSql.rows.length > 0) {
-            insertedData = resSql.rows[0];
-          }
-        } catch (pgErr: any) {
-          console.warn("Notice on pgPool student insert:", pgErr.message || pgErr);
-        }
-      }
-
       if (!insertedData) {
         // Resilient fallback storage
         const fallbackId = Date.now();
@@ -14766,33 +14768,7 @@ NOTIFY pgrst, 'reload schema';`;
         }
       }
 
-      // 3. Direct SQL via pgPool if available and not yet inserted
-      if (!insertedRecords && pgPool) {
-        try {
-          const rows: any[] = [];
-          for (const s of camelPrepared) {
-            try {
-              const resSql = await pgPool.query(
-                `INSERT INTO students ("studentId", "firstName", "lastName", "class", "dateOfBirth", "gender", "guardianName", "guardianPhone", "feesPaid", "totalFees", "createdAt", "school_id", "house", "department")
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                 RETURNING *`,
-                [
-                  s.studentId, s.firstName, s.lastName, s.class,
-                  s.dateOfBirth, s.gender, s.guardianName, s.guardianPhone,
-                  s.feesPaid, s.totalFees, s.createdAt, s.school_id || null,
-                  s.house || null, s.department || null
-                ]
-              );
-              if (resSql.rows && resSql.rows[0]) rows.push(resSql.rows[0]);
-            } catch (errOne) {}
-          }
-          if (rows.length > 0) insertedRecords = rows;
-        } catch (pgErr: any) {
-          console.warn("Notice on pgPool bulk insert:", pgErr.message || pgErr);
-        }
-      }
-
-      // 4. Return result from Supabase
+      // 3. Return result from Supabase
       const finalResult = (insertedRecords || camelPrepared.map((item, idx) => ({ ...item, id: Date.now() + idx }))).map((s: any) => normalizeServerStudentRecord(s));
       for (const rec of finalResult) {
         saveToFallback('students', rec);
@@ -14904,29 +14880,6 @@ NOTIFY pgrst, 'reload schema';`;
           const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
-      }
-
-      // 3. If direct pgPool is available, run direct SQL UPDATE
-      if (!updatedData && pgPool) {
-        try {
-          const sets: string[] = [];
-          const values: any[] = [];
-          let paramIdx = 1;
-          for (const [k, v] of Object.entries(snakePayload)) {
-            sets.push(`"${k}" = $${paramIdx++}`);
-            values.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
-          }
-          if (sets.length > 0) {
-            values.push(id);
-            const whereClause = !isNaN(Number(id)) ? `WHERE id = $${paramIdx}` : `WHERE "student_id" = $${paramIdx} OR "studentId" = $${paramIdx}`;
-            const resSql = await pgPool.query(`UPDATE students SET ${sets.join(', ')} ${whereClause} RETURNING *`, values);
-            if (resSql.rows && resSql.rows.length > 0) {
-              updatedData = resSql.rows[0];
-            }
-          }
-        } catch (e) {
-          console.warn("Direct pgPool update notice:", e);
-        }
       }
 
       invalidateDbCache();
@@ -15140,22 +15093,6 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      // 3. Try pgPool direct SQL if available
-      if (!insertedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `INSERT INTO teachers ("staffId", "firstName", "lastName", "phone", "email", "assignedClasses", "subjects", "school_id")
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING *`,
-            [
-              cleanObj.staffId, cleanObj.firstName, cleanObj.lastName, cleanObj.phone,
-              cleanObj.email || '', JSON.stringify(cleanObj.assignedClasses), JSON.stringify(cleanObj.subjects), cleanObj.school_id || null
-            ]
-          );
-          if (resSql.rows && resSql.rows.length > 0) insertedData = resSql.rows[0];
-        } catch (pgErr) {}
-      }
-
       if (!insertedData) {
         const fallbackId = Date.now();
         insertedData = { ...cleanObj, id: fallbackId };
@@ -15246,24 +15183,6 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      // Direct SQL update via pgPool if available
-      if (!updatedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `UPDATE teachers 
-             SET "firstName" = $1, "lastName" = $2, "phone" = $3, "email" = $4, "assignedClasses" = $5, "subjects" = $6
-             WHERE id = $7 OR "staffId" = $8 OR staff_id = $8
-             RETURNING *`,
-            [
-              cleanObj.firstName, cleanObj.lastName, cleanObj.phone, cleanObj.email || '',
-              JSON.stringify(cleanObj.assignedClasses), JSON.stringify(cleanObj.subjects),
-              !isNaN(Number(id)) ? Number(id) : -1, staffIdParam || String(id)
-            ]
-          );
-          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
-        } catch (pgErr) {}
-      }
-
       invalidateDbCache();
 
       if (!updatedData) {
@@ -15306,17 +15225,6 @@ NOTIFY pgrst, 'reload schema';`;
           if (schoolId) q2 = q2.eq('school_id', schoolId);
           await q2;
         } catch (e) {}
-      }
-
-      if (pgPool) {
-        try {
-          if (!isNaN(Number(id))) {
-            await pgPool.query(`DELETE FROM teachers WHERE id = $1`, [Number(id)]);
-          }
-          if (sidToDelete) {
-            await pgPool.query(`DELETE FROM teachers WHERE "staffId" = $1 OR staff_id = $1`, [sidToDelete]);
-          }
-        } catch (pgErr) {}
       }
 
       removeFromFallback('teachers', (item: any) =>
@@ -15391,19 +15299,6 @@ NOTIFY pgrst, 'reload schema';`;
         if (!error && data) insertedData = data;
       } catch (e) {}
 
-      // 2. Try pgPool direct SQL if available
-      if (!insertedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `INSERT INTO classes ("name", "level", "school_id")
-             VALUES ($1, $2, $3)
-             RETURNING *`,
-            [cleanObj.name, cleanObj.level, cleanObj.school_id || null]
-          );
-          if (resSql.rows && resSql.rows.length > 0) insertedData = resSql.rows[0];
-        } catch (pgErr) {}
-      }
-
       if (!insertedData) {
         const fallbackId = Date.now();
         insertedData = { ...cleanObj, id: fallbackId };
@@ -15462,20 +15357,6 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      // Direct SQL update via pgPool if available
-      if (!updatedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `UPDATE classes 
-             SET "name" = $1, "level" = $2, "capacity" = $3
-             WHERE id = $4 OR "name" = $5
-             RETURNING *`,
-            [cleanObj.name, cleanObj.level, cleanObj.capacity || 50, !isNaN(Number(id)) ? Number(id) : -1, originalName || String(id)]
-          );
-          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
-        } catch (pgErr) {}
-      }
-
       invalidateDbCache();
 
       if (!updatedData) {
@@ -15513,17 +15394,6 @@ NOTIFY pgrst, 'reload schema';`;
           if (schoolId) q = q.eq('school_id', schoolId);
           await q;
         } catch (e) {}
-      }
-
-      if (pgPool) {
-        try {
-          if (!isNaN(Number(id))) {
-            await pgPool.query(`DELETE FROM classes WHERE id = $1`, [Number(id)]);
-          }
-          if (nameToDelete) {
-            await pgPool.query(`DELETE FROM classes WHERE "name" = $1`, [nameToDelete]);
-          }
-        } catch (pgErr) {}
       }
 
       removeFromFallback('classes', (item: any) =>
@@ -15610,19 +15480,6 @@ NOTIFY pgrst, 'reload schema';`;
           const { data, error } = await adminClient.from('subjects').insert([snakePayload]).select().single();
           if (!error && data) insertedData = data;
         } catch (e) {}
-      }
-
-      // 3. Try pgPool direct SQL if available
-      if (!insertedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `INSERT INTO subjects ("name", "code", "applicableClasses", "school_id")
-             VALUES ($1, $2, $3, $4)
-             RETURNING *`,
-            [cleanObj.name, cleanObj.code, JSON.stringify(cleanObj.applicableClasses), cleanObj.school_id || null]
-          );
-          if (resSql.rows && resSql.rows.length > 0) insertedData = resSql.rows[0];
-        } catch (pgErr) {}
       }
 
       if (!insertedData) {
@@ -15712,20 +15569,6 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      // Direct SQL update via pgPool if available
-      if (!updatedData && pgPool) {
-        try {
-          const resSql = await pgPool.query(
-            `UPDATE subjects 
-             SET "name" = $1, "code" = $2, "applicableClasses" = $3
-             WHERE id = $4 OR "code" = $5 OR "name" = $6
-             RETURNING *`,
-            [cleanObj.name, cleanObj.code, JSON.stringify(cleanObj.applicableClasses), !isNaN(Number(id)) ? Number(id) : -1, originalCode || String(id), originalName || String(id)]
-          );
-          if (resSql.rows && resSql.rows.length > 0) updatedData = resSql.rows[0];
-        } catch (pgErr) {}
-      }
-
       invalidateDbCache();
 
       if (!updatedData) {
@@ -15772,17 +15615,6 @@ NOTIFY pgrst, 'reload schema';`;
           if (schoolId) q = q.eq('school_id', schoolId);
           await q;
         } catch (e) {}
-      }
-
-      if (pgPool) {
-        try {
-          if (!isNaN(Number(id))) {
-            await pgPool.query(`DELETE FROM subjects WHERE id = $1`, [Number(id)]);
-          }
-          if (codeParam || nameParam || isNaN(Number(id))) {
-            await pgPool.query(`DELETE FROM subjects WHERE "code" = $1 OR name = $2`, [codeParam || id, nameParam || id]);
-          }
-        } catch (pgErr) {}
       }
 
       removeFromFallback('subjects', (item: any) =>

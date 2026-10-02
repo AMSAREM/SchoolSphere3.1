@@ -3,7 +3,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 
 // In-Memory Supabase mock database for hermetic test execution
-const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
+const { testSupabaseDB, mockSupabaseClient, serverMockFactory } = vi.hoisted(() => {
   const db: Record<string, any[]> = {
     schools: [
       { id: 'school-uuid-a', name: 'School A Academy', slug: 'school-a', status: 'active' },
@@ -215,30 +215,125 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     }
   }
 
+  const authUsers: Array<{ id: string; email: string; password?: string; user_metadata?: Record<string, any> }> = [];
+
   const client = {
     from: (table: string) => new MockQueryBuilder(table),
     rpc: async (_fn: string, _args: any) => ({ data: null, error: null }),
     auth: {
+      getUser: async (token?: string) => {
+        if (token && token.startsWith('sb-access-')) {
+          const uid = token.replace('sb-access-', '');
+          const found = authUsers.find(u => u.id === uid);
+          if (found) return { data: { user: found }, error: null };
+        }
+        return { data: { user: null }, error: { message: 'Invalid token' } };
+      },
       signInWithOtp: async () => ({ error: null }),
-      signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Invalid login credentials' } }),
+      signInWithPassword: async ({ email, password }: { email: string; password?: string }) => {
+        const cleanEmail = String(email || '').trim().toLowerCase();
+        const found = authUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        if (found && password && found.password === password) {
+          const session = {
+            access_token: `sb-access-${found.id}`,
+            refresh_token: `sb-refresh-${found.id}`,
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: found
+          };
+          return { data: { user: found, session }, error: null };
+        }
+        return { data: { user: null, session: null }, error: { message: 'Invalid login credentials' } };
+      },
+      verifyOtp: async ({ token_hash }: { token_hash?: string; type?: string }) => {
+        const cleanEmail = String(token_hash || '').replace(/^mock-hash-/, '').trim().toLowerCase();
+        const found = authUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        if (found) {
+          const session = {
+            access_token: `sb-access-${found.id}`,
+            refresh_token: `sb-refresh-${found.id}`,
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: found
+          };
+          return { data: { user: found, session }, error: null };
+        }
+        return { data: { user: null, session: null }, error: { message: 'Invalid OTP' } };
+      },
       admin: {
-        listUsers: async () => ({ data: { users: [] }, error: null }),
-        createUser: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
-        updateUserById: async () => ({ data: { user: { id: 'auth-user-id' } }, error: null }),
-        deleteUser: async () => ({ data: {}, error: null })
+        listUsers: async () => ({ data: { users: authUsers }, error: null }),
+        getUserById: async (uid: string) => {
+          const found = authUsers.find(u => u.id === uid);
+          return found ? { data: { user: found }, error: null } : { data: { user: null }, error: { message: 'User not found' } };
+        },
+        createUser: async (attrs: { email?: string; password?: string; user_metadata?: Record<string, any> }) => {
+          const cleanEmail = String(attrs.email || '').trim().toLowerCase();
+          let existing = authUsers.find(u => u.email.toLowerCase() === cleanEmail);
+          if (existing) {
+            if (attrs.password) existing.password = attrs.password;
+            if (attrs.user_metadata) existing.user_metadata = { ...(existing.user_metadata || {}), ...attrs.user_metadata };
+            return { data: { user: existing }, error: null };
+          }
+          const created = {
+            id: `auth-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            email: cleanEmail,
+            password: attrs.password,
+            user_metadata: attrs.user_metadata || {}
+          };
+          authUsers.push(created);
+          return { data: { user: created }, error: null };
+        },
+        updateUserById: async (uid: string, attrs: { email?: string; password?: string; user_metadata?: Record<string, any> }) => {
+          const found = authUsers.find(u => u.id === uid);
+          if (found) {
+            if (attrs.email) found.email = String(attrs.email).trim().toLowerCase();
+            if (attrs.password) found.password = attrs.password;
+            if (attrs.user_metadata) found.user_metadata = { ...(found.user_metadata || {}), ...attrs.user_metadata };
+            return { data: { user: found }, error: null };
+          }
+          return { data: { user: { id: uid } }, error: null };
+        },
+        generateLink: async ({ email }: { type: string; email: string }) => {
+          const cleanEmail = String(email || '').trim().toLowerCase();
+          let found = authUsers.find(u => u.email.toLowerCase() === cleanEmail);
+          if (!found) {
+            found = {
+              id: `auth-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              email: cleanEmail,
+              user_metadata: {}
+            };
+            authUsers.push(found);
+          }
+          return {
+            data: {
+              user: found,
+              properties: { hashed_token: `mock-hash-${cleanEmail}` }
+            },
+            error: null
+          };
+        },
+        deleteUser: async (uid: string) => {
+          const idx = authUsers.findIndex(u => u.id === uid);
+          if (idx >= 0) authUsers.splice(idx, 1);
+          return { data: {}, error: null };
+        }
       }
     }
   };
 
-  return { testSupabaseDB: db, mockSupabaseClient: client };
+  const mockFactory = () => ({
+    getSupabaseAdmin: () => client,
+    getSupabaseUrlStrict: () => process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co',
+    createAuthenticatedSupabaseClient: () => client,
+    getCreatorAuthenticatedClient: async () => client,
+    getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
+      return db.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
+    }
+  });
+
+  return { testSupabaseDB: db, mockSupabaseClient: client, serverMockFactory: mockFactory };
 });
 
-vi.mock('../lib/supabase/server.js', () => ({
-  getSupabaseAdmin: () => mockSupabaseClient,
-  getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
-    return testSupabaseDB.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
-  }
-}));
+vi.mock('../lib/supabase/server.js', () => serverMockFactory());
+vi.mock('../lib/supabase/server.ts', () => serverMockFactory());
 
 import { 
   verifyAuthToken, 
@@ -964,10 +1059,9 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(userInB.fullName).toBe('John Mensah (School B)');
     });
 
-    it('allows newly provisioned tenant user to log in immediately with their plain username without mutating password_hash', async () => {
+    it('allows newly provisioned tenant user to log in immediately with their plain username via Supabase Auth', async () => {
       const userBefore = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
       expect(userBefore).toBeDefined();
-      const originalHash = userBefore.password_hash;
 
       const loginRes = await request(app)
         .post('/api/auth/login')
@@ -982,16 +1076,12 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(loginRes.body.token).toBeDefined();
       expect(loginRes.body.user.username).toBe(sharedUsername);
       expect(loginRes.body.user.role).toBe('teacher');
-
-      // Verify password_hash in Supabase was NOT overwritten during login
-      const userAfter = testSupabaseDB.users.find((u: any) => u.id === userBefore.id);
-      expect(userAfter.password_hash).toBe(originalHash);
     });
 
-    it('preserves existing license keys and user passwords untouched across GET /api/license/list, GET /api/schools, and invalid/demo login attempts', async () => {
+    it('preserves existing license keys and user records untouched across GET /api/license/list, GET /api/schools, and invalid/demo login attempts', async () => {
       const originalLicenseKey = testSupabaseDB.school_licenses[0].license_key;
       const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
-      const originalPasswordHash = targetUser.password_hash;
+      expect(targetUser).toBeDefined();
 
       const licListRes = await request(app).get('/api/license/list');
       expect(licListRes.status).toBe(200);
@@ -1001,7 +1091,7 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(schoolsRes.status).toBe(200);
       expect(testSupabaseDB.school_licenses[0].license_key).toBe(originalLicenseKey);
 
-      // Attempt login with demo123 or admin123 on existing user -> must be 401 and must NOT overwrite password_hash
+      // Attempt login with demo123 or admin123 on existing user -> must be 401
       const badLogin = await request(app)
         .post('/api/auth/login')
         .send({
@@ -1010,13 +1100,11 @@ describe('Security & API Endpoints Test Suite', () => {
           schoolId: 'school-uuid-a'
         });
       expect(badLogin.status).toBe(401);
-      expect(targetUser.password_hash).toBe(originalPasswordHash);
     }, 15000);
 
-    it('updates user password via PUT /api/users/:id directly in Supabase and deletes user via DELETE /api/users/:id', async () => {
+    it('updates user password via PUT /api/users/:id directly in Supabase Auth and deletes user via DELETE /api/users/:id', async () => {
       const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
       expect(targetUser).toBeDefined();
-      const oldHash = targetUser.password_hash;
 
       // Reset password via PUT /api/users/:id
       const updateRes = await request(app)
@@ -1030,10 +1118,6 @@ describe('Security & API Endpoints Test Suite', () => {
 
       expect(updateRes.status).toBe(200);
       expect(updateRes.body.success).toBe(true);
-
-      const updatedUserInDb = testSupabaseDB.users.find((u: any) => u.id === targetUser.id);
-      expect(updatedUserInDb.password_hash).not.toBe(oldHash);
-      expect(updatedUserInDb.password_hash).toMatch(/^\$2[aby]\$/);
 
       // Verify login succeeds with new password
       const newLoginRes = await request(app)

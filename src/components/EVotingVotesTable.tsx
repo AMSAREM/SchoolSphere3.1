@@ -766,7 +766,7 @@ export const EVotingVotesTable: React.FC<EVotingVotesTableProps> = ({
 
           <button
             type="button"
-            onClick={() => triggerPrint('evoting-votes-table-printable', 'Supabase votes_table Official Ballot Ledger')}
+            onClick={() => triggerPrint()}
             className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5 text-emerald-400" />

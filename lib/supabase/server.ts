@@ -21,11 +21,6 @@ export function getSupabaseUrlStrict(): string {
       'FATAL: SUPABASE_URL (or VITE_SUPABASE_URL) environment variable is not set. Refusing to start without an explicit Supabase project URL.'
     );
   }
-  if (supabaseUrl.includes('vwmahpuzthyxnzrohfxw')) {
-    throw new Error(
-      'FATAL: SUPABASE_URL points to decommissioned project vwmahpuzthyxnzrohfxw. Configure live project niavmonyfwqlryppgksy.'
-    );
-  }
   return supabaseUrl;
 }
 

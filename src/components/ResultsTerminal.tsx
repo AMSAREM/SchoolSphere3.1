@@ -628,7 +628,7 @@ export default function ResultsTerminal() {
           .first();
 
         if (existing) {
-          await db.results.update(existing.id!, res);
+          await db.results.update(existing.id!, res as any);
         } else {
           await db.results.add(res);
         }
@@ -872,7 +872,7 @@ export default function ResultsTerminal() {
             .where({ studentId: res.studentId, subject: res.subject, term: res.term })
             .first();
           if (existing) {
-            await db.results.update(existing.id!, res);
+            await db.results.update(existing.id!, res as any);
           } else {
             await db.results.add(res);
           }

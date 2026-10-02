@@ -158,7 +158,6 @@ CREATE TABLE IF NOT EXISTS public.users (
   auth_user_id UUID NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
   username VARCHAR(100) NOT NULL,
-  password_hash VARCHAR(255) NULL,
   full_name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NULL,
   phone VARCHAR(50) NULL,

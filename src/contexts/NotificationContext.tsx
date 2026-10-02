@@ -3,13 +3,15 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast, Toaster } from 'sonner';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
-export type NotificationType = 'success' | 'error' | 'info';
+export type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
 export interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel?: string;
+  confirmText?: string;
   cancelLabel?: string;
+  type?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
 }

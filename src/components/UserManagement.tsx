@@ -398,7 +398,7 @@ export default function UserManagement() {
   const toggleSelectAllUsers = () => {
     const validIds = filteredUsers
       .map(u => u.id)
-      .filter((id): id is number | string => id !== undefined && id !== null && id !== currentUser?.id);
+      .filter((id): id is number => typeof id === 'number' && id !== currentUser?.id);
     if (validIds.length > 0 && validIds.every(id => selectedUserIds.includes(id))) {
       setSelectedUserIds([]);
     } else {
