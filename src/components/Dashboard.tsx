@@ -40,6 +40,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { formatCurrency, triggerPrint, cn } from '../lib/utils';
+import { getQuickActionsForRole, getPortalRoleLabel, QuickActionItem } from '../lib/quickActions';
 
 interface DashboardProps {
   onViewChange: (view: any) => void;
@@ -799,7 +800,32 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
     return counts;
   }, [announcementsList]);
 
-  const isStaff = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'headteacher' || user?.role === 'teacher';
+  const isStaff =
+    user?.role === 'super_admin' ||
+    user?.role === 'admin' ||
+    user?.role === 'headteacher' ||
+    (user?.role as string) === 'hod' ||
+    user?.role === 'teacher';
+
+  const roleQuickActions = useMemo(
+    () => getQuickActionsForRole(user?.role, false),
+    [user?.role]
+  );
+  const portalRoleLabel = useMemo(
+    () => getPortalRoleLabel(user?.role, false),
+    [user?.role]
+  );
+
+  const handleDashboardQuickAction = (action: QuickActionItem) => {
+    if (action.creatorPanel) {
+      localStorage.setItem('esepa_creator_active_panel', action.creatorPanel);
+      onViewChange('creator');
+      return;
+    }
+    if (action.targetView) {
+      onViewChange(action.targetView);
+    }
+  };
 
   return (
     <div className="space-y-4 sm:space-y-8">
@@ -979,11 +1005,9 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Main Analytics Chart */}
-        <div className={`bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden ${
-          (user?.role === 'student' || user?.role === 'parent') ? 'lg:col-span-3' : 'lg:col-span-2'
-        }`}>
-          {user?.role === 'teacher' || user?.role === 'student' || user?.role === 'parent' ? (
-            // Teacher, Student, or Parent specific: Classroom scores or ward performance
+        <div className="bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden lg:col-span-2">
+          {user?.role === 'teacher' || (user?.role as string) === 'hod' || user?.role === 'student' || user?.role === 'parent' ? (
+            // Teacher, HOD, Student, or Parent specific: Classroom scores or ward performance
             <>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div className="space-y-1">
@@ -1102,59 +1126,67 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
           )}
         </div>
 
-        {/* Quick Actions & Recent */}
-        {(user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
-          <div className="space-y-6 sm:space-y-8">
-            <div className="bg-white p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
-              <h3 className="text-base font-bold text-[#1f2a2e] mb-4">Quick Actions</h3>
-              <div className="grid grid-cols-1 gap-3">
-                <button 
-                  onClick={() => onViewChange('students')}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#1c4a59] flex items-center justify-center shrink-0">
-                      <Users className="w-4 h-4 text-[#faae57]" />
-                    </div>
-                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">
-                      {user?.role === 'admin' || user?.role === 'super_admin' ? 'Manage Students' : 'View Students'}
-                    </span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
-                </button>
-
-                {(user?.role as string) !== 'teacher' && (user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
-                  <button 
-                    onClick={() => onViewChange('fees')}
-                    className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#faae57]/25 flex items-center justify-center shrink-0">
-                        <Wallet className="w-4 h-4 text-[#1c4a59]" />
-                      </div>
-                      <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Record Fee Payment</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
-                  </button>
-                )}
-
-                {(user?.role as string) !== 'accountant' && (user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
-                  <button 
-                    onClick={() => onViewChange('results')}
-                    className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#1c4a59] hover:bg-[#163b47] text-white transition-all group text-left cursor-pointer min-h-[48px]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4 h-4 text-[#faae57]" />
-                      </div>
-                      <span className="text-xs sm:text-sm font-bold text-white">Enter Exam Results</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#faae57] transition-colors shrink-0" />
-                  </button>
-                )}
-              </div>
+        {/* Role-Aware Quick Actions & Recent Students */}
+        <div className="space-y-6 sm:space-y-8">
+          <div className="bg-white p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h3 className="text-base font-bold text-[#1f2a2e]">Quick Actions</h3>
+              <span className="text-xs font-medium text-[#6a7f84] truncate">
+                {portalRoleLabel}
+              </span>
             </div>
+            <div className="grid grid-cols-1 gap-3">
+              {roleQuickActions.map((action) => {
+                const ActionIcon = action.icon;
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => handleDashboardQuickAction(action)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-3.5 rounded-2xl border hover:shadow-sm transition-all group text-left cursor-pointer min-h-[52px] active:scale-[0.99]",
+                      action.theme.cardBg,
+                      action.theme.cardBorder
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+                          action.theme.cardIconBg
+                        )}
+                      >
+                        <ActionIcon className={cn("w-4 h-4", action.theme.cardIconText)} />
+                      </div>
+                      <div className="min-w-0">
+                        <span
+                          className={cn(
+                            "text-xs sm:text-sm font-bold block truncate",
+                            action.theme.cardText
+                          )}
+                        >
+                          {action.title}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-medium block truncate mt-0.5",
+                            action.theme.cardSubtext
+                          )}
+                        >
+                          {action.subtitle}
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight
+                      className={cn("w-4 h-4 transition-colors shrink-0 ml-2", action.theme.chevronText)}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
+          {(user?.role as string) !== 'student' && (user?.role as string) !== 'parent' && (
             <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-[#1f2a2e]">Recent Students</h3>
@@ -1188,8 +1220,8 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                 ))}
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* --- UPCOMING EVENTS & NOTIFICATIONS SECTION --- */}

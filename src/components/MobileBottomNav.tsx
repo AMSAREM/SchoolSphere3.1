@@ -5,17 +5,12 @@ import {
   Plus, 
   BarChart3, 
   User, 
-  CheckSquare, 
-  UserPlus, 
-  Award, 
-  Bell,
-  X,
-  Clock,
-  Wallet
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { getQuickActionsForRole, getPortalRoleLabel, QuickActionItem } from '../lib/quickActions';
 
 interface NavItemEntry {
   id: string;
@@ -31,6 +26,10 @@ interface MobileBottomNavProps {
   mobileMenuOpen?: boolean;
   onOpenMobileMenu?: () => void;
   actionSlot?: React.ReactNode;
+  isCreatorConsole?: boolean;
+  onCreatorNavigate?: (panelId: string) => void;
+  onRefreshTelemetry?: () => void;
+  isRefreshingTelemetry?: boolean;
 }
 
 export interface MobileSafeActionStackProps {
@@ -76,12 +75,57 @@ export function MobileBottomNav({
   mobileMenuOpen,
   onOpenMobileMenu,
   actionSlot,
+  isCreatorConsole = false,
+  onCreatorNavigate,
+  onRefreshTelemetry,
+  isRefreshingTelemetry = false,
 }: MobileBottomNavProps) {
   const { user } = useAuth();
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
   const primaryTabs = navItems && navItems.length >= 2 ? navItems.slice(0, 2) : null;
   const thirdTab = navItems && navItems.length >= 3 ? navItems[2] : null;
+
+  const isCreatorContext = isCreatorConsole || activeView === 'creator' || user?.role === 'creator';
+  const roleActions = getQuickActionsForRole(user?.role, isCreatorContext);
+  const portalLabel = getPortalRoleLabel(user?.role, isCreatorContext);
+
+  const handleActionClick = (action: QuickActionItem) => {
+    setShowQuickMenu(false);
+
+    if (action.specialAction === 'quick_reminder') {
+      if (onOpenQuickReminder) {
+        onOpenQuickReminder();
+      } else {
+        onNavigate(action.targetView || 'timetable');
+      }
+      return;
+    }
+
+    if (action.specialAction === 'refresh_telemetry') {
+      if (onRefreshTelemetry) {
+        onRefreshTelemetry();
+      } else {
+        localStorage.setItem('esepa_creator_active_panel', 'dashboard');
+        onNavigate('creator');
+      }
+      return;
+    }
+
+    if (action.creatorPanel) {
+      localStorage.setItem('esepa_creator_active_panel', action.creatorPanel);
+      if (onCreatorNavigate) {
+        onCreatorNavigate(action.creatorPanel);
+      } else {
+        onNavigate('creator');
+      }
+      return;
+    }
+
+    if (action.targetView) {
+      onNavigate(action.targetView);
+    }
+  };
 
   return (
     <>
@@ -158,7 +202,7 @@ export function MobileBottomNav({
                 "w-12 h-12 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] flex items-center justify-center shadow-[0_6px_18px_rgba(250,174,87,0.45)] border-2 border-white transition-all transform active:scale-95 cursor-pointer min-h-[48px] min-w-[48px]",
                 showQuickMenu && "rotate-45 bg-[#1c4a59] text-white"
               )}
-              title="Quick Actions"
+              title={`Quick Actions · ${portalLabel}`}
             >
               <Plus className="w-5 h-5 stroke-[2.75]" />
             </button>
@@ -237,107 +281,82 @@ export function MobileBottomNav({
         </nav>
       </MobileSafeActionStack>
 
-      {/* Quick Action Drawer / Menu */}
+      {/* Role-Aware Quick Action Drawer / Menu */}
       <AnimatePresence>
         {showQuickMenu && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-slate-900/40 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
+          <div
+            onClick={() => setShowQuickMenu(false)}
+            className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-slate-900/40 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]"
+          >
             <motion.div
-              initial={{ opacity: 0, y: 30, scale: 0.95 }}
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 30, scale: 0.95 }}
-              className="bg-white rounded-3xl p-5 border border-[#bac4c6] shadow-xl max-w-sm w-full space-y-3 relative"
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl p-5 border border-[#bac4c6] shadow-xl max-w-sm w-full space-y-3.5 relative"
             >
-              <div className="flex items-center justify-between pb-2 border-b border-[#bac4c6]">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#6a7f84]">
-                  Quick Actions
-                </span>
+              <div className="flex items-center justify-between pb-2.5 border-b border-[#bac4c6]/70">
+                <div className="flex items-center gap-1.5 text-xs text-[#6a7f84] min-w-0">
+                  <span className="font-bold text-[#1f2a2e] tracking-tight whitespace-nowrap">
+                    Quick Actions
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-medium text-[#1c4a59] truncate">
+                    {portalLabel}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowQuickMenu(false)}
-                  className="p-1.5 rounded-full hover:bg-[#f6f8f7] text-[#6a7f84] transition-colors"
+                  className="p-1.5 rounded-full hover:bg-[#f6f8f7] text-[#6a7f84] hover:text-[#1f2a2e] transition-colors cursor-pointer shrink-0"
+                  aria-label="Close Quick Actions"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 pt-1">
-                {/* Take Attendance */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowQuickMenu(false);
-                    onNavigate('attendance');
-                  }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#06d6a0]/10 hover:bg-[#06d6a0]/20 border border-[#06d6a0]/30 text-[#1f2a2e] transition-all text-left min-h-[44px]"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-[#06d6a0] text-white flex items-center justify-center shrink-0">
-                    <CheckSquare className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold leading-tight">Take Attendance</h5>
-                    <span className="text-[10px] text-[#059669]">Daily roll</span>
-                  </div>
-                </button>
-
-                {/* Add Reminder */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowQuickMenu(false);
-                    if (onOpenQuickReminder) {
-                      onOpenQuickReminder();
-                    } else {
-                      onNavigate('timetable');
-                    }
-                  }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#e1c594]/30 hover:bg-[#e1c594]/50 border border-[#e4ae67]/40 text-[#1f2a2e] transition-all text-left min-h-[44px]"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-[#faae57] text-[#1f2a2e] flex items-center justify-center shrink-0 font-bold">
-                    <Clock className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold leading-tight">Set Reminder</h5>
-                    <span className="text-[10px] text-[#807654]">Add to day</span>
-                  </div>
-                </button>
-
-                {/* Record Fee */}
-                {user?.role !== 'teacher' && user?.role !== 'student' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowQuickMenu(false);
-                      onNavigate('fees');
-                    }}
-                    className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#1c4a59]/10 hover:bg-[#1c4a59]/20 border border-[#1c4a59]/30 text-[#1f2a2e] transition-all text-left min-h-[44px]"
-                  >
-                    <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center shrink-0">
-                      <Wallet className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold leading-tight">Record Fees</h5>
-                      <span className="text-[10px] text-[#1c4a59]">MoMo / Cash</span>
-                    </div>
-                  </button>
-                )}
-
-                {/* Record Results */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowQuickMenu(false);
-                    onNavigate('results');
-                  }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#f6f8f7] hover:bg-white border border-[#bac4c6] text-[#1f2a2e] transition-all text-left min-h-[44px]"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-white flex items-center justify-center shrink-0">
-                    <Award className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h5 className="text-xs font-bold leading-tight">Enter Scores</h5>
-                    <span className="text-[10px] text-[#6a7f84]">Term assess</span>
-                  </div>
-                </button>
+              <div className="grid grid-cols-2 gap-2.5 pt-0.5">
+                {roleActions.map((action) => {
+                  const ActionIcon = action.icon;
+                  const isSyncSpinning =
+                    action.specialAction === 'refresh_telemetry' && isRefreshingTelemetry;
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => handleActionClick(action)}
+                      className={cn(
+                        "flex items-center gap-2.5 p-3 rounded-2xl border text-[#1f2a2e] transition-all text-left min-h-[52px] cursor-pointer active:scale-[0.98] min-w-0",
+                        action.theme.drawerBg,
+                        action.theme.drawerBorder
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",
+                          action.theme.drawerIconBg,
+                          action.theme.drawerIconText
+                        )}
+                      >
+                        <ActionIcon className={cn("w-4 h-4", isSyncSpinning && "animate-spin")} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h5 className="text-xs font-bold leading-tight truncate text-[#1f2a2e]">
+                          {action.title}
+                        </h5>
+                        <span
+                          className={cn(
+                            "text-[10px] block truncate mt-0.5",
+                            action.theme.drawerSubtitleText
+                          )}
+                        >
+                          {action.subtitle}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </motion.div>
           </div>

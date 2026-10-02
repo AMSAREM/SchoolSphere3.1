@@ -55,6 +55,7 @@ import SalesSuite from './creator/SalesSuite';
 import ServicesSuite from './creator/ServicesSuite';
 import SecuritySuite from './creator/SecuritySuite';
 import FrontendTestRunner from './FrontendTestRunner';
+import { MobileBottomNav } from './MobileBottomNav';
 import { getCreatorPanelIdentity, resolveCreatorPanelFromPathname } from '../lib/pageMetadata';
 
 const AVAILABLE_MODULES = [
@@ -1207,7 +1208,7 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
         </header>
 
         {/* Content Container */}
-        <main className="flex-1 overflow-y-auto p-6 space-y-6 print:block print:h-auto print:overflow-visible print:p-0">
+        <main className="flex-1 overflow-y-auto p-6 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] lg:pb-6 space-y-6 print:block print:h-auto print:overflow-visible print:p-0">
 
           {/* Active Sub-Suite Rendering */}
           <AnimatePresence mode="wait">
@@ -1262,6 +1263,7 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
                   lastTelemetrySyncAt={lastTelemetrySyncAt}
                   isRefreshingTelemetry={isRefreshingTelemetry}
                   onRefreshTelemetry={() => fetchCreatorTelemetry(true)}
+                  onNavigatePanel={setActivePanel}
                 />
               )}
 
@@ -1342,6 +1344,26 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
             </motion.div>
           </AnimatePresence>
         </main>
+
+        {/* Mobile Bottom Navigation & Creator Quick Actions Drawer */}
+        <MobileBottomNav
+          activeView={activePanel}
+          onNavigate={setActivePanel}
+          isCreatorConsole={true}
+          onCreatorNavigate={setActivePanel}
+          onRefreshTelemetry={() => {
+            fetchCreatorTelemetry(true);
+            showToast('Synchronizing live telemetry and presence channels...', 'info');
+          }}
+          isRefreshingTelemetry={isRefreshingTelemetry}
+          mobileMenuOpen={mobileMenuOpen}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          navItems={[
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'license_management', label: 'Licenses', icon: Key },
+            { id: 'school_management', label: 'Tenants', icon: Building }
+          ]}
+        />
       </div>
     </div>
   );

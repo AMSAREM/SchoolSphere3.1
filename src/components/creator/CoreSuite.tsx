@@ -38,6 +38,7 @@ import {
   broadcastLicenseChange
 } from '../../lib/licenseSync';
 import { getApiHeaders } from '../../lib/api';
+import { getQuickActionsForRole, QuickActionItem } from '../../lib/quickActions';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -88,6 +89,7 @@ interface CoreSuiteProps {
   lastTelemetrySyncAt?: number;
   isRefreshingTelemetry?: boolean;
   onRefreshTelemetry?: () => void;
+  onNavigatePanel?: (panelId: string) => void;
 }
 
 export default function CoreSuite({
@@ -116,7 +118,8 @@ export default function CoreSuite({
   isRealtimeConnected = true,
   lastTelemetrySyncAt = Date.now(),
   isRefreshingTelemetry = false,
-  onRefreshTelemetry
+  onRefreshTelemetry,
+  onNavigatePanel
 }: CoreSuiteProps) {
   const { showToast, confirm } = useNotifications();
   const [sessionViewFilter, setSessionViewFilter] = useState<'online' | 'recent' | 'all'>('online');
@@ -476,6 +479,90 @@ export default function CoreSuite({
             <div className="text-lg font-bold text-indigo-600 mt-2 font-mono truncate select-all">
               {licenseInfo?.licenseKey || 'EVALUATION'}
             </div>
+          </div>
+        </div>
+
+        {/* Creator Console Quick Actions */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 sm:p-6 shadow-xs">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900">Quick Actions</h3>
+              <span aria-hidden="true">·</span>
+              <span className="font-medium text-indigo-600">Creator Console</span>
+            </div>
+            <span className="text-xs text-slate-400 font-mono tabular-nums hidden sm:inline">
+              Last sync {syncTimeFormatted}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {getQuickActionsForRole('creator', true).map((action: QuickActionItem) => {
+              const ActionIcon = action.icon;
+              const isSyncAction = action.specialAction === 'refresh_telemetry';
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => {
+                    if (isSyncAction) {
+                      if (onRefreshTelemetry) {
+                        onRefreshTelemetry();
+                        showToast('Synchronizing live telemetry and presence channels...', 'info');
+                      }
+                      return;
+                    }
+                    if (action.creatorPanel && onNavigatePanel) {
+                      onNavigatePanel(action.creatorPanel);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center justify-between p-3.5 rounded-2xl border transition-all group text-left cursor-pointer min-h-[54px] active:scale-[0.99]",
+                    action.theme.cardBg,
+                    action.theme.cardBorder
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={cn(
+                        "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+                        action.theme.cardIconBg
+                      )}
+                    >
+                      <ActionIcon
+                        className={cn(
+                          "w-4 h-4",
+                          action.theme.cardIconText,
+                          isSyncAction && isRefreshingTelemetry && "animate-spin"
+                        )}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span
+                        className={cn(
+                          "text-xs sm:text-sm font-bold block truncate",
+                          action.theme.cardText
+                        )}
+                      >
+                        {action.title}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[11px] font-medium block truncate mt-0.5",
+                          action.theme.cardSubtext
+                        )}
+                      >
+                        {action.subtitle}
+                      </span>
+                    </div>
+                  </div>
+                  <ArrowRight
+                    className={cn(
+                      "w-4 h-4 transition-transform group-hover:translate-x-0.5 shrink-0 ml-2",
+                      action.theme.chevronText
+                    )}
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
 

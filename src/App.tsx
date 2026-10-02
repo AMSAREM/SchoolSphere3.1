@@ -937,7 +937,7 @@ function AppContent() {
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
-    } else if (user?.role === 'accountant') {
+    } else if (user?.role === 'accountant' || (user?.role as string) === 'bursar') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
@@ -945,15 +945,18 @@ function AppContent() {
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
     } else if (user?.role === 'student') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
+        { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
     } else if (user?.role === 'parent') {
       baseItems = [
@@ -962,10 +965,12 @@ function AppContent() {
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
     } else {
       baseItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon }
       ];
     }
 
