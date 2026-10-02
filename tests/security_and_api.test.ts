@@ -785,8 +785,13 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(res.body.dbMode).not.toBe('mysql');
     });
 
-    it('GET /api/sync/logs returns an array of sync logs', async () => {
-      const res = await request(app).get('/api/sync/logs');
+    it('GET /api/sync/logs rejects unauthenticated requests with 401 and returns sync logs when authenticated', async () => {
+      const unauthRes = await request(app).get('/api/sync/logs');
+      expect(unauthRes.status).toBe(401);
+
+      const res = await request(app)
+        .get('/api/sync/logs')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
@@ -1083,11 +1088,15 @@ describe('Security & API Endpoints Test Suite', () => {
       const targetUser = testSupabaseDB.users.find((u: any) => u.school_id === 'school-uuid-a' && u.username === sharedUsername);
       expect(targetUser).toBeDefined();
 
-      const licListRes = await request(app).get('/api/license/list');
+      const licListRes = await request(app)
+        .get('/api/license/list')
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(licListRes.status).toBe(200);
       expect(testSupabaseDB.school_licenses[0].license_key).toBe(originalLicenseKey);
 
-      const schoolsRes = await request(app).get('/api/schools');
+      const schoolsRes = await request(app)
+        .get('/api/schools')
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(schoolsRes.status).toBe(200);
       expect(testSupabaseDB.school_licenses[0].license_key).toBe(originalLicenseKey);
 
@@ -1245,7 +1254,9 @@ describe('Security & API Endpoints Test Suite', () => {
         }
       );
 
-      const res = await request(app).get('/api/license/list');
+      const res = await request(app)
+        .get('/api/license/list')
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
 
@@ -1265,7 +1276,7 @@ describe('Security & API Endpoints Test Suite', () => {
       // Issuing a new license via POST /api/license/generate must immediately appear in GET /api/license/list
       const genRes = await request(app)
         .post('/api/license/generate')
-        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           schoolName: 'Wesley Girls High School',
           tier: 'Enterprise',
@@ -1277,7 +1288,9 @@ describe('Security & API Endpoints Test Suite', () => {
       const issuedKey = genRes.body.license?.key;
       expect(typeof issuedKey).toBe('string');
 
-      const listAfterGen = await request(app).get('/api/license/list');
+      const listAfterGen = await request(app)
+        .get('/api/license/list')
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(listAfterGen.status).toBe(200);
       expect(listAfterGen.body.some((r: any) => r.key === issuedKey)).toBe(true);
     });
@@ -1318,6 +1331,7 @@ describe('Security & API Endpoints Test Suite', () => {
       for (const action of actions) {
         const res = await request(app)
           .post('/api/diagnostics/backend-suite')
+          .set('Authorization', `Bearer ${superAdminToken}`)
           .send({ action });
 
         expect(res.status).toBe(200);
@@ -1382,19 +1396,24 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(modRes.body.success).toBe(true);
       expect(modRes.body.activeModules).toEqual(['students', 'attendance', 'results']);
 
-      // 6. Verify Creator telemetry endpoint reads from Supabase
-      const telRes = await request(app)
+      // 6. Verify Creator telemetry endpoint reads from Supabase (restricted to creator/super_admin)
+      const telForbidden = await request(app)
         .get('/api/creator/telemetry')
         .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(telForbidden.status).toBe(403);
+
+      const telRes = await request(app)
+        .get('/api/creator/telemetry')
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(telRes.status).toBe(200);
       expect(telRes.body.success).toBe(true);
       expect(telRes.body.counts).toHaveProperty('schools');
       expect(telRes.body.counts).toHaveProperty('students');
 
-      // 7. Create and read CRM lead and subscription invoice in Supabase
+      // 7. Create and read CRM lead and subscription invoice in Supabase (restricted to creator/super_admin)
       const leadCreate = await request(app)
         .post('/api/crm/leads')
-        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           schoolName: 'Cape Coast Science College',
           contactPerson: 'Dr. Mensah',
@@ -1408,13 +1427,13 @@ describe('Security & API Endpoints Test Suite', () => {
 
       const leadsRead = await request(app)
         .get('/api/crm/leads')
-        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(leadsRead.status).toBe(200);
       expect(leadsRead.body.leads.some((l: any) => l.schoolName === 'Cape Coast Science College')).toBe(true);
 
       const invCreate = await request(app)
         .post('/api/crm/invoices')
-        .set('Authorization', `Bearer ${adminTokenSchoolA}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           school: 'Cape Coast Science College',
           type: 'Annual License',
@@ -1427,9 +1446,120 @@ describe('Security & API Endpoints Test Suite', () => {
 
       const invRead = await request(app)
         .get('/api/crm/invoices')
-        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+        .set('Authorization', `Bearer ${superAdminToken}`);
       expect(invRead.status).toBe(200);
       expect(invRead.body.invoices.some((i: any) => i.school === 'Cape Coast Science College' && i.amount === 950)).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // 9. Server-Wide Unauthenticated & Cross-Tenant Isolation Lockdown
+  // ============================================================================
+  describe('9. Server-Wide Unauthenticated & Cross-Tenant Isolation Lockdown', () => {
+    it('REJECTS unauthenticated requests with 401 across all tenant directory, license, and module endpoints', async () => {
+      const getEndpoints = [
+        '/api/schools',
+        '/api/tenants',
+        '/api/license/list',
+        '/api/license/generated',
+        '/api/students?school_id=school-uuid-a',
+        '/api/teachers?school_id=school-uuid-a',
+        '/api/classes?school_id=school-uuid-a',
+        '/api/subjects?school_id=school-uuid-a',
+        '/api/attendance?school_id=school-uuid-a',
+        '/api/results?school_id=school-uuid-a',
+        '/api/fees/transactions?school_id=school-uuid-a',
+        '/api/timetable?school_id=school-uuid-a',
+        '/api/lesson-notes?school_id=school-uuid-a',
+        '/api/siren/state?school_id=school-uuid-a',
+        '/api/evoting/state?school_id=school-uuid-a',
+        '/api/inventory/state?school_id=school-uuid-a',
+        '/api/payroll?school_id=school-uuid-a',
+        '/api/duty-roster?school_id=school-uuid-a',
+        '/api/settings/state?school_id=school-uuid-a',
+        '/api/db/sync?school_id=school-uuid-a'
+      ];
+
+      for (const endpoint of getEndpoints) {
+        const res = await request(app).get(endpoint);
+        expect(res.status, `Expected GET ${endpoint} without token to return 401`).toBe(401);
+      }
+
+      const postEndpoints = [
+        { url: '/api/attendance', body: { school_id: 'school-uuid-a', studentId: 'STU-1', date: '2026-10-01', status: 'Present' } },
+        { url: '/api/results', body: { school_id: 'school-uuid-a', studentId: 'STU-1', subject: 'Math', term: 'Term 1' } },
+        { url: '/api/fees/pay', body: { school_id: 'school-uuid-a', studentId: 'STU-1', amount: 100 } },
+        { url: '/api/siren/broadcast', body: { school_id: 'school-uuid-a', broadcast: { type: 'fire', label: 'Fire' } } },
+        { url: '/api/settings/save', body: { school_id: 'school-uuid-a', key: 'schoolProfile', value: {} } },
+        { url: '/api/db/sync?school_id=school-uuid-a', body: { students: [] } }
+      ];
+
+      for (const ep of postEndpoints) {
+        const res = await request(app).post(ep.url).send(ep.body);
+        expect(res.status, `Expected POST ${ep.url} without token to return 401`).toBe(401);
+      }
+    });
+
+    it('BLOCKS cross-tenant access (403 Forbidden) when School B admin attempts to read or mutate School A data', async () => {
+      const crossTenantGets = [
+        '/api/students?school_id=school-uuid-a',
+        '/api/teachers?school_id=school-uuid-a',
+        '/api/classes?school_id=school-uuid-a',
+        '/api/subjects?school_id=school-uuid-a',
+        '/api/attendance?school_id=school-uuid-a',
+        '/api/results?school_id=school-uuid-a',
+        '/api/fees/transactions?school_id=school-uuid-a',
+        '/api/timetable?school_id=school-uuid-a',
+        '/api/lesson-notes?school_id=school-uuid-a',
+        '/api/siren/state?school_id=school-uuid-a',
+        '/api/evoting/state?school_id=school-uuid-a',
+        '/api/inventory/state?school_id=school-uuid-a',
+        '/api/payroll?school_id=school-uuid-a',
+        '/api/duty-roster?school_id=school-uuid-a',
+        '/api/settings/state?school_id=school-uuid-a',
+        '/api/db/sync?school_id=school-uuid-a'
+      ];
+
+      for (const endpoint of crossTenantGets) {
+        const res = await request(app)
+          .get(endpoint)
+          .set('Authorization', `Bearer ${adminTokenSchoolB}`);
+        expect(res.status, `Expected GET ${endpoint} by School B admin to return 403`).toBe(403);
+      }
+
+      const crossTenantPosts = [
+        { url: '/api/attendance', body: { school_id: 'school-uuid-a', studentId: 'STU-1', date: '2026-10-01', status: 'Present' } },
+        { url: '/api/results', body: { school_id: 'school-uuid-a', studentId: 'STU-1', subject: 'Math', term: 'Term 1' } },
+        { url: '/api/fees/pay', body: { school_id: 'school-uuid-a', studentId: 'STU-1', amount: 100 } },
+        { url: '/api/siren/broadcast', body: { school_id: 'school-uuid-a', broadcast: { type: 'fire', label: 'Fire' } } },
+        { url: '/api/settings/save', body: { school_id: 'school-uuid-a', key: 'schoolProfile', value: {} } },
+        { url: '/api/db/sync?school_id=school-uuid-a', body: { students: [] } }
+      ];
+
+      for (const ep of crossTenantPosts) {
+        const res = await request(app)
+          .post(ep.url)
+          .set('Authorization', `Bearer ${adminTokenSchoolB}`)
+          .send(ep.body);
+        expect(res.status, `Expected POST ${ep.url} by School B admin for School A to return 403`).toBe(403);
+      }
+    });
+
+    it('SCOPES GET /api/schools and GET /api/license/list so School A admin only sees School A and never School B', async () => {
+      const schoolsRes = await request(app)
+        .get('/api/schools')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(schoolsRes.status).toBe(200);
+      expect(Array.isArray(schoolsRes.body.schools)).toBe(true);
+      expect(schoolsRes.body.schools.every((s: any) => s.id === 'school-uuid-a')).toBe(true);
+      expect(schoolsRes.body.schools.some((s: any) => s.id === 'school-uuid-b')).toBe(false);
+
+      const licRes = await request(app)
+        .get('/api/license/list')
+        .set('Authorization', `Bearer ${adminTokenSchoolA}`);
+      expect(licRes.status).toBe(200);
+      expect(Array.isArray(licRes.body)).toBe(true);
+      expect(licRes.body.every((l: any) => l.school_id === 'school-uuid-a')).toBe(true);
     });
   });
 });

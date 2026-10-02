@@ -68,7 +68,7 @@ function buildAuthHeaders(extraSchoolId?: string | null): Record<string, string>
     'Content-Type': 'application/json'
   };
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-    const token = localStorage.getItem('esepa_auth_token');
+    const token = localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token');
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -113,12 +113,16 @@ export async function fetchTenantLicenseStatus(
 ): Promise<TenantLicenseStatusResponse | null> {
   purgeLegacyLicenseCaches();
   try {
+    const headers = buildAuthHeaders(schoolId);
+    if (!headers['Authorization']) {
+      return null;
+    }
     const params = new URLSearchParams();
     if (schoolId) params.set('school_id', schoolId);
     if (role) params.set('role', role);
     const qs = params.toString();
     const res = await fetch(`/api/license/status${qs ? `?${qs}` : ''}`, {
-      headers: buildAuthHeaders(schoolId)
+      headers
     });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
@@ -265,9 +269,13 @@ export async function generateSchoolLicense(
 ): Promise<{ success: boolean; license?: LicenseRecord; provisionedAdmin?: any; emailDispatched?: boolean; message?: string; error?: string }> {
   purgeLegacyLicenseCaches();
   try {
+    const headers = buildAuthHeaders(payload.schoolId);
+    if (payload?.googleAccessToken && typeof payload.googleAccessToken === 'string') {
+      headers['x-google-access-token'] = payload.googleAccessToken;
+    }
     const res = await fetch('/api/license/generate', {
       method: 'POST',
-      headers: buildAuthHeaders(payload.schoolId),
+      headers,
       body: JSON.stringify(payload)
     });
     const data = await res.json().catch(() => ({}));

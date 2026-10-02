@@ -99,7 +99,9 @@ export default function FrontendTestRunner({
   const [isAuditingSchema, setIsAuditingSchema] = useState(false);
 
   const getAuthHeaders = useCallback((): Record<string, string> => {
-    const token = localStorage.getItem('esepa_auth_token');
+    const token =
+      localStorage.getItem('esepa_supabase_access_token') ||
+      localStorage.getItem('esepa_auth_token');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };

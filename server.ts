@@ -2082,28 +2082,138 @@ async function doStartServer() {
     };
   }
 
-  // Auth-gated license status endpoint (Supabase public.school_licenses & public.schools as single source of truth)
-  app.get("/api/license/status", optionalAuthenticateToken, async (req: any, res) => {
-    try {
-      const authHeader = req.headers?.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ') && !req.user) {
-        return res.status(403).json({ success: false, error: "Invalid or expired token." });
-      }
-      const querySchoolId = String(req.query?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || '').trim();
-      const queryRole = String(req.query?.role || '').trim().toLowerCase();
+  class TenantAccessError extends Error {
+    statusCode: number;
+    code: string;
+    constructor(message: string, statusCode: 401 | 403 = 403) {
+      super(message);
+      this.name = 'TenantAccessError';
+      this.statusCode = statusCode;
+      this.code = statusCode === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN_CROSS_TENANT';
+    }
+  }
 
-      // Require authentication if neither a valid token nor explicit tenant/role query is present (satisfies §A5 & §A7)
-      if (!req.user && !querySchoolId && !queryRole) {
-        return res.status(401).json({ success: false, error: "Authentication required to check license status." });
+  function isTenantAccessError(err: any): err is TenantAccessError {
+    return Boolean(
+      err &&
+      (err instanceof TenantAccessError ||
+        err.name === 'TenantAccessError' ||
+        err.statusCode === 401 ||
+        err.statusCode === 403)
+    );
+  }
+
+  // Strict Tenant Isolation & Scope Resolution Helper (Fail-Closed):
+  // - Never falls through to client-supplied school_id when unauthenticated (!req.user -> 401).
+  // - Non-creator users must have an assigned school_id on their authenticated session (!validUserSchoolId -> 403).
+  // - Non-creator users are strictly bound to their assigned req.user.school_id; any mismatched requested school_id is rejected with 403.
+  // - Only 'super_admin' or 'creator' may inspect or target a different tenant's school_id.
+  function resolveTenantAccessScope(req: any, explicitSchoolId?: string): {
+    schoolId: string;
+    isSuper: boolean;
+    forbidden: boolean;
+    unauthorized?: boolean;
+    error?: string;
+  } {
+    if (!req.user) {
+      return {
+        schoolId: '',
+        isSuper: false,
+        forbidden: true,
+        unauthorized: true,
+        error: 'Authentication required. Please sign in to access tenant data.'
+      };
+    }
+
+    const userRole = String(req.user?.role || '').toLowerCase();
+    const isSuper = userRole === 'super_admin' || userRole === 'creator';
+    const userSchoolId = String(req.user?.school_id || req.user?.schoolId || '').trim();
+    const requestedSchoolId = String(
+      explicitSchoolId ??
+      req.query?.school_id ??
+      req.query?.schoolId ??
+      req.headers?.['x-school-id'] ??
+      req.body?.school_id ??
+      req.body?.schoolId ??
+      ''
+    ).trim();
+
+    const validUserSchoolId = (userSchoolId && userSchoolId !== '00000000-0000-0000-0000-000000000001') ? userSchoolId : '';
+    const validRequestedSchoolId = (requestedSchoolId && requestedSchoolId !== '00000000-0000-0000-0000-000000000001') ? requestedSchoolId : '';
+
+    if (!isSuper) {
+      if (!validUserSchoolId) {
+        return {
+          schoolId: '',
+          isSuper: false,
+          forbidden: true,
+          error: 'Tenant isolation policy violation: User account is not assigned to a valid school tenant.'
+        };
       }
+      if (validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId) {
+        return {
+          schoolId: validUserSchoolId,
+          isSuper: false,
+          forbidden: true,
+          error: 'Cross-tenant access denied: You can only access or modify data belonging to your assigned school.'
+        };
+      }
+      return {
+        schoolId: validUserSchoolId,
+        isSuper: false,
+        forbidden: false
+      };
+    }
+
+    return {
+      schoolId: validRequestedSchoolId || validUserSchoolId,
+      isSuper: true,
+      forbidden: false
+    };
+  }
+
+  async function resolveStrictModuleSchoolId(req: any, explicitSchoolId?: string): Promise<string> {
+    const scope = resolveTenantAccessScope(req, explicitSchoolId);
+    if (scope.unauthorized) {
+      throw new TenantAccessError(scope.error || 'Authentication required.', 401);
+    }
+    if (scope.forbidden) {
+      throw new TenantAccessError(scope.error || 'Cross-tenant access denied.', 403);
+    }
+    if (scope.schoolId) {
+      return scope.schoolId;
+    }
+    if (scope.isSuper) {
+      try {
+        const adminClient = getSupabaseAdmin();
+        const { data: sch } = await adminClient
+          .from('schools')
+          .select('id')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (sch?.id) return String(sch.id);
+      } catch {}
+    }
+    return '';
+  }
+
+  const requireAuthenticatedSchoolScope = resolveStrictModuleSchoolId;
+
+  // Auth-gated license status endpoint (Supabase public.school_licenses & public.schools as single source of truth)
+  app.get("/api/license/status", authenticateToken, async (req: any, res) => {
+    try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const isSuper = scope.isSuper;
 
       const adminClient = getSupabaseAdmin();
-      const userRole = String(req.user?.role || queryRole || '').toLowerCase();
-      const isSuper = userRole === 'super_admin' || userRole === 'creator';
-      const userSchoolId = req.user?.school_id || req.user?.schoolId || null;
-
-      // Non-super users are strictly scoped to their own school_id when available
-      const targetSchoolId = (!isSuper && userSchoolId) ? String(userSchoolId).trim() : (querySchoolId || (userSchoolId ? String(userSchoolId).trim() : ''));
+      const targetSchoolId = scope.schoolId;
 
       let license: any = null;
       let schoolRow: any = null;
@@ -5205,7 +5315,7 @@ async function doStartServer() {
   });
 
   // Record User Login & Telemetry Audit Tracking
-  app.post("/api/auth/record-login", async (req, res) => {
+  app.post("/api/auth/record-login", authenticateToken, async (req: any, res) => {
     try {
       const { user_id, auth_user_id, organization_id, school_name, full_name, username, role, email, status } = req.body || {};
       if (!email && !username) {
@@ -5235,7 +5345,7 @@ async function doStartServer() {
   });
 
   // Real-Time Active Session Heartbeat & Presence Endpoint
-  app.post("/api/auth/heartbeat", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/auth/heartbeat", authenticateToken, async (req: any, res) => {
     try {
       const body = req.body || {};
       const authUser = req.user || {};
@@ -5284,7 +5394,7 @@ async function doStartServer() {
   });
 
   // Real-Time Logout Presence Endpoint
-  app.post("/api/auth/logout-telemetry", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/auth/logout-telemetry", authenticateToken, async (req: any, res) => {
     try {
       const body = req.body || {};
       const authUser = req.user || {};
@@ -5803,7 +5913,7 @@ async function doStartServer() {
   });
 
   // Role Permissions Matrix Endpoint
-  app.get("/api/auth/permissions", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/auth/permissions", authenticateToken, async (req: any, res) => {
     try {
       const userRole = req.user?.role || req.query.role || 'teacher';
       return res.json({
@@ -5825,23 +5935,25 @@ async function doStartServer() {
 
   // Helper to resolve canonical tenant school record and display username for User Management
   async function resolveTenantSchoolForUsers(req: any, explicitSchoolId?: string | null, explicitSchoolName?: string | null) {
+    const scope = resolveTenantAccessScope(req, explicitSchoolId);
+    if (scope.unauthorized) {
+      throw new TenantAccessError(scope.error || 'Authentication required.', 401);
+    }
+    if (scope.forbidden) {
+      throw new TenantAccessError(scope.error || 'Access denied: Cross-tenant access is forbidden.', 403);
+    }
+
     const adminClient = getSupabaseAdmin();
     const rawCandidate = String(
+      scope.schoolId ||
       explicitSchoolId ||
-      req.body?.school_id ||
-      req.body?.schoolId ||
-      req.query?.school_id ||
-      req.query?.schoolId ||
-      req.headers?.['x-school-id'] ||
       req.user?.school_id ||
       req.user?.schoolId ||
       ''
     ).trim();
 
     const rawNameCandidate = String(
-      explicitSchoolName ||
-      req.body?.schoolName ||
-      req.body?.school_name ||
+      (scope.isSuper ? (explicitSchoolName || req.body?.schoolName || req.body?.school_name) : '') ||
       req.user?.schoolName ||
       ''
     ).trim();
@@ -6277,6 +6389,9 @@ async function doStartServer() {
         users: formatted
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       console.error("Error in GET /api/users:", err);
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
@@ -6940,6 +7055,9 @@ async function doStartServer() {
         linkedProfile
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       console.error("Error in POST /api/users:", err);
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
@@ -6950,11 +7068,24 @@ async function doStartServer() {
     try {
       const { id } = req.params;
       const { fullName, full_name, role, status, email, phone, password, passwordHash, schoolId, school_id, username: reqUsername } = req.body || {};
+      const scope = resolveTenantAccessScope(req, schoolId || school_id);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
 
       const updateData: any = { updated_at: Date.now() };
       if (fullName || full_name) updateData.full_name = (fullName || full_name).trim();
-      if (role) updateData.role = role;
+      if (role) {
+        const requestedRole = String(role).toLowerCase();
+        if (!scope.isSuper && (requestedRole === 'creator' || requestedRole === 'super_admin')) {
+          return res.status(403).json({ success: false, error: "Forbidden: Only platform creators can assign super_admin or creator roles." });
+        }
+        updateData.role = role;
+      }
       if (status) updateData.status = status;
       if (email !== undefined) updateData.email = email;
       if (phone !== undefined) updateData.phone = phone;
@@ -6971,7 +7102,7 @@ async function doStartServer() {
         }
       }
 
-      const targetSchoolId = schoolId || school_id || req.query?.school_id || req.user?.school_id || req.user?.schoolId || req.headers?.['x-school-id'] || null;
+      const targetSchoolId = scope.schoolId || null;
       let targetUsername = String(reqUsername || req.query?.username || '').trim().toLowerCase().replace(/^@+/, '');
 
       // Look up username from registries if not passed
@@ -6984,12 +7115,11 @@ async function doStartServer() {
       let updateErrMsg: string | null = null;
 
       try {
-        const { data, error } = await adminClient
-          .from('users')
-          .update(updateData)
-          .eq('id', id)
-          .select()
-          .maybeSingle();
+        let q = adminClient.from('users').update(updateData).eq('id', id);
+        if (!scope.isSuper && targetSchoolId) {
+          q = q.eq('school_id', targetSchoolId);
+        }
+        const { data, error } = await q.select().maybeSingle();
         if (!error && data) {
           updatedRow = data;
           if (!targetUsername && data.username) {
@@ -7125,17 +7255,27 @@ async function doStartServer() {
   app.delete("/api/users/:id", authenticateToken, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
-      const targetSchoolId = req.query?.school_id || req.query?.schoolId || req.user?.school_id || req.user?.schoolId || req.headers?.['x-school-id'] || null;
+      const targetSchoolId = scope.schoolId || null;
       let targetUsername = String(req.query?.username || '').trim().toLowerCase().replace(/^@+/, '');
 
       let existingUser: any = null;
       try {
-        const { data } = await adminClient
+        let lookupQ = adminClient
           .from('users')
           .select('id, auth_user_id, username, school_id')
-          .eq('id', id)
-          .maybeSingle();
+          .eq('id', id);
+        if (!scope.isSuper && targetSchoolId) {
+          lookupQ = lookupQ.eq('school_id', targetSchoolId);
+        }
+        const { data } = await lookupQ.maybeSingle();
         existingUser = data;
         if (existingUser?.username && !targetUsername) {
           targetUsername = String(existingUser.username).trim().toLowerCase().split('@')[0];
@@ -7153,10 +7293,11 @@ async function doStartServer() {
       let deleteErrMsg: string | null = null;
 
       try {
-        const { error } = await adminClient
-          .from('users')
-          .delete()
-          .eq('id', id);
+        let delQ = adminClient.from('users').delete().eq('id', id);
+        if (!scope.isSuper && targetSchoolId) {
+          delQ = delQ.eq('school_id', targetSchoolId);
+        }
+        const { error } = await delQ;
         if (!error) {
           deletedOk = true;
         } else {
@@ -7845,8 +7986,15 @@ async function doStartServer() {
   }
 
   // Get all generated licenses from Supabase and server registry (strictly read-only, never mutates or rewrites existing keys)
-  app.get(["/api/license/list", "/api/license/generated"], async (req, res) => {
+  app.get(["/api/license/list", "/api/license/generated"], authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       let dbLicenses: any[] = [];
 
@@ -8140,6 +8288,12 @@ async function doStartServer() {
         });
       }
 
+      if (!scope.isSuper) {
+        const scoped = dedupedLicenses.filter(
+          (l: any) => l.school_id && String(l.school_id) === String(scope.schoolId)
+        );
+        return res.json(scoped);
+      }
       return res.json(dedupedLicenses);
     } catch (err: any) {
       console.error("Error listing licenses:", err);
@@ -8148,7 +8302,7 @@ async function doStartServer() {
   });
 
   // Sync / Batch sync pending licenses to Supabase live
-  app.post("/api/license/sync", async (req, res) => {
+  app.post("/api/license/sync", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const rawList = Array.isArray(req.body) ? req.body : (req.body?.licenses || [req.body]);
       const items = rawList.filter((item: any) => item && (item.key || item.license_key));
@@ -8214,7 +8368,7 @@ async function doStartServer() {
   });
 
   // Repair & Reconcile all school <-> license relationships in Supabase
-  app.post("/api/license/repair-relationships", async (req, res) => {
+  app.post("/api/license/repair-relationships", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
       await autoReconcileSchoolsAndLicenses(adminClient);
@@ -8713,7 +8867,7 @@ async function doStartServer() {
 
   // Dedicated API Route: /api/send-license (and alias /api/license/send)
   // Implements license code generation, storage in 'license_codes' table, and immediate backend SMTP delivery
-  app.post(["/api/send-license", "/api/license/send"], async (req, res) => {
+  app.post(["/api/send-license", "/api/license/send"], authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { 
         to, 
@@ -9113,7 +9267,7 @@ async function doStartServer() {
   });
 
   // Dedicated test endpoint for verifying SMTP / Email settings with live feedback
-  app.post("/api/email/test-smtp", async (req, res) => {
+  app.post("/api/email/test-smtp", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { to, customHost, customPort, customUser, customPass, customFrom } = req.body || {};
       const targetRecipient = (to || process.env.SMTP_USER || "amoakoemmanuel2026@gmail.com").trim();
@@ -9183,7 +9337,7 @@ async function doStartServer() {
   });
 
   // Generate a new license key and live sync to Supabase database (with verified email delivery)
-  app.post("/api/license/generate", async (req, res) => {
+  app.post("/api/license/generate", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { 
         schoolName, 
@@ -9438,7 +9592,7 @@ async function doStartServer() {
   });
 
   // Dedicated endpoint to send / resend any license key directly to client's email via Gmail or Supabase
-  app.post("/api/license/send-email", async (req, res) => {
+  app.post("/api/license/send-email", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { licenseKey, recipientEmail, schoolName, contactPerson, redirectUrl, customMessage, googleAccessToken } = req.body || {};
       if (!licenseKey || !recipientEmail) {
@@ -9615,7 +9769,7 @@ async function doStartServer() {
   });
 
   // Dedicated endpoint for logging email dispatch directly from client-side Gmail API calls
-  app.post("/api/license/log-email-dispatch", async (req, res) => {
+  app.post("/api/license/log-email-dispatch", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { licenseKey, recipientEmail, schoolName, contactPerson, method = 'gmail', gmailMessageId } = req.body || {};
       const keyUpper = (licenseKey || '').trim().toUpperCase();
@@ -9869,11 +10023,11 @@ async function doStartServer() {
     }
   };
 
-  app.post("/api/license/update", handleUpdateLicense);
-  app.put("/api/license/update", handleUpdateLicense);
+  app.post("/api/license/update", authenticateToken, requireRoles("super_admin", "creator"), handleUpdateLicense);
+  app.put("/api/license/update", authenticateToken, requireRoles("super_admin", "creator"), handleUpdateLicense);
 
   // Revoke a license key and suspend school access in-place in Supabase (never inserts new rows)
-  app.post("/api/license/revoke", async (req, res) => {
+  app.post("/api/license/revoke", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { key, licenseKey, schoolId, school_id, schoolName, slug, status } = req.body || {};
       const rawKey = String(key ?? licenseKey ?? '').trim().toUpperCase();
@@ -9912,7 +10066,7 @@ async function doStartServer() {
   // =========================================================================
 
   // Live Platform Telemetry Counts, Real-Time Presence & Login Stream from Supabase for CreatorHub
-  app.get("/api/creator/telemetry", optionalAuthenticateToken, async (_req, res) => {
+  app.get("/api/creator/telemetry", authenticateToken, requireRoles("super_admin", "creator"), async (_req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
       const fetchTableRows = async (table: string): Promise<any[]> => {
@@ -10589,7 +10743,7 @@ async function doStartServer() {
   }
 
   // Sales Suite CRM Leads CRUD (Supabase public.crm_leads + public.settings fallback)
-  app.get("/api/crm/leads", optionalAuthenticateToken, async (_req, res) => {
+  app.get("/api/crm/leads", authenticateToken, requireRoles("super_admin", "creator"), async (_req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
       const { data, error } = await adminClient
@@ -10623,7 +10777,7 @@ async function doStartServer() {
     }
   });
 
-  app.post("/api/crm/leads", optionalAuthenticateToken, async (req, res) => {
+  app.post("/api/crm/leads", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const raw = req.body || {};
       const now = Date.now();
@@ -10679,7 +10833,7 @@ async function doStartServer() {
     }
   });
 
-  app.put("/api/crm/leads/:id", optionalAuthenticateToken, async (req, res) => {
+  app.put("/api/crm/leads/:id", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { id } = req.params;
       const raw = req.body || {};
@@ -10714,7 +10868,7 @@ async function doStartServer() {
     }
   });
 
-  app.delete("/api/crm/leads/:id", optionalAuthenticateToken, async (req, res) => {
+  app.delete("/api/crm/leads/:id", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { id } = req.params;
       const adminClient = getSupabaseAdmin();
@@ -10733,7 +10887,7 @@ async function doStartServer() {
   });
 
   // Sales Suite Subscription Invoices CRUD (Supabase public.subscription_invoices + public.settings fallback)
-  app.get("/api/crm/invoices", optionalAuthenticateToken, async (_req, res) => {
+  app.get("/api/crm/invoices", authenticateToken, requireRoles("super_admin", "creator"), async (_req, res) => {
     try {
       const adminClient = getSupabaseAdmin();
       const { data, error } = await adminClient
@@ -10774,7 +10928,7 @@ async function doStartServer() {
     }
   });
 
-  app.post("/api/crm/invoices", optionalAuthenticateToken, async (req, res) => {
+  app.post("/api/crm/invoices", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const raw = req.body || {};
       const now = Date.now();
@@ -10837,7 +10991,7 @@ async function doStartServer() {
     }
   });
 
-  app.put("/api/crm/invoices/:id", optionalAuthenticateToken, async (req, res) => {
+  app.put("/api/crm/invoices/:id", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { id } = req.params;
       const raw = req.body || {};
@@ -10871,7 +11025,7 @@ async function doStartServer() {
     }
   });
 
-  app.delete("/api/crm/invoices/:id", optionalAuthenticateToken, async (req, res) => {
+  app.delete("/api/crm/invoices/:id", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { id } = req.params;
       const adminClient = getSupabaseAdmin();
@@ -10997,23 +11151,24 @@ async function doStartServer() {
     await writeSupabaseSettingList('platform_support_tickets', allTickets);
   }
 
-  app.get("/api/support/tickets", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/support/tickets", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const allTickets = await loadAllSupportTicketsFromSupabase();
       const queryScope = String(req.query?.scope || '').toLowerCase();
-      const queryRole = String(req.user?.role || req.query?.role || '').toLowerCase();
-      const querySchoolId = String(
-        req.user?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || ''
-      ).trim();
-      const querySchoolName = String(req.query?.schoolName || '').trim().toLowerCase();
-      const queryUserId = String(req.user?.id || req.user?.username || req.query?.userId || '')
+      const queryRole = String(req.user?.role || '').toLowerCase();
+      const querySchoolId = scope.schoolId;
+      const queryUserId = String(req.user?.id || req.user?.username || '')
         .trim()
         .toLowerCase();
 
-      const isCreator =
-        queryScope === 'creator' || queryRole === 'creator' || queryRole === 'super_admin';
-
-      if (isCreator) {
+      if (scope.isSuper) {
         return res.json({ success: true, tickets: allTickets });
       }
 
@@ -11022,14 +11177,7 @@ async function doStartServer() {
 
       const filtered = allTickets.filter((t) => {
         const ticketSchoolId = String(t.schoolId || '').trim();
-        const ticketSchoolName = String(t.schoolName || '').trim().toLowerCase();
-
-        const matchesSchool =
-          (querySchoolId && ticketSchoolId && ticketSchoolId === querySchoolId) ||
-          (querySchoolName && ticketSchoolName && ticketSchoolName === querySchoolName) ||
-          (!querySchoolId && !querySchoolName);
-
-        if (!matchesSchool) return false;
+        if (!querySchoolId || ticketSchoolId !== querySchoolId) return false;
 
         if (!canViewSchoolTickets || queryScope === 'own') {
           if (!queryUserId) return true;
@@ -11044,8 +11192,15 @@ async function doStartServer() {
     }
   });
 
-  app.post("/api/support/tickets", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/support/tickets", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const raw = req.body || {};
       const now = Date.now();
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -11055,11 +11210,11 @@ async function doStartServer() {
       const newTicket = normalizeSupportTicketRecord({
         id: ticketId,
         ticketNumber: raw.ticketNumber || `TKT-${randomSuffix}`,
-        schoolId: raw.schoolId || req.user?.school_id || req.headers?.['x-school-id'] || '',
+        schoolId: scope.schoolId || '',
         schoolName: raw.schoolName || 'SCHOOLSPHERE PORTAL',
-        submittedById: raw.submittedById || req.user?.id || req.user?.username || 'staff',
-        submittedByName: raw.submittedByName || req.user?.fullName || req.user?.username || 'School Staff',
-        submittedByRole: raw.submittedByRole || req.user?.role || 'admin',
+        submittedById: req.user?.id || req.user?.username || raw.submittedById || 'staff',
+        submittedByName: req.user?.fullName || req.user?.username || raw.submittedByName || 'School Staff',
+        submittedByRole: req.user?.role || raw.submittedByRole || 'admin',
         subject: String(raw.subject || '').trim() || 'System Issue Report',
         category: String(raw.category || 'General / Portal').trim(),
         priority: raw.priority || 'medium',
@@ -11106,8 +11261,15 @@ async function doStartServer() {
     }
   });
 
-  app.patch("/api/support/tickets/:id", optionalAuthenticateToken, async (req: any, res) => {
+  app.patch("/api/support/tickets/:id", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const { id } = req.params;
       const raw = req.body || {};
       const now = Date.now();
@@ -11122,6 +11284,9 @@ async function doStartServer() {
       }
 
       const existing = currentList[targetIndex];
+      if (!scope.isSuper && existing.schoolId && String(existing.schoolId) !== String(scope.schoolId)) {
+        return res.status(403).json({ success: false, error: "Cross-tenant access denied." });
+      }
       const messages = Array.isArray(existing.messages) ? [...existing.messages] : [];
       let latestReply = existing.reply || '';
       let nextStatus = existing.status;
@@ -11131,13 +11296,13 @@ async function doStartServer() {
       }
 
       if (raw.messageText && String(raw.messageText).trim()) {
-        const isCreator = Boolean(raw.isCreator);
+        const isCreator = scope.isSuper;
         const msgObj = {
           id: crypto.randomUUID(),
           senderName:
             String(raw.senderName || '').trim() ||
             (isCreator ? 'SchoolSphere Team / Emmanuel Amoako' : 'School Staff'),
-          senderRole: String(raw.senderRole || (isCreator ? 'creator' : 'staff')),
+          senderRole: String(req.user?.role || (isCreator ? 'creator' : 'staff')),
           isCreator,
           text: String(raw.messageText).trim(),
           createdAt: now
@@ -11170,15 +11335,32 @@ async function doStartServer() {
     }
   });
 
-  app.delete("/api/support/tickets/:id", optionalAuthenticateToken, async (req: any, res) => {
+  app.delete("/api/support/tickets/:id", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const { id } = req.params;
+      const currentList = await loadAllSupportTicketsFromSupabase();
+      const target = currentList.find(
+        (item) => String(item.id) === String(id) || String(item.ticketNumber) === String(id)
+      );
+      if (target && !scope.isSuper && target.schoolId && String(target.schoolId) !== String(scope.schoolId)) {
+        return res.status(403).json({ success: false, error: "Cross-tenant access denied." });
+      }
       const adminClient = getSupabaseAdmin();
       try {
-        await adminClient.from('support_tickets').delete().eq('id', id);
+        let delQ = adminClient.from('support_tickets').delete().eq('id', id);
+        if (!scope.isSuper && scope.schoolId) {
+          delQ = delQ.eq('school_id', scope.schoolId);
+        }
+        await delQ;
       } catch {}
 
-      const currentList = await loadAllSupportTicketsFromSupabase();
       const filtered = currentList.filter(
         (item) => String(item.id) !== String(id) && String(item.ticketNumber) !== String(id)
       );
@@ -11192,11 +11374,16 @@ async function doStartServer() {
   // Teachers Duty Roster & Daily Logbook Cloud Sync (Supabase public.settings + public.audit_logs)
   const inMemoryDutyRosters = new Map<string, { assignments: any[]; logs: any[] }>();
 
-  app.get("/api/duty-roster", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/duty-roster", authenticateToken, async (req: any, res) => {
     try {
-      const schoolId = String(
-        req.user?.school_id || req.query?.schoolId || req.headers?.['x-school-id'] || 'default'
-      ).trim();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const schoolId = scope.schoolId || 'default';
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolId) && schoolId !== '00000000-0000-0000-0000-000000000001';
       if (isUuid) {
         const adminClient = getSupabaseAdmin();
@@ -11226,12 +11413,17 @@ async function doStartServer() {
     }
   });
 
-  app.post("/api/duty-roster/sync", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/duty-roster/sync", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const raw = req.body || {};
-      const schoolId = String(
-        raw.schoolId || req.user?.school_id || req.headers?.['x-school-id'] || 'default'
-      ).trim();
+      const schoolId = scope.schoolId || 'default';
       const payload = {
         schoolId,
         schoolName: String(raw.schoolName || 'SCHOOLSPHERE PORTAL'),
@@ -11372,27 +11564,7 @@ NOTIFY pgrst, 'reload schema';`;
     );
 
   async function resolvePayrollSchoolId(req: any): Promise<string> {
-    const rawCandidate = String(
-      req.body?.schoolId ||
-        req.query?.schoolId ||
-        req.user?.school_id ||
-        req.headers?.['x-school-id'] ||
-        ''
-    ).trim();
-
-    if (isUuidFormat(rawCandidate)) return rawCandidate;
-
-    try {
-      const adminClient = getSupabaseAdmin();
-      const { data: firstSchool } = await adminClient
-        .from('schools')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
-      if (firstSchool?.id) return String(firstSchool.id);
-    } catch {}
-
-    return rawCandidate || 'default';
+    return resolveStrictModuleSchoolId(req);
   }
 
   function mapRowToSalaryProfile(row: any) {
@@ -11821,7 +11993,7 @@ NOTIFY pgrst, 'reload schema';`;
     }
   }
 
-  app.get(["/api/payroll", "/api/payroll/state"], optionalAuthenticateToken, async (req: any, res) => {
+  app.get(["/api/payroll", "/api/payroll/state"], authenticateToken, async (req: any, res) => {
     try {
       const schoolId = await resolvePayrollSchoolId(req);
       const data = await fetchPayrollFromSupabase(schoolId);
@@ -11843,11 +12015,14 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  app.post("/api/payroll/sync", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/payroll/sync", authenticateToken, async (req: any, res) => {
     try {
       const raw = req.body || {};
       const schoolId = await resolvePayrollSchoolId(req);
@@ -11895,12 +12070,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/payroll/disburse - Marks payslips Paid, deducts loan balances, and posts Salaries to public.school_expenses + audit_logs
-  app.post("/api/payroll/disburse", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/payroll/disburse", authenticateToken, async (req: any, res) => {
     try {
       const raw = req.body || {};
       const schoolId = await resolvePayrollSchoolId(req);
@@ -12008,12 +12186,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // Get license keys for a specific client school from Supabase
-  app.get("/api/license/school/:schoolName", async (req, res) => {
+  app.get("/api/license/school/:schoolName", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const targetSchool = req.params.schoolName.trim().toUpperCase();
       const adminClient = getSupabaseAdmin();
@@ -12126,8 +12307,15 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Multi-Tenant API: Get all registered school tenants with counts and canonical license keys from Supabase
-  app.get(["/api/schools", "/api/tenants"], async (req, res) => {
+  app.get(["/api/schools", "/api/tenants"], authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       let supabaseSchools: any[] = [];
       let supabaseLicenses: any[] = [];
       let studentCounts: Record<string, number> = {};
@@ -12328,7 +12516,11 @@ NOTIFY pgrst, 'reload schema';`;
         }
       });
 
-      const result = Array.from(map.values());
+      let result = Array.from(map.values());
+      if (!scope.isSuper) {
+        const assignedSchoolId = String(scope.schoolId || '').trim().toLowerCase();
+        result = result.filter(t => String(t.id || '').trim().toLowerCase() === assignedSchoolId);
+      }
       return res.json({ 
         success: true, 
         tenants: result,
@@ -12342,7 +12534,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Multi-Tenant API: Provision a new school tenant (single canonical license key & atomic sync)
-  app.post(["/api/schools", "/api/tenants"], async (req, res) => {
+  app.post(["/api/schools", "/api/tenants"], authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     const { 
       name, 
       schoolName, 
@@ -12468,8 +12660,19 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Multi-Tenant API: Update school tenant metadata in-place (never inserts duplicate rows)
-  const updateTenantHandler = async (req: Request, res: Response) => {
+  const updateTenantHandler = async (req: any, res: Response) => {
     const tenantId = req.params.id;
+    const scope = resolveTenantAccessScope(req, tenantId);
+    if (scope.unauthorized) {
+      return res.status(401).json({ success: false, error: scope.error });
+    }
+    if (scope.forbidden) {
+      return res.status(403).json({ success: false, error: scope.error });
+    }
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!scope.isSuper && role !== 'admin') {
+      return res.status(403).json({ success: false, error: "Forbidden: Only school administrators or platform creators can update school metadata." });
+    }
     const { name, schoolName, theme, logo_url, email, phone, address, academic_year, current_term, status, key, licenseKey, tier, expiryDate } = req.body || {};
     const effectiveName = (name || schoolName || '').trim();
 
@@ -12509,8 +12712,8 @@ NOTIFY pgrst, 'reload schema';`;
     }
   };
 
-  app.put(["/api/schools/:id", "/api/tenants/:id"], updateTenantHandler);
-  app.patch(["/api/schools/:id", "/api/tenants/:id"], updateTenantHandler);
+  app.put(["/api/schools/:id", "/api/tenants/:id"], authenticateToken, updateTenantHandler);
+  app.patch(["/api/schools/:id", "/api/tenants/:id"], authenticateToken, updateTenantHandler);
 
   // Update lockout announcement message
   app.post("/api/license/announcement", authenticateToken, requireRoles("admin", "super_admin", "creator"), async (req: AuthenticatedRequest, res) => {
@@ -12547,7 +12750,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Advanced In-depth Tenant Maintenance Route
-  app.post("/api/license/maintenance", async (req, res) => {
+  app.post("/api/license/maintenance", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     const { key, actionType } = req.body;
     if (!key) {
       return res.status(400).json({ success: false, error: "License key is required" });
@@ -12604,7 +12807,7 @@ NOTIFY pgrst, 'reload schema';`;
   // =========================================================================
   // CREATOR DIAGNOSTIC TOOL: SCHEMA & TENANT LINKAGE VALIDATION ENGINE
   // =========================================================================
-  app.all("/api/diagnostics/schema-linkage", async (req, res) => {
+  app.all("/api/diagnostics/schema-linkage", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     const startTime = Date.now();
     const testLogs: Array<{
       step: number;
@@ -13097,7 +13300,7 @@ NOTIFY pgrst, 'reload schema';`;
   // =========================================================================
   // BACKEND & DATABASE VERIFICATION SUITE ENDPOINT (NON-DESTRUCTIVE PROBES)
   // =========================================================================
-  app.all("/api/diagnostics/backend-suite", async (req, res) => {
+  app.all("/api/diagnostics/backend-suite", authenticateToken, requireRoles("super_admin", "creator", "admin"), async (req, res) => {
     const startTime = Date.now();
     const action = String(req.body?.action || req.query?.action || "schema_audit").trim();
 
@@ -13975,7 +14178,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Serve Master Supabase Schema SQL
-  app.get("/api/diagnostics/master-schema-sql", (req, res) => {
+  app.get("/api/diagnostics/master-schema-sql", authenticateToken, requireRoles("super_admin", "creator"), (req, res) => {
     try {
       const sqlPath = path.join(process.cwd(), "supabase", "schema_master.sql");
       if (fs.existsSync(sqlPath)) {
@@ -13989,7 +14192,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Supabase Service Role Key Connection & Direct Database Routing
-  app.post("/api/admin/supabase-service-key", async (req, res) => {
+  app.post("/api/admin/supabase-service-key", authenticateToken, requireRoles("super_admin", "creator"), async (req, res) => {
     try {
       const { serviceRoleKey } = req.body || {};
       if (!serviceRoleKey || typeof serviceRoleKey !== 'string') {
@@ -14109,7 +14312,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Dedicated Vercel & Supabase Bridge Link status & ping endpoint
-  app.get("/api/integrations/vercel-supabase", async (req, res) => {
+  app.get("/api/integrations/vercel-supabase", authenticateToken, requireRoles("admin", "super_admin", "creator"), async (req, res) => {
     const startTime = Date.now();
     const supabaseUrl = getResolvedSupabaseUrl();
     const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://schoolsphere-portal.vercel.app';
@@ -14195,29 +14398,22 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // API endpoint to retrieve sync logs
-  app.get("/api/sync/logs", (req, res) => {
+  app.get("/api/sync/logs", authenticateToken, (req, res) => {
     res.json(inMemorySyncLogs);
   });
 
   // Pull All Data from DB with multi-tenant isolation
-  app.get("/api/db/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/db/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const isFresh = req.query.fresh === 'true';
-      const userRole = (req.user?.role || '').toLowerCase();
-      const isSuper = userRole === 'super_admin' || userRole === 'creator';
-      
-      const requestedSchoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
-      const userSchoolId = req.user?.school_id || req.user?.schoolId || null;
-
-      let schoolId = requestedSchoolId || userSchoolId;
-      if (!isSuper) {
-        if (!schoolId) {
-          return res.status(401).json({ success: false, error: "Authentication or valid school_id required to sync tenant data." });
-        }
-        if (userSchoolId && schoolId !== userSchoolId) {
-          return res.status(403).json({ success: false, error: "Tenant isolation violation: cannot sync another school's data." });
-        }
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
       }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const schoolId = scope.schoolId;
 
       const data = await pullData(isFresh, schoolId || null);
       res.setHeader("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
@@ -14240,24 +14436,17 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Push All Data to DB with multi-tenant isolation
-  app.post("/api/db/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/db/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
-      const userRole = (req.user?.role || '').toLowerCase();
-      const isSuper = userRole === 'super_admin' || userRole === 'creator';
-      
-      const requestedSchoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.school_id || req.body?.schoolId || '') as string;
-      const userSchoolId = req.user?.school_id || req.user?.schoolId || null;
-
-      let schoolId = requestedSchoolId || userSchoolId;
-      if (!isSuper) {
-        if (!schoolId) {
-          return res.status(401).json({ success: false, error: "Authentication or valid school_id required to sync tenant data." });
-        }
-        if (userSchoolId && schoolId !== userSchoolId) {
-          return res.status(403).json({ success: false, error: "Tenant isolation violation: cannot push data to another school." });
-        }
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
       }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const schoolId = scope.schoolId;
 
       await pushData(req.body, schoolId || null);
       addSyncLog("Push Local Storage", true, req.body);
@@ -14273,85 +14462,20 @@ NOTIFY pgrst, 'reload schema';`;
   // MULTI-TENANT ACADEMIC API ENDPOINTS (RLS & Tenant Isolation Enforced)
   // ==========================================
 
-  function resolveTenantAccessScope(req: any, explicitSchoolId?: string | null): {
-    schoolId: string;
-    isSuper: boolean;
-    forbidden: boolean;
-    error?: string;
-    dbClient: any;
-  } {
-    const adminClient = getSupabaseAdmin();
-    let user = req.user || null;
-    const authHeader = (req.headers?.authorization || req.headers?.Authorization || '') as string;
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const supabaseHeaderToken = (req.headers?.['x-supabase-token'] || '') as string;
-
-    if (!user && bearerToken) {
-      user = verifyAuthToken(bearerToken);
-      if (user) req.user = user;
-    }
-
-    const role = String(user?.role || '').toLowerCase();
-    const isSuper = role === 'creator' || role === 'super_admin';
-    const userSchoolId = String(user?.school_id || user?.schoolId || '').trim();
-    const validUserSchoolId =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userSchoolId) &&
-      userSchoolId !== '00000000-0000-0000-0000-000000000001'
-        ? userSchoolId
-        : '';
-
-    const rawRequested = String(
-      explicitSchoolId ||
-      req.params?.schoolId ||
-      req.query?.school_id ||
-      req.query?.schoolId ||
-      req.headers?.['x-school-id'] ||
-      req.body?.school_id ||
-      req.body?.schoolId ||
-      ''
-    ).trim();
-    const validRequestedSchoolId =
-      rawRequested && rawRequested !== '00000000-0000-0000-0000-000000000001' && rawRequested !== 'default'
-        ? rawRequested
-        : '';
-
-    // Enforce tenant isolation: non-Creator authenticated users cannot query or mutate another school's UUID
-    if (!isSuper && validUserSchoolId && validRequestedSchoolId && /^[0-9a-f-]{36}$/i.test(validRequestedSchoolId)) {
-      if (validRequestedSchoolId.toLowerCase() !== validUserSchoolId.toLowerCase()) {
-        return {
-          schoolId: validUserSchoolId,
-          isSuper: false,
-          forbidden: true,
-          error: "Tenant isolation policy violation: You can only access records belonging to your assigned school.",
-          dbClient: adminClient
-        };
-      }
-    }
-
-    const effectiveSchoolId = isSuper
-      ? validRequestedSchoolId
-      : (validUserSchoolId || validRequestedSchoolId);
-
-    // If a Supabase Auth RLS JWT is present, create an RLS-scoped client
-    const activeRlsToken = supabaseHeaderToken || (bearerToken && user?.sub ? bearerToken : '');
-    const dbClient = activeRlsToken ? createAuthenticatedSupabaseClient(activeRlsToken) : adminClient;
-
-    return {
-      schoolId: effectiveSchoolId,
-      isSuper,
-      forbidden: false,
-      dbClient
-    };
-  }
-
   // Sync entire academic dataset for a specific school tenant
-  app.get("/api/academic/sync-tenant/:schoolId", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/academic/sync-tenant/:schoolId", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req, req.params.schoolId);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
-      const schoolId = scope.schoolId || req.params.schoolId;
+      const schoolId = scope.schoolId;
+      if (!schoolId) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const adminClient = getSupabaseAdmin();
       const tables = ["students", "teachers", "classes", "subjects", "attendance", "results", "termReports"];
       const tableMap: Record<string, string> = {
@@ -14423,13 +14547,19 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Bulk push academic dataset for a specific school tenant
-  app.post("/api/academic/sync-tenant/:schoolId", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/academic/sync-tenant/:schoolId", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req, req.params.schoolId);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
-      const schoolId = scope.schoolId || req.params.schoolId;
+      const schoolId = scope.schoolId;
+      if (!schoolId) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const payload = req.body || {};
       await pushData(payload, schoolId);
       return res.json({ success: true, message: `Academic data successfully synced for school ${schoolId}` });
@@ -14440,15 +14570,18 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Students CRUD
-  app.get("/api/students", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/students", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const schoolId = scope.schoolId;
       if (!schoolId && !scope.isSuper) {
-        return res.json([]);
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
       }
       const adminClient = getSupabaseAdmin();
       let query = adminClient.from('students').select('*');
@@ -14465,20 +14598,27 @@ NOTIFY pgrst, 'reload schema';`;
       return res.json(parsed);
     } catch (err: any) {
       const scope = resolveTenantAccessScope(req);
-      if (!scope.schoolId && !scope.isSuper) return res.json([]);
+      if (scope.unauthorized) return res.status(401).json({ success: false, error: scope.error });
+      if (scope.forbidden || (!scope.schoolId && !scope.isSuper)) return res.status(403).json({ success: false, error: scope.error || "Forbidden" });
       const fallback = getFromFallback('students', scope.schoolId).map((s: any) => normalizeServerStudentRecord(s));
       return res.json(fallback);
     }
   });
 
-  app.post("/api/students", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/students", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const adminClient = getSupabaseAdmin();
-      const schoolId = scope.schoolId || (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const raw = { ...req.body };
       
       let dob = '2015-01-01';
@@ -14576,16 +14716,23 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Security Endpoints for Anti-Duplicate File Ingestion
-  app.get("/api/security/check-file-hash", (req, res) => {
+  app.get("/api/security/check-file-hash", authenticateToken, (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const hash = (req.query.hash as string || "").trim();
-      const schoolId = (req.query.school_id as string || req.query.schoolId as string || "").trim();
+      const schoolId = scope.schoolId;
       const moduleName = (req.query.module as string || "students").trim();
 
       if (!hash) return res.json({ isDuplicate: false });
 
       const key = `${schoolId || 'global'}_${moduleName}_${hash}`;
-      const record = importedFileHashesMap.get(key) || importedFileHashesMap.get(`global_${moduleName}_${hash}`);
+      const record = importedFileHashesMap.get(key);
 
       if (record) {
         return res.json({
@@ -14601,9 +14748,17 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.post("/api/security/record-file-hash", (req, res) => {
+  app.post("/api/security/record-file-hash", authenticateToken, (req: any, res) => {
     try {
-      const { hash, fileName, rowCount, schoolId, module } = req.body || {};
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const { hash, fileName, rowCount, module } = req.body || {};
+      const schoolId = scope.schoolId;
       if (!hash) return res.json({ success: false });
 
       const moduleName = module || "students";
@@ -14625,10 +14780,20 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.post("/api/students/bulk", async (req, res) => {
+  app.post("/api/students/bulk", authenticateToken, async (req: any, res) => {
     try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const fileHash = (req.body?.fileHash || req.headers['x-file-hash'] || '') as string;
       const fileName = (req.body?.fileName || 'import.csv') as string;
       const list = Array.isArray(req.body?.students) ? req.body.students : (Array.isArray(req.body) ? req.body : []);
@@ -14794,12 +14959,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.put("/api/students/:id", async (req, res) => {
+  app.put("/api/students/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.school_id || req.body?.schoolId || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const raw = req.body || {};
 
       let dob = raw.dateOfBirth || raw.date_of_birth;
@@ -14842,7 +15017,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 1. Try Supabase update with snake_case fields
       try {
         if (!isNaN(Number(id))) {
-          const { data, error } = await adminClient.from('students').update(snakePayload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('students').update(snakePayload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) {
             updatedData = data;
           }
@@ -14866,7 +15043,9 @@ NOTIFY pgrst, 'reload schema';`;
       if (!updatedData) {
         try {
           if (!isNaN(Number(id))) {
-            const { data, error } = await adminClient.from('students').update(camelPayload).eq('id', Number(id)).select().maybeSingle();
+            let q = adminClient.from('students').update(camelPayload).eq('id', Number(id));
+            if (schoolId) q = q.eq('school_id', schoolId);
+            const { data, error } = await q.select().maybeSingle();
             if (!error && data) updatedData = data;
           }
         } catch (e) {}
@@ -14897,12 +15076,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.delete("/api/students/:id", async (req, res) => {
+  app.delete("/api/students/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id']) as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const studentId = (req.query.student_id || req.query.studentId) as string;
 
       // 1. Delete by exact id
@@ -14929,12 +15118,15 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      removeFromFallback('students', (item: any) =>
-        String(item.id) === String(id) ||
-        (studentId && (item.studentId === studentId || item.student_id === studentId)) ||
-        item.studentId === String(id) ||
-        item.student_id === String(id)
-      );
+      removeFromFallback('students', (item: any) => {
+        if (schoolId && item.school_id && String(item.school_id) !== String(schoolId)) return false;
+        return (
+          String(item.id) === String(id) ||
+          (studentId && (item.studentId === studentId || item.student_id === studentId)) ||
+          item.studentId === String(id) ||
+          item.student_id === String(id)
+        );
+      });
 
       invalidateDbCache();
       return res.json({ success: true, message: "Student removed successfully from Supabase" });
@@ -14944,12 +15136,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.post("/api/students/bulk-delete", async (req, res) => {
+  app.post("/api/students/bulk-delete", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
-      const { ids, studentIds, schoolId } = req.body || {};
-      const targetSchoolId = (schoolId || req.query.school_id || req.headers['x-school-id']) as string;
+      const { ids, studentIds } = req.body || {};
+      const targetSchoolId = scope.schoolId;
+      if (!targetSchoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
 
       const listIds = Array.isArray(ids) ? ids : [];
       const listStudentIds = Array.isArray(studentIds) ? studentIds : [];
@@ -15010,15 +15212,18 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Teachers CRUD
-  app.get("/api/teachers", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/teachers", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const schoolId = scope.schoolId;
       if (!schoolId && !scope.isSuper) {
-        return res.json([]);
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
       }
       const adminClient = getSupabaseAdmin();
       let query = adminClient.from('teachers').select('*');
@@ -15034,21 +15239,28 @@ NOTIFY pgrst, 'reload schema';`;
       return res.json(parsed);
     } catch (err: any) {
       const scope = resolveTenantAccessScope(req);
-      if (!scope.schoolId && !scope.isSuper) return res.json([]);
+      if (scope.unauthorized) return res.status(401).json({ success: false, error: scope.error });
+      if (scope.forbidden || (!scope.schoolId && !scope.isSuper)) return res.status(403).json({ success: false, error: scope.error || "Forbidden" });
       const fallback = getFromFallback('teachers', scope.schoolId).map((t: any) => normalizeServerTeacherRecord(t));
       return res.json(fallback);
     }
   });
 
-  app.post("/api/teachers", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/teachers", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const adminClient = getSupabaseAdmin();
-      const schoolId = scope.schoolId || (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
       
@@ -15109,12 +15321,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.put("/api/teachers/:id", async (req, res) => {
+  app.put("/api/teachers/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const staffIdParam = String(req.query.staff_id || req.query.staffId || req.body?.staffId || req.body?.staff_id || '').trim();
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
@@ -15150,7 +15372,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 1. Try snake_case update by ID first
       if (!isNaN(Number(id))) {
         try {
-          const { data, error } = await adminClient.from('teachers').update(snakePayload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('teachers').update(snakePayload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -15169,7 +15393,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 3. Try camelCase update fallback
       if (!updatedData && !isNaN(Number(id))) {
         try {
-          const { data, error } = await adminClient.from('teachers').update(camelPayload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('teachers').update(camelPayload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -15197,12 +15423,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.delete("/api/teachers/:id", async (req, res) => {
+  app.delete("/api/teachers/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const staffIdParam = (req.query.staff_id || req.query.staffId || '') as string;
 
       try {
@@ -15227,10 +15463,13 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      removeFromFallback('teachers', (item: any) =>
-        String(item.id) === String(id) ||
-        (sidToDelete && (item.staffId === sidToDelete || item.staff_id === sidToDelete))
-      );
+      removeFromFallback('teachers', (item: any) => {
+        if (schoolId && item.school_id && String(item.school_id) !== String(schoolId)) return false;
+        return (
+          String(item.id) === String(id) ||
+          (sidToDelete && (item.staffId === sidToDelete || item.staff_id === sidToDelete))
+        );
+      });
 
       invalidateDbCache();
       return res.json({ success: true, message: "Teacher deleted successfully" });
@@ -15241,15 +15480,18 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Classes CRUD
-  app.get("/api/classes", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/classes", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const schoolId = scope.schoolId;
       if (!schoolId && !scope.isSuper) {
-        return res.json([]);
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
       }
       const adminClient = getSupabaseAdmin();
       let query = adminClient.from('classes').select('*');
@@ -15265,21 +15507,28 @@ NOTIFY pgrst, 'reload schema';`;
       return res.json(parsed);
     } catch (err: any) {
       const scope = resolveTenantAccessScope(req);
-      if (!scope.schoolId && !scope.isSuper) return res.json([]);
+      if (scope.unauthorized) return res.status(401).json({ success: false, error: scope.error });
+      if (scope.forbidden || (!scope.schoolId && !scope.isSuper)) return res.status(403).json({ success: false, error: scope.error || "Forbidden" });
       const fallback = getFromFallback('classes', scope.schoolId).map((c: any) => normalizeServerClassRecord(c));
       return res.json(fallback);
     }
   });
 
-  app.post("/api/classes", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/classes", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const adminClient = getSupabaseAdmin();
-      const schoolId = scope.schoolId || (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
 
@@ -15315,12 +15564,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.put("/api/classes/:id", async (req, res) => {
+  app.put("/api/classes/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const originalName = String(req.query.name || req.body?.originalName || '').trim();
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
@@ -15341,7 +15600,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 1. Try Supabase update by ID first
       if (!isNaN(Number(id))) {
         try {
-          const { data, error } = await adminClient.from('classes').update(payload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('classes').update(payload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -15371,12 +15632,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.delete("/api/classes/:id", async (req, res) => {
+  app.delete("/api/classes/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const nameParam = (req.query.name || '') as string;
 
       try {
@@ -15396,10 +15667,13 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      removeFromFallback('classes', (item: any) =>
-        String(item.id) === String(id) ||
-        (nameToDelete && item.name?.toLowerCase() === nameToDelete.toLowerCase())
-      );
+      removeFromFallback('classes', (item: any) => {
+        if (schoolId && item.school_id && String(item.school_id) !== String(schoolId)) return false;
+        return (
+          String(item.id) === String(id) ||
+          (nameToDelete && item.name?.toLowerCase() === nameToDelete.toLowerCase())
+        );
+      });
 
       invalidateDbCache();
       return res.json({ success: true, message: "Class deleted successfully" });
@@ -15410,15 +15684,18 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Subjects CRUD
-  app.get("/api/subjects", optionalAuthenticateToken, async (req: any, res) => {
+  app.get("/api/subjects", authenticateToken, async (req: any, res) => {
     try {
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const schoolId = scope.schoolId;
       if (!schoolId && !scope.isSuper) {
-        return res.json([]);
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
       }
       const adminClient = getSupabaseAdmin();
       let query = adminClient.from('subjects').select('*');
@@ -15434,21 +15711,28 @@ NOTIFY pgrst, 'reload schema';`;
       return res.json(parsed);
     } catch (err: any) {
       const scope = resolveTenantAccessScope(req);
-      if (!scope.schoolId && !scope.isSuper) return res.json([]);
+      if (scope.unauthorized) return res.status(401).json({ success: false, error: scope.error });
+      if (scope.forbidden || (!scope.schoolId && !scope.isSuper)) return res.status(403).json({ success: false, error: scope.error || "Forbidden" });
       const fallback = getFromFallback('subjects', scope.schoolId).map((sub: any) => normalizeServerSubjectRecord(sub));
       return res.json(fallback);
     }
   });
 
-  app.post("/api/subjects", optionalAuthenticateToken, async (req: any, res) => {
+  app.post("/api/subjects", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
       const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
       if (scope.forbidden) {
         return res.status(403).json({ success: false, error: scope.error });
       }
       const adminClient = getSupabaseAdmin();
-      const schoolId = scope.schoolId || (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const raw = { ...req.body };
       if (schoolId) raw.school_id = schoolId;
 
@@ -15498,12 +15782,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.put("/api/subjects/:id", async (req, res) => {
+  app.put("/api/subjects/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || req.body?.schoolId || req.body?.school_id || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const originalCode = String(req.query.code || req.body?.originalCode || '').trim();
       const originalName = String(req.query.name || req.body?.originalName || '').trim();
       const raw = { ...req.body };
@@ -15532,7 +15826,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 1. Try snake_case update by ID first
       if (!isNaN(Number(id))) {
         try {
-          const { data, error } = await adminClient.from('subjects').update(snakePayload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('subjects').update(snakePayload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -15553,7 +15849,9 @@ NOTIFY pgrst, 'reload schema';`;
       // 3. Try camelCase update fallback
       if (!updatedData && !isNaN(Number(id))) {
         try {
-          const { data, error } = await adminClient.from('subjects').update(camelPayload).eq('id', Number(id)).select().maybeSingle();
+          let q = adminClient.from('subjects').update(camelPayload).eq('id', Number(id));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data, error } = await q.select().maybeSingle();
           if (!error && data) updatedData = data;
         } catch (e) {}
       }
@@ -15583,12 +15881,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
-  app.delete("/api/subjects/:id", async (req, res) => {
+  app.delete("/api/subjects/:id", authenticateToken, async (req: any, res) => {
     try {
       invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.unauthorized) {
+        return res.status(401).json({ success: false, error: scope.error });
+      }
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
       const adminClient = getSupabaseAdmin();
       const { id } = req.params;
-      const schoolId = (req.query.school_id || req.query.schoolId || req.headers['x-school-id'] || '') as string;
+      const schoolId = scope.schoolId;
+      if (!schoolId && !scope.isSuper) {
+        return res.status(403).json({ success: false, error: "Tenant isolation policy violation: valid school_id required." });
+      }
       const codeParam = (req.query.code || '') as string;
       const nameParam = (req.query.name || '') as string;
 
@@ -15617,11 +15925,14 @@ NOTIFY pgrst, 'reload schema';`;
         } catch (e) {}
       }
 
-      removeFromFallback('subjects', (item: any) =>
-        String(item.id) === String(id) ||
-        (codeParam && item.code?.toLowerCase() === codeParam.toLowerCase()) ||
-        (nameParam && item.name?.toLowerCase() === nameParam.toLowerCase())
-      );
+      removeFromFallback('subjects', (item: any) => {
+        if (schoolId && item.school_id && String(item.school_id) !== String(schoolId)) return false;
+        return (
+          String(item.id) === String(id) ||
+          (codeParam && item.code?.toLowerCase() === codeParam.toLowerCase()) ||
+          (nameParam && item.name?.toLowerCase() === nameParam.toLowerCase())
+        );
+      });
 
       invalidateDbCache();
       return res.json({ success: true, message: "Subject deleted successfully" });
@@ -15771,88 +16082,7 @@ NOTIFY pgrst, 'reload schema';`;
   };
 
   async function resolveTimetableSchoolId(req: any): Promise<string> {
-    const adminClient = getSupabaseAdmin();
-    const rawCandidates = [
-      req.user?.school_id,
-      req.user?.schoolId,
-      req.query?.school_id,
-      req.query?.schoolId,
-      req.headers?.['x-school-id'],
-      req.body?.school_id,
-      req.body?.schoolId
-    ];
-
-    const candidates = rawCandidates
-      .map(v => String(v || '').trim())
-      .filter(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) && v !== '00000000-0000-0000-0000-000000000001');
-
-    try {
-      const { data: schoolsList } = await adminClient
-        .from('schools')
-        .select('id, name, updated_at')
-        .order('updated_at', { ascending: false });
-
-      const validSchools = Array.isArray(schoolsList) ? schoolsList : [];
-      const validIds = new Set(validSchools.map(s => String(s.id)));
-
-      for (const c of candidates) {
-        if (validIds.has(c)) {
-          return c;
-        }
-      }
-
-      // Check if authenticated user has a school_id in public.users
-      if (req.user?.email || req.user?.username) {
-        const { data: uRow } = await adminClient
-          .from('users')
-          .select('school_id')
-          .or(`email.eq.${req.user.email || ''},username.eq.${req.user.username || ''}`)
-          .limit(1)
-          .maybeSingle();
-        if (uRow?.school_id && validIds.has(String(uRow.school_id))) {
-          return String(uRow.school_id);
-        }
-      }
-
-      // Check if incoming class name belongs to a specific school in public.classes
-      const hintClass = String(
-        req.body?.classId ||
-        req.body?.class_id ||
-        req.body?.slots?.[0]?.classId ||
-        req.body?.slots?.[0]?.class_id ||
-        ''
-      ).trim();
-      if (hintClass) {
-        const { data: clsMatch } = await adminClient
-          .from('classes')
-          .select('school_id')
-          .ilike('name', hintClass)
-          .limit(1)
-          .maybeSingle();
-        if (clsMatch?.school_id && validIds.has(String(clsMatch.school_id))) {
-          return String(clsMatch.school_id);
-        }
-      }
-
-      // Prefer a school that has classes/subjects configured (most recently updated)
-      const { data: activeCls } = await adminClient
-        .from('classes')
-        .select('school_id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (activeCls?.school_id && validIds.has(String(activeCls.school_id))) {
-        return String(activeCls.school_id);
-      }
-
-      if (validSchools.length > 0) {
-        return String(validSchools[0].id);
-      }
-    } catch (err) {
-      console.warn('Notice resolving timetable school_id:', err);
-    }
-
-    return candidates[0] || '';
+    return requireAuthenticatedSchoolScope(req);
   }
 
   async function readTimetableMetadataFromSchoolSettings(schoolId: string): Promise<{
@@ -16746,7 +16976,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/timetable - Fetch all timetable slots, suggestions, periods, classes, subjects, teachers, and linked period bells from Supabase
-  app.get("/api/timetable", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/timetable", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveTimetableSchoolId(req);
       const [{ slots, suggestions, periods, classes, subjects, teachers }, bellReconciled] = await Promise.all([
@@ -16765,12 +16995,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/timetable/sync - Auto-migrate existing local slots & suggestions to Supabase and return merged list + synced period bells
-  app.post("/api/timetable/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/timetable/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16805,12 +17038,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/timetable/slots - Create a new timetable slot in Supabase and auto-sync Period Bell Timetable
-  app.post("/api/timetable/slots", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/timetable/slots", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16843,12 +17079,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PUT /api/timetable/slots/:id - Update an existing timetable slot in Supabase and auto-sync Period Bell Timetable
-  app.put("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/timetable/slots/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16873,12 +17112,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/timetable/slots/:id - Delete a timetable slot from Supabase and auto-sync Period Bell Timetable
-  app.delete("/api/timetable/slots/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/timetable/slots/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16901,12 +17143,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/timetable/suggestions - Create a teacher period suggestion in Supabase
-  app.post("/api/timetable/suggestions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/timetable/suggestions", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16933,12 +17178,15 @@ NOTIFY pgrst, 'reload schema';`;
         teachers
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PUT /api/timetable/suggestions/:id - Approve or reject a teacher period suggestion in Supabase
-  app.put("/api/timetable/suggestions/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/timetable/suggestions/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -16994,12 +17242,15 @@ NOTIFY pgrst, 'reload schema';`;
         bellSchedule: bellReconciled.bellSchedule
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/timetable/suggestions/:id - Delete a period suggestion from Supabase
-  app.delete("/api/timetable/suggestions/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/timetable/suggestions/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveTimetableSchoolId(req);
@@ -17016,6 +17267,9 @@ NOTIFY pgrst, 'reload schema';`;
         periods
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -17080,57 +17334,7 @@ NOTIFY pgrst, 'reload schema';`;
   };
 
   async function resolveAttendanceSchoolId(req: any): Promise<string> {
-    const adminClient = getSupabaseAdmin();
-    const baseResolved = await resolveTimetableSchoolId(req);
-
-    // Also check if a student_id or class in the request belongs to a specific school in public.students
-    const hintStudentId = String(
-      req.body?.studentId ||
-      req.body?.student_id ||
-      req.body?.records?.[0]?.studentId ||
-      req.body?.records?.[0]?.student_id ||
-      req.query?.student_id ||
-      req.query?.studentId ||
-      ''
-    ).trim();
-
-    if (hintStudentId) {
-      try {
-        const { data: stuMatch } = await adminClient
-          .from('students')
-          .select('school_id')
-          .eq('student_id', hintStudentId)
-          .limit(1)
-          .maybeSingle();
-        if (stuMatch?.school_id) {
-          return String(stuMatch.school_id);
-        }
-      } catch {}
-    }
-
-    const hintClass = String(
-      req.body?.class ||
-      req.body?.className ||
-      req.query?.class ||
-      req.body?.records?.[0]?.class ||
-      ''
-    ).trim();
-
-    if (hintClass) {
-      try {
-        const { data: stuClsMatch } = await adminClient
-          .from('students')
-          .select('school_id')
-          .ilike('class', hintClass)
-          .limit(1)
-          .maybeSingle();
-        if (stuClsMatch?.school_id) {
-          return String(stuClsMatch.school_id);
-        }
-      } catch {}
-    }
-
-    return baseResolved;
+    return requireAuthenticatedSchoolScope(req);
   }
 
   async function ensureAttendanceReferenceRecordsInSupabase(
@@ -17434,7 +17638,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/attendance - Fetch attendance records, classes, and students for the active school from Supabase
-  app.get("/api/attendance", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/attendance", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveAttendanceSchoolId(req);
       const date = req.query.date ? String(req.query.date).trim() : undefined;
@@ -17458,12 +17662,15 @@ NOTIFY pgrst, 'reload schema';`;
         students
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/attendance - Save single or bulk attendance entries directly to Supabase (public.attendance)
-  app.post("/api/attendance", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/attendance", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -17532,12 +17739,15 @@ NOTIFY pgrst, 'reload schema';`;
         students
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/attendance/sync - Auto-migrate local attendance, students, and classes to Supabase on load
-  app.post("/api/attendance/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/attendance/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveAttendanceSchoolId(req);
@@ -17585,6 +17795,9 @@ NOTIFY pgrst, 'reload schema';`;
         students
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -17620,59 +17833,7 @@ NOTIFY pgrst, 'reload schema';`;
   };
 
   async function resolveResultsSchoolId(req: any): Promise<string> {
-    const baseResolved = await resolveTimetableSchoolId(req);
-    if (baseResolved) return baseResolved;
-
-    const adminClient = getSupabaseAdmin();
-    const hintStudentId = String(
-      req.query?.student_id ||
-      req.query?.studentId ||
-      req.body?.studentId ||
-      req.body?.student_id ||
-      req.body?.results?.[0]?.studentId ||
-      req.body?.results?.[0]?.student_id ||
-      req.body?.records?.[0]?.studentId ||
-      req.body?.records?.[0]?.student_id ||
-      ''
-    ).trim();
-
-    if (hintStudentId) {
-      try {
-        const { data: stuMatch } = await adminClient
-          .from('students')
-          .select('school_id')
-          .eq('student_id', hintStudentId)
-          .limit(1)
-          .maybeSingle();
-        if (stuMatch?.school_id) {
-          return String(stuMatch.school_id);
-        }
-      } catch {}
-    }
-
-    const hintClass = String(
-      req.query?.class ||
-      req.body?.class ||
-      req.body?.className ||
-      req.body?.results?.[0]?.class ||
-      ''
-    ).trim();
-
-    if (hintClass) {
-      try {
-        const { data: clsMatch } = await adminClient
-          .from('students')
-          .select('school_id')
-          .ilike('class', hintClass)
-          .limit(1)
-          .maybeSingle();
-        if (clsMatch?.school_id) {
-          return String(clsMatch.school_id);
-        }
-      } catch {}
-    }
-
-    return baseResolved;
+    return requireAuthenticatedSchoolScope(req);
   }
 
   async function readContinuousAssessmentFromSchoolSettings(schoolId: string): Promise<Record<string, {
@@ -18241,7 +18402,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/results - Fetch academic results and Continuous Assessment (Exercises, Homework, Tests) from Supabase
-  app.get("/api/results", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/results", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveResultsSchoolId(req);
       const className = req.query.class ? String(req.query.class).trim() : undefined;
@@ -18267,12 +18428,15 @@ NOTIFY pgrst, 'reload schema';`;
         allCaMap
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/results/ca - Real-time auto-save of Class Exercises, Homework, and Class Test columns & marks to Supabase
-  app.post("/api/results/ca", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/results/ca", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -18370,12 +18534,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/results - Authoritative bulk save of Class Exercises, 30% Class Scores, 70% Exam Scores, and Report Card totals to Supabase
-  app.post("/api/results", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/results", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -18421,12 +18588,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/results/sync - Auto-migrate local results & CA breakdowns to Supabase on load
-  app.post("/api/results/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/results/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveResultsSchoolId(req);
@@ -18462,6 +18632,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -19194,7 +19367,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // POST /api/lesson-notes/upload-pdf - Upload teacher lesson note PDF directly to Supabase Storage bucket
-  app.post("/api/lesson-notes/upload-pdf", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/lesson-notes/upload-pdf", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const userRole = String(req.user?.role || '').toLowerCase();
       if (userRole === 'parent' || userRole === 'student') {
@@ -19242,12 +19415,15 @@ NOTIFY pgrst, 'reload schema';`;
         pdfUploadedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // GET /api/lesson-notes - Fetch lesson notes and PDF attachments from Supabase
-  app.get("/api/lesson-notes", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/lesson-notes", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveResultsSchoolId(req);
       const term = req.query.term ? String(req.query.term).trim() : undefined;
@@ -19281,12 +19457,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/lesson-notes - Save or submit a teacher lesson note (Structured Template + PDF Upload) to Supabase
-  app.post("/api/lesson-notes", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/lesson-notes", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -19330,12 +19509,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PATCH /api/lesson-notes/:id/review - HOD, Headmaster, or Administrator review & approval stamp in Supabase
-  app.patch("/api/lesson-notes/:id/review", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.patch("/api/lesson-notes/:id/review", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -19392,12 +19574,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/lesson-notes/:id - Delete a lesson note and its PDF object from Supabase Storage
-  app.delete("/api/lesson-notes/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/lesson-notes/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveResultsSchoolId(req);
@@ -19440,12 +19625,15 @@ NOTIFY pgrst, 'reload schema';`;
         lessonNotes: remaining
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/lesson-notes/sync - Reconcile local lesson notes with Supabase
-  app.post("/api/lesson-notes/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/lesson-notes/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveResultsSchoolId(req);
@@ -19474,6 +19662,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -19741,7 +19932,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/fees/structures - Fetch fee_structures and invoices from Supabase (auto-initializing from active students if empty)
-  app.get("/api/fees/structures", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/fees/structures", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveResultsSchoolId(req);
       if (!schoolId) {
@@ -19838,12 +20029,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/fees/structures - Save or update a fee structure in Supabase public.fee_structures
-  app.post("/api/fees/structures", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/fees/structures", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveResultsSchoolId(req);
@@ -19883,12 +20077,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/fees/structures/:id - Delete a fee structure from public.fee_structures
-  app.delete("/api/fees/structures/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/fees/structures/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveResultsSchoolId(req);
@@ -19909,12 +20106,15 @@ NOTIFY pgrst, 'reload schema';`;
         feeStructures: remaining || []
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // GET /api/fees/transactions - Fetch verified fee transactions from Supabase
-  app.get("/api/fees/transactions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/fees/transactions", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveResultsSchoolId(req);
       const studentId = (req.query.student_id || req.query.studentId)
@@ -19928,12 +20128,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/fees/pay - Atomically record a fee payment in Supabase (public.fee_transactions + public.students + public.invoices + public.sms_logs)
-  app.post("/api/fees/pay", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/fees/pay", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const adminClient = getSupabaseAdmin();
@@ -19963,13 +20166,9 @@ NOTIFY pgrst, 'reload schema';`;
       }
       if (!existingStudent && numericId != null && !isNaN(Number(numericId))) {
         try {
-          const { data } = await adminClient.from('students').select('*').eq('id', Number(numericId)).limit(1).maybeSingle();
-          if (data) existingStudent = data;
-        } catch {}
-      }
-      if (!existingStudent && studentId) {
-        try {
-          const { data } = await adminClient.from('students').select('*').eq('student_id', studentId).limit(1).maybeSingle();
+          let q = adminClient.from('students').select('*').eq('id', Number(numericId));
+          if (schoolId) q = q.eq('school_id', schoolId);
+          const { data } = await q.limit(1).maybeSingle();
           if (data) existingStudent = data;
         } catch {}
       }
@@ -20193,12 +20392,15 @@ NOTIFY pgrst, 'reload schema';`;
       });
     } catch (err: any) {
       invalidateDbCache();
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/fees/batch-bill - Save fee_structure in public.fee_structures and bill students + public.invoices in Supabase
-  app.post("/api/fees/batch-bill", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/fees/batch-bill", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const userRole = String(req.user?.role || '').toLowerCase();
@@ -20323,12 +20525,15 @@ NOTIFY pgrst, 'reload schema';`;
       });
     } catch (err: any) {
       invalidateDbCache();
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // Check Arkesel Bulk SMS configuration status on server
-  app.get("/api/sms/config", (req, res) => {
+  app.get("/api/sms/config", authenticateToken, (req, res) => {
     let apiKey = (process.env.ARKESEL_API_KEY || "").trim();
     if (!apiKey && fs.existsSync(path.join(process.cwd(), ".env.example"))) {
       try {
@@ -20343,7 +20548,6 @@ NOTIFY pgrst, 'reload schema';`;
     }
     res.json({
       hasApiKey: !!apiKey,
-      apiKey: apiKey,
       apiKeyAbbrev: apiKey 
         ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` 
         : "",
@@ -20352,7 +20556,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Paystack initialization endpoint
-  app.post("/api/paystack/initialize", async (req, res) => {
+  app.post("/api/paystack/initialize", authenticateToken, async (req, res) => {
     const { amount, email } = req.body;
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     if (!secretKey) {
@@ -20387,7 +20591,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Fetch Arkesel client balance details
-  app.get("/api/sms/balance-arkesel", async (req, res) => {
+  app.get("/api/sms/balance-arkesel", authenticateToken, async (req, res) => {
     if (smsBalanceCacheStore && (Date.now() - smsBalanceCacheStore.timestamp < SMS_BALANCE_CACHE_TTL_MS)) {
       res.setHeader("Cache-Control", "private, max-age=60");
       return res.json(smsBalanceCacheStore.data);
@@ -20483,7 +20687,7 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Proxy Endpoint for Arkesel v2 Bulk SMS Service
-  app.post("/api/sms/send-arkesel", async (req, res) => {
+  app.post("/api/sms/send-arkesel", authenticateToken, async (req, res) => {
     const { sender, message, recipients } = req.body;
     let apiKey = (process.env.ARKESEL_API_KEY || "").trim();
     if (!apiKey && fs.existsSync(path.join(process.cwd(), ".env.example"))) {
@@ -20722,19 +20926,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   async function resolveSirenSchoolId(req: any): Promise<string> {
-    const baseResolved = await resolveTimetableSchoolId(req);
-    if (baseResolved) return baseResolved;
-    try {
-      const adminClient = getSupabaseAdmin();
-      const { data: sch } = await adminClient
-        .from('schools')
-        .select('id')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (sch?.id) return String(sch.id);
-    } catch {}
-    return '';
+    return requireAuthenticatedSchoolScope(req);
   }
 
   const SIREN_CONSOLE_DDL_SQL = `-- Campus-Wide Siren & Broadcast Console Tables for Supabase
@@ -21733,7 +21925,7 @@ NOTIFY pgrst, 'reload schema';`;
   }, 1500);
 
   // GET /api/siren/db-status - Inspect live Supabase tables connected to the Siren Console
-  app.get("/api/siren/db-status", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/siren/db-status", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       await readSirenConsoleStateFromSupabase(schoolId);
@@ -21744,12 +21936,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/provision-tables - Provision or verify Siren Console tables & seed initial records in Supabase
-  app.post("/api/siren/provision-tables", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/provision-tables", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const pgRes = await tryProvisionSirenDedicatedTablesViaPg();
@@ -21764,12 +21959,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // GET /api/siren/state - Fetch canonical Siren Console state from Supabase (enriched with School Timetable link)
-  app.get("/api/siren/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/siren/state", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const [state, reconciled, dbStatus] = await Promise.all([
@@ -21788,12 +21986,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/sync-timetable - Two-way sync between School Timetable and Siren Console Period Bell Timetable
-  app.post("/api/siren/sync-timetable", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/sync-timetable", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const incomingBells = Array.isArray(req.body?.bellSchedule) ? req.body.bellSchedule : undefined;
@@ -21817,12 +22018,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/sync - Reconcile & migrate local Siren Console data with Supabase
-  app.post("/api/siren/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const body = req.body || {};
@@ -21920,12 +22124,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/broadcast - Trigger an emergency alarm, period bell, or live intercom announcement in Supabase
-  app.post("/api/siren/broadcast", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/broadcast", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const body = req.body || {};
@@ -22044,6 +22251,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -22099,15 +22309,18 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   };
 
-  app.delete("/api/siren/broadcast", optionalAuthenticateToken, squelchSirenHandler);
-  app.post("/api/siren/squelch", optionalAuthenticateToken, squelchSirenHandler);
+  app.delete("/api/siren/broadcast", authenticateToken, squelchSirenHandler);
+  app.post("/api/siren/squelch", authenticateToken, squelchSirenHandler);
 
   // PUT /api/siren/schedule - Save automated period bell timetable schedule to Supabase
-  app.put("/api/siren/schedule", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/siren/schedule", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const rawSchedule = Array.isArray(req.body?.bellSchedule)
@@ -22182,12 +22395,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PUT /api/siren/settings - Save acoustic volume & global mute preferences to Supabase
-  app.put("/api/siren/settings", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/siren/settings", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const patch: Partial<ServerSirenConsoleState> = {};
@@ -22207,12 +22423,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/recordings - Save recorded microphone announcement or uploaded audio chime to Supabase Storage + school_settings
-  app.post("/api/siren/recordings", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/recordings", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const body = req.body?.recording || req.body || {};
@@ -22283,12 +22502,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/siren/recordings/:id - Delete a custom audio recording from Supabase Storage & school_settings
-  app.delete("/api/siren/recordings/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/siren/recordings/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const recId = String(req.params.id || '').trim();
@@ -22337,12 +22559,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/siren/logs - Append a siren trigger or drill log to Supabase
-  app.post("/api/siren/logs", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/siren/logs", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       const body = req.body?.log || req.body || {};
@@ -22403,12 +22628,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/siren/logs - Clear tenant siren trigger & drill logs in Supabase
-  app.delete("/api/siren/logs", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/siren/logs", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveSirenSchoolId(req);
       if (schoolId) {
@@ -22446,6 +22674,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -22657,66 +22888,7 @@ NOTIFY pgrst, 'reload schema';`;
   };
 
   async function resolveEvotingSchoolId(req: any): Promise<string> {
-    const adminClient = getSupabaseAdmin();
-
-    // 1. Check if a studentId hint is provided in body/query and resolve its school_id
-    const hintStudentId = String(
-      req.body?.studentId ||
-      req.body?.student_id ||
-      req.query?.studentId ||
-      req.query?.student_id ||
-      ''
-    ).trim();
-    if (hintStudentId) {
-      try {
-        const { data: stuMatch } = await adminClient
-          .from('students')
-          .select('school_id')
-          .ilike('student_id', hintStudentId)
-          .limit(1)
-          .maybeSingle();
-        if (stuMatch?.school_id) return String(stuMatch.school_id);
-      } catch {}
-    }
-
-    // 2. Check if a pollId hint is provided in params/body and resolve its school_id
-    const hintPollId = Number(req.params?.id || req.body?.pollId || req.body?.poll_id || req.query?.pollId || req.query?.poll_id || 0);
-    if (hintPollId > 0 && (req.path?.includes('/polls/') || req.body?.pollId || req.query?.pollId)) {
-      try {
-        const { data: pollMatch } = await adminClient
-          .from('polls')
-          .select('school_id')
-          .eq('id', hintPollId)
-          .limit(1)
-          .maybeSingle();
-        if (pollMatch?.school_id) return String(pollMatch.school_id);
-      } catch {}
-    }
-
-    // 3. Use standard tenant / timetable / siren resolution
-    const baseResolved = await resolveTimetableSchoolId(req);
-    if (baseResolved) return baseResolved;
-
-    // 4. Check if any school has polls or students in Supabase
-    try {
-      const { data: pollSch } = await adminClient
-        .from('polls')
-        .select('school_id')
-        .limit(1)
-        .maybeSingle();
-      if (pollSch?.school_id) return String(pollSch.school_id);
-    } catch {}
-
-    try {
-      const { data: stuSch } = await adminClient
-        .from('students')
-        .select('school_id')
-        .limit(1)
-        .maybeSingle();
-      if (stuSch?.school_id) return String(stuSch.school_id);
-    } catch {}
-
-    return await resolveSirenSchoolId(req);
+    return requireAuthenticatedSchoolScope(req);
   }
 
   const buildBallotReceiptCode = (raw: {
@@ -23374,19 +23546,6 @@ NOTIFY pgrst, 'reload schema';`;
       ? stuRes.data.map((s: any) => normalizeServerStudentRecord(s))
       : [];
 
-    if (students.length === 0) {
-      try {
-        const { data: anyStudents } = await adminClient
-          .from('students')
-          .select('*')
-          .order('first_name', { ascending: true })
-          .limit(200);
-        if (Array.isArray(anyStudents) && anyStudents.length > 0) {
-          students = anyStudents.map((s: any) => normalizeServerStudentRecord(s));
-        }
-      } catch {}
-    }
-
     const rawCandidates = (candRes.data || [])
       .map((c: any) => normalizeCandidateRecord(c))
       .filter(Boolean) as NonNullable<ReturnType<typeof normalizeCandidateRecord>>[];
@@ -23459,7 +23618,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/evoting/state - Fetch polls, candidates, votes, votes_table, students, and table health from Supabase
-  app.get("/api/evoting/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/evoting/state", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveEvotingSchoolId(req);
       const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: true });
@@ -23481,12 +23640,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/sync - Two-way synchronize local Dexie polls/candidates/votes/students with Supabase
-  app.post("/api/evoting/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -23607,12 +23769,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/verify-voter - Authenticate Student ID against Supabase public.students & return voted poll IDs
-  app.post("/api/evoting/verify-voter", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/verify-voter", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveEvotingSchoolId(req);
       const rawStudentId = String(req.body?.studentId || req.body?.student_id || '').trim();
@@ -23635,18 +23800,7 @@ NOTIFY pgrst, 'reload schema';`;
         if (scopedStu) matchedStudentRow = scopedStu;
       }
 
-      // 2. Fallback: search across public.students by student_id
-      if (!matchedStudentRow) {
-        const { data: globalStu } = await adminClient
-          .from('students')
-          .select('*')
-          .ilike('student_id', rawStudentId)
-          .limit(1)
-          .maybeSingle();
-        if (globalStu) matchedStudentRow = globalStu;
-      }
-
-      // 3. If student exists in client Dexie but wasn't synced to Supabase yet, register them in public.students
+      // 2. If student exists in client Dexie but wasn't synced to Supabase yet, register them in public.students
       if (!matchedStudentRow && req.body?.localStudent && typeof req.body.localStudent === 'object' && schoolId) {
         const ls = req.body.localStudent;
         if (String(ls.studentId || '').trim().toUpperCase() === rawStudentId.toUpperCase()) {
@@ -23713,12 +23867,15 @@ NOTIFY pgrst, 'reload schema';`;
         votesCastCount: (studentVoteRows || []).length
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/polls - Create a new election poll in Supabase public.polls
-  app.post("/api/evoting/polls", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/polls", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -23783,12 +23940,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PUT /api/evoting/polls/:id - Update election status or details in Supabase public.polls
-  app.put("/api/evoting/polls/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/evoting/polls/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const pollId = Number(req.params.id);
@@ -23847,12 +24007,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/evoting/polls/:id - Delete an election poll (and cascade its candidates & votes) in Supabase
-  app.delete("/api/evoting/polls/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/evoting/polls/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const pollId = Number(req.params.id);
@@ -23916,12 +24079,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/candidates - Register a nominee (with optional Supabase Storage portrait upload)
-  app.post("/api/evoting/candidates", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/candidates", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -24009,12 +24175,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/evoting/candidates/:id - Remove a candidate nomination from Supabase
-  app.delete("/api/evoting/candidates/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/evoting/candidates/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const candidateId = Number(req.params.id);
@@ -24064,12 +24233,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/vote - Atomically verify voter, block double-voting, record votes in BOTH public.votes and public.votes_table, increment tallies, and log SMS/Audit
-  app.post("/api/evoting/vote", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/vote", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -24108,12 +24280,9 @@ NOTIFY pgrst, 'reload schema';`;
       const adminClient = getSupabaseAdmin();
 
       // 1. Verify poll is active
-      const { data: pollRow } = await adminClient
-        .from('polls')
-        .select('*')
-        .eq('id', pollId)
-        .limit(1)
-        .maybeSingle();
+      let pq = adminClient.from('polls').select('*').eq('id', pollId);
+      if (schoolId) pq = pq.eq('school_id', schoolId);
+      const { data: pollRow } = await pq.limit(1).maybeSingle();
 
       if (!pollRow) {
         return res.status(404).json({ success: false, error: "Selected election event was not found in Supabase." });
@@ -24128,12 +24297,9 @@ NOTIFY pgrst, 'reload schema';`;
       const effectiveSchoolId = String(pollRow.school_id || schoolId || '');
 
       // 2. Verify student in public.students (or register if passed in body.student)
-      let { data: studentRow } = await adminClient
-        .from('students')
-        .select('*')
-        .ilike('student_id', rawStudentId)
-        .limit(1)
-        .maybeSingle();
+      let sq = adminClient.from('students').select('*').ilike('student_id', rawStudentId);
+      if (effectiveSchoolId) sq = sq.eq('school_id', effectiveSchoolId);
+      let { data: studentRow } = await sq.limit(1).maybeSingle();
 
       if (!studentRow && req.body?.student && effectiveSchoolId) {
         await ensureAttendanceReferenceRecordsInSupabase(effectiveSchoolId, [], [req.body.student]);
@@ -24337,12 +24503,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // GET /api/evoting/votes-table - Query and filter enriched records from Supabase votes_table & votes
-  app.get("/api/evoting/votes-table", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/evoting/votes-table", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveEvotingSchoolId(req);
       const evotingData = await fetchSchoolEvotingFromSupabase(schoolId, { allowAutoSeed: true });
@@ -24405,12 +24574,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // GET /api/evoting/votes-table/verify/:query - Verify a ballot receipt code or Student ID against Supabase votes_table & votes
-  app.get("/api/evoting/votes-table/verify/:query", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/evoting/votes-table/verify/:query", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveEvotingSchoolId(req);
       const rawQuery = String(req.params.query || '').trim();
@@ -24450,12 +24622,15 @@ NOTIFY pgrst, 'reload schema';`;
         verifiedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/evoting/votes-table/recount - Recalculate all candidate tallies directly from Supabase votes_table & votes rows
-  app.post("/api/evoting/votes-table/recount", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/evoting/votes-table/recount", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -24521,12 +24696,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/evoting/votes-table/:id - Void a cast ballot row (or reset test votes for a poll) in Supabase votes_table & votes
-  app.delete("/api/evoting/votes-table/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/evoting/votes-table/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveEvotingSchoolId(req);
@@ -24637,6 +24815,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -24755,20 +24936,7 @@ NOTIFY pgrst, 'reload schema';`;
   ];
 
   async function resolveInventorySchoolId(req: any): Promise<string> {
-    const baseResolved = await resolveTimetableSchoolId(req);
-    if (baseResolved) return baseResolved;
-
-    const adminClient = getSupabaseAdmin();
-    try {
-      const { data: invSch } = await adminClient
-        .from('inventory_items')
-        .select('school_id')
-        .limit(1)
-        .maybeSingle();
-      if (invSch?.school_id) return String(invSch.school_id);
-    } catch {}
-
-    return await resolveEvotingSchoolId(req);
+    return requireAuthenticatedSchoolScope(req);
   }
 
   const normalizeInventoryItemRecord = (raw: any, defaultSchoolId?: string) => {
@@ -25152,7 +25320,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // GET /api/inventory/state - Fetch inventory_items, stock_movements, school_expenses, and table status from Supabase
-  app.get("/api/inventory/state", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.get("/api/inventory/state", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const schoolId = await resolveInventorySchoolId(req);
       const invData = await fetchSchoolInventoryFromSupabase(schoolId, { allowAutoSeed: true });
@@ -25169,12 +25337,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/inventory/sync - Two-way synchronize local Dexie inventory & expenses with Supabase
-  app.post("/api/inventory/sync", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/inventory/sync", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveInventorySchoolId(req);
@@ -25292,12 +25463,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/inventory/items - Create a new stock commodity in Supabase public.inventory_items & log initial stock in public.stock_movements
-  app.post("/api/inventory/items", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/inventory/items", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveInventorySchoolId(req);
@@ -25392,12 +25566,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // PUT /api/inventory/items/:id - Update stock commodity details in Supabase public.inventory_items & log any quantity delta in public.stock_movements
-  app.put("/api/inventory/items/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.put("/api/inventory/items/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const itemId = Number(req.params.id);
@@ -25408,11 +25585,9 @@ NOTIFY pgrst, 'reload schema';`;
       const schoolId = await resolveInventorySchoolId(req);
       const adminClient = getSupabaseAdmin();
 
-      const { data: existingItem } = await adminClient
-        .from('inventory_items')
-        .select('*')
-        .eq('id', itemId)
-        .maybeSingle();
+      let findQ = adminClient.from('inventory_items').select('*').eq('id', itemId);
+      if (schoolId) findQ = findQ.eq('school_id', schoolId);
+      const { data: existingItem } = await findQ.maybeSingle();
 
       const prevQty = Number(existingItem?.quantity ?? 0);
       const newQty =
@@ -25494,12 +25669,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/inventory/items/:id/adjust - Adjust commodity quantity (+ / - / restock / issue) and record movement in Supabase public.stock_movements
-  app.post("/api/inventory/items/:id/adjust", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/inventory/items/:id/adjust", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const itemId = Number(req.params.id);
@@ -25510,11 +25688,9 @@ NOTIFY pgrst, 'reload schema';`;
       const schoolId = await resolveInventorySchoolId(req);
       const adminClient = getSupabaseAdmin();
 
-      const { data: existingItem, error: findErr } = await adminClient
-        .from('inventory_items')
-        .select('*')
-        .eq('id', itemId)
-        .maybeSingle();
+      let findQ = adminClient.from('inventory_items').select('*').eq('id', itemId);
+      if (schoolId) findQ = findQ.eq('school_id', schoolId);
+      const { data: existingItem, error: findErr } = await findQ.maybeSingle();
 
       if (findErr || !existingItem) {
         return res.status(404).json({ success: false, error: "Inventory commodity not found in Supabase." });
@@ -25545,10 +25721,12 @@ NOTIFY pgrst, 'reload schema';`;
             : `Issued ${Math.abs(actualDelta)} unit(s) of ${existingItem.item_name}`)
       ).trim();
 
-      const { error: updErr } = await adminClient
+      let updQ = adminClient
         .from('inventory_items')
         .update({ quantity: newQty, last_updated: now })
         .eq('id', itemId);
+      if (effectiveSchoolId) updQ = updQ.eq('school_id', effectiveSchoolId);
+      const { error: updErr } = await updQ;
 
       if (updErr) {
         return res.status(500).json({ success: false, error: sanitizeErrorMessage(updErr) });
@@ -25610,12 +25788,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/inventory/items/:id - Delete an inventory commodity from Supabase public.inventory_items
-  app.delete("/api/inventory/items/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/inventory/items/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const itemId = Number(req.params.id);
@@ -25658,12 +25839,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // POST /api/inventory/expenses - Record an overhead or Inventory Restock expense in Supabase public.school_expenses (and update inventory_items + stock_movements)
-  app.post("/api/inventory/expenses", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/inventory/expenses", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const schoolId = await resolveInventorySchoolId(req);
@@ -25698,6 +25882,7 @@ NOTIFY pgrst, 'reload schema';`;
           .from('inventory_items')
           .select('*')
           .eq('id', inventoryItemId)
+          .eq('school_id', schoolId)
           .maybeSingle();
 
         if (!targetItem) {
@@ -25786,12 +25971,15 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
   // DELETE /api/inventory/expenses/:id - Delete an expense record (and roll back restocked quantity if Inventory Restock)
-  app.delete("/api/inventory/expenses/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+  app.delete("/api/inventory/expenses/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       invalidateDbCache();
       const expenseId = Number(req.params.id);
@@ -25802,11 +25990,9 @@ NOTIFY pgrst, 'reload schema';`;
       const schoolId = await resolveInventorySchoolId(req);
       const adminClient = getSupabaseAdmin();
 
-      const { data: existingExp } = await adminClient
-        .from('school_expenses')
-        .select('*')
-        .eq('id', expenseId)
-        .maybeSingle();
+      let findExpQ = adminClient.from('school_expenses').select('*').eq('id', expenseId);
+      if (schoolId) findExpQ = findExpQ.eq('school_id', schoolId);
+      const { data: existingExp } = await findExpQ.maybeSingle();
 
       const effectiveSchoolId = String(existingExp?.school_id || schoolId || '');
       const validUserId = await resolveValidSupabaseUserId(effectiveSchoolId, req.user?.id);
@@ -25819,20 +26005,20 @@ NOTIFY pgrst, 'reload schema';`;
       ) {
         const itemId = Number(existingExp.inventory_item_id);
         const revertQty = Number(existingExp.quantity_purchased);
-        const { data: targetItem } = await adminClient
-          .from('inventory_items')
-          .select('*')
-          .eq('id', itemId)
-          .maybeSingle();
+        let findItemQ = adminClient.from('inventory_items').select('*').eq('id', itemId);
+        if (effectiveSchoolId) findItemQ = findItemQ.eq('school_id', effectiveSchoolId);
+        const { data: targetItem } = await findItemQ.maybeSingle();
 
         if (targetItem) {
           const prevQty = Math.max(0, Number(targetItem.quantity || 0));
           const newQty = Math.max(0, prevQty - revertQty);
           const now = Date.now();
-          await adminClient
+          let updItemQ = adminClient
             .from('inventory_items')
             .update({ quantity: newQty, last_updated: now })
             .eq('id', itemId);
+          if (effectiveSchoolId) updItemQ = updItemQ.eq('school_id', effectiveSchoolId);
+          await updItemQ;
 
           try {
             await adminClient.from('stock_movements').insert([
@@ -25877,6 +26063,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
@@ -26074,12 +26263,6 @@ NOTIFY pgrst, 'reload schema';`;
           .eq('id', schoolId)
           .limit(1)
           .maybeSingle();
-        schoolRow = data || null;
-      } catch {}
-    }
-    if (!schoolRow) {
-      try {
-        const { data } = await adminClient.from('schools').select('*').limit(1).maybeSingle();
         schoolRow = data || null;
       } catch {}
     }
@@ -26291,12 +26474,12 @@ NOTIFY pgrst, 'reload schema';`;
     };
   }
 
-  app.get("/api/settings/state", async (req: any, res) => {
+  app.get("/api/settings/state", authenticateToken, async (req: any, res) => {
     try {
       const schoolId = await resolveInventorySchoolId(req);
-      const userId = req.query.user_id || req.user?.id || null;
-      const username = (req.query.username as string) || req.user?.username || null;
-      const role = (req.query.role as string) || (req.headers['x-user-role'] as string) || req.user?.role || null;
+      const userId = req.user?.id || req.query.user_id || null;
+      const username = req.user?.username || (req.query.username as string) || null;
+      const role = req.user?.role || (req.query.role as string) || null;
 
       const state = await fetchFullAppSettingsFromSupabase({
         schoolId,
@@ -26313,22 +26496,23 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: Date.now()
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  app.post("/api/settings/save", async (req: any, res) => {
+  app.post("/api/settings/save", authenticateToken, async (req: any, res) => {
     try {
       const schoolId = await resolveInventorySchoolId(req);
       const body = req.body || {};
-      const callerRole = String(
-        body.role || req.headers['x-user-role'] || req.user?.role || 'admin'
-      )
+      const callerRole = String(req.user?.role || 'teacher')
         .trim()
         .toLowerCase();
       const rawSection = String(body.section || body.key || 'profile').trim();
-      const userId = body.userId ?? body.user_id ?? req.user?.id ?? null;
-      const username = body.username ?? req.user?.username ?? null;
+      const userId = req.user?.id ?? body.userId ?? body.user_id ?? null;
+      const username = req.user?.username ?? body.username ?? null;
 
       // 1. Enforce Role-Based Access Control (RBAC)
       const permCheck = canRoleModifySettingsSection(callerRole, rawSection);
@@ -26604,19 +26788,22 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });
 
-  app.post("/api/settings/sync", async (req: any, res) => {
+  app.post("/api/settings/sync", authenticateToken, async (req: any, res) => {
     try {
       const schoolId = await resolveInventorySchoolId(req);
       const body = req.body || {};
-      const callerRole = String(body.role || req.headers['x-user-role'] || req.user?.role || 'admin')
+      const callerRole = String(req.user?.role || 'teacher')
         .trim()
         .toLowerCase();
-      const userId = body.userId ?? body.user_id ?? req.user?.id ?? null;
-      const username = body.username ?? req.user?.username ?? null;
+      const userId = req.user?.id ?? body.userId ?? body.user_id ?? null;
+      const username = req.user?.username ?? body.username ?? null;
 
       const current = await fetchFullAppSettingsFromSupabase({
         schoolId,
@@ -26756,6 +26943,9 @@ NOTIFY pgrst, 'reload schema';`;
         syncedAt: now
       });
     } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
     }
   });

@@ -1,98 +1,113 @@
-# Complete `server.ts` Hardening, Dead-Code Removal & Supabase Auth Consolidation
+# Remediate Server-Wide Unauthenticated Cross-Tenant Data Exposure
 
-This plan verifies the current live state of every item requested in `server.ts` and related modules, resolves all remaining discrepancies discovered in the actual files, and consolidates server authentication around Supabase Auth (`adminClient.auth.getUser(accessToken)`).
+This plan eliminates the structural unauthenticated cross-tenant data exposure across `server.ts` by locking down directory/license endpoints, enforcing mandatory `authenticateToken` middleware on every tenant and administrative route, and hardening `resolveTenantAccessScope` plus all module-level `resolve*SchoolId` helpers so unauthenticated or cross-tenant requests never fall through to client-supplied `school_id` parameters.
 
-## User Review & Critical Decisions
+## User Review Required
 
 > [!IMPORTANT]
-> **Line-by-Line Audit of Current Workspace State (Verified Before Any Edits)**
->
-> - **Pre-Check (`bcryptjs` & `password_hash`)**:
->   - `package.json` has no `bcryptjs` dependency, and `server.ts` has no `import bcrypt` or `bcrypt.compare`/`hash` calls.
->   - `POST /api/auth/login` authenticates passwords via `authClient.auth.signInWithPassword({ email: canonicalEmail, password: rawPasswordStr })` (`server.ts:3830`) and does not read `public.users.password_hash`.
->   - **Remaining references found to clean up**: `tests/security_and_api.test.ts` (lines 967–1036) and `supabase/schema_master.sql` (line 161) still reference `password_hash` / bcrypt hashes.
-> - **Item 1 (TLS / DNS Bypass & `vwmahpuzthyxnzrohfxw`)**:
->   - `NODE_TLS_REJECT_UNAUTHORIZED = '0'` and the `dnsCache` / `dns.lookup` monkey-patch are gone from `server.ts`, **but `import dns from "dns";` is still present on `server.ts:7`**, and `lib/supabase/server.ts:24-27` still contains a string reference to the deleted project `vwmahpuzthyxnzrohfxw`. Both will be removed completely (standard Node DNS works natively in AI Studio, Vercel, and Electron).
-> - **Item 2 (Hardcoded Fallbacks & Startup Service-Role Enforcement in `initDatabase()` / `getSupabaseAdmin()`)**:
->   - `getSupabaseAdmin()` in `lib/supabase/server.ts` throws when `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY` is missing, **but `initDatabase()` in `server.ts:708-721` wraps `getSupabaseAdmin()` in a `try/catch` that swallows the fatal error into a `console.warn`**, and `server.ts:39` & `server.ts:705` still have hardcoded URL fallbacks (`|| 'https://niavmonyfwqlryppgksy.supabase.co'`). `initDatabase()` will be updated to use `getSupabaseUrlStrict()` and rethrow fatal startup configuration errors immediately.
-> - **Item 3 (`createPostgresTables()` & `pgPool` / `pg` Direct-SQL Code)**:
->   - While `createPostgresTables()` was removed earlier, **`server.ts` STILL has `import pg from "pg";` (line 3), `const pgPool: any = null;` (line 42), and 12 unreachable `if (!insertedData && pgPool)` / `if (pgPool)` blocks with embedded raw SQL strings across lines 14535–15787** (in students, teachers, classes, and subjects routes). All 12 `pgPool` SQL blocks, `const pgPool`, and `import pg from "pg"` will be deleted completely.
-> - **Item 4 (`pullData()` Error Visibility & Per-Table Error Flags)**:
->   - `pullData()` (`server.ts:1093-1427`) will log every failed Supabase table read via `console.error` with the table name, error code, and message, record per-table error flags in `tableErrors: Record<string, string>`, and throw / surface those errors on `/api/sync/pull` instead of silently returning `data[table] = []`.
-> - **Item 5 (CORS Allow-List & `.env.example`)**:
->   - `server.ts` will read `ALLOWED_ORIGINS` (comma-separated) to reflect only explicitly allowed origins, and `.env.example` (currently `ALLOWED_ORIGINS=`) will be populated with the real frontend origins (`https://schoolsphere.app,https://www.schoolsphere.app,http://localhost:3000`).
-> - **Item 6 (Auth Consolidation Audit Findings)**:
->   - **`electron-main.cjs` & `preload.cjs` check**: Neither file references `lib/auth.ts`, `lib/multiTenantAuth.ts`, or any custom JWT token (`electron-main.cjs` only spawns `dist/server.cjs` and opens `http://localhost:3000`; `preload.cjs` only exposes `{ platform, isElectron: true }`).
->   - **Dexie / Offline Sync (`src/db/schema.ts`, `src/lib/syncService.ts`, `src/lib/api.ts`) check**: Dexie stores (`src/db/schema.ts`) do not store custom tokens; `syncService.ts` and `api.ts` read the Supabase `access_token` (`esepa_supabase_access_token` / `esepa_auth_token`) and pass `Authorization: Bearer <accessToken>`.
->   - **Auth verification consolidation**: `lib/auth.ts` still had a unverified `jwt.decode(token)` fallback (`lib/auth.ts:71-77`) when `SUPABASE_JWT_SECRET` was absent. We will update `authenticateToken` and `optionalAuthenticateToken` to verify tokens directly with `await getSupabaseAdmin().auth.getUser(token)` (with short-lived verified session caching and `SUPABASE_JWT_SECRET` HMAC verification), and remove the unverified `jwt.decode()` fallback.
+> **1. `GET /api/schools` (`/api/tenants`) & `GET /api/license/list` Lockdown**
+> - `GET /api/schools` and `GET /api/tenants` will require mandatory `authenticateToken`.
+>   - **Platform Creator (`creator` / `super_admin`)**: Receives the full tenant directory and license keys.
+>   - **Authenticated Tenant User (`admin`, `teacher`, etc.)**: Receives **only** their own assigned school (`id === req.user.school_id`), never any other tenant's record or license key.
+>   - **Unauthenticated Caller**: Rejected immediately with `401 Unauthorized` (pre-login school discovery already uses the sanitized `GET /api/schools/public` and `GET /api/auth/resolve-school` routes).
+> - `GET /api/license/list` (`/api/license/generated`), `POST /api/license/generate`, `POST|PUT /api/license/update`, `POST /api/license/revoke`, `POST /api/license/sync`, `POST /api/license/repair-relationships`, and `POST /api/license/maintenance` will require `authenticateToken` and restrict cross-tenant license enumeration/mutation to `creator` / `super_admin` (or own-tenant read for `admin`).
+
+> [!WARNING]
+> **2. Fail-Closed `resolveTenantAccessScope` & Module `resolve*SchoolId` Helpers**
+> - **`resolveTenantAccessScope(req, explicitSchoolId)`**:
+>   - If `!req.user`: immediately returns `{ schoolId: '', isSuper: false, forbidden: true, unauthorized: true, error: 'Authentication required.' }` — never falls through to `validRequestedSchoolId`.
+>   - If `!isSuper && !validUserSchoolId`: immediately returns `{ schoolId: '', isSuper: false, forbidden: true, error: 'Tenant isolation policy violation: User account has no assigned school_id.' }` — never falls through to `validRequestedSchoolId`.
+>   - If `!isSuper && validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId`: returns `forbidden: true` (`403 Forbidden`).
+>   - Non-Creator effective `schoolId` is strictly `validUserSchoolId`.
+> - **All Module Helpers (`resolveTimetableSchoolId`, `resolveAttendanceSchoolId`, `resolveResultsSchoolId`, `resolveSirenSchoolId`, `resolveEvotingSchoolId`, `resolveInventorySchoolId`, `resolvePayrollSchoolId`)**:
+>   - Refactored to delegate directly to `resolveTenantAccessScope(req)` and throw a typed `TenantAccessError` (`statusCode: 401 | 403`) if `unauthorized` or `forbidden`, removing all unauthenticated fallbacks that previously accepted `req.query.school_id` / `req.body.school_id` or queried arbitrary rows from `schools`, `classes`, or `students`.
 
 ---
 
-## 1. Overview & Core Concept
-
-- **What It Does**: Eliminates all residual legacy database connection code (`pgPool`, `import pg`, `import dns`), enforces fail-fast startup validation when `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_URL` is missing, surfaces explicit per-table errors in `pullData()`, restricts CORS to `ALLOWED_ORIGINS`, and verifies all bearer tokens through Supabase Auth (`adminClient.auth.getUser(accessToken)`).
-- **Target Audience / Persona**: School administrators, teachers, and platform operators running SchoolSphere across cloud and desktop deployments.
-- **Key Value**: Guarantees a clean install with zero missing dependencies, prevents silent data-pull failures or unauthenticated token Forgery, and ensures `niavmonyfwqlryppgksy` is the sole Supabase backend.
-
----
-
-## 2. User Experience & Visual Design
-
-- **Key User Flows**:
-  - **Password & License Login**: Users sign in via `supabase.auth.signInWithPassword()` or license activation and receive a real Supabase Auth `access_token` and `refresh_token`.
-  - **Protected API Requests**: Every `/api/*` call bearing `Authorization: Bearer <access_token>` is verified against Supabase Auth (`adminClient.auth.getUser(accessToken)`), hydrating tenant scope (`school_id`) and role.
-  - **Data Sync (`/api/sync/pull`)**: If any Supabase table query fails during sync, the backend logs the exact table name and error and returns structured error details rather than silently returning empty arrays.
-- **Visual Identity & Theme**:
-  - Backend-focused architectural remediation; preserves the existing SchoolSphere UI without visual regressions.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Complete Removal of `pgPool` and `import pg` / `import dns`**
-  - *Chosen Approach*: Delete `import pg`, `import dns`, `const pgPool`, and all 12 `if (... && pgPool)` SQL fallback blocks in `server.ts`.
-  - *Why*: `dbMode` is exclusively `"supabase"` via `@supabase/supabase-js`; `pgPool` was hardcoded to `null`, making all 12 SQL blocks dead code.
-- **Decision 2: Fail-Fast Startup in `initDatabase()`**
-  - *Chosen Approach*: Call `getSupabaseUrlStrict()` and `getSupabaseAdmin()` outside of any error-swallowing `try/catch` in `initDatabase()` so missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` immediately throws a clear fatal startup error.
-  - *Why*: Prevents the server from booting in a degraded state or silently downgrading to an anonymous key.
-- **Decision 3: Supabase Auth Token Verification via `adminClient.auth.getUser(accessToken)`**
-  - *Chosen Approach*: Remove the unverified `jwt.decode()` fallback in `lib/auth.ts` and validate Bearer tokens via `getSupabaseAdmin().auth.getUser(token)` (combined with cryptographic `SUPABASE_JWT_SECRET` verification when configured), while keeping organization/invitation helpers in `lib/multiTenantAuth.ts` using Supabase Auth sessions.
-  - *Why*: Aligns runtime session validation with `SUPABASE_AUTH_ONBOARDING_GUIDE.md` while keeping `/api/auth/register-org`, `/api/auth/verify-invite`, `/api/auth/join-invite`, and `/api/tenant/workers` fully functional.
-
----
-
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+## Technical Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        Frontend SPA / Electron                           │
-│  • AuthContext + api.ts + syncService.ts                                 │
-│  • Sends Authorization: Bearer <supabase_access_token>                   │
-└───────────────────────────────────┬──────────────────────────────────────┘
-                                    │ CORS (ALLOWED_ORIGINS allow-list)
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     Express Server (server.ts)                           │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │ Startup: initDatabase()                                            │  │
-│  │  • Enforces getSupabaseUrlStrict() & getSupabaseAdmin()            │  │
-│  │  • Throws immediately if SUPABASE_SERVICE_ROLE_KEY is missing      │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │ Auth Middleware (authenticateToken / optionalAuthenticateToken)    │  │
-│  │  • Verifies token via adminClient.auth.getUser(accessToken)        │  │
-│  │  • Resolves canonical public.users row + school_id scope           │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │ Data Layer (pullData & CRUD Routes)                                │  │
-│  │  • 100% Supabase client (@supabase/supabase-js) — zero pgPool SQL  │  │
-│  │  • pullData() logs table errors visibly & surfaces tableErrors     │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────┬──────────────────────────────────────┘
-                                    │
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│          Supabase Cloud (niavmonyfwqlryppgksy.supabase.co)               │
-│  • GoTrue (auth.users) + PostgreSQL (public.* with RLS)                  │
-└──────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         Incoming HTTP Request                              │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+          ┌───────────────────────────┴───────────────────────────┐
+          ▼                                                       ▼
+┌───────────────────────────────────┐           ┌────────────────────────────┐
+│ Public Pre-Auth Allowlist ONLY    │           │ All Tenant & Admin Routes  │
+│ • GET  /api/schools/public        │           │ • /api/schools, /tenants   │
+│ • GET  /api/auth/resolve-school   │           │ • /api/license/*           │
+│ • POST /api/auth/login, /verify   │           │ • /api/students, /teachers │
+│ • POST /api/license/activate      │           │ • /api/classes, /subjects  │
+│ • GET  /api/health, /api/db/status│           │ • /api/timetable, /results │
+└───────────────────────────────────┘           │ • /api/attendance, /fees/* │
+                                                │ • /api/lesson-notes, /siren│
+                                                │ • /api/evoting, /inventory │
+                                                │ • /api/payroll, /settings/*│
+                                                └─────────────┬──────────────┘
+                                                              │
+                                                              ▼
+                                                ┌────────────────────────────┐
+                                                │ Mandatory authenticateToken│
+                                                │ No valid Bearer token ➔ 401│
+                                                └─────────────┬──────────────┘
+                                                              │
+                                                              ▼
+                                                ┌────────────────────────────┐
+                                                │  resolveTenantAccessScope  │
+                                                │ • !req.user ➔ 401          │
+                                                │ • !isSuper & !userSchool   │
+                                                │   ➔ 403 Forbidden          │
+                                                │ • !isSuper & reqSchool !=  │
+                                                │   userSchool ➔ 403         │
+                                                │ • Effective ID = userSchool│
+                                                └────────────────────────────┘
 ```
+
+### Key Files to Modify
+
+- **`server.ts`**
+  - **Directory & License Endpoints**: Add mandatory `authenticateToken` (and role/scope checks) to:
+    - `GET /api/schools`, `GET /api/tenants`, `POST /api/schools`, `POST /api/tenants`, `PUT /api/schools/:id`, `PATCH /api/schools/:id`, `PUT /api/tenants/:id`, `PATCH /api/tenants/:id`
+    - `GET /api/license/list`, `GET /api/license/generated`, `GET /api/license/school/:schoolName`, `POST /api/license/generate`, `POST /api/license/update`, `PUT /api/license/update`, `POST /api/license/revoke`, `POST /api/license/sync`, `POST /api/license/repair-relationships`, `POST /api/license/maintenance`, `POST /api/send-license`, `POST /api/license/send`, `POST /api/license/send-email`, `POST /api/license/log-email-dispatch`, `GET /api/license/status`, `POST /api/license/modules`, `POST /api/license/deactivate`
+    - `GET /api/creator/telemetry`, `GET|POST|PUT|DELETE /api/crm/leads*`, `GET|POST|PUT|DELETE /api/crm/invoices*`, `POST /api/admin/supabase-service-key`, `GET /api/integrations/vercel-supabase`, `GET /api/diagnostics/master-schema-sql`
+  - **Core Academic & Sync Endpoints**: Replace `optionalAuthenticateToken` and bare handlers with mandatory `authenticateToken` + `resolveTenantAccessScope` on:
+    - `GET /api/db/sync`, `POST /api/db/sync`, `GET /api/sync/pull`, `POST /api/sync/push`, `GET /api/sync/logs`, `GET /api/academic/sync-tenant/:schoolId`, `POST /api/academic/sync-tenant/:schoolId`
+    - `GET /api/students`, `POST /api/students`, `POST /api/students/bulk`, `PUT /api/students/:id`, `DELETE /api/students/:id`, `POST /api/students/bulk-delete`
+    - `GET /api/teachers`, `POST /api/teachers`, `PUT /api/teachers/:id`, `DELETE /api/teachers/:id`
+    - `GET /api/classes`, `POST /api/classes`, `PUT /api/classes/:id`, `DELETE /api/classes/:id`
+    - `GET /api/subjects`, `POST /api/subjects`, `PUT /api/subjects/:id`, `DELETE /api/subjects/:id`
+  - **All Feature Module Endpoints**: Replace `optionalAuthenticateToken` and bare handlers with mandatory `authenticateToken` + strict tenant scope enforcement on:
+    - `/api/timetable*` (8 routes)
+    - `/api/attendance*` (3 routes)
+    - `/api/results*` (4 routes)
+    - `/api/lesson-notes*` (6 routes)
+    - `/api/fees/*` (6 routes)
+    - `/api/payroll*` (3 routes)
+    - `/api/duty-roster*` (2 routes)
+    - `/api/support/tickets*` (4 routes)
+    - `/api/siren/*` (13 routes)
+    - `/api/evoting/*` (13 routes)
+    - `/api/inventory/*` (8 routes)
+    - `/api/settings/state`, `/api/settings/save`, `/api/settings/sync` (3 routes)
+    - `/api/sms/config`, `/api/sms/balance-arkesel`, `/api/sms/send-arkesel`, `/api/paystack/initialize` (4 routes)
+    - `/api/security/check-file-hash`, `/api/security/record-file-hash` (2 routes)
+    - `/api/auth/heartbeat`, `/api/auth/logout-telemetry`, `/api/auth/permissions`, `/api/auth/record-login` (4 routes)
+  - **Scope Resolution Helpers (`resolveTenantAccessScope`, `resolveTimetableSchoolId`, `resolveAttendanceSchoolId`, `resolveResultsSchoolId`, `resolveSirenSchoolId`, `resolveEvotingSchoolId`, `resolveInventorySchoolId`, `resolvePayrollSchoolId`)**:
+    - Never fall back to client-supplied `school_id` when `!req.user` or when `!isSuper`.
+    - Remove all cross-tenant database fallback lookups (`from('schools').select('id').limit(1)`, `from('classes').select('school_id')`, `from('students').select('school_id')`).
+- **Frontend API Callers (`src/components/SchoolManagement.tsx`, `src/components/SmsModule.tsx`, `src/components/PaystackPaymentButton.tsx`, `src/lib/fileSecurity.ts`, `src/lib/api.ts`)**
+  - Ensure `getApiHeaders()` is passed on all requests to `/api/tenants`, `/api/schools`, `/api/sms/*`, `/api/paystack/initialize`, and `/api/security/*`, and preserve `Authorization: Bearer <supabaseAccessToken>` when passing `x-google-access-token` to `/api/license/generate`.
+- **`tests/security_and_api.test.ts`**
+  - Add comprehensive regression tests verifying:
+    1. Unauthenticated requests to `GET /api/schools`, `GET /api/tenants`, `GET /api/license/list`, `GET /api/students?school_id=school-uuid-a`, `GET /api/teachers`, `GET /api/attendance`, `POST /api/attendance`, `GET /api/results`, `GET /api/fees/transactions`, `POST /api/fees/pay`, `GET /api/timetable`, `GET /api/lesson-notes`, `GET /api/siren/state`, `GET /api/evoting/state`, `GET /api/inventory/state`, and `GET /api/settings/state` all return **`401 Unauthorized`**.
+    2. Authenticated School B user attempting to read or mutate School A data (`?school_id=school-uuid-a` or `body.school_id='school-uuid-a'`) across those routes receives **`403 Forbidden`** (or is strictly isolated from School A's data).
+    3. Authenticated School A admin calling `GET /api/schools` sees only School A and cannot harvest School B's record or license key.
+
+---
+
+## Verification & Execution Plan
+
+1. **Harden `resolveTenantAccessScope` & Module Helpers**: Refactor `resolveTenantAccessScope` and all `resolve*SchoolId` helpers in `server.ts` to fail closed on missing authentication or cross-tenant `school_id` mismatch.
+2. **Enforce Mandatory `authenticateToken` Across Routes**: Update all tenant and administrative route definitions in `server.ts` to require `authenticateToken` and enforce tenant isolation.
+3. **Sync Frontend Headers & Run Automated Security Suite**: Update any frontend `fetch` calls missing `getApiHeaders()`, expand `tests/security_and_api.test.ts` with unauthenticated (`401`) and cross-tenant (`403`) assertions across all modules, and verify with `npx vitest run tests/security_and_api.test.ts`, `lint_applet`, and `compile_applet`.

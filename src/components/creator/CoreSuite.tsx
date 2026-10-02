@@ -37,6 +37,7 @@ import {
   activateTenantLicense,
   broadcastLicenseChange
 } from '../../lib/licenseSync';
+import { getApiHeaders } from '../../lib/api';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -349,7 +350,7 @@ export default function CoreSuite({
     try {
       const res = await fetch('/api/license/maintenance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(),
         body: JSON.stringify({ key: selectedManageSchool.key, actionType })
       });
       const data = await res.json();

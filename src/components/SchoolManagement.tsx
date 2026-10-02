@@ -29,6 +29,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { cn } from '../lib/utils';
 import { LicenseSyncBanner } from './LicenseSyncBanner';
 import { revokeSchoolLicense, broadcastLicenseChange } from '../lib/licenseSync';
+import { getApiHeaders } from '../lib/api';
 
 interface SchoolManagementProps {
   onSwitchSchool?: (school: any) => void;
@@ -72,7 +73,7 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     setIsLoading(true);
     localStorage.removeItem('esepa_cached_tenants');
     try {
-      const res = await fetch('/api/tenants');
+      const res = await fetch('/api/tenants', { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.tenants)) {
@@ -86,7 +87,7 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     }
 
     try {
-      const resOld = await fetch('/api/schools');
+      const resOld = await fetch('/api/schools', { headers: getApiHeaders() });
       if (resOld.ok) {
         const data = await resOld.json();
         if (Array.isArray(data.schools)) {
@@ -117,7 +118,7 @@ export default function SchoolManagement({ onSwitchSchool }: SchoolManagementPro
     try {
       const res = await fetch('/api/tenants', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           name: newSchoolName.trim(),
           schoolName: newSchoolName.trim(),

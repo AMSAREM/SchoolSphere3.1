@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CreditCard, Loader2 } from 'lucide-react';
+import { getApiHeaders } from '../lib/api';
 
 interface PaystackButtonProps {
   amount: number;
@@ -25,9 +26,7 @@ export default function PaystackPaymentButton({
     try {
       const response = await fetch('/api/paystack/initialize', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           amount,
           email

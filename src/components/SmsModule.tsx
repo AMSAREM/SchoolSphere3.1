@@ -42,6 +42,7 @@ import {
   Cell 
 } from 'recharts';
 import { useNotifications } from '../contexts/NotificationContext';
+import { getApiHeaders } from '../lib/api';
 import * as XLSX from 'xlsx';
 
 // Predefined school SMS templates
@@ -115,7 +116,7 @@ export default function SmsModule() {
     if (gatewayType === 'arkesel') {
       try {
         setBalanceLoading(true);
-        const res = await fetch('/api/sms/balance-arkesel');
+        const res = await fetch('/api/sms/balance-arkesel', { headers: getApiHeaders() });
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
@@ -199,7 +200,7 @@ export default function SmsModule() {
     };
     const fetchArkeselConfig = async () => {
       try {
-        const response = await fetch('/api/sms/config');
+        const response = await fetch('/api/sms/config', { headers: getApiHeaders() });
         if (response.ok) {
           const config = await response.json();
           setServerArkeselConfig(config);
@@ -438,7 +439,7 @@ export default function SmsModule() {
           // 1st Attempt: Server-side API Proxy
           const response = await fetch('/api/sms/send-arkesel', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getApiHeaders(),
             body: JSON.stringify({
               sender: senderId || 'SCHOOLSPHR',
               message: interpolated,

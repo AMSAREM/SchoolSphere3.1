@@ -4,6 +4,8 @@
  * content fingerprinting, and maintaining an audit log of imported files per school tenant.
  */
 
+import { getApiHeaders } from './api';
+
 export interface ImportedFileRecord {
   id?: number;
   hash: string; // SHA-256 hash of file content
@@ -128,7 +130,9 @@ export async function checkIsFileDuplicate(
 
     // 3. Ask server check API
     try {
-      const res = await fetch(`/api/security/check-file-hash?hash=${encodeURIComponent(hash)}&school_id=${encodeURIComponent(schoolId || '')}&module=${moduleName}`);
+      const res = await fetch(`/api/security/check-file-hash?hash=${encodeURIComponent(hash)}&school_id=${encodeURIComponent(schoolId || '')}&module=${moduleName}`, {
+        headers: getApiHeaders(schoolId)
+      });
       if (res.ok) {
         const serverCheck = await res.json();
         if (serverCheck.isDuplicate) {
@@ -172,7 +176,7 @@ export async function recordImportedFile(record: Omit<ImportedFileRecord, 'check
     try {
       await fetch('/api/security/record-file-hash', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(record.schoolId),
         body: JSON.stringify(fullRecord)
       });
     } catch (e) {}

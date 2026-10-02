@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { LinkageDiagnosticTool } from './LinkageDiagnosticTool';
+import { getApiHeaders } from '../../lib/api';
 
 interface SecuritySuiteProps {
   activePanel: string;
@@ -359,7 +360,7 @@ export default function SecuritySuite({
           <button
             onClick={async () => {
               try {
-                const res = await fetch('/api/integrations/vercel-supabase');
+                const res = await fetch('/api/integrations/vercel-supabase', { headers: getApiHeaders() });
                 const data = await res.json();
                 if (data.success) {
                   alert(`Vercel  Supabase Bridge Healthy!\nLatency: ${data.latencyMs}ms\nSupabase Status: ${data.supabase.status}\nVercel Origin: ${data.vercel.frontendUrl}`);

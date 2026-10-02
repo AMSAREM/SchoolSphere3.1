@@ -38,6 +38,7 @@ import { cn } from '../lib/utils';
 import { getGoogleAccessToken, clearGoogleAccessToken } from '../lib/gmailService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase/client';
+import { getApiHeaders } from '../lib/api';
 import {
   fetchTenantLicenseStatus,
   activateTenantLicense,
@@ -383,7 +384,7 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
   const fetchSyncLogs = async () => {
     setLoadingSyncLogs(true);
     try {
-      const res = await fetch('/api/sync/logs');
+      const res = await fetch('/api/sync/logs', { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSyncLogs(data);

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan and line-by-line pre-modification audit for server.ts, lib/auth.ts, lib/supabase/server.ts, and .env.example covering bcryptjs/password_hash verification, DNS/TLS cleanup, strict service-role startup enforcement, complete pgPool/direct-SQL removal, pullData per-table error surfacing, ALLOWED_ORIGINS CORS allow-list, Supabase Auth getUser() consolidation, and project ref verification.",
-  "updatedAt":  "2026-10-02T00:31:21.853853441Z",
+  "summary":  "Implementation plan to eliminate unauthenticated cross-tenant data exposure across server.ts by enforcing mandatory authenticateToken on all tenant and administrative routes, locking down GET /api/schools and GET /api/license/list, and hardening resolveTenantAccessScope and all resolve*SchoolId helpers so unauthenticated or cross-tenant requests never fall through to client-supplied school_id values.",
+  "updatedAt":  "2026-10-02T01:21:50.084283127Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

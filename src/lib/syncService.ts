@@ -572,8 +572,9 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
     // 1. Fetch complete dataset from Backend /api/db/sync
     const url = `/api/db/sync?fresh=${forceFresh ? 'true' : 'false'}&school_id=${encodeURIComponent(targetSchoolId || '')}`;
     const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+    if (!token) return false;
     const headers: Record<string, string> = { 'x-school-id': targetSchoolId || '' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(url, { headers });
 
     if (res.ok) {
