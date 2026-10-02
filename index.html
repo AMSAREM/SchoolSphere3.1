@@ -4,6 +4,51 @@
     <meta charset="UTF-8" />
     <script>
       (function () {
+        var NativeWebSocket = window.WebSocket;
+        if (typeof NativeWebSocket === 'function') {
+          function PatchedWebSocket(url, protocols) {
+            var isViteHmr =
+              protocols === 'vite-hmr' ||
+              protocols === 'vite-ping' ||
+              (Array.isArray(protocols) &&
+                (protocols.indexOf('vite-hmr') !== -1 || protocols.indexOf('vite-ping') !== -1));
+            if (isViteHmr) {
+              var dummy = new EventTarget();
+              dummy.url = String(url || '');
+              dummy.readyState = 1; // OPEN
+              dummy.protocol = typeof protocols === 'string' ? protocols : 'vite-hmr';
+              dummy.extensions = '';
+              dummy.bufferedAmount = 0;
+              dummy.binaryType = 'blob';
+              dummy.send = function () {};
+              dummy.close = function () {
+                dummy.readyState = 3;
+              };
+              var origAdd = dummy.addEventListener.bind(dummy);
+              dummy.addEventListener = function (type, listener, options) {
+                origAdd(type, listener, options);
+                if (type === 'open' && typeof listener === 'function') {
+                  setTimeout(function () {
+                    try {
+                      listener(new Event('open'));
+                    } catch (e) {}
+                  }, 0);
+                }
+              };
+              return dummy;
+            }
+            return arguments.length > 1
+              ? new NativeWebSocket(url, protocols)
+              : new NativeWebSocket(url);
+          }
+          PatchedWebSocket.prototype = NativeWebSocket.prototype;
+          PatchedWebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+          PatchedWebSocket.OPEN = NativeWebSocket.OPEN;
+          PatchedWebSocket.CLOSING = NativeWebSocket.CLOSING;
+          PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
+          window.WebSocket = PatchedWebSocket;
+        }
+
         function isBenignDevError(msg) {
           if (typeof msg !== 'string') return false;
           return (

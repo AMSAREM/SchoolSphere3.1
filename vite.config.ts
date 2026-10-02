@@ -11,6 +11,30 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [
+      {
+        name: 'disable-vite-hmr-client-ws',
+        enforce: 'post',
+        transform(code, id) {
+          if (id.includes('vite/dist/client/client.mjs')) {
+            return {
+              code: code
+                .replace(
+                  'transport.connect(createHMRHandler(handleMessage));',
+                  '/* HMR disabled: transport.connect skipped */'
+                )
+                .replace(
+                  /console\.error\(\s*`\[vite\] failed to connect to websocket[\s\S]*?\);/g,
+                  '/* suppressed vite ws error */'
+                )
+                .replace(
+                  'console.error(`[vite] failed to connect to websocket (${e}). `);',
+                  '/* suppressed vite ws error */'
+                ),
+              map: null,
+            };
+          }
+        },
+      },
       react(), 
       tailwindcss(),
       VitePWA({

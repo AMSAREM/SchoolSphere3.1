@@ -21017,7 +21017,8 @@ NOTIFY pgrst, 'reload schema';`;
       return { provisioned: false, message: 'Direct Postgres connection string not configured; using Supabase REST API.' };
     }
     try {
-      const pgMod: any = await import('pg');
+      const pgPkgName = 'pg';
+      const pgMod: any = await import(/* @vite-ignore */ pgPkgName);
       const ClientClass = pgMod.Client || pgMod.default?.Client;
       if (!ClientClass) return { provisioned: false };
       const client = new ClientClass({
@@ -26973,8 +26974,15 @@ NOTIFY pgrst, 'reload schema';`;
       server: {
         middlewareMode: true,
         hmr: false,
+        ws: false,
       },
       appType: "spa",
+    });
+    app.use((req, res, next) => {
+      if (req.url && req.url.startsWith("/@vite/client")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      }
+      next();
     });
     app.use(vite.middlewares);
   } else if (process.env.NODE_ENV === "production") {

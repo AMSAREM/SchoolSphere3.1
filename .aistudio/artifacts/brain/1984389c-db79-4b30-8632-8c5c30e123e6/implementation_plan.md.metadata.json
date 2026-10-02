@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to eliminate Recharts zero-dimension (width 0 / height 0) chart errors across all analytics modules and suppress Vite HMR disabled WebSocket connection errors and unhandled rejections.",
-  "updatedAt":  "2026-10-02T03:19:55.747810142Z",
+  "summary":  "Implementation plan to eliminate the Vite 6 client HMR WebSocket connection error at the source by neutralizing transport.connect() in the transformed /@vite/client bundle when HMR is disabled.",
+  "updatedAt":  "2026-10-02T10:07:08.368913473Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
