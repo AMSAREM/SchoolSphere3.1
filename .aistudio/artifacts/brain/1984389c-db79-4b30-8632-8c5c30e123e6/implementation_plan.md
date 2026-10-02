@@ -1,113 +1,101 @@
-# Remediate Server-Wide Unauthenticated Cross-Tenant Data Exposure
+# Role-Aware Quick Actions Across All Portals & Creator Console
 
-This plan eliminates the structural unauthenticated cross-tenant data exposure across `server.ts` by locking down directory/license endpoints, enforcing mandatory `authenticateToken` middleware on every tenant and administrative route, and hardening `resolveTenantAccessScope` plus all module-level `resolve*SchoolId` helpers so unauthenticated or cross-tenant requests never fall through to client-supplied `school_id` parameters.
+Deliver tailored, role-specific Quick Actions across every user portal—including the Creator Command Console, School Administration, HOD, Teacher, Bursar, Student, and Parent workspaces—spanning both the desktop Dashboard Quick Actions card and the mobile Quick Actions drawer.
 
-## User Review Required
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **1. `GET /api/schools` (`/api/tenants`) & `GET /api/license/list` Lockdown**
-> - `GET /api/schools` and `GET /api/tenants` will require mandatory `authenticateToken`.
->   - **Platform Creator (`creator` / `super_admin`)**: Receives the full tenant directory and license keys.
->   - **Authenticated Tenant User (`admin`, `teacher`, etc.)**: Receives **only** their own assigned school (`id === req.user.school_id`), never any other tenant's record or license key.
->   - **Unauthenticated Caller**: Rejected immediately with `401 Unauthorized` (pre-login school discovery already uses the sanitized `GET /api/schools/public` and `GET /api/auth/resolve-school` routes).
-> - `GET /api/license/list` (`/api/license/generated`), `POST /api/license/generate`, `POST|PUT /api/license/update`, `POST /api/license/revoke`, `POST /api/license/sync`, `POST /api/license/repair-relationships`, and `POST /api/license/maintenance` will require `authenticateToken` and restrict cross-tenant license enumeration/mutation to `creator` / `super_admin` (or own-tenant read for `admin`).
+> The following architectural and UX decisions were confirmed during Phase 1 clarification and govern this implementation:
 
-> [!WARNING]
-> **2. Fail-Closed `resolveTenantAccessScope` & Module `resolve*SchoolId` Helpers**
-> - **`resolveTenantAccessScope(req, explicitSchoolId)`**:
->   - If `!req.user`: immediately returns `{ schoolId: '', isSuper: false, forbidden: true, unauthorized: true, error: 'Authentication required.' }` — never falls through to `validRequestedSchoolId`.
->   - If `!isSuper && !validUserSchoolId`: immediately returns `{ schoolId: '', isSuper: false, forbidden: true, error: 'Tenant isolation policy violation: User account has no assigned school_id.' }` — never falls through to `validRequestedSchoolId`.
->   - If `!isSuper && validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId`: returns `forbidden: true` (`403 Forbidden`).
->   - Non-Creator effective `schoolId` is strictly `validUserSchoolId`.
-> - **All Module Helpers (`resolveTimetableSchoolId`, `resolveAttendanceSchoolId`, `resolveResultsSchoolId`, `resolveSirenSchoolId`, `resolveEvotingSchoolId`, `resolveInventorySchoolId`, `resolvePayrollSchoolId`)**:
->   - Refactored to delegate directly to `resolveTenantAccessScope(req)` and throw a typed `TenantAccessError` (`statusCode: 401 | 403`) if `unauthorized` or `forbidden`, removing all unauthenticated fallbacks that previously accepted `req.query.school_id` / `req.body.school_id` or queried arbitrary rows from `schools`, `classes`, or `students`.
+- **Confirmed Decision 1 — Target Surfaces**: Update all three Quick Actions surfaces—the Mobile Bottom Navigation Quick Actions Drawer, the Desktop/Tablet Dashboard Quick Actions Card, and the Creator Command Console (both its overview dashboard card and mobile quick-action bar).
+- **Confirmed Decision 2 — Portal Coverage**: Provide dedicated, role-appropriate action sets for all seven user portals: **Creator (`creator` / `super_admin` in Creator Console)**, **Admin / Headteacher (`admin`, `super_admin`, `headteacher`)**, **HOD (`hod`)**, **Teacher (`teacher`)**, **Bursar / Accountant (`bursar`, `accountant`)**, **Student (`student`)**, and **Parent (`parent`)**.
+- **Confirmed Decision 3 — Creator Console Shortcuts**: Surface four high-frequency command shortcuts in the Creator Console Quick Actions: **Generate License Key**, **Provision School Tenant**, **Run Diagnostics Suite**, and **Live Telemetry Sync**.
 
 ---
 
-## Technical Architecture
+## 1. Overview & Core Concept
 
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                         Incoming HTTP Request                              │
-└─────────────────────────────────────┬──────────────────────────────────────┘
-                                      │
-          ┌───────────────────────────┴───────────────────────────┐
-          ▼                                                       ▼
-┌───────────────────────────────────┐           ┌────────────────────────────┐
-│ Public Pre-Auth Allowlist ONLY    │           │ All Tenant & Admin Routes  │
-│ • GET  /api/schools/public        │           │ • /api/schools, /tenants   │
-│ • GET  /api/auth/resolve-school   │           │ • /api/license/*           │
-│ • POST /api/auth/login, /verify   │           │ • /api/students, /teachers │
-│ • POST /api/license/activate      │           │ • /api/classes, /subjects  │
-│ • GET  /api/health, /api/db/status│           │ • /api/timetable, /results │
-└───────────────────────────────────┘           │ • /api/attendance, /fees/* │
-                                                │ • /api/lesson-notes, /siren│
-                                                │ • /api/evoting, /inventory │
-                                                │ • /api/payroll, /settings/*│
-                                                └─────────────┬──────────────┘
-                                                              │
-                                                              ▼
-                                                ┌────────────────────────────┐
-                                                │ Mandatory authenticateToken│
-                                                │ No valid Bearer token ➔ 401│
-                                                └─────────────┬──────────────┘
-                                                              │
-                                                              ▼
-                                                ┌────────────────────────────┐
-                                                │  resolveTenantAccessScope  │
-                                                │ • !req.user ➔ 401          │
-                                                │ • !isSuper & !userSchool   │
-                                                │   ➔ 403 Forbidden          │
-                                                │ • !isSuper & reqSchool !=  │
-                                                │   userSchool ➔ 403         │
-                                                │ • Effective ID = userSchool│
-                                                └────────────────────────────┘
-```
-
-### Key Files to Modify
-
-- **`server.ts`**
-  - **Directory & License Endpoints**: Add mandatory `authenticateToken` (and role/scope checks) to:
-    - `GET /api/schools`, `GET /api/tenants`, `POST /api/schools`, `POST /api/tenants`, `PUT /api/schools/:id`, `PATCH /api/schools/:id`, `PUT /api/tenants/:id`, `PATCH /api/tenants/:id`
-    - `GET /api/license/list`, `GET /api/license/generated`, `GET /api/license/school/:schoolName`, `POST /api/license/generate`, `POST /api/license/update`, `PUT /api/license/update`, `POST /api/license/revoke`, `POST /api/license/sync`, `POST /api/license/repair-relationships`, `POST /api/license/maintenance`, `POST /api/send-license`, `POST /api/license/send`, `POST /api/license/send-email`, `POST /api/license/log-email-dispatch`, `GET /api/license/status`, `POST /api/license/modules`, `POST /api/license/deactivate`
-    - `GET /api/creator/telemetry`, `GET|POST|PUT|DELETE /api/crm/leads*`, `GET|POST|PUT|DELETE /api/crm/invoices*`, `POST /api/admin/supabase-service-key`, `GET /api/integrations/vercel-supabase`, `GET /api/diagnostics/master-schema-sql`
-  - **Core Academic & Sync Endpoints**: Replace `optionalAuthenticateToken` and bare handlers with mandatory `authenticateToken` + `resolveTenantAccessScope` on:
-    - `GET /api/db/sync`, `POST /api/db/sync`, `GET /api/sync/pull`, `POST /api/sync/push`, `GET /api/sync/logs`, `GET /api/academic/sync-tenant/:schoolId`, `POST /api/academic/sync-tenant/:schoolId`
-    - `GET /api/students`, `POST /api/students`, `POST /api/students/bulk`, `PUT /api/students/:id`, `DELETE /api/students/:id`, `POST /api/students/bulk-delete`
-    - `GET /api/teachers`, `POST /api/teachers`, `PUT /api/teachers/:id`, `DELETE /api/teachers/:id`
-    - `GET /api/classes`, `POST /api/classes`, `PUT /api/classes/:id`, `DELETE /api/classes/:id`
-    - `GET /api/subjects`, `POST /api/subjects`, `PUT /api/subjects/:id`, `DELETE /api/subjects/:id`
-  - **All Feature Module Endpoints**: Replace `optionalAuthenticateToken` and bare handlers with mandatory `authenticateToken` + strict tenant scope enforcement on:
-    - `/api/timetable*` (8 routes)
-    - `/api/attendance*` (3 routes)
-    - `/api/results*` (4 routes)
-    - `/api/lesson-notes*` (6 routes)
-    - `/api/fees/*` (6 routes)
-    - `/api/payroll*` (3 routes)
-    - `/api/duty-roster*` (2 routes)
-    - `/api/support/tickets*` (4 routes)
-    - `/api/siren/*` (13 routes)
-    - `/api/evoting/*` (13 routes)
-    - `/api/inventory/*` (8 routes)
-    - `/api/settings/state`, `/api/settings/save`, `/api/settings/sync` (3 routes)
-    - `/api/sms/config`, `/api/sms/balance-arkesel`, `/api/sms/send-arkesel`, `/api/paystack/initialize` (4 routes)
-    - `/api/security/check-file-hash`, `/api/security/record-file-hash` (2 routes)
-    - `/api/auth/heartbeat`, `/api/auth/logout-telemetry`, `/api/auth/permissions`, `/api/auth/record-login` (4 routes)
-  - **Scope Resolution Helpers (`resolveTenantAccessScope`, `resolveTimetableSchoolId`, `resolveAttendanceSchoolId`, `resolveResultsSchoolId`, `resolveSirenSchoolId`, `resolveEvotingSchoolId`, `resolveInventorySchoolId`, `resolvePayrollSchoolId`)**:
-    - Never fall back to client-supplied `school_id` when `!req.user` or when `!isSuper`.
-    - Remove all cross-tenant database fallback lookups (`from('schools').select('id').limit(1)`, `from('classes').select('school_id')`, `from('students').select('school_id')`).
-- **Frontend API Callers (`src/components/SchoolManagement.tsx`, `src/components/SmsModule.tsx`, `src/components/PaystackPaymentButton.tsx`, `src/lib/fileSecurity.ts`, `src/lib/api.ts`)**
-  - Ensure `getApiHeaders()` is passed on all requests to `/api/tenants`, `/api/schools`, `/api/sms/*`, `/api/paystack/initialize`, and `/api/security/*`, and preserve `Authorization: Bearer <supabaseAccessToken>` when passing `x-google-access-token` to `/api/license/generate`.
-- **`tests/security_and_api.test.ts`**
-  - Add comprehensive regression tests verifying:
-    1. Unauthenticated requests to `GET /api/schools`, `GET /api/tenants`, `GET /api/license/list`, `GET /api/students?school_id=school-uuid-a`, `GET /api/teachers`, `GET /api/attendance`, `POST /api/attendance`, `GET /api/results`, `GET /api/fees/transactions`, `POST /api/fees/pay`, `GET /api/timetable`, `GET /api/lesson-notes`, `GET /api/siren/state`, `GET /api/evoting/state`, `GET /api/inventory/state`, and `GET /api/settings/state` all return **`401 Unauthorized`**.
-    2. Authenticated School B user attempting to read or mutate School A data (`?school_id=school-uuid-a` or `body.school_id='school-uuid-a'`) across those routes receives **`403 Forbidden`** (or is strictly isolated from School A's data).
-    3. Authenticated School A admin calling `GET /api/schools` sees only School A and cannot harvest School B's record or license key.
+- **What It Does**: Replaces static, one-size-fits-all shortcuts with a unified role-aware Quick Actions engine that adapts to the authenticated user's portal role and active workspace context.
+- **Target Audience / Persona**:
+  - **Platform Creators**: Need instant one-click access to license key generation, school tenant provisioning, automated diagnostics, and live telemetry synchronization.
+  - **School Administrators & Headteachers**: Need immediate access to student registry management, fee collection oversight, terminal results verification, and school-wide circulars.
+  - **Heads of Department (HODs)**: Need rapid navigation to lesson note vetting, departmental exam analysis, score entry, and class timetables.
+  - **Teachers**: Need one-tap daily roll call (attendance), continuous assessment score entry, lesson note submission, and personal schedule reminders.
+  - **Bursars & Accountants**: Need streamlined access to fee payment recording, expense & payroll ledgers, debtor SMS reminders, and inventory tracking.
+  - **Students & Parents**: Need clear, accessible shortcuts to academic report cards, class schedules, fee statements/online payments (for parents), and campus e-voting/learning resources.
+- **Key Value**: Eliminates irrelevant or unauthorized action buttons (such as showing "Take Attendance" or "Enter Scores" to students, parents, or bursars) and brings the same one-click productivity to the Creator Command Console and Student/Parent portals.
 
 ---
 
-## Verification & Execution Plan
+## 2. User Experience & Visual Design
 
-1. **Harden `resolveTenantAccessScope` & Module Helpers**: Refactor `resolveTenantAccessScope` and all `resolve*SchoolId` helpers in `server.ts` to fail closed on missing authentication or cross-tenant `school_id` mismatch.
-2. **Enforce Mandatory `authenticateToken` Across Routes**: Update all tenant and administrative route definitions in `server.ts` to require `authenticateToken` and enforce tenant isolation.
-3. **Sync Frontend Headers & Run Automated Security Suite**: Update any frontend `fetch` calls missing `getApiHeaders()`, expand `tests/security_and_api.test.ts` with unauthenticated (`401`) and cross-tenant (`403`) assertions across all modules, and verify with `npx vitest run tests/security_and_api.test.ts`, `lint_applet`, and `compile_applet`.
+- **Key User Flows**:
+  1. **Mobile Quick Actions Drawer Flow**: Tapping the raised warm-amber `+` Floating Action Button in the mobile bottom navigation opens a refined bottom sheet displaying 4 role-matched action tiles with clear titles, concise subtitles, and semantic icon badges. Tapping any tile closes the drawer and navigates directly to the target module or triggers the corresponding modal/action.
+  2. **Portal Dashboard Quick Actions Card Flow**: On the Institutional Overview dashboard, every role (now including Student and Parent portals alongside Admin, HOD, Teacher, and Bursar) sees a structured **Quick Actions** card in the right-hand column beside the primary analytics chart, offering 4 tailored shortcuts with subtle hover elevation and directional chevrons.
+  3. **Creator Command Console Quick Actions Flow**: Inside the Creator Console (`Overview & Telemetry` and mobile navigation), a dedicated **Creator Quick Actions** panel and mobile drawer provide instant execution for **Generate License Key** (switches to License Generator & focuses the form), **Provision School Tenant** (opens the School Registry & Tenant Provisioning panel), **Run Diagnostics Suite** (navigates to the Full-Stack Diagnostics Runner), and **Live Telemetry Sync** (triggers an immediate real-time Supabase & server telemetry refresh with visual spinner feedback).
+- **Visual Identity & Theme**:
+  - *Aesthetic Direction*: High-craft SaaS workspace discipline with single-elevation cards, crisp 1px structural borders, and purposeful semantic accents.
+  - *Color Palette & Mood*:
+    - **School Portals**: Deep Teal (`#1c4a59`) primary authority surfaces, Warm Amber (`#faae57`) high-intent action highlights, Emerald (`#06d6a0`) nominal/attendance accents, and Soft Sage-Slate (`#f6f8f7` / `#bac4c6`) structural containers.
+    - **Creator Console**: Slate-900 (`#0f172a`) and Indigo-600 (`#4f46e5`) command palette with Emerald (`#10b981`) live telemetry indicators and Amber (`#f59e0b`) provisioning accents.
+  - *Typography & Hierarchy*: Crisp display and action labels (`font-bold tracking-tight`) paired with muted 10px–11px descriptive subtitles (`text-[#6a7f84]`) and `tabular-nums` for any counters or sync timestamps. All action labels enforce single-line truncation safety.
+  - *Component Styling & Layout*:
+    - **Mobile Drawer**: `rounded-3xl` floating sheet anchored safely above the bottom navigation bar (`pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]`), featuring a 2×2 grid of tactile action cards (`min-h-[52px]`).
+    - **Dashboard Card**: Single-elevation `rounded-2xl` container (`border border-[#bac4c6]/60 bg-white p-6`) with a 2-column or vertical stack of interactive action rows (`min-h-[48px]`) with icon badges and hover chevron transitions.
+- **Interactive Feedback & Motion**:
+  - Smooth 150ms–200ms spring/compositor transitions (`opacity`, `transform`) on drawer open/close and button press (`active:scale-[0.98]`).
+  - Live loading spinner on the **Live Telemetry Sync** action while telemetry is actively refreshing, followed by toast confirmation.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1 — Centralized Role-to-Actions Resolver**:
+  - *Chosen Approach*: Define a single, strongly typed Quick Actions resolver that maps the current user role (`creator`, `super_admin`, `admin`, `headteacher`, `hod`, `teacher`, `bursar`, `accountant`, `student`, `parent`) and portal mode (Standard Portal vs. Creator Console) to its 4 canonical Quick Actions.
+  - *Why*: Guarantees 100% consistency between the desktop Dashboard Quick Actions card and the Mobile Bottom Navigation Quick Actions drawer so a user never sees mismatched shortcuts across devices.
+  - *Alternatives Considered*: Hardcoding separate `if/else` role checks inside individual components, which previously caused drift and left Student, Parent, HOD, and Creator portals without relevant shortcuts.
+- **Decision 2 — Enabling Dashboard Quick Actions for Student & Parent Portals**:
+  - *Chosen Approach*: Include the right-hand Quick Actions column on the Dashboard for `student` and `parent` roles (which previously hid the column entirely), pairing the 2-column performance chart with a 1-column tailored Quick Actions & Summary card.
+  - *Why*: Gives students and parents immediate 1-click access to their most important tasks (Report Cards, Class Schedule, Fee Statements/Payment, and Campus E-Voting) right from the home screen.
+
+---
+
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+
+- **Architecture & Component Diagram**:
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Role-Aware Quick Actions Resolver                      │
+│  Input: User Role (creator | admin | hod | teacher | bursar | student |   │
+│         parent) + Active Workspace Context (Portal vs Creator Console)    │
+└───────────────────┬───────────────────┬───────────────────┬───────────────┘
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+┌───────────────────────────┐ ┌───────────────────┐ ┌───────────────────────┐
+│  Mobile Quick Menu Drawer │ │ Dashboard Quick   │ │ Creator Console       │
+│  (MobileBottomNav)        │ │ Actions Card      │ │ Quick Actions Bar &   │
+│                           │ │ (Dashboard)       │ │ Mobile Nav            │
+│ • 2x2 Tactile Action Grid │ │ • Role-Tailored   │ │ • Generate License    │
+│ • Safe-Area Dock Stack    │ │   Action Rows     │ │ • Provision Tenant    │
+│ • Portal & Creator Modes  │ │ • Enabled for All │ │ • Run Diagnostics     │
+│                           │ │   7 User Portals  │ │ • Live Telemetry Sync │
+└───────────────────────────┘ └───────────────────┘ └───────────────────────┘
+```
+
+- **Role-Specific Action Matrix**:
+
+| Portal / Role | Action 1 | Action 2 | Action 3 | Action 4 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Creator Console** (`creator` / `super_admin`) | **Generate License Key** (`generator` panel) | **Provision School Tenant** (`school_management` panel) | **Run Diagnostics Suite** (`frontend_test_runner` panel) | **Live Telemetry Sync** (Triggers `onRefreshTelemetry`) |
+| **Admin / Headteacher** (`admin`, `headteacher`, `super_admin`) | **Manage Students** (`students` view) | **Take Attendance** (`attendance` view) | **Record Fee Payment** (`fees` view) | **Enter Exam Results** (`results` view) |
+| **HOD** (`hod`) | **Vet Lesson Notes** (`lesson_notes` view) | **Enter Exam Scores** (`results` view) | **Exam Analysis** (`exam_analysis` view) | **Take Attendance** (`attendance` view) |
+| **Teacher** (`teacher`) | **Take Attendance** (`attendance` view) | **Enter Exam Scores** (`results` view) | **Lesson Notes** (`lesson_notes` view) | **Set Reminder** (Quick Reminder / `timetable` view) |
+| **Bursar / Accountant** (`bursar`, `accountant`) | **Record Fee Payment** (`fees` view) | **Payroll & Expenses** (`payroll` view) | **Fee Reminder SMS** (`sms` view) | **Store & Inventory** (`inventory` view) |
+| **Student** (`student`) | **My Report Card** (`results` view) | **Class Timetable** (`timetable` view) | **Attendance Record** (`attendance` view) | **Student E-Voting** (`evoting` view) |
+| **Parent** (`parent`) | **Pay / View Fees** (`fees` view) | **Ward Report Card** (`results` view) | **Ward Attendance** (`attendance` view) | **Class Schedule** (`timetable` view) |
+
+- **Interactive Component & State Mapping**:
+  - **Mobile Drawer (`MobileBottomNav`)**: Reads the active user role and optional `creatorMode` callbacks (`onCreatorNavigate`, `onRefreshTelemetry`, `isRefreshingTelemetry`). Clicking an action closes the drawer (`setShowQuickMenu(false)`) and invokes the corresponding view navigation, modal trigger (`onOpenQuickReminder`), or Creator Console action.
+  - **Dashboard Card (`Dashboard`)**: Renders the resolved role action list for all portals (including `student` and `parent` roles) with role-specific badges, labels, descriptions, and click handlers bound to `onViewChange`.
+  - **Creator Console (`CreatorHub` & `CoreSuite`)**: Renders a prominent **Creator Quick Actions** bar at the top of the `Overview & Telemetry` suite and wires `MobileBottomNav` for mobile Creator viewports so all 4 Creator shortcuts work seamlessly on both desktop and mobile.
