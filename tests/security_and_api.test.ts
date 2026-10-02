@@ -324,6 +324,8 @@ const { testSupabaseDB, mockSupabaseClient, serverMockFactory } = vi.hoisted(() 
     getSupabaseUrlStrict: () => process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co',
     createAuthenticatedSupabaseClient: () => client,
     getCreatorAuthenticatedClient: async () => client,
+    runWithRequestToken: (_token: string | null | undefined, fn: () => any) => fn(),
+    getCurrentRequestToken: () => null,
     getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
       return db.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
     }
@@ -332,6 +334,7 @@ const { testSupabaseDB, mockSupabaseClient, serverMockFactory } = vi.hoisted(() 
   return { testSupabaseDB: db, mockSupabaseClient: client, serverMockFactory: mockFactory };
 });
 
+vi.mock('../lib/supabase/server', () => serverMockFactory());
 vi.mock('../lib/supabase/server.js', () => serverMockFactory());
 vi.mock('../lib/supabase/server.ts', () => serverMockFactory());
 

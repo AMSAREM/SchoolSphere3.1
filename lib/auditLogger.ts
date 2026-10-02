@@ -3,7 +3,7 @@
  * Tracks sensitive operations for security compliance and monitoring
  */
 
-import { getSupabaseAdmin } from './supabase/server.ts';
+import { getSupabaseAdmin } from './supabase/server';
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 

@@ -3,7 +3,7 @@
  * Provides TOTP-based 2FA for enhanced security, especially for admin accounts
  */
 
-import { getSupabaseAdmin } from './supabase/server.ts';
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server';
 import crypto from 'crypto';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -332,8 +332,7 @@ export async function disableTwoFactorAuth(params: {
         return { success: false, error: 'Unable to verify user email for password check' };
       }
 
-      const { createAuthenticatedSupabaseClient } = await import('./supabase/server.ts');
-      const verifyClient = createAuthenticatedSupabaseClient();
+      const verifyClient = createAuthenticatedSupabaseClient(null);
       const { data: signRes, error: signErr } = await verifyClient.auth.signInWithPassword({
         email: canonicalEmail,
         password: String(password)

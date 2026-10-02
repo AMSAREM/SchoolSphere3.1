@@ -664,6 +664,109 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
   } catch (err) {
     console.warn('[SyncService] Backend pull notice:', err);
   }
+
+  // 2. Direct Supabase Multi-Table Pull Fallback (for edge/serverless environments)
+  try {
+    const token =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('esepa_supabase_access_token') ||
+          localStorage.getItem('esepa_auth_token') ||
+          sessionStorage.getItem('esepa_auth_token')
+        : null;
+    if (!token) return false;
+
+    const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const validSchoolFilter =
+      targetSchoolId &&
+      targetSchoolId !== '00000000-0000-0000-0000-000000000001' &&
+      targetSchoolId !== '00000000-0000-0000-0000-000000000000'
+        ? targetSchoolId
+        : null;
+
+    const queryTable = async (tableName: string) => {
+      try {
+        let q: any = supabase.from(tableName).select('*');
+        if (validSchoolFilter) {
+          q = q.eq('school_id', validSchoolFilter);
+        }
+        const { data, error } = await q;
+        return !error && Array.isArray(data) ? data : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const [
+      classesRows,
+      teachersRows,
+      subjectsRows,
+      studentsRows,
+      attendanceRows,
+      resultsRows,
+      termReportsRows,
+      feeTransactionsRows,
+      smsLogsRows
+    ] = await Promise.all([
+      queryTable('classes'),
+      queryTable('teachers'),
+      queryTable('subjects'),
+      queryTable('students'),
+      queryTable('attendance'),
+      queryTable('results'),
+      queryTable('term_reports'),
+      queryTable('fee_transactions'),
+      queryTable('sms_logs')
+    ]);
+
+    let anySynced = false;
+    if (Array.isArray(classesRows)) {
+      await reconcileClassesInDexie(classesRows, true);
+      anySynced = true;
+    }
+    if (Array.isArray(teachersRows)) {
+      await reconcileTeachersInDexie(teachersRows, true);
+      anySynced = true;
+    }
+    if (Array.isArray(subjectsRows)) {
+      await reconcileSubjectsInDexie(subjectsRows, true);
+      anySynced = true;
+    }
+    if (Array.isArray(studentsRows)) {
+      await reconcileStudentsInDexie(studentsRows, true);
+      anySynced = true;
+    }
+    if (Array.isArray(attendanceRows)) {
+      if (attendanceRows.length === 0) await db.attendance.clear();
+      else await reconcileAttendanceInDexie(attendanceRows);
+      anySynced = true;
+    }
+    if (Array.isArray(resultsRows)) {
+      if (resultsRows.length === 0) await db.results.clear();
+      else await reconcileResultsInDexie(resultsRows);
+      anySynced = true;
+    }
+    if (Array.isArray(termReportsRows)) {
+      if (termReportsRows.length === 0) await db.termReports.clear();
+      else await reconcileTermReportsInDexie(termReportsRows);
+      anySynced = true;
+    }
+    if (Array.isArray(feeTransactionsRows)) {
+      await reconcileFeeTransactionsInDexie(feeTransactionsRows, true);
+      anySynced = true;
+    }
+    if (Array.isArray(smsLogsRows)) {
+      await reconcileSmsLogsInDexie(smsLogsRows);
+      anySynced = true;
+    }
+
+    if (anySynced && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('database-reconciled', { detail: { timestamp: Date.now() } }));
+      return true;
+    }
+  } catch (supaErr) {
+    console.warn('[SyncService] Direct Supabase fallback notice:', supaErr);
+  }
+
   return false;
 }
 

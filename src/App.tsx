@@ -49,6 +49,7 @@ import { cn } from './lib/utils';
 import { db, purgeDemoRecordsFromDb } from './db/schema';
 import { initRealtimeAndAutoSync, syncAllDataFromBackend } from './lib/syncService';
 import { sirenApi } from './lib/api';
+import { supabase } from './lib/supabase/client';
 import Dashboard from './components/Dashboard';
 import StudentManagement from './components/StudentManagement';
 import AttendanceTerminal from './components/AttendanceTerminal';
@@ -785,6 +786,10 @@ function AppContent() {
   };
 
   const checkSupabaseConnection = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSupabaseConnected(false);
+      return;
+    }
     setSupabaseChecking(true);
     try {
       const res = await fetch('/api/db/status');
@@ -795,9 +800,13 @@ function AppContent() {
         if (data.supabase?.url) {
           setSupabaseDetails(data.supabase.url);
         }
-      } else {
-        setSupabaseConnected(false);
+        return;
       }
+    } catch {}
+
+    try {
+      const { error } = await supabase.auth.getSession();
+      setSupabaseConnected(!error);
     } catch {
       setSupabaseConnected(false);
     } finally {
@@ -805,12 +814,16 @@ function AppContent() {
     }
   };
 
-  // Check Supabase connection on load and periodically every 15 seconds
+  // Check Supabase connection when authenticated (avoids background polling while on /sign-in)
   useEffect(() => {
+    if (!user) {
+      setSupabaseConnected(true);
+      return;
+    }
     checkSupabaseConnection();
-    const interval = setInterval(checkSupabaseConnection, 15000);
+    const interval = setInterval(checkSupabaseConnection, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user?.id]);
 
   // Periodic auto-sync every 30 minutes
   useEffect(() => {

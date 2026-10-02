@@ -583,42 +583,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           parsedSlug = strippedHandle.replace(/[^a-z0-9-]/g, '');
         }
 
-        // Look up user profile by username or email in public.users
-        try {
-          const { data: userRow } = await supabase
-            .from('users')
-            .select('*, schools(*)')
-            .or(`username.ilike.${strippedHandle},email.ilike.${strippedHandle}`)
-            .limit(1)
-            .maybeSingle();
-          if (userRow) {
-            matchedProfile = userRow;
-            if (userRow.schools) {
-              resolvedSchool = userRow.schools;
-            }
-          }
-        } catch {}
-
-        // Build candidate emails matching ensureUserSupabaseAuthIdentity conventions in server.ts
+        // Build targeted candidate email (avoiding unauthenticated anon queries or 12-permutation loops)
         const candidateEmails = new Set<string>();
-        if (strippedHandle.includes('@') && /\.[a-z]{2,}$/i.test(strippedHandle)) {
-          candidateEmails.add(normalizeEmail(strippedHandle));
-        }
-        if (matchedProfile?.email) {
-          candidateEmails.add(String(matchedProfile.email).trim().toLowerCase());
-        }
-        if (strippedHandle === 'creator' || strippedHandle === 'super_admin') {
+        const isFullEmail = strippedHandle.includes('@') && /\.[a-z]{2,}$/i.test(strippedHandle);
+        if (
+          strippedHandle === 'creator' ||
+          strippedHandle === 'super_admin' ||
+          strippedHandle === 'amoakoemmanuel@hotmail.com' ||
+          strippedHandle === 'creator@schoolsphere.app'
+        ) {
           candidateEmails.add('creator@schoolsphere.app');
+        } else if (isFullEmail) {
+          candidateEmails.add(normalizeEmail(strippedHandle));
+        } else {
+          const cleanBaseUser = (localHandle || 'user').replace(/[^a-z0-9_.-]/g, '') || 'user';
+          if (parsedSlug) {
+            candidateEmails.add(`${cleanBaseUser}@${parsedSlug}.edu.gh`);
+          } else {
+            candidateEmails.add(`${cleanBaseUser}@schoolsphere.edu.gh`);
+          }
         }
-        const cleanBaseUser = (localHandle || 'user').replace(/[^a-z0-9_.-]/g, '') || 'user';
-        if (parsedSlug) {
-          candidateEmails.add(`${cleanBaseUser}@${parsedSlug}.edu.gh`);
-          candidateEmails.add(`admin@${parsedSlug}.edu.gh`);
-          candidateEmails.add(`${cleanBaseUser}@${parsedSlug}.com`);
-        }
-        candidateEmails.add(`${cleanBaseUser}@schoolsphere.edu.gh`);
-        candidateEmails.add(`${cleanBaseUser}@schoolsphere.app`);
-        candidateEmails.add(`${cleanBaseUser}@schoolsphere.xyz`);
 
         const ensureCompliantPassword = (p: string) => {
           if (!p) return '';
@@ -631,14 +615,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         const rawTrimmedPass = password.trim();
+        const compliantPass = ensureCompliantPassword(rawTrimmedPass);
         const candidatePasswords = Array.from(
-          new Set(
-            [
-              rawTrimmedPass,
-              ensureCompliantPassword(rawTrimmedPass),
-              ensureCompliantPassword(rawTrimmedPass.toUpperCase())
-            ].filter(Boolean)
-          )
+          new Set([rawTrimmedPass, compliantPass].filter(Boolean))
         );
 
         for (const candidateEmail of Array.from(candidateEmails)) {
