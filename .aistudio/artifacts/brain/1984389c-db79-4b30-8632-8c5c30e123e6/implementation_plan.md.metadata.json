@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan to preserve the clean UI without extra header or banner bars while keeping native HTML5 History API path routing and dynamic browser tab titles intact.",
-  "updatedAt":  "2026-10-01T21:57:23.955891649Z",
+  "summary":  "Plan to remove the selected breadcrumb span element in the top navigation bar of the authentication screen (AuthScreens).",
+  "updatedAt":  "2026-10-02T00:07:10.025881122Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

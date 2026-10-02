@@ -202,8 +202,6 @@ export interface User {
   school_name?: string;
   auth_user_id?: string;
   username: string;
-  passwordHash?: string;
-  password_hash?: string;
   fullName: string;
   full_name?: string;
   email?: string;

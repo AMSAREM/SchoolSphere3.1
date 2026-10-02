@@ -95,7 +95,7 @@ export function PrivacyPolicyModal({ isOpen, onClose }: PrivacyPolicyModalProps)
                 <li><strong>Academic Performance Records:</strong> Continuous assessment scores (30%), terminal exam results (70%), teacher remarks, attendance percentages, and WAEC/BECE preparation transcripts.</li>
                 <li><strong>Parent & Guardian Information:</strong> Names, phone numbers (for SMS broadcast alerts), and email addresses.</li>
                 <li><strong>Financial & Fee Records:</strong> Tuition billing invoices, receipt serials, payment method identifiers, and bursary reconciliations.</li>
-                <li><strong>Administrative Credentials:</strong> Securely salted bcrypt hashes for teacher, administrator, and bursar accounts.</li>
+                <li><strong>Administrative Credentials:</strong> Supabase Auth managed identities and session tokens for teacher, administrator, and bursar accounts.</li>
               </ul>
             </div>
 

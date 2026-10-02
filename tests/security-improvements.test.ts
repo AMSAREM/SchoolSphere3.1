@@ -14,117 +14,38 @@ describe('Security Improvements', () => {
     await startServer();
   });
   
-  describe('JWT Secret Handling', () => {
-    it('should require JWT_SECRET in production environment', async () => {
-      const originalEnv = process.env.NODE_ENV;
-      const originalJwt = process.env.JWT_SECRET;
-      const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
-      const originalShortJwt = process.env.JWT;
+  describe('Supabase Auth JWT Verification', () => {
+    it('should verify valid Supabase Auth session tokens and reject custom/foreign tokens', async () => {
+      const jwt = (await import('jsonwebtoken')).default;
+      const { verifyAuthToken } = await import('../lib/auth');
+      const expectedIssuer = `${(process.env.SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co').replace(/\/+$/, '')}/auth/v1`;
 
-      process.env.NODE_ENV = 'production';
-      delete process.env.JWT_SECRET;
-      delete process.env.SUPABASE_JWT_SECRET;
-      delete process.env.JWT;
+      const validSupabaseJwt = jwt.sign(
+        {
+          sub: '84b1efc0-de52-42fa-b811-000000000001',
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'test@example.com',
+          user_metadata: {
+            user_id: 'test-user-id',
+            username: 'testuser',
+            role: 'admin',
+            school_id: 'test-school-id',
+            full_name: 'Test User'
+          }
+        },
+        process.env.SUPABASE_JWT_SECRET || 'test-jwt-secret-for-vitest-suite-2026',
+        { issuer: expectedIssuer, expiresIn: '1h' }
+      );
 
-      try {
-        const { getJwtSecret } = await import('../lib/auth');
-        expect(() => getJwtSecret()).toThrow('JWT_SECRET or SUPABASE_JWT_SECRET environment variable must be set in production');
-      } finally {
-        process.env.NODE_ENV = originalEnv;
-        if (originalJwt) process.env.JWT_SECRET = originalJwt;
-        if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
-        if (originalShortJwt) process.env.JWT = originalShortJwt;
-      }
-    });
-
-    it('should use fallback in development with warning', async () => {
-      const originalEnv = process.env.NODE_ENV;
-      const originalJwt = process.env.JWT_SECRET;
-      const originalSbJwt = process.env.SUPABASE_JWT_SECRET;
-      const originalShortJwt = process.env.JWT;
-
-      process.env.NODE_ENV = 'development';
-      delete process.env.JWT_SECRET;
-      delete process.env.SUPABASE_JWT_SECRET;
-      delete process.env.JWT;
-
-      try {
-        const authModule = await import('../lib/auth');
-        const secret = authModule.getJwtSecret();
-        expect(secret).toBe('schoolsphere-dev-fallback-jwt-secret-key-3.1');
-      } finally {
-        process.env.NODE_ENV = originalEnv;
-        if (originalJwt) process.env.JWT_SECRET = originalJwt;
-        if (originalSbJwt) process.env.SUPABASE_JWT_SECRET = originalSbJwt;
-        if (originalShortJwt) process.env.JWT = originalShortJwt;
-      }
-    });
-  });
-
-  describe('Token Refresh Mechanism', () => {
-    it('should generate both access and refresh tokens', async () => {
-      const { generateAuthToken, generateRefreshToken } = await import('../lib/auth');
-      
-      const userPayload = {
-        id: 'test-user-id',
-        username: 'testuser',
-        email: 'test@example.com',
-        role: 'admin',
-        school_id: 'test-school-id'
-      };
-
-      const accessToken = generateAuthToken(userPayload);
-      const refreshToken = generateRefreshToken(userPayload);
-
-      expect(accessToken).toBeDefined();
-      expect(refreshToken).toBeDefined();
-      expect(accessToken).not.toBe(refreshToken);
-    });
-
-    it('should verify refresh tokens correctly', async () => {
-      const { generateRefreshToken, verifyRefreshToken } = await import('../lib/auth');
-      
-      const userPayload = {
-        id: 'test-user-id',
-        username: 'testuser',
-        email: 'test@example.com',
-        role: 'admin',
-        school_id: 'test-school-id'
-      };
-
-      const refreshToken = generateRefreshToken(userPayload);
-      const decoded = verifyRefreshToken(refreshToken);
-
-      expect(decoded).toBeDefined();
-      expect(decoded?.type).toBe('refresh');
+      const decoded = verifyAuthToken(validSupabaseJwt);
+      expect(decoded).not.toBeNull();
       expect(decoded?.username).toBe('testuser');
-    });
+      expect(decoded?.role).toBe('admin');
+      expect(decoded?.school_id).toBe('test-school-id');
 
-    it('should refresh access tokens using refresh tokens', async () => {
-      const { generateRefreshToken, refreshAccessToken } = await import('../lib/auth');
-      
-      const userPayload = {
-        id: 'test-user-id',
-        username: 'testuser',
-        email: 'test@example.com',
-        role: 'admin',
-        school_id: 'test-school-id'
-      };
-
-      const refreshToken = generateRefreshToken(userPayload);
-      const result = refreshAccessToken(refreshToken);
-
-      expect(result.success).toBe(true);
-      expect(result.newAccessToken).toBeDefined();
-    });
-
-    it('should reject invalid refresh tokens', async () => {
-      const { refreshAccessToken } = await import('../lib/auth');
-      
-      const result = refreshAccessToken('invalid-refresh-token');
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      const customHmacToken = jwt.sign({ id: 1, username: 'admin', role: 'admin' }, 'custom-hmac-secret');
+      expect(verifyAuthToken(customHmacToken)).toBeNull();
     });
   });
 

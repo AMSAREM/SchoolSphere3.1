@@ -571,7 +571,7 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
     
     // 1. Fetch complete dataset from Backend /api/db/sync
     const url = `/api/db/sync?fresh=${forceFresh ? 'true' : 'false'}&school_id=${encodeURIComponent(targetSchoolId || '')}`;
-    const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
     const headers: Record<string, string> = { 'x-school-id': targetSchoolId || '' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(url, { headers });
@@ -738,7 +738,7 @@ export async function reconcileOfflineWrites(): Promise<void> {
     for (const item of queue) {
       try {
         if (item.table === 'fee_payment') {
-          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;
@@ -749,7 +749,7 @@ export async function reconcileOfflineWrites(): Promise<void> {
           });
           if (!res.ok) throw new Error('Offline fee payment replay failed');
         } else if (item.table === 'fee_batch_bill') {
-          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;
@@ -760,7 +760,7 @@ export async function reconcileOfflineWrites(): Promise<void> {
           });
           if (!res.ok) throw new Error('Offline batch bill replay failed');
         } else if (item.table === 'siren_api') {
-          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
+          const token = typeof window !== 'undefined' ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token') || sessionStorage.getItem('esepa_auth_token')) : null;
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           if (item.payload?.schoolId) headers['x-school-id'] = item.payload.schoolId;

@@ -241,13 +241,33 @@ vi.mock('../lib/supabase/server.js', () => ({
 }));
 
 import { 
-  generateAuthToken, 
   verifyAuthToken, 
   requireRoles, 
   requireSchoolScope, 
   AuthenticatedRequest 
 } from '../lib/auth';
 import { app, startServer } from '../server';
+
+function makeTestSupabaseToken(payload: { id: string; username: string; role: string; school_id?: string; fullName?: string }): string {
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://niavmonyfwqlryppgksy.supabase.co').replace(/\/+$/, '');
+  return jwt.sign(
+    {
+      sub: payload.id,
+      aud: 'authenticated',
+      role: 'authenticated',
+      email: `${payload.username}@schoolsphere.edu.gh`,
+      user_metadata: {
+        user_id: payload.id,
+        username: payload.username,
+        role: payload.role,
+        school_id: payload.school_id || null,
+        full_name: payload.fullName || payload.username
+      }
+    },
+    process.env.SUPABASE_JWT_SECRET || 'test-jwt-secret-for-vitest-suite-2026',
+    { issuer: `${supabaseUrl}/auth/v1`, expiresIn: '1h' }
+  );
+}
 
 describe('Security & API Endpoints Test Suite', () => {
   let adminTokenSchoolA: string;
@@ -261,7 +281,7 @@ describe('Security & API Endpoints Test Suite', () => {
     await startServer();
 
     // 1. School A Admin
-    adminTokenSchoolA = generateAuthToken({
+    adminTokenSchoolA = makeTestSupabaseToken({
       id: 'user-admin-a',
       username: 'school_a_admin',
       role: 'admin',
@@ -270,7 +290,7 @@ describe('Security & API Endpoints Test Suite', () => {
     });
 
     // 2. Elena with teacher role at School A (Backdoor removal verification)
-    teacherElenaTokenSchoolA = generateAuthToken({
+    teacherElenaTokenSchoolA = makeTestSupabaseToken({
       id: 'user-elena-teacher',
       username: 'elena',
       role: 'teacher',
@@ -279,7 +299,7 @@ describe('Security & API Endpoints Test Suite', () => {
     });
 
     // 3. School B Admin
-    adminTokenSchoolB = generateAuthToken({
+    adminTokenSchoolB = makeTestSupabaseToken({
       id: 'user-admin-b',
       username: 'school_b_admin',
       role: 'admin',
@@ -288,7 +308,7 @@ describe('Security & API Endpoints Test Suite', () => {
     });
 
     // 4. Super Admin / Creator
-    superAdminToken = generateAuthToken({
+    superAdminToken = makeTestSupabaseToken({
       id: 'user-super-creator',
       username: 'vendor_creator',
       role: 'creator',

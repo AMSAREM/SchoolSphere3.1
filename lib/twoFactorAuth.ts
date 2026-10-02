@@ -279,20 +279,36 @@ export async function disableTwoFactorAuth(params: {
     const adminClient = getSupabaseAdmin();
     const { userId, password } = params;
 
-    // If password provided, verify it (extra security)
+    // If password provided, verify via Supabase Auth signInWithPassword
     if (password) {
       const { data: user } = await adminClient
         .from('users')
-        .select('password_hash')
+        .select('email, auth_user_id')
         .eq('id', userId)
         .maybeSingle();
 
-      if (user?.password_hash) {
-        const bcrypt = (await import('bcryptjs')).default;
-        const isValid = await bcrypt.compare(password, user.password_hash);
-        if (!isValid) {
-          return { success: false, error: 'Invalid password' };
-        }
+      let canonicalEmail = String(user?.email || '').trim().toLowerCase();
+      if (user?.auth_user_id && adminClient.auth?.admin?.getUserById) {
+        try {
+          const { data: au } = await adminClient.auth.admin.getUserById(user.auth_user_id);
+          if (au?.user?.email) {
+            canonicalEmail = au.user.email.trim().toLowerCase();
+          }
+        } catch {}
+      }
+
+      if (!canonicalEmail) {
+        return { success: false, error: 'Unable to verify user email for password check' };
+      }
+
+      const { createAuthenticatedSupabaseClient } = await import('./supabase/server.ts');
+      const verifyClient = createAuthenticatedSupabaseClient();
+      const { data: signRes, error: signErr } = await verifyClient.auth.signInWithPassword({
+        email: canonicalEmail,
+        password: String(password)
+      });
+      if (signErr || !signRes?.user?.id) {
+        return { success: false, error: 'Invalid password' };
       }
     }
 

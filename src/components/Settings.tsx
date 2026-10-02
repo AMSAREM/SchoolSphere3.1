@@ -1112,8 +1112,8 @@ export default function Settings() {
       const users = await db.users.toArray();
       if (users.length > 0) {
         sql += `-- Table: users\nTRUNCATE TABLE users;\n`;
-        sql += `INSERT INTO users (id, username, passwordHash, fullName, role, createdAt) VALUES\n`;
-        sql += users.map(u => `(${escapeSql(u.id)}, ${escapeSql(u.username)}, ${escapeSql(u.passwordHash)}, ${escapeSql(u.fullName)}, ${escapeSql(u.role)}, ${escapeSql(u.createdAt)})`).join(',\n') + ';\n\n';
+        sql += `INSERT INTO users (id, username, fullName, role, createdAt) VALUES\n`;
+        sql += users.map(u => `(${escapeSql(u.id)}, ${escapeSql(u.username)}, ${escapeSql(u.fullName)}, ${escapeSql(u.role)}, ${escapeSql(u.createdAt)})`).join(',\n') + ';\n\n';
       }
 
       // 2. Classes

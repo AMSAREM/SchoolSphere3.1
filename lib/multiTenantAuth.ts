@@ -1,7 +1,6 @@
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
-import { getSupabaseAdmin } from './supabase/server.ts';
-import { generateAuthToken, type AuthJwtPayload } from './auth.ts';
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server.ts';
+import type { AuthJwtPayload } from './auth.ts';
 import { validateEmail, normalizeEmail } from '../src/lib/emailValidation.ts';
 
 export interface RegisterOrgInput {
@@ -39,7 +38,6 @@ export interface StaffProfile {
   phone?: string;
   role: string;
   status: string;
-  password_hash?: string;
   created_at: number;
   updated_at: number;
 }
@@ -308,19 +306,18 @@ export async function registerOrganization(input: RegisterOrgInput) {
     }]);
   } catch (licErr) {}
 
-  // 6. Generate authenticated JWT
-  const authPayload: Omit<AuthJwtPayload, 'iat' | 'exp'> = {
-    id: insertedUserId,
-    username: username,
-    email: canonicalEmail,
-    role: 'admin',
-    school_id: newOrg.id,
-    schoolId: newOrg.id,
-    organization_id: newOrg.id,
-    fullName: adminFullName.trim()
-  };
-
-  const token = generateAuthToken(authPayload);
+  // 6. Issue real Supabase Auth session token via signInWithPassword
+  let token = '';
+  try {
+    const authClient = createAuthenticatedSupabaseClient();
+    const { data: signRes } = await authClient.auth.signInWithPassword({
+      email: canonicalEmail,
+      password
+    });
+    if (signRes?.session?.access_token) {
+      token = signRes.session.access_token;
+    }
+  } catch {}
 
   // 7. Record login telemetry
   recordUserLoginActivity({
@@ -636,19 +633,18 @@ export async function joinWithInvitation(input: {
       .eq('token', token.trim());
   } catch (e) {}
 
-  // Generate JWT token
-  const tokenPayload: Omit<AuthJwtPayload, 'iat' | 'exp'> = {
-    id: insertedUserId,
-    username,
-    email: canonicalEmail,
-    role: designatedRole,
-    school_id: orgId,
-    schoolId: orgId,
-    organization_id: orgId,
-    fullName: fullName.trim()
-  };
-
-  const authToken = generateAuthToken(tokenPayload);
+  // Issue real Supabase Auth session token via signInWithPassword
+  let authToken = '';
+  try {
+    const authClient = createAuthenticatedSupabaseClient();
+    const { data: signRes } = await authClient.auth.signInWithPassword({
+      email: canonicalEmail,
+      password
+    });
+    if (signRes?.session?.access_token) {
+      authToken = signRes.session.access_token;
+    }
+  } catch {}
 
   // Record login activity
   recordUserLoginActivity({

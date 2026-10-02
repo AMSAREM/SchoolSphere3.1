@@ -430,7 +430,7 @@ export function AuthScreens({
 
       {/* Main Centered Auth Form Container */}
       <div className="w-full max-w-md mx-auto my-auto relative z-10">
-        {/* Top Navigation: Return to Homepage + Breadcrumb */}
+        {/* Top Navigation: Return to Homepage */}
         <div className="mb-4 flex items-center justify-between gap-2">
           <button
             type="button"
@@ -440,9 +440,6 @@ export function AuthScreens({
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Return to Homepage</span>
           </button>
-          <span className="text-[11px] font-bold text-[#6a7f84] truncate">
-            {authPageMeta.category} › <span className="text-[#1c4a59]">{authPageMeta.title}</span>
-          </span>
         </div>
         
         {/* Brand Header */}

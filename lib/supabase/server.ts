@@ -80,8 +80,7 @@ export function createAuthenticatedSupabaseClient(accessToken?: string | null) {
   const anonKey =
     getEnvVar('SUPABASE_ANON_KEY') ||
     getEnvVar('VITE_SUPABASE_ANON_KEY') ||
-    getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY') ||
-    getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+    getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY');
 
   if (!anonKey) {
     throw new Error(

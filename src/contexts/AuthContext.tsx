@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshSession = async () => {
-    const savedToken = localStorage.getItem('esepa_auth_token');
+    const savedToken = localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token');
     const savedRefreshToken = localStorage.getItem('esepa_refresh_token');
     
     if (!savedToken) return;
@@ -177,42 +177,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (res.status === 401 || res.status === 403) {
         console.warn("Session token expired or revoked.");
         
-        // Try to refresh using refresh token
+        // Refresh using Supabase Auth refreshSession or /api/auth/refresh-token
         if (savedRefreshToken) {
           try {
-            const refreshRes = await fetch('/api/auth/refresh-token', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refreshToken: savedRefreshToken })
+            let newAccessToken: string | null = null;
+            let newRefreshToken: string | null = null;
+
+            const { data: sbRefreshed, error: sbRefreshErr } = await supabase.auth.refreshSession({
+              refresh_token: savedRefreshToken
             });
+            if (!sbRefreshErr && sbRefreshed?.session?.access_token) {
+              newAccessToken = sbRefreshed.session.access_token;
+              newRefreshToken = sbRefreshed.session.refresh_token || savedRefreshToken;
+            } else {
+              const refreshRes = await fetch('/api/auth/refresh-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: savedRefreshToken })
+              });
+              if (refreshRes.ok) {
+                const refreshData = await refreshRes.json();
+                if (refreshData.success && (refreshData.supabaseAccessToken || refreshData.token)) {
+                  newAccessToken = refreshData.supabaseAccessToken || refreshData.token;
+                  newRefreshToken = refreshData.supabaseRefreshToken || refreshData.refreshToken || savedRefreshToken;
+                }
+              }
+            }
 
-            if (refreshRes.ok) {
-              const refreshData = await refreshRes.json();
-              if (refreshData.success && refreshData.token) {
-                setToken(refreshData.token);
-                localStorage.setItem('esepa_auth_token', refreshData.token);
-                
-                // Retry the original request with new token
-                const retryRes = await fetch('/api/auth/me', {
-                  headers: {
-                    'Authorization': `Bearer ${refreshData.token}`
-                  }
-                });
+            if (newAccessToken) {
+              setToken(newAccessToken);
+              localStorage.setItem('esepa_auth_token', newAccessToken);
+              localStorage.setItem('esepa_supabase_access_token', newAccessToken);
+              if (newRefreshToken) {
+                setRefreshToken(newRefreshToken);
+                localStorage.setItem('esepa_refresh_token', newRefreshToken);
+              }
+              
+              // Retry the original request with new Supabase token
+              const retryRes = await fetch('/api/auth/me', {
+                headers: {
+                  'Authorization': `Bearer ${newAccessToken}`
+                }
+              });
 
-                if (retryRes.ok) {
-                  const retryData = await retryRes.json();
-                  if (retryData.success && retryData.user) {
-                    setUser(prev => ({ ...(prev || {}), ...retryData.user }));
-                    localStorage.setItem('esepa_user', JSON.stringify(retryData.user));
-                    if (retryData.school) {
-                      setSchool(retryData.school);
-                      localStorage.setItem('esepa_active_school', JSON.stringify(retryData.school));
-                    }
+              if (retryRes.ok) {
+                const retryData = await retryRes.json();
+                if (retryData.success && retryData.user) {
+                  setUser(prev => ({ ...(prev || {}), ...retryData.user }));
+                  localStorage.setItem('esepa_user', JSON.stringify(retryData.user));
+                  if (retryData.school) {
+                    setSchool(retryData.school);
+                    localStorage.setItem('esepa_active_school', JSON.stringify(retryData.school));
                   }
                 }
               }
             } else {
-              // Refresh token also expired, clear session
               logout();
             }
           } catch (refreshErr) {
@@ -455,8 +474,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: data.user.id,
             auth_user_id: verifiedAuthUid,
             username: data.user.username || cleanUser,
-            passwordHash: '',
-            password_hash: '',
             fullName: data.user.fullName || data.user.full_name || username,
             full_name: data.user.fullName || data.user.full_name || username,
             email: data.user.email,
@@ -469,13 +486,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             lastLogin: Date.now()
           };
 
-          if (data.token) {
-            setToken(data.token);
-            localStorage.setItem('esepa_auth_token', data.token);
+          const activeSessionToken = data.supabaseSession?.access_token || data.supabaseAccessToken || data.token;
+          const activeRefreshToken = data.supabaseSession?.refresh_token || data.supabaseRefreshToken || data.refreshToken;
+
+          if (activeSessionToken) {
+            setToken(activeSessionToken);
+            localStorage.setItem('esepa_auth_token', activeSessionToken);
+            localStorage.setItem('esepa_supabase_access_token', activeSessionToken);
           }
-          if (data.refreshToken) {
-            setRefreshToken(data.refreshToken);
-            localStorage.setItem('esepa_refresh_token', data.refreshToken);
+          if (activeRefreshToken) {
+            setRefreshToken(activeRefreshToken);
+            localStorage.setItem('esepa_refresh_token', activeRefreshToken);
           }
 
           // Update Context and local storage session before setting Supabase session so onAuthStateChange sees verified state
@@ -483,14 +504,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
 
           // Hydrate browser Supabase client with RLS session token when returned by backend
-          if (data.supabaseSession?.access_token && data.supabaseSession?.refresh_token) {
-            localStorage.setItem('esepa_supabase_access_token', data.supabaseSession.access_token);
+          if (activeSessionToken && activeRefreshToken) {
             supabase.auth.setSession({
-              access_token: data.supabaseSession.access_token,
-              refresh_token: data.supabaseSession.refresh_token
+              access_token: activeSessionToken,
+              refresh_token: activeRefreshToken
             }).catch(() => {});
-          } else if (data.supabaseAccessToken) {
-            localStorage.setItem('esepa_supabase_access_token', data.supabaseAccessToken);
           }
 
           // Cache verified tenant user locally in Dexie scoped by school_id (never cache platform creator/super_admin in client user store)
@@ -779,8 +797,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const activeUser: User = {
           id: respData.user?.id || Date.now(),
           username: cleanUser,
-          passwordHash: '',
-          password_hash: '',
           fullName: fullName.trim() || cleanUser,
           full_name: fullName.trim() || cleanUser,
           email: email || `${cleanUser}@schoolsphere.xyz`,
@@ -793,9 +809,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           lastLogin: Date.now()
         };
 
-        if (respData.token) {
-          setToken(respData.token);
-          localStorage.setItem('esepa_auth_token', respData.token);
+        const sessionToken = respData.supabaseAccessToken || respData.token;
+        if (sessionToken) {
+          setToken(sessionToken);
+          localStorage.setItem('esepa_auth_token', sessionToken);
+          localStorage.setItem('esepa_supabase_access_token', sessionToken);
         }
 
         setUser(activeUser);

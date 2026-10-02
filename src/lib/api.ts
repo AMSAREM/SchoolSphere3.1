@@ -22,7 +22,10 @@ import {
  */
 
 export function getApiHeaders(schoolId?: string): Record<string, string> {
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('esepa_auth_token') : null;
+  const token =
+    typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('esepa_supabase_access_token') || localStorage.getItem('esepa_auth_token'))
+      : null;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
@@ -2634,7 +2637,7 @@ export const usersApi = {
   create: async (userData: any, schoolId?: string) => {
     const targetSchoolId = schoolId || userData.school_id || userData.schoolId || (await getCurrentSchoolId());
     const safeRole = (userData.role === 'creator' || userData.role === 'super_admin') ? 'admin' : (userData.role || 'teacher');
-    const rawPassword = userData.password || userData.passwordHash || userData.password_hash || '';
+    const rawPassword = userData.password || '';
     const cleanUsername = String(userData.username || '').trim().toLowerCase().replace(/^@+/, '');
 
     const payload = {

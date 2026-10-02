@@ -901,8 +901,8 @@ export default function FrontendTestRunner({
         },
         {
           id: 'test_crud_tenant_user_autolink',
-          name: 'Tenant User Provisioning, Bcrypt Immutability & Profile Auto-Linking',
-          description: 'Provisions a scoped teacher user + linked teacher profile in Supabase, verifies bcrypt hash, and rolls back.',
+          name: 'Tenant User Provisioning & Profile Auto-Linking',
+          description: 'Provisions a scoped teacher user + linked teacher profile in Supabase and rolls back.',
           targetView: 'users',
           run: async () => {
             const outcome = await callBackendDiag('crud_user_autolink_probe');

@@ -5,10 +5,9 @@ import fs from "fs";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import dns from "dns";
-import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { getSupabaseAdmin, createAuthenticatedSupabaseClient, getCreatorAuthenticatedClient } from "./lib/supabase/server.ts";
-import { generateAuthToken, authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, generateRefreshToken, verifyRefreshToken, refreshAccessToken, type AuthenticatedRequest } from "./lib/auth.ts";
+import { authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, type AuthenticatedRequest } from "./lib/auth.ts";
 import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.ts";
 import type { Request, Response, NextFunction } from 'express';
 import { 
@@ -303,6 +302,7 @@ async function ensureUserSupabaseAuthIdentity(params: {
   schoolId?: string | null;
   schoolSlug?: string | null;
   rawPassword?: string | null;
+  overwritePassword?: boolean;
   scopedUsername?: string | null;
   issueSession?: boolean;
 }): Promise<{
@@ -327,7 +327,16 @@ async function ensureUserSupabaseAuthIdentity(params: {
         : `${cleanBaseUser}@${cleanSlug}.edu.gh`);
 
   const rawPass = params.rawPassword ? String(params.rawPassword).trim() : '';
-  const authPassword = rawPass.length >= 6 ? rawPass : (rawPass ? `${rawPass}#2026` : '');
+  const ensureCompliantPassword = (p: string) => {
+    if (!p) return '';
+    let out = p;
+    if (!/[a-z]/.test(out)) out += 'a';
+    if (!/[A-Z]/.test(out)) out += 'A';
+    if (!/[0-9]/.test(out)) out += '1';
+    if (out.length < 6) out += '#2026';
+    return out;
+  };
+  const authPassword = ensureCompliantPassword(rawPass);
 
   const userMetaPayload = {
     full_name: String(params.fullName || cleanBaseUser).trim(),
@@ -359,8 +368,7 @@ async function ensureUserSupabaseAuthIdentity(params: {
           user_metadata: {
             ...(existingAuth.user.user_metadata || {}),
             ...userMetaPayload
-          },
-          ...(authPassword ? { password: authPassword } : {})
+          }
         });
       } else {
         resolvedAuthUid = null;
@@ -397,8 +405,7 @@ async function ensureUserSupabaseAuthIdentity(params: {
             user_metadata: {
               ...(linkData.user.user_metadata || {}),
               ...userMetaPayload
-            },
-            ...(authPassword ? { password: authPassword } : {})
+            }
           });
         }
       }
@@ -540,13 +547,12 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
       }
     }
 
-    // 2. Clean up orphan trigger-created duplicate rows (where school_id is null, role is null, password_hash is null)
+    // 2. Clean up orphan trigger-created duplicate rows (where school_id is null and role is not creator)
     let activeUsers = Array.isArray(users) ? [...users] : [];
     const orphanRows = activeUsers.filter(
       (u: any) =>
         !u.school_id &&
-        (!u.role || String(u.role).toLowerCase() !== 'creator') &&
-        !u.password_hash
+        (!u.role || String(u.role).toLowerCase() !== 'creator')
     );
     for (const orp of orphanRows) {
       try {
@@ -576,8 +582,8 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
             String(u.email || '').toLowerCase() === 'admin@joyce.edu.gh'
         )
         .sort((a: any, b: any) => {
-          const aScore = (a.school_id === joyceSchool.id ? 4 : 0) + (a.password_hash ? 2 : 0) + (a.role === 'admin' ? 2 : 0);
-          const bScore = (b.school_id === joyceSchool.id ? 4 : 0) + (b.password_hash ? 2 : 0) + (b.role === 'admin' ? 2 : 0);
+          const aScore = (a.school_id === joyceSchool.id ? 4 : 0) + (a.auth_user_id ? 2 : 0) + (a.role === 'admin' ? 2 : 0);
+          const bScore = (b.school_id === joyceSchool.id ? 4 : 0) + (b.auth_user_id ? 2 : 0) + (b.role === 'admin' ? 2 : 0);
           if (bScore !== aScore) return bScore - aScore;
           return Number(a.id || 0) - Number(b.id || 0);
         });
@@ -619,19 +625,18 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
           userId: primaryJoyceAdmin.id,
           existingAuthUserId: primaryJoyceAdmin.auth_user_id,
           username: 'admin',
-          email: primaryJoyceAdmin.email || 'admin@joyce.com',
+          email: primaryJoyceAdmin.email || 'admin@joyce.edu.gh',
           fullName: primaryJoyceAdmin.full_name || 'Head Administrator',
           role: 'admin',
           schoolId: joyceSchool.id,
           schoolSlug: 'joyce',
-          rawPassword: joyceLicenseKey,
           issueSession: false
         });
       }
 
       // Also clean up any duplicate Joyce admin entries in local registered_users store
       try {
-        const regUsers = getRegisteredUsers();
+        const regUsers = getFromFallback('users');
         if (Array.isArray(regUsers) && regUsers.length > 0) {
           let seenJoyceAdmin = false;
           const cleanedReg = regUsers
@@ -669,7 +674,7 @@ async function reconcileSupabaseAuthAndJoyceAdmin() {
               }
               return true;
             });
-          saveRegisteredUsers(cleanedReg);
+          localFallbackDb.users = cleanedReg;
         }
       } catch {}
     }
@@ -1174,19 +1179,14 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         if (error) {
           const errCode = String((error as any).code || '');
           const errMsg = String(error.message || error);
-          const isOptionalUnprovisionedTable =
-            (errCode === '42P01' || errCode === 'PGRST205' || errMsg.includes('Could not find the table')) &&
-            ['school_licenses', 'promotion_history', 'sms_logs', 'lesson_notes'].includes(targetTable);
 
           console.error(
             `[Supabase pullData Table Error] table="${targetTable}" (logical="${table}") school_id="${targetSchoolId || 'global'}" code="${errCode}" message="${errMsg}"`
           );
 
-          if (!isOptionalUnprovisionedTable) {
-            throw new Error(
-              `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
-            );
-          }
+          throw new Error(
+            `Supabase read failed on table "${targetTable}" (code ${errCode || 'UNKNOWN'}): ${errMsg}`
+          );
         }
 
         const safeRows: any[] = Array.isArray(rows) ? rows : [];
@@ -1789,7 +1789,6 @@ async function doStartServer() {
   // ----------------------------------------------------
   // LICENSE VERIFICATION & SINGLE SOURCE OF TRUTH (SUPABASE)
   // ----------------------------------------------------
-  const customUserPasswords = new Map<string, { passwordHash: string; role?: string; fullName?: string; schoolId?: string | null; email?: string; updatedAt: number }>();
   const resetTokens = new Map<string, { username: string; email: string; token: string; code: string; expiresAt: number }>();
 
   function getRegisteredUsers(): any[] {
@@ -1871,13 +1870,10 @@ async function doStartServer() {
     const fullName = (params.contactPerson || 'Head Administrator').trim();
 
     const rawPassword = params.adminPassword || params.licenseKey || '';
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = rawPassword ? await bcrypt.hash(String(rawPassword).trim(), salt) : '';
 
     let savedUserId: any = Date.now();
     let finalUsername = cleanBaseUser;
     let authUserId: string | null = null;
-    let finalPasswordHash = passwordHash;
 
     // 1. Check if THIS school already has a matching admin user in Supabase public.users
     try {
@@ -1904,9 +1900,6 @@ async function doStartServer() {
         cleanBaseUser = finalUsername.includes('@') ? finalUsername.split('@')[0] : finalUsername;
         scopedUsername = `${cleanBaseUser}@${cleanSlug}`;
         authUserId = existingForSchool.auth_user_id || null;
-        if (params.preserveExistingPassword && existingForSchool.password_hash) {
-          finalPasswordHash = existingForSchool.password_hash;
-        }
 
         // Preserve canonical auth.users email if auth_user_id is already linked; never overwrite public.users.email out of sync with auth.users
         let canonicalExistingEmail = existingForSchool.email || targetEmail;
@@ -1941,39 +1934,16 @@ async function doStartServer() {
           finalUsername = scopedUsername;
         }
 
-        let rpcSaved = false;
-        if (schoolId && /^[0-9a-f-]{36}$/i.test(String(schoolId))) {
-          try {
-            const rpcRes = await adminClient.rpc('provision_tenant_user', {
-              p_school_id: schoolId,
-              p_username: finalUsername,
-              p_password_hash: finalPasswordHash,
-              p_full_name: fullName,
-              p_role: 'admin',
-              p_status: 'active',
-              p_email: targetEmail,
-              p_phone: null,
-              p_auth_user_id: authUserId
-            });
-            if (!rpcRes.error && rpcRes.data?.id) {
-              savedUserId = rpcRes.data.id;
-              rpcSaved = true;
-            }
-          } catch {}
-        }
-
-        if (!rpcSaved) {
-          const insertPayload: any = {
-            username: finalUsername,
-            full_name: fullName,
-            email: targetEmail,
-            password_hash: finalPasswordHash,
-            role: 'admin',
-            school_id: schoolId,
-            status: 'active',
-            created_at: Date.now(),
-            updated_at: Date.now()
-          };
+        const insertPayload: any = {
+          username: finalUsername,
+          full_name: fullName,
+          email: targetEmail,
+          role: 'admin',
+          school_id: schoolId,
+          status: 'active',
+          created_at: Date.now(),
+          updated_at: Date.now()
+        };
 
           const { data: insertedUser, error: insertErr } = await adminClient
             .from('users')
@@ -1991,9 +1961,8 @@ async function doStartServer() {
               .upsert([{ ...insertPayload, username: scopedUsername }], { onConflict: 'username' })
               .select()
               .maybeSingle();
-            if (retryUser?.id) {
-              savedUserId = retryUser.id;
-            }
+          if (retryUser?.id) {
+            savedUserId = retryUser.id;
           }
         }
       }
@@ -2037,10 +2006,6 @@ async function doStartServer() {
          u.role === 'admin')
       );
 
-      if (existingIdx >= 0 && params.preserveExistingPassword && (regUsers[existingIdx].passwordHash || regUsers[existingIdx].password_hash)) {
-        finalPasswordHash = regUsers[existingIdx].passwordHash || regUsers[existingIdx].password_hash;
-      }
-
       const localRecord = {
         id: savedUserId,
         username: finalUsername,
@@ -2049,8 +2014,6 @@ async function doStartServer() {
         fullName,
         full_name: fullName,
         email: targetEmail,
-        passwordHash: finalPasswordHash,
-        password_hash: finalPasswordHash,
         licenseKey: params.licenseKey ? String(params.licenseKey).trim().toUpperCase() : undefined,
         role: 'admin',
         status: 'active',
@@ -2081,21 +2044,6 @@ async function doStartServer() {
         deduplicatedReg.push(localRecord);
       }
       saveRegisteredUsers(deduplicatedReg);
-
-      const memEntry = {
-        passwordHash: finalPasswordHash,
-        fullName,
-        role: 'admin',
-        schoolId,
-        email: targetEmail,
-        updatedAt: Date.now()
-      };
-      customUserPasswords.set(scopedUsername, memEntry);
-      customUserPasswords.set(targetEmail, memEntry);
-      customUserPasswords.set(`${cleanBaseUser}::${schoolId}`, memEntry);
-      if (!customUserPasswords.has(cleanBaseUser) || !params.preserveExistingPassword) {
-        customUserPasswords.set(cleanBaseUser, memEntry);
-      }
     } catch (e) {}
 
     return {
@@ -2660,7 +2608,7 @@ async function doStartServer() {
               createdAt: Date.now(),
               lastLogin: Date.now()
             };
-            authToken = generateAuthToken(authUserObj);
+            authToken = provisioned.supabaseAccessToken || null;
           } catch (uErr: any) {
             console.warn("Notice syncing activated admin user to Supabase:", uErr.message);
           }
@@ -3065,13 +3013,26 @@ async function doStartServer() {
         createdAt: Date.now(),
         lastLogin: Date.now()
       };
-      const authToken = generateAuthToken(authUserObj);
+      const authIdentity = await ensureUserSupabaseAuthIdentity({
+        userId: existU?.id || null,
+        existingAuthUserId: authUserId || null,
+        username,
+        email: cleanEmail,
+        fullName: fullName?.trim() || 'Head Administrator',
+        role: 'admin',
+        schoolId: dbSchoolId,
+        issueSession: true
+      });
+      const authToken = authIdentity.accessToken || '';
 
       return res.json({
         success: true,
         message: `School license activated! A secure magic sign-in link has been dispatched to ${cleanEmail}.`,
         license: updatedLicense,
         token: authToken,
+        supabaseAccessToken: authToken || undefined,
+        supabaseRefreshToken: authIdentity.refreshToken || undefined,
+        supabaseSession: authIdentity.session || undefined,
         user: authUserObj,
         magicLinkUrl,
         emailOtpCode,
@@ -3585,8 +3546,8 @@ async function doStartServer() {
           lastLogin: Date.now()
         };
 
-        const token = generateAuthToken(creatorUser);
-        const refreshToken = generateRefreshToken(creatorUser);
+        const token = creatorAuth.accessToken || creatorAuth.session?.access_token || '';
+        const refreshToken = creatorAuth.refreshToken || creatorAuth.session?.refresh_token || '';
         
         recordUserLoginActivity({
           id: crypto.randomUUID(),
@@ -3608,8 +3569,8 @@ async function doStartServer() {
           success: true,
           token,
           refreshToken,
-          supabaseAccessToken: creatorAuth.session?.access_token || null,
-          supabaseRefreshToken: creatorAuth.session?.refresh_token || null,
+          supabaseAccessToken: token || null,
+          supabaseRefreshToken: refreshToken || null,
           supabaseSession: creatorAuth.session || null,
           user: creatorUser,
           school: defaultSchoolObj
@@ -3689,8 +3650,8 @@ async function doStartServer() {
         } catch {}
 
         const matchesUserHandle = (u: any) => {
-          // Skip orphan rows with no school_id and no password_hash
-          if (!u.school_id && !u.schoolId && !u.password_hash && !u.passwordHash && u.role !== 'creator') {
+          // Skip orphan rows with no school_id and non-creator role
+          if (!u.school_id && !u.schoolId && u.role !== 'creator') {
             return false;
           }
           const uName = String(u.username || '').trim().toLowerCase().replace(/^@+/, '');
@@ -3769,7 +3730,6 @@ async function doStartServer() {
               status: sp.status || 'active',
               school_id: sp.organization_id,
               schoolId: sp.organization_id,
-              password_hash: sp.password_hash,
               updated_at: sp.updated_at,
               _source: 'staff_profile'
             };
@@ -3802,6 +3762,8 @@ async function doStartServer() {
         if (combinedCandidates.length > 0) {
           existingUserFoundInStep2 = true;
           combinedCandidates.sort((a, b) => {
+            const aSourceScore = a._source === 'supabase' ? 10 : a._source === 'supabase_rpc' ? 8 : 0;
+            const bSourceScore = b._source === 'supabase' ? 10 : b._source === 'supabase_rpc' ? 8 : 0;
             const aEmailExact = String(a.email || '').toLowerCase() === rawUsernameInput ? 3 : 0;
             const bEmailExact = String(b.email || '').toLowerCase() === rawUsernameInput ? 3 : 0;
             const aScopedExact = String(a.scopedUsername || a.username || '').toLowerCase() === rawUsernameInput ? 3 : 0;
@@ -3818,7 +3780,7 @@ async function doStartServer() {
               b.schools?.id === hintSchoolId ||
               String(b.schools?.slug || '').toLowerCase() === targetSchoolHint
             ) ? 6 : 0;
-            const scoreDiff = (bSchoolMatch + bEmailExact + bScopedExact) - (aSchoolMatch + aEmailExact + aScopedExact);
+            const scoreDiff = (bSourceScore + bSchoolMatch + bEmailExact + bScopedExact) - (aSourceScore + aSchoolMatch + aEmailExact + aScopedExact);
             if (scoreDiff !== 0) return scoreDiff;
             const aUpdated = Number(a.updatedAt || a.updated_at || a.createdAt || a.created_at || 0);
             const bUpdated = Number(b.updatedAt || b.updated_at || b.createdAt || b.created_at || 0);
@@ -3979,8 +3941,8 @@ async function doStartServer() {
                 lastLogin: Date.now()
               };
 
-              const token = generateAuthToken(userObj);
-              const refreshToken = generateRefreshToken(userObj);
+              const token = authIdentity.accessToken || '';
+              const refreshToken = authIdentity.refreshToken || '';
 
               recordUserLoginActivity({
                 id: crypto.randomUUID(),
@@ -4080,8 +4042,8 @@ async function doStartServer() {
                 createdAt: Date.now(),
                 lastLogin: Date.now()
               };
-              const token = generateAuthToken(teacherUser);
-              const refreshToken = generateRefreshToken(teacherUser);
+              const token = authIdentity.accessToken || '';
+              const refreshToken = authIdentity.refreshToken || '';
               recordUserLoginActivity({
                 id: crypto.randomUUID(),
                 user_id: teacherUser.id,
@@ -4312,8 +4274,8 @@ async function doStartServer() {
               lastLogin: Date.now()
             };
 
-            const token = generateAuthToken(userObj);
-            const refreshToken = generateRefreshToken(userObj);
+            const token = provisioned.supabaseAccessToken || '';
+            const refreshToken = provisioned.supabaseRefreshToken || '';
 
             recordUserLoginActivity({
               id: crypto.randomUUID(),
@@ -4476,10 +4438,9 @@ async function doStartServer() {
         schoolName: dbUser.schools?.name || 'SchoolSphere Academy',
         rlsAuthenticated: true
       };
-      const token = generateAuthToken(userObj);
       return res.json({
         verified: true,
-        token,
+        token: rawAccessToken,
         supabaseAccessToken: rawAccessToken,
         user: userObj,
         school: dbUser.schools || null
@@ -4844,66 +4805,38 @@ async function doStartServer() {
         return res.status(400).json({ success: false, error: "Invalid or expired reset token or code. Please request a fresh reset link." });
       }
 
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(newPassword, salt);
       const adminClient = getSupabaseAdmin();
 
       try {
-        const updatePayload: any = {
-          password_hash: passwordHash,
-          updated_at: Date.now()
-        };
-
         const { data: existingUser } = await adminClient
           .from('users')
-          .select('id, username, email, auth_user_id')
+          .select('id, username, email, full_name, role, school_id, auth_user_id')
           .or(`username.ilike.${targetUsername || 'none'},email.ilike.${targetEmail || 'none'}`)
           .maybeSingle();
 
         if (existingUser) {
-          await adminClient.from('users').update(updatePayload).eq('id', existingUser.id);
+          await adminClient.from('users').update({ updated_at: Date.now() }).eq('id', existingUser.id);
           if (existingUser.auth_user_id && adminClient.auth?.admin?.updateUserById) {
             await adminClient.auth.admin.updateUserById(existingUser.auth_user_id, {
               password: newPassword,
               user_metadata: { must_change_password: false }
             });
+          } else {
+            await ensureUserSupabaseAuthIdentity({
+              userId: existingUser.id,
+              email: existingUser.email || targetEmail,
+              username: existingUser.username || targetUsername,
+              fullName: existingUser.full_name || existingUser.username,
+              role: existingUser.role || 'teacher',
+              schoolId: existingUser.school_id,
+              rawPassword: newPassword,
+              overwritePassword: true,
+              issueSession: false
+            });
           }
-        } else {
-          // If user wasn't in DB yet, create full profile with new password hash
-          const DEMO_USERS: Record<string, { role: string, fullName: string, email: string }> = {
-            'school_admin': { role: 'admin', fullName: 'School Administrator', email: 'admin@schoolsphere.xyz' },
-            'admin': { role: 'admin', fullName: 'Head Administrator', email: 'headadmin@schoolsphere.xyz' },
-            'ebenezer': { role: 'teacher', fullName: 'Ebenezer Mensah', email: 'ebenezer@schoolsphere.xyz' },
-            'alice': { role: 'accountant', fullName: 'Alice Quarshie', email: 'alice@schoolsphere.xyz' },
-            'kofi': { role: 'student', fullName: 'Kofi Manu', email: 'kofi@schoolsphere.xyz' },
-            'ama': { role: 'parent', fullName: 'Ama Serwaa', email: 'ama@schoolsphere.xyz' }
-          };
-
-          const key = (targetUsername || '').toLowerCase();
-          const demoInfo = DEMO_USERS[key] || { role: 'teacher', fullName: targetUsername, email: targetEmail };
-
-          await adminClient.from('users').upsert([{
-            username: targetUsername || targetEmail?.split('@')[0],
-            full_name: demoInfo.fullName,
-            email: targetEmail || demoInfo.email,
-            password_hash: passwordHash,
-            role: demoInfo.role,
-            status: 'active',
-            school_id: '00000000-0000-0000-0000-000000000001',
-            created_at: Date.now(),
-            updated_at: Date.now(),
-            last_login: Date.now()
-          }], { onConflict: 'username' });
         }
       } catch (dbErr: any) {
-        console.warn("Notice updating password in Supabase:", dbErr.message);
-      }
-
-      if (targetUsername) {
-        customUserPasswords.set(targetUsername.toLowerCase(), { passwordHash, updatedAt: Date.now() });
-      }
-      if (targetEmail) {
-        customUserPasswords.set(targetEmail.toLowerCase(), { passwordHash, updatedAt: Date.now() });
+        console.warn("Notice updating password in Supabase Auth:", dbErr.message);
       }
 
       if (token) resetTokens.delete(token);
@@ -4919,7 +4852,7 @@ async function doStartServer() {
     }
   });
 
-  // User Registration Endpoint - writes to Supabase database
+  // User Registration Endpoint - writes to Supabase Auth + public.users
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { username, password, fullName, role, email, phone, schoolId, status } = req.body || {};
@@ -4928,16 +4861,13 @@ async function doStartServer() {
       }
 
       const cleanUser = username.trim().toLowerCase();
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(password, salt);
       const adminClient = getSupabaseAdmin();
 
       const userPayload = {
         username: cleanUser,
         full_name: (fullName || username).trim(),
-        email: email || null,
+        email: email || `${cleanUser}@schoolsphere.edu.gh`,
         phone: phone || null,
-        password_hash: passwordHash,
         role: role || 'teacher',
         status: status || 'active',
         school_id: role === 'super_admin' ? null : (schoolId || null),
@@ -4956,11 +4886,24 @@ async function doStartServer() {
         console.warn("Supabase user register warning:", error.message);
       }
 
+      const authIdentity = await ensureUserSupabaseAuthIdentity({
+        userId: data?.id || null,
+        username: cleanUser,
+        email: userPayload.email,
+        fullName: userPayload.full_name,
+        role: userPayload.role,
+        schoolId: userPayload.school_id,
+        rawPassword: String(password).trim(),
+        overwritePassword: true,
+        issueSession: true
+      });
+
       const registeredUser = {
         id: data?.id || Date.now(),
+        auth_user_id: authIdentity.authUserId || null,
         username: cleanUser,
         fullName: userPayload.full_name,
-        email: userPayload.email,
+        email: authIdentity.authEmail || userPayload.email,
         phone: userPayload.phone,
         role: userPayload.role,
         status: userPayload.status,
@@ -4974,8 +4917,6 @@ async function doStartServer() {
         const regUsers = getRegisteredUsers();
         regUsers.push({
           ...registeredUser,
-          passwordHash,
-          password_hash: passwordHash,
           updatedAt: Date.now()
         });
         saveRegisteredUsers(regUsers);
@@ -5020,11 +4961,15 @@ async function doStartServer() {
         }
       }
 
-      const token = generateAuthToken(registeredUser);
+      const token = authIdentity.accessToken || '';
 
       return res.json({
         success: true,
         token,
+        refreshToken: authIdentity.refreshToken || undefined,
+        supabaseAccessToken: authIdentity.accessToken || undefined,
+        supabaseRefreshToken: authIdentity.refreshToken || undefined,
+        supabaseSession: authIdentity.session || undefined,
         user: registeredUser,
         school: data?.schools || null,
         license_code: generatedLicenseCode,
@@ -5118,15 +5063,13 @@ async function doStartServer() {
 
       // Sync invited staff member to local registered users for universal login
       try {
-        if (result.user && (result as any).passwordHash) {
+        if (result.user) {
           const regUsers = getRegisteredUsers();
           regUsers.push({
             id: result.user.id,
             username: result.user.username,
             fullName: result.user.fullName,
             email: result.user.email,
-            passwordHash: (result as any).passwordHash,
-            password_hash: (result as any).passwordHash,
             role: result.user.role,
             status: 'active',
             schoolId: result.user.organizationId || result.user.school_id,
@@ -5211,7 +5154,7 @@ async function doStartServer() {
     }
   });
 
-  // Token Refresh Endpoint - Refresh access token using refresh token
+  // Token Refresh Endpoint - Refresh access token using Supabase Auth refresh token
   app.post("/api/auth/refresh-token", async (req, res) => {
     try {
       const { refreshToken } = req.body || {};
@@ -5219,14 +5162,25 @@ async function doStartServer() {
         return res.status(400).json({ success: false, error: "Refresh token is required" });
       }
 
-      const result = refreshAccessToken(refreshToken);
-      if (!result.success) {
-        return res.status(401).json({ success: false, error: result.error });
+      const authClient = createAuthenticatedSupabaseClient();
+      const { data: refreshed, error: refreshErr } = await authClient.auth.refreshSession({
+        refresh_token: String(refreshToken).trim()
+      });
+
+      if (refreshErr || !refreshed?.session?.access_token) {
+        return res.status(401).json({
+          success: false,
+          error: refreshErr?.message || "Invalid or expired Supabase refresh token. Please log in again."
+        });
       }
 
       return res.json({
         success: true,
-        token: result.newAccessToken
+        token: refreshed.session.access_token,
+        refreshToken: refreshed.session.refresh_token || refreshToken,
+        supabaseAccessToken: refreshed.session.access_token,
+        supabaseRefreshToken: refreshed.session.refresh_token || refreshToken,
+        supabaseSession: refreshed.session
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -5680,22 +5634,58 @@ async function doStartServer() {
       }
 
       const adminClient = getSupabaseAdmin();
-      const { data: dbUser, error } = await adminClient
-        .from('users')
-        .select('id, auth_user_id, username, email')
-        .eq('id', authUser.id)
-        .maybeSingle();
+      const rawId = String(authUser.id || '');
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
 
-      if (error || !dbUser) {
+      let dbUser: any = null;
+      if (isUuid) {
+        const { data: byUid } = await adminClient
+          .from('users')
+          .select('id, auth_user_id, username, email, school_id')
+          .eq('auth_user_id', rawId)
+          .maybeSingle();
+        if (byUid) dbUser = byUid;
+      } else if (rawId) {
+        const { data: byId } = await adminClient
+          .from('users')
+          .select('id, auth_user_id, username, email, school_id')
+          .eq('id', authUser.id)
+          .maybeSingle();
+        if (byId) dbUser = byId;
+      }
+
+      if (!dbUser && authUser.auth_user_id) {
+        const { data: byAuthUid } = await adminClient
+          .from('users')
+          .select('id, auth_user_id, username, email, school_id')
+          .eq('auth_user_id', authUser.auth_user_id)
+          .maybeSingle();
+        if (byAuthUid) dbUser = byAuthUid;
+      }
+
+      if (!dbUser && authUser.email) {
+        const { data: byEmail } = await adminClient
+          .from('users')
+          .select('id, auth_user_id, username, email, school_id')
+          .ilike('email', authUser.email)
+          .maybeSingle();
+        if (byEmail) dbUser = byEmail;
+      }
+
+      if (!dbUser) {
         return res.status(404).json({ success: false, error: "User record not found in database" });
       }
 
       let canonicalEmail = String(dbUser.email || '').trim().toLowerCase();
+      let existingUserMeta: Record<string, any> = {};
       if (dbUser.auth_user_id && adminClient.auth?.admin?.getUserById) {
         try {
           const { data: au } = await adminClient.auth.admin.getUserById(dbUser.auth_user_id);
           if (au?.user?.email) {
             canonicalEmail = au.user.email.trim().toLowerCase();
+          }
+          if (au?.user?.user_metadata) {
+            existingUserMeta = au.user.user_metadata;
           }
         } catch {}
       }
@@ -5709,6 +5699,24 @@ async function doStartServer() {
             password: String(currentPassword)
           });
           if (!signErr && signRes?.user?.id) {
+            isCurrentValid = true;
+          }
+        } catch {}
+      }
+
+      // Also allow the school's active license key as currentPassword when changing from initial license-key activation
+      if (!isCurrentValid && (dbUser.school_id || authUser.school_id)) {
+        try {
+          const targetSchoolId = dbUser.school_id || authUser.school_id;
+          const { data: licRow } = await adminClient
+            .from('school_licenses')
+            .select('license_key')
+            .eq('school_id', targetSchoolId)
+            .maybeSingle();
+          if (
+            licRow?.license_key &&
+            String(currentPassword).trim().toUpperCase() === String(licRow.license_key).trim().toUpperCase()
+          ) {
             isCurrentValid = true;
           }
         } catch {}
@@ -5735,12 +5743,13 @@ async function doStartServer() {
       const { error: authUpdErr } = await adminClient.auth.admin.updateUserById(dbUser.auth_user_id, {
         password: String(newPassword),
         user_metadata: {
+          ...existingUserMeta,
           must_change_password: false
         }
       });
 
       if (authUpdErr) {
-        return res.status(500).json({ success: false, error: authUpdErr.message });
+        return res.status(400).json({ success: false, error: authUpdErr.message });
       }
 
       const { error: updateErr } = await adminClient
@@ -6299,24 +6308,17 @@ async function doStartServer() {
         return res.status(400).json({ success: false, error: "Please provide a valid username" });
       }
 
-      // Decode raw password and compute bcrypt hash
+      // Decode raw password for Supabase Auth user creation
       let rawPasswordStr = password ? String(password).trim() : '';
-      let finalHash = passwordHash || '';
-      if (rawPasswordStr) {
-        const salt = await bcrypt.genSalt(10);
-        finalHash = await bcrypt.hash(rawPasswordStr, salt);
-      } else if (passwordHash && !String(passwordHash).startsWith('$2a$') && !String(passwordHash).startsWith('$2b$')) {
+      if (!rawPasswordStr && passwordHash && !String(passwordHash).startsWith('$2a$') && !String(passwordHash).startsWith('$2b$')) {
         try {
           const decoded = Buffer.from(String(passwordHash), 'base64').toString('utf-8');
-          rawPasswordStr = decoded || String(passwordHash);
-          const salt = await bcrypt.genSalt(10);
-          finalHash = await bcrypt.hash(rawPasswordStr, salt);
+          rawPasswordStr = (decoded || String(passwordHash)).trim();
         } catch {
-          rawPasswordStr = String(passwordHash);
-          const salt = await bcrypt.genSalt(10);
-          finalHash = await bcrypt.hash(rawPasswordStr, salt);
+          rawPasswordStr = String(passwordHash).trim();
         }
-      } else if (!finalHash) {
+      }
+      if (!rawPasswordStr) {
         return res.status(400).json({ success: false, error: "Password is required to create a user" });
       }
 
@@ -6474,85 +6476,15 @@ async function doStartServer() {
 
       const activeDbClient = authedUserClient || adminClient;
 
-      // 4. Provision in Supabase public.users (try 9-arg and 15-arg provision_tenant_user RPC, upsert_tenant_user RPC, then direct insert/upsert)
+      // 4. Provision in Supabase public.users
       const nowTs = Date.now();
       let savedRow: any = null;
       let linkedProfile: any = null;
       let dbWriteError: string | null = null;
 
-      if (targetSchool && /^[0-9a-f-]{36}$/i.test(String(targetSchool))) {
-        try {
-          const rpcRes9 = await activeDbClient.rpc('provision_tenant_user', {
-            p_school_id: targetSchool,
-            p_username: dbUsername,
-            p_password_hash: finalHash,
-            p_full_name: cleanFullName,
-            p_role: safeRole,
-            p_status: safeStatus,
-            p_email: effectiveEmail,
-            p_phone: cleanPhone || null,
-            p_auth_user_id: authUserId
-          });
-          if (!rpcRes9.error && rpcRes9.data && rpcRes9.data.id) {
-            savedRow = rpcRes9.data;
-            if (rpcRes9.data.linked_profile) {
-              linkedProfile = rpcRes9.data.linked_profile;
-            }
-          }
-        } catch {}
-
-        if (!savedRow) {
-          try {
-            const rpcRes15 = await activeDbClient.rpc('provision_tenant_user', {
-              p_school_id: targetSchool,
-              p_username: dbUsername,
-              p_password_hash: finalHash,
-              p_full_name: cleanFullName,
-              p_role: safeRole,
-              p_status: safeStatus,
-              p_email: effectiveEmail,
-              p_phone: cleanPhone || null,
-              p_auth_user_id: authUserId,
-              p_staff_id: staffId || null,
-              p_student_id: studentId || null,
-              p_student_class: studentClass || 'Basic 7',
-              p_gender: gender === 'Female' ? 'Female' : 'Male',
-              p_date_of_birth: dateOfBirth || '2012-01-01',
-              p_guardian_name: guardianName || null
-            });
-            if (!rpcRes15.error && rpcRes15.data && rpcRes15.data.id) {
-              savedRow = rpcRes15.data;
-              if (rpcRes15.data.linked_profile) {
-                linkedProfile = rpcRes15.data.linked_profile;
-              }
-            }
-          } catch {}
-        }
-      }
-
-      if (!savedRow && targetSchool && /^[0-9a-f-]{36}$/i.test(String(targetSchool))) {
-        try {
-          const rpcRes = await activeDbClient.rpc('upsert_tenant_user', {
-            p_school_id: targetSchool,
-            p_username: dbUsername,
-            p_password_hash: finalHash,
-            p_full_name: cleanFullName,
-            p_role: safeRole,
-            p_status: safeStatus,
-            p_email: effectiveEmail,
-            p_phone: cleanPhone || null,
-            p_auth_user_id: authUserId
-          });
-          if (!rpcRes.error && rpcRes.data && rpcRes.data.id) {
-            savedRow = rpcRes.data;
-          }
-        } catch {}
-      }
-
       if (!savedRow) {
         const fullPayload: Record<string, any> = {
           username: dbUsername,
-          password_hash: finalHash,
           full_name: cleanFullName,
           role: safeRole,
           status: safeStatus,
@@ -6592,7 +6524,6 @@ async function doStartServer() {
             dbWriteError = insErr.message;
             const corePayload: Record<string, any> = {
               username: insErr.code === '23505' ? scopedUsername : dbUsername,
-              password_hash: finalHash,
               full_name: cleanFullName,
               role: safeRole,
               status: safeStatus,
@@ -6626,8 +6557,6 @@ async function doStartServer() {
           username: dbUsername,
           baseUsername: cleanBaseUser,
           scopedUsername,
-          password_hash: finalHash,
-          passwordHash: finalHash,
           full_name: cleanFullName,
           fullName: cleanFullName,
           role: safeRole,
@@ -6652,7 +6581,7 @@ async function doStartServer() {
           fullName: cleanFullName,
           role: safeRole,
           schoolId: targetSchool,
-          password: rawPasswordStr || undefined,
+          rawPassword: rawPasswordStr || undefined,
           existingAuthUserId: authUserId || savedRow.auth_user_id || null,
           issueSession: false
         });
@@ -6910,7 +6839,7 @@ async function doStartServer() {
         }
       }
 
-      // Always synchronize created tenant user into server registered users store, customUserPasswords, and Supabase settings ('tenant_users_registry')
+      // Always synchronize created tenant user into server registered users store and Supabase settings ('tenant_users_registry')
       const registryUserRecord = {
         id: savedId,
         auth_user_id: savedRow.auth_user_id || authUserId || null,
@@ -6921,8 +6850,6 @@ async function doStartServer() {
         full_name: savedRow.full_name || cleanFullName,
         email: savedRow.email || effectiveEmail,
         phone: savedRow.phone ?? cleanPhone,
-        passwordHash: finalHash,
-        password_hash: finalHash,
         role: savedRow.role || safeRole,
         status: savedRow.status || safeStatus,
         schoolId: savedRow.school_id || targetSchool,
@@ -6952,23 +6879,6 @@ async function doStartServer() {
           regUsers.unshift(registryUserRecord);
         }
         saveRegisteredUsers(regUsers);
-      } catch {}
-
-      try {
-        const passEntry = {
-          passwordHash: finalHash,
-          role: safeRole,
-          fullName: cleanFullName,
-          schoolId: targetSchool,
-          email: effectiveEmail,
-          updatedAt: nowTs
-        };
-        customUserPasswords.set(cleanBaseUser.toLowerCase(), passEntry);
-        customUserPasswords.set(scopedUsername.toLowerCase(), passEntry);
-        customUserPasswords.set(effectiveEmail.toLowerCase(), passEntry);
-        if (targetSchool) {
-          customUserPasswords.set(`${targetSchool}:${cleanBaseUser.toLowerCase()}`, passEntry);
-        }
       } catch {}
 
       try {
@@ -7035,22 +6945,12 @@ async function doStartServer() {
       let rawPasswordStr = '';
       if (password) {
         rawPasswordStr = String(password).trim();
-        const salt = await bcrypt.genSalt(10);
-        updateData.password_hash = await bcrypt.hash(rawPasswordStr, salt);
-      } else if (passwordHash) {
-        if (!String(passwordHash).startsWith('$2a$') && !String(passwordHash).startsWith('$2b$')) {
-          try {
-            const decoded = Buffer.from(String(passwordHash), 'base64').toString('utf-8');
-            rawPasswordStr = decoded || String(passwordHash);
-            const salt = await bcrypt.genSalt(10);
-            updateData.password_hash = await bcrypt.hash(rawPasswordStr, salt);
-          } catch {
-            rawPasswordStr = String(passwordHash);
-            const salt = await bcrypt.genSalt(10);
-            updateData.password_hash = await bcrypt.hash(rawPasswordStr, salt);
-          }
-        } else {
-          updateData.password_hash = passwordHash;
+      } else if (passwordHash && !String(passwordHash).startsWith('$2a$') && !String(passwordHash).startsWith('$2b$')) {
+        try {
+          const decoded = Buffer.from(String(passwordHash), 'base64').toString('utf-8');
+          rawPasswordStr = (decoded || String(passwordHash)).trim();
+        } catch {
+          rawPasswordStr = String(passwordHash).trim();
         }
       }
 
@@ -7097,24 +6997,6 @@ async function doStartServer() {
         } catch {}
       }
 
-      if (!updatedRow && /^\d+$/.test(String(id))) {
-        try {
-          const rpcRes = await adminClient.rpc('update_tenant_user', {
-            p_user_id: Number(id),
-            p_school_id: targetSchoolId && /^[0-9a-f-]{36}$/i.test(String(targetSchoolId)) ? targetSchoolId : null,
-            p_full_name: updateData.full_name ?? null,
-            p_role: updateData.role ?? null,
-            p_status: updateData.status ?? null,
-            p_email: updateData.email ?? null,
-            p_phone: updateData.phone ?? null,
-            p_password_hash: updateData.password_hash ?? null
-          });
-          if (!rpcRes.error && rpcRes.data && rpcRes.data.success !== false && rpcRes.data.id) {
-            updatedRow = rpcRes.data;
-          }
-        } catch {}
-      }
-
       const matchesUserEntry = (u: any) => {
         if (String(u.id) === String(id)) return true;
         if (updatedRow?.id && String(u.id) === String(updatedRow.id)) return true;
@@ -7142,26 +7024,11 @@ async function doStartServer() {
               ...(updateData.status ? { status: updateData.status } : {}),
               ...(updateData.email !== undefined ? { email: updateData.email } : {}),
               ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
-              ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
               updatedAt: updateData.updated_at,
               updated_at: updateData.updated_at
             };
             regUsers[rIdx] = merged;
             if (!updatedRow) updatedRow = merged;
-
-            if (updateData.password_hash) {
-              const passEntry = {
-                passwordHash: updateData.password_hash,
-                role: merged.role,
-                fullName: merged.fullName || merged.full_name,
-                schoolId: merged.school_id || merged.schoolId || targetSchoolId,
-                email: merged.email,
-                updatedAt: updateData.updated_at
-              };
-              if (merged.username) customUserPasswords.set(String(merged.username).toLowerCase(), passEntry);
-              if (merged.scopedUsername) customUserPasswords.set(String(merged.scopedUsername).toLowerCase(), passEntry);
-              if (merged.email) customUserPasswords.set(String(merged.email).toLowerCase(), passEntry);
-            }
           }
         }
         if (matchedAny) saveRegisteredUsers(regUsers);
@@ -7181,7 +7048,6 @@ async function doStartServer() {
                 ...(updateData.status ? { status: updateData.status } : {}),
                 ...(updateData.email !== undefined ? { email: updateData.email } : {}),
                 ...(updateData.phone !== undefined ? { phone: updateData.phone } : {}),
-                ...(updateData.password_hash ? { passwordHash: updateData.password_hash, password_hash: updateData.password_hash } : {}),
                 updatedAt: updateData.updated_at,
                 updated_at: updateData.updated_at
               };
@@ -8978,15 +8844,13 @@ async function doStartServer() {
           console.warn("Notice in admin.createUser:", authErr?.message);
         }
 
-        // Also record in public.users table for local / SQL logins
+        // Also record in public.users table linked with auth_user_id
         try {
-          const salt = await bcrypt.genSalt(10);
-          const passwordHash = await bcrypt.hash(password, salt);
           await adminClient.from('users').upsert([{
+            auth_user_id: userId,
             username: cleanEmail.split('@')[0],
             full_name: fullName || cleanEmail.split('@')[0],
             email: cleanEmail,
-            password_hash: passwordHash,
             role: role,
             status: 'pending_verification',
             created_at: Date.now(),
@@ -13956,7 +13820,6 @@ NOTIFY pgrst, 'reload schema';`;
         try {
           probeSchoolId = await createDiagnosticSchool("crud-usr");
 
-          const passwordHash = await bcrypt.hash("DiagSafePass123!", 10);
           const { data: createdUsers, error: usrErr } = await diagTable("users").insert([
             {
               username: probeUsername,
@@ -13964,7 +13827,6 @@ NOTIFY pgrst, 'reload schema';`;
               email: `${probeUsername}@diag.edu.gh`,
               role: "teacher",
               status: "active",
-              password_hash: passwordHash,
               school_id: probeSchoolId,
               created_at: Date.now()
             }
@@ -13973,7 +13835,7 @@ NOTIFY pgrst, 'reload schema';`;
 
           if (usrErr) throw new Error(`Users INSERT failed: ${usrErr.message}`);
           details.push(
-            `1. Provisioned scoped user "${probeUsername}" in public.users with bcrypt hash (${passwordHash.slice(0, 7)}...).`
+            `1. Provisioned scoped user "${probeUsername}" in public.users (Supabase Auth single password authority).`
           );
 
           let { error: tchErr } = await diagTable("teachers").insert([
@@ -14006,19 +13868,17 @@ NOTIFY pgrst, 'reload schema';`;
             `2. Auto-linked teacher profile "${probeStaffId}" in public.teachers for school "${probeSchoolId.slice(0, 8)}...".`
           );
 
-          // Verify bcrypt verification works without mutating password_hash
+          // Verify tenant user record round-trip in public.users
           const { data: verifyUsers } = await diagTable("users").select({
             school_id: probeSchoolId,
             username: probeUsername
           });
           const verifyUser = verifyUsers?.[0] || null;
 
-          if (!verifyUser || verifyUser.password_hash !== passwordHash) {
-            throw new Error("User password_hash mismatch or unexpected mutation");
+          if (!verifyUser || verifyUser.username !== probeUsername) {
+            throw new Error("User profile round-trip verification failed");
           }
-          const validCheck = await bcrypt.compare("DiagSafePass123!", verifyUser.password_hash);
-          if (!validCheck) throw new Error("Bcrypt password verification failed");
-          details.push(`3. Verified bcrypt authentication handshake preserves password_hash untouched.`);
+          details.push(`3. Verified tenant user profile persistence and teacher link.`);
         } finally {
           if (probeSchoolId) {
             await diagTable("teachers").delete({ school_id: probeSchoolId });
@@ -14032,7 +13892,7 @@ NOTIFY pgrst, 'reload schema';`;
           success: true,
           action,
           durationMs: Date.now() - startTime,
-          summary: `Tenant user provisioning, bcrypt immutability, and profile auto-linking verified with rollback.`,
+          summary: `Tenant user provisioning and profile auto-linking verified with rollback.`,
           details
         });
       }
@@ -26794,8 +26654,19 @@ NOTIFY pgrst, 'reload schema';`;
             if (typeof userUpdates.phone === 'string') {
               dbPatch.phone = userUpdates.phone.trim() || null;
             }
-            if (typeof userUpdates.newPassword === 'string' && userUpdates.newPassword.trim().length >= 4) {
-              dbPatch.password_hash = hashPassword(userUpdates.newPassword.trim());
+            if (typeof userUpdates.newPassword === 'string' && userUpdates.newPassword.trim().length >= 6) {
+              try {
+                const { data: targetRow } = await adminClient
+                  .from('users')
+                  .select('auth_user_id')
+                  .eq('id', targetUserRowId)
+                  .maybeSingle();
+                if (targetRow?.auth_user_id && adminClient.auth?.admin?.updateUserById) {
+                  await adminClient.auth.admin.updateUserById(targetRow.auth_user_id, {
+                    password: userUpdates.newPassword.trim()
+                  });
+                }
+              } catch {}
             }
             // Note: Only School/Client Admin can change role or status
             if (isServerAdminRole(callerRole)) {

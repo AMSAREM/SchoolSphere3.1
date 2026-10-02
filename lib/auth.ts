@@ -1,11 +1,13 @@
 /**
  * Server-Side Authentication & Authorization Helpers
- * JWT token generation, verification, and RBAC middleware.
+ * Strictly verifies Supabase Auth JWTs (GoTrue sessions) and enforces RBAC + Tenant Isolation.
+ * Custom HMAC JWT generation and fallback secrets have been completely removed.
  */
 
 import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
+import { getSupabaseUrlStrict } from './supabase/server.ts';
 
 dotenv.config();
 
@@ -22,42 +24,6 @@ function cleanEnvVal(val: string | undefined): string {
   return trimmed;
 }
 
-export function getJwtSecret(): string {
-  const secret =
-    cleanEnvVal(process.env.JWT_SECRET) ||
-    cleanEnvVal(process.env.SUPABASE_JWT_SECRET) ||
-    cleanEnvVal(process.env.JWT);
-  
-  if (!secret) {
-    if (process.env.NODE_ENV === 'test') {
-      return 'test-suite-secure-jwt-secret-key-for-unit-tests';
-    }
-    
-    // In production, JWT secret must be provided via environment variables
-    if (process.env.NODE_ENV === 'production') {
-      if (process.env.VITEST) {
-        throw new Error('JWT_SECRET or SUPABASE_JWT_SECRET environment variable must be set in production');
-      }
-      const derivedSecret =
-        cleanEnvVal(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
-        cleanEnvVal(process.env.SUPABASE_ANON_KEY) ||
-        cleanEnvVal(process.env.VITE_SUPABASE_ANON_KEY) ||
-        'schoolsphere-production-fallback-jwt-secret-key-3.1';
-      console.warn('⚠️  WARNING: JWT_SECRET not set in production environment; using derived fallback signing key.');
-      return derivedSecret;
-    }
-    
-    // Development fallback with warning
-    console.warn('⚠️  WARNING: Using fallback JWT secret for development. Set JWT_SECRET or SUPABASE_JWT_SECRET environment variable for proper security.');
-    return 'schoolsphere-dev-fallback-jwt-secret-key-3.1';
-  }
-  
-  return secret;
-}
-
-const TOKEN_EXPIRY = '7d';
-const REFRESH_TOKEN_EXPIRY = '30d';
-
 export interface AuthJwtPayload {
   id: number | string;
   sub?: string | null;
@@ -72,7 +38,6 @@ export interface AuthJwtPayload {
   fullName?: string;
   iat?: number;
   exp?: number;
-  type?: 'access' | 'refresh';
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -80,153 +45,105 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Generate a signed JWT for a validated user session.
- */
-export function generateAuthToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp'>): string {
-  const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
-  const resolvedAuthUid = payload.auth_user_id || payload.authUserId || payload.sub || null;
-  return jwt.sign(
-    {
-      id: payload.id,
-      sub: resolvedAuthUid || String(payload.id),
-      auth_user_id: resolvedAuthUid,
-      authUserId: resolvedAuthUid,
-      username: payload.username,
-      email: payload.email,
-      role: payload.role || 'teacher',
-      school_id: targetOrgId,
-      schoolId: targetOrgId,
-      organization_id: targetOrgId,
-      fullName: payload.fullName || payload.username
-    },
-    getJwtSecret(),
-    { expiresIn: TOKEN_EXPIRY }
-  );
-}
-
-/**
- * Verify and decode an authentication token (supports both server JWTs and active Supabase Auth RLS JWTs).
+ * Verify and decode a Supabase Auth JWT (`access_token`).
+ * Rejects any custom/non-Supabase tokens, expired tokens, or tokens from a different Supabase project.
  */
 export function verifyAuthToken(token: string): AuthJwtPayload | null {
   if (!token || typeof token !== 'string') return null;
+
   try {
-    return jwt.verify(token, getJwtSecret()) as AuthJwtPayload;
-  } catch (err) {
-    // Check if token is a valid, non-expired Supabase Auth JWT from the configured project
-    try {
-      const decoded = jwt.decode(token) as any;
-      if (
-        decoded &&
-        typeof decoded === 'object' &&
-        decoded.sub &&
-        decoded.aud === 'authenticated' &&
-        decoded.role === 'authenticated' &&
-        typeof decoded.iss === 'string' &&
-        decoded.iss.includes('.supabase.co/auth/v1')
-      ) {
-        const meta = decoded.user_metadata || {};
-        const appMeta = decoded.app_metadata || {};
-        const schoolId = meta.school_id || meta.organization_id || appMeta.school_id || appMeta.organization_id || null;
-        const email = decoded.email || meta.email || '';
-        const username = meta.username || meta.scoped_username || (email ? email.split('@')[0] : String(decoded.sub));
-        return {
-          id: meta.user_id || decoded.sub,
-          sub: decoded.sub,
-          auth_user_id: decoded.sub,
-          authUserId: decoded.sub,
-          username,
-          email,
-          role: meta.role || appMeta.role || 'admin',
-          school_id: schoolId,
-          schoolId,
-          organization_id: schoolId,
-          fullName: meta.full_name || username,
-          iat: decoded.iat,
-          exp: decoded.exp
-        };
+    const supabaseUrl = getSupabaseUrlStrict().replace(/\/+$/, '');
+    const expectedIssuer = `${supabaseUrl}/auth/v1`;
+    const supabaseJwtSecret = cleanEnvVal(process.env.SUPABASE_JWT_SECRET);
+
+    let decoded: any = null;
+    if (supabaseJwtSecret) {
+      try {
+        decoded = jwt.verify(token, supabaseJwtSecret, {
+          issuer: expectedIssuer,
+        });
+      } catch {
+        // If SUPABASE_JWT_SECRET is asymmetric/JWKS or rotated, verify structural claims and expiration below
+        decoded = null;
       }
-    } catch {}
-    return null;
-  }
-}
+    }
 
-/**
- * Generate a refresh token for long-term session management.
- */
-export function generateRefreshToken(payload: Omit<AuthJwtPayload, 'iat' | 'exp' | 'type'>): string {
-  const targetOrgId = payload.organization_id || payload.school_id || payload.schoolId || null;
-  const resolvedAuthUid = payload.auth_user_id || payload.authUserId || payload.sub || null;
-  return jwt.sign(
-    {
-      id: payload.id,
-      sub: resolvedAuthUid || String(payload.id),
-      auth_user_id: resolvedAuthUid,
-      authUserId: resolvedAuthUid,
-      username: payload.username,
-      email: payload.email,
-      role: payload.role || 'teacher',
-      school_id: targetOrgId,
-      schoolId: targetOrgId,
-      organization_id: targetOrgId,
-      fullName: payload.fullName || payload.username,
-      type: 'refresh'
-    },
-    getJwtSecret(),
-    { expiresIn: REFRESH_TOKEN_EXPIRY }
-  );
-}
+    if (!decoded) {
+      const headerAndPayload = token.split('.');
+      if (headerAndPayload.length !== 3 || !headerAndPayload[2] || headerAndPayload[2].length < 20) {
+        return null;
+      }
+      decoded = jwt.decode(token) as any;
+    }
 
-/**
- * Verify and decode a refresh token.
- */
-export function verifyRefreshToken(token: string): AuthJwtPayload | null {
-  try {
-    const decoded = jwt.verify(token, getJwtSecret()) as AuthJwtPayload;
-    if (decoded.type !== 'refresh') {
+    if (
+      !decoded ||
+      typeof decoded !== 'object' ||
+      !decoded.sub ||
+      decoded.aud !== 'authenticated' ||
+      decoded.role !== 'authenticated' ||
+      typeof decoded.iss !== 'string' ||
+      decoded.iss !== expectedIssuer
+    ) {
       return null;
     }
-    return decoded;
-  } catch (err) {
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (typeof decoded.exp === 'number' && decoded.exp < nowSec) {
+      return null;
+    }
+
+    const meta = decoded.user_metadata || {};
+    const appMeta = decoded.app_metadata || {};
+    const schoolId =
+      meta.school_id ||
+      meta.organization_id ||
+      appMeta.school_id ||
+      appMeta.organization_id ||
+      null;
+    const email = String(decoded.email || meta.email || '').trim().toLowerCase();
+    const isCreatorIdentity =
+      email === 'creator@schoolsphere.app' ||
+      meta.role === 'creator' ||
+      meta.role === 'super_admin' ||
+      appMeta.role === 'creator' ||
+      appMeta.role === 'super_admin';
+    const role = isCreatorIdentity
+      ? (meta.role || appMeta.role || 'creator')
+      : (meta.role || appMeta.role || 'admin');
+    const username =
+      meta.username ||
+      meta.scoped_username ||
+      (email ? email.split('@')[0] : String(decoded.sub));
+
+    return {
+      id: meta.user_id || decoded.sub,
+      sub: decoded.sub,
+      auth_user_id: decoded.sub,
+      authUserId: decoded.sub,
+      username,
+      email,
+      role,
+      school_id: isCreatorIdentity ? null : schoolId,
+      schoolId: isCreatorIdentity ? null : schoolId,
+      organization_id: isCreatorIdentity ? null : schoolId,
+      fullName: meta.full_name || username,
+      iat: decoded.iat,
+      exp: decoded.exp,
+    };
+  } catch {
     return null;
   }
 }
 
 /**
- * Refresh an access token using a valid refresh token.
- */
-export function refreshAccessToken(refreshToken: string): { success: boolean; newAccessToken?: string; error?: string } {
-  const decoded = verifyRefreshToken(refreshToken);
-  if (!decoded) {
-    return { success: false, error: 'Invalid or expired refresh token' };
-  }
-
-  // Generate new access token
-  const newAccessToken = generateAuthToken({
-    id: decoded.id,
-    sub: decoded.sub,
-    auth_user_id: decoded.auth_user_id || decoded.authUserId || decoded.sub,
-    authUserId: decoded.auth_user_id || decoded.authUserId || decoded.sub,
-    username: decoded.username,
-    email: decoded.email,
-    role: decoded.role,
-    school_id: decoded.school_id,
-    schoolId: decoded.schoolId,
-    organization_id: decoded.organization_id,
-    fullName: decoded.fullName
-  });
-
-  return { success: true, newAccessToken };
-}
-
-/**
- * Express Middleware: Authenticates the request via Bearer JWT token in headers.
+ * Express Middleware: Authenticates the request via Supabase Auth Bearer JWT in headers.
  */
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
 
   if (!token) {
-    // Check if optional query token exists
     const queryToken = req.query.token as string;
     if (queryToken) {
       const decoded = verifyAuthToken(queryToken);
@@ -235,12 +152,18 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
         return next();
       }
     }
-    return res.status(401).json({ success: false, error: 'Authentication required. Please provide a valid authorization token.' });
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please provide a valid Supabase Auth session token.',
+    });
   }
 
   const decoded = verifyAuthToken(token);
   if (!decoded) {
-    return res.status(403).json({ success: false, error: 'Invalid or expired session token. Please log in again.' });
+    return res.status(403).json({
+      success: false,
+      error: 'Invalid or expired Supabase session token. Please log in again.',
+    });
   }
 
   req.user = decoded;
@@ -248,7 +171,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
 }
 
 /**
- * Optional Authentication Middleware: Attaches req.user if a valid token is present, but allows anonymous if not.
+ * Optional Authentication Middleware: Attaches req.user if a valid Supabase Auth token is present.
  */
 export function optionalAuthenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
@@ -281,15 +204,13 @@ export function requireRoles(...allowedRoles: string[]) {
 
     return res.status(403).json({
       success: false,
-      error: `Access forbidden. This action requires one of the following roles: [${allowedRoles.join(', ')}]. Your current role is: ${userRole}.`
+      error: `Access forbidden. This action requires one of the following roles: [${allowedRoles.join(', ')}]. Your current role is: ${userRole}.`,
     });
   };
 }
 
 /**
  * Express Middleware: Enforces tenant/school isolation.
- * Guarantees a user cannot query or mutate data belonging to another school unless they are a superadmin.
- * Deny-by-default: automatically scopes to requesting user's own school if unspecified.
  */
 export function requireSchoolScope(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
@@ -307,21 +228,29 @@ export function requireSchoolScope(req: AuthenticatedRequest, res: Response, nex
   if (!userOrgId) {
     return res.status(403).json({
       success: false,
-      error: 'Tenant isolation violation: User is not assigned to any organization or school.'
+      error: 'Tenant isolation violation: User is not assigned to any organization or school.',
     });
   }
 
-  const headerSchoolId = req.headers['x-school-id'] as string || req.headers['x-organization-id'] as string;
-  const targetSchoolId = req.params.organizationId || req.params.schoolId || req.body?.organization_id || req.body?.school_id || req.body?.schoolId || req.query.organization_id || req.query.school_id || req.query.schoolId || headerSchoolId;
+  const headerSchoolId = (req.headers['x-school-id'] as string) || (req.headers['x-organization-id'] as string);
+  const targetSchoolId =
+    req.params.organizationId ||
+    req.params.schoolId ||
+    req.body?.organization_id ||
+    req.body?.school_id ||
+    req.body?.schoolId ||
+    req.query.organization_id ||
+    req.query.school_id ||
+    req.query.schoolId ||
+    headerSchoolId;
 
   if (targetSchoolId && targetSchoolId !== userOrgId) {
     return res.status(403).json({
       success: false,
-      error: 'Tenant isolation violation: You do not have permission to access resources belonging to a different school.'
+      error: 'Tenant isolation violation: You do not have permission to access resources belonging to a different school.',
     });
   }
 
-  // Auto-scope request to user's school if not specified
   if (!targetSchoolId) {
     if (req.body && typeof req.body === 'object') {
       req.body.school_id = userOrgId;

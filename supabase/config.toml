@@ -1,5 +1,5 @@
 # Supabase CLI project configuration
-project_id = "school-sphere-app"
+project_id = "niavmonyfwqlryppgksy"
 
 [api]
 enabled = true
