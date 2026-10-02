@@ -8,7 +8,7 @@
     "test": "vitest run --passWithNoTests",
     "build": "vite build && node scripts/build-vercel-api.mjs",
     "start": "node server.ts",
-    "clean": "rm -rf dist server.js api/_serverBundle.mjs",
+    "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "db:check": "tsx scripts/check-supabase-drift.ts"
   },
@@ -25,6 +25,7 @@
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.25.12",
     "express": "^4.21.2",
     "firebase": "^12.18.0",
     "html2canvas": "^1.4.1",
