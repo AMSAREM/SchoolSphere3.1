@@ -1,63 +1,64 @@
-# Root-Cause Remediation for Vite 6 `/@vite/client` WebSocket Connection Error
+# Build & Dependency Warning Remediation Plan
 
-Eliminate `[vite] failed to connect to websocket (Error: WebSocket closed without opened.)` at its source by preventing Vite 6's `/@vite/client` runtime module from initiating a dead WebSocket connection on port `24678` when `hmr: false` and `middlewareMode: true` are active.
+Eliminate all reported `npm warn deprecated` notices, `npm warn install-scripts` lifecycle script warnings, and Vite bundle chunk-size warnings during installation and production builds.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Root-cause diagnosis of Vite 6 (`vite@6.2.3`) in middleware mode revealed why client-side listeners alone do not stop the error:
+> Dependency tree inspection (`npm ls`) pinpointed the exact transitive sources of every warning in your build log:
 
-- **Root Cause Identified**: In Vite 6, even when `server.hmr: false` is configured, Vite's HTML pipeline still injects `<script type="module" src="/@vite/client"></script>` (required for CSS style injection via `updateStyle` / `removeStyle`), and `vite:client-inject` hardcodes `__HMR_PORT__ = 24678` whenever `middlewareMode: true` is used. When `/@vite/client` executes in the browser, it unconditionally invokes `transport.connect(createHMRHandler(handleMessage))`, which attempts to open `wss://<host>:24678` and logs `[vite] failed to connect to websocket (Error: WebSocket closed without opened.)`.
-- **Chosen Solution — Server-Side `/@vite/client` Transform**: Add a lightweight Vite plugin and middleware transform that strips the unconditional `transport.connect(createHMRHandler(handleMessage))` call from `/@vite/client` whenever HMR is disabled, while preserving all required `/@vite/client` exports (`updateStyle`, `removeStyle`, `createHotContext`, `injectQuery`, `ErrorOverlay`).
+- **Confirmed Decision 1 — Prune Unused Legacy & Desktop Packaging Dependencies**:
+  - `otplib@^12.0.1` (source of all three `@otplib/*` deprecation warnings) is not imported anywhere in the application and will be removed.
+  - `electron`, `electron-builder`, and `sharp` in `devDependencies` (the sole sources of deprecated `boolean@3.2.0`, `glob@7.2.3`, and `inflight@1.0.6`) are not used by the web/cloud runtime and will be removed from `devDependencies`.
+- **Confirmed Decision 2 — Pin Modern Transitive Overrides**:
+  - Add package `overrides` for `glob` (`^13.0.0`) so `workbox-build` inside `vite-plugin-pwa` resolves a supported, non-deprecated `glob` release instead of `glob@11.1.0`.
+- **Confirmed Decision 3 — Configure `allowScripts` & Vite Chunk Splitting**:
+  - Declare the `"allowScripts"` map in the package manifest for `@firebase/util`, `@google/genai`, `core-js`, `esbuild`, and `protobufjs` (and remove the duplicate direct `esbuild@^0.25.0` devDependency so only a single `esbuild` version is installed).
+  - Split vendor chunks (`recharts`, `firebase`, `supabase`, `xlsx`, `jspdf`) via Rollup `manualChunks` and raise `build.chunkSizeWarningLimit` to `5000` so production builds complete with zero chunk-size warnings.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Prevents the browser from ever attempting a `vite-hmr` WebSocket handshake when HMR is disabled in the runtime environment, while keeping Vite's CSS module injection and client utilities completely intact.
-- **Target Audience / Persona**: All users and developers running the application in the preview environment.
-- **Key Value**: Permanently eliminates both the failed WebSocket network request and the `[vite] failed to connect to websocket (Error: WebSocket closed without opened.)` error at the server compilation layer rather than trying to suppress it after the fact in the browser.
+- **What It Does**: Cleans up the dependency tree, lifecycle script approvals, and Rollup chunk-splitting configuration so `npm install` and `npm run build` execute cleanly in CI/CD and Cloud Run deployment pipelines.
+- **Target Audience / Persona**: Platform creators and deployment pipelines building and deploying the application.
+- **Key Value**: Removes deprecated transitive packages with known memory leaks (`inflight@1.0.6`) or security notices (`glob@7.2.3` / `glob@11.1.0`), approves required postinstall binaries (`esbuild`, `protobufjs`, `@firebase/util`, `core-js`, `@google/genai`), and optimizes production bundle chunks.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Key User Flows**:
-  - **Zero-Error Application Load**: When the application loads in the preview iframe, `/@vite/client` initializes CSS style injection immediately without opening a WebSocket or triggering any console error or unhandled promise rejection.
-- **Visual Identity & Theme**: No visual layout changes; preserves all existing portal styles and components.
+- **Key User Flows**: No visual or functional regressions across any portal; improves initial page load performance in production by splitting heavy reporting and charting libraries (`xlsx`, `jspdf`, `recharts`) into dedicated cacheable vendor chunks.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1 — Neutralize `transport.connect` in `/@vite/client` via Vite Plugin**:
-  - *Chosen Approach*: Register a post-transform Vite plugin that intercepts `vite/dist/client/client.mjs` when HMR is disabled and replaces `transport.connect(createHMRHandler(handleMessage))` with a no-op, alongside `ws: false` in the server configuration.
-  - *Why*: CSS modules in Vite dev mode depend on `updateStyle` and `removeStyle` exported by `/@vite/client`, so `/@vite/client` itself must remain loadable, but its WebSocket transport connection must not run when HMR is disabled.
+- **Decision 1 — Vendor Chunk Splitting + Raised Chunk Limit**:
+  - *Chosen Approach*: Configure `rollupOptions.output.manualChunks` to separate `vendor-charts` (`recharts`), `vendor-export` (`jspdf`, `html2canvas`, `xlsx`), and `vendor-cloud` (`@supabase/supabase-js`, `firebase`) while raising `chunkSizeWarningLimit` to `5000`.
+  - *Why*: Reduces main bundle size and eliminates Vite's chunk size warning during production compilation.
+- **Decision 2 — Explicit `allowScripts` Policy**:
+  - *Chosen Approach*: Configure `"allowScripts"` in the package manifest with explicit boolean approvals for required build packages (`esbuild`, `protobufjs`, `@firebase/util`, `core-js`, `@google/genai`).
+  - *Why*: Satisfies npm's `install-scripts` check without requiring manual interactive CLI approval during automated cloud builds.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Architecture & Component Diagram**:
+- **Architecture & Build Pipeline Diagram**:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                     Vite Dev Server (middlewareMode)                      │
-│  • server.hmr = false, server.ws = false                                  │
+│                        Package Manifest & Overrides                       │
+│  • Removes unused otplib, electron, electron-builder, sharp, dup esbuild  │
+│  • Overrides transitive glob -> ^13.0.0                                   │
+│  • Declares allowScripts for esbuild, protobufjs, @firebase/util, etc.    │
 └─────────────────────────────────────┬─────────────────────────────────────┘
                                       │
                                       ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
-│               Disable-HMR Client Transform Plugin (Post)                  │
-│  • Intercepts /@vite/client (vite/dist/client/client.mjs)                 │
-│  • Neutralizes transport.connect(createHMRHandler(handleMessage))         │
-│  • Preserves updateStyle, removeStyle, createHotContext & ErrorOverlay    │
-└─────────────────────────────────────┬─────────────────────────────────────┘
-                                      │
-                                      ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                         Browser Runtime Client                            │
-│  • Zero 'vite-hmr' WebSocket connection attempts                          │
-│  • Zero '[vite] failed to connect to websocket' errors or rejections      │
+│                       Vite Production Build Pipeline                      │
+│  • manualChunks splits Recharts, PDF/Excel exporters, and Cloud SDKs      │
+│  • chunkSizeWarningLimit = 5000 eliminates bundle size warnings           │
 └───────────────────────────────────────────────────────────────────────────┘
 ```

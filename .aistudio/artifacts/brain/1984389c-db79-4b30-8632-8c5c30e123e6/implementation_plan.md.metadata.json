@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to eliminate the Vite 6 client HMR WebSocket connection error at the source by neutralizing transport.connect() in the transformed /@vite/client bundle when HMR is disabled.",
-  "updatedAt":  "2026-10-02T10:07:08.368913473Z",
+  "summary":  "Implementation plan to resolve all npm deprecation warnings (otplib, boolean, inflight, glob, node-domexception), configure allowScripts for lifecycle scripts, and optimize Vite chunk splitting and chunkSizeWarningLimit.",
+  "updatedAt":  "2026-10-02T10:17:30.148509857Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

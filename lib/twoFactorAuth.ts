@@ -6,17 +6,62 @@
 import { getSupabaseAdmin } from './supabase/server.ts';
 import crypto from 'crypto';
 
-// Note: otplib and qrcode need to be installed via npm for full 2FA functionality
-// These are optional dependencies - the system will function without them but with limited 2FA features
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
-// Helper function to dynamically load otplib
-async function loadOtplib() {
-  try {
-    const otplib = await import('otplib');
-    return otplib.authenticator || (otplib as any).default?.authenticator || otplib;
-  } catch (error) {
-    return null;
+function encodeBase32(buffer: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let output = '';
+  for (let i = 0; i < buffer.length; i++) {
+    value = (value << 8) | buffer[i];
+    bits += 8;
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
   }
+  if (bits > 0) {
+    output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
+function decodeBase32(input: string): Buffer {
+  const cleaned = input.toUpperCase().replace(/[^A-Z2-7]/g, '');
+  if (!cleaned) {
+    return Buffer.from(input, 'utf8');
+  }
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    const idx = BASE32_ALPHABET.indexOf(cleaned[i]);
+    if (idx === -1) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+export function generateTOTPToken(secret: string, stepOffset: number = 0): string {
+  const key = decodeBase32(secret);
+  const counter = Math.floor(Date.now() / 1000 / 30) + stepOffset;
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeBigInt64BE(BigInt(counter), 0);
+
+  const hmac = crypto.createHmac('sha1', key).update(counterBuffer).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const binary =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  const otp = binary % 1000000;
+  return String(otp).padStart(6, '0');
 }
 
 // Helper function to dynamically load qrcode
@@ -42,19 +87,10 @@ export interface TwoFactorSettings {
 }
 
 /**
- * Generate a secure TOTP secret
+ * Generate a secure TOTP secret (RFC 4648 Base32)
  */
 export async function generateTOTPSecret(): Promise<string> {
-  try {
-    const authenticator = await loadOtplib();
-    if (authenticator) {
-      return authenticator.generateSecret();
-    }
-  } catch (error) {
-    console.warn('Failed to generate TOTP secret with otplib');
-  }
-  // Fallback to crypto-based secret generation
-  return crypto.randomBytes(20).toString('base64');
+  return encodeBase32(crypto.randomBytes(20));
 }
 
 /**
@@ -65,16 +101,10 @@ export async function generateTOTPQRCodeURI(
   username: string,
   serviceName: string = 'SchoolSphere'
 ): Promise<string> {
-  try {
-    const authenticator = await loadOtplib();
-    if (authenticator) {
-      return authenticator.keyuri(username, serviceName, secret);
-    }
-  } catch (error) {
-    console.warn('Failed to generate TOTP QR URI with otplib');
-  }
-  // Fallback to manual URI construction
-  return `otpauth://totp/${serviceName}:${username}?secret=${secret}&issuer=${serviceName}`;
+  const encodedIssuer = encodeURIComponent(serviceName);
+  const encodedAccount = encodeURIComponent(username);
+  const encodedSecret = encodeURIComponent(secret);
+  return `otpauth://totp/${encodedIssuer}:${encodedAccount}?secret=${encodedSecret}&issuer=${encodedIssuer}`;
 }
 
 /**
@@ -107,21 +137,22 @@ export function generateBackupCodes(count: number = 10): string[] {
 }
 
 /**
- * Verify TOTP token
+ * Verify TOTP token across ±1 time step window (RFC 6238)
  */
 export async function verifyTOTPToken(token: string, secret: string): Promise<boolean> {
+  const cleanToken = String(token || '').trim();
+  if (!/^\d{6}$/.test(cleanToken) || !secret) {
+    return false;
+  }
   try {
-    const authenticator = await loadOtplib();
-    if (authenticator) {
-      if (typeof authenticator.check === 'function') {
-        return authenticator.check(token, secret);
-      }
-      if (typeof authenticator.verify === 'function') {
-        return authenticator.verify({ token, secret });
+    for (const offset of [-1, 0, 1]) {
+      const candidate = generateTOTPToken(secret, offset);
+      if (candidate === cleanToken) {
+        return true;
       }
     }
-  } catch (error) {
-    // If verification encounters error, return false without logging noise
+  } catch {
+    return false;
   }
   return false;
 }

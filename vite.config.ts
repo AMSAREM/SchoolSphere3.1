@@ -95,7 +95,8 @@ export default defineConfig(({mode}) => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 2000,
+      target: 'esnext',
+      chunkSizeWarningLimit: 5000,
       sourcemap: false,
     },
     server: {

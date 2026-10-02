@@ -117,19 +117,12 @@ describe('Security Improvements', () => {
     });
 
     it('should verify TOTP tokens', async () => {
-      const { generateTOTPSecret, verifyTOTPToken } = await import('../lib/twoFactorAuth');
+      const { generateTOTPSecret, generateTOTPToken, verifyTOTPToken } = await import('../lib/twoFactorAuth');
       
       const secret = await generateTOTPSecret();
-      // Generate a valid token using the same secret
-      try {
-        const { authenticator } = await import('otplib');
-        const token = authenticator.generate(secret);
-        const isValid = await verifyTOTPToken(token, secret);
-        expect(isValid).toBe(true);
-      } catch (error) {
-        // If otplib is not installed, skip this test
-        console.warn('Skipping TOTP verification test - otplib not available');
-      }
+      const token = generateTOTPToken(secret);
+      const isValid = await verifyTOTPToken(token, secret);
+      expect(isValid).toBe(true);
     });
 
     it('should verify backup codes', async () => {
