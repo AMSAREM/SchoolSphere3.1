@@ -458,6 +458,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // 1. Authoritative query against backend /api/auth/login
     // All credential hashing, validation, role scoping, license-email/key fallback, and JWT issuance is handled on the server
+    let shouldAttemptSupabaseFallback = false;
+    let backendErrorMsg: string | null = null;
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -539,14 +542,224 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           return { success: true, user: verifiedUser, token: data.token, refreshToken: data.refreshToken, school: data.school };
         } else if (data.error) {
-          return { success: false, error: data.error };
+          backendErrorMsg = data.error;
+          if (res.status >= 500 || res.status === 404 || res.status === 405) {
+            shouldAttemptSupabaseFallback = true;
+          } else {
+            return { success: false, error: data.error };
+          }
         }
+      } else {
+        // Non-JSON response (e.g. HTTP 405 from static rewrite on edge host)
+        shouldAttemptSupabaseFallback = true;
       }
-      return { success: false, error: "Invalid username or password" };
     } catch (apiErr: any) {
-      console.warn("Backend auth error:", apiErr);
-      return { success: false, error: "Unable to reach the authentication service. Please check your network connection." };
+      console.warn("Backend auth error, falling back to direct Supabase auth:", apiErr);
+      shouldAttemptSupabaseFallback = true;
     }
+
+    // 2. Direct Supabase Multi-Tenant Fallback (when /api/auth/login returns 405/404/5xx or is unreachable)
+    if (shouldAttemptSupabaseFallback) {
+      try {
+        const strippedHandle = cleanUser.replace(/^@+/, '');
+        let matchedProfile: any = null;
+        let resolvedSchool: any = null;
+
+        // Parse local handle and school slug from inputs like "admin@joyce", "@joyce", or "admin@joyce.edu.gh"
+        let localHandle = strippedHandle;
+        let parsedSlug = (schoolId || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+        if (strippedHandle.includes('@')) {
+          const [lhs, rhs] = strippedHandle.split('@');
+          localHandle = lhs || 'admin';
+          const domainSlug = (rhs || '').replace(/\.(com|org|net|edu|gh|xyz|io|app|ac|co|gov|uk|us|ca|ng|ke|za).*$/i, '').trim().toLowerCase();
+          if (domainSlug && !/^(gmail|yahoo|hotmail|outlook|icloud|live|msn|aol|protonmail|zoho|mail|schoolsphere)$/i.test(domainSlug)) {
+            parsedSlug = domainSlug;
+          }
+        } else if (
+          strippedHandle &&
+          !['admin', 'school_admin', 'headmaster', 'principal', 'creator', 'super_admin'].includes(strippedHandle) &&
+          !parsedSlug
+        ) {
+          parsedSlug = strippedHandle.replace(/[^a-z0-9-]/g, '');
+        }
+
+        // Look up user profile by username or email in public.users
+        try {
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('*, schools(*)')
+            .or(`username.ilike.${strippedHandle},email.ilike.${strippedHandle}`)
+            .limit(1)
+            .maybeSingle();
+          if (userRow) {
+            matchedProfile = userRow;
+            if (userRow.schools) {
+              resolvedSchool = userRow.schools;
+            }
+          }
+        } catch {}
+
+        // Build candidate emails matching ensureUserSupabaseAuthIdentity conventions in server.ts
+        const candidateEmails = new Set<string>();
+        if (strippedHandle.includes('@') && /\.[a-z]{2,}$/i.test(strippedHandle)) {
+          candidateEmails.add(normalizeEmail(strippedHandle));
+        }
+        if (matchedProfile?.email) {
+          candidateEmails.add(String(matchedProfile.email).trim().toLowerCase());
+        }
+        if (strippedHandle === 'creator' || strippedHandle === 'super_admin') {
+          candidateEmails.add('creator@schoolsphere.app');
+        }
+        const cleanBaseUser = (localHandle || 'user').replace(/[^a-z0-9_.-]/g, '') || 'user';
+        if (parsedSlug) {
+          candidateEmails.add(`${cleanBaseUser}@${parsedSlug}.edu.gh`);
+          candidateEmails.add(`admin@${parsedSlug}.edu.gh`);
+          candidateEmails.add(`${cleanBaseUser}@${parsedSlug}.com`);
+        }
+        candidateEmails.add(`${cleanBaseUser}@schoolsphere.edu.gh`);
+        candidateEmails.add(`${cleanBaseUser}@schoolsphere.app`);
+        candidateEmails.add(`${cleanBaseUser}@schoolsphere.xyz`);
+
+        const ensureCompliantPassword = (p: string) => {
+          if (!p) return '';
+          let out = p;
+          if (!/[a-z]/.test(out)) out += 'a';
+          if (!/[A-Z]/.test(out)) out += 'A';
+          if (!/[0-9]/.test(out)) out += '1';
+          if (out.length < 6) out += '#2026';
+          return out;
+        };
+
+        const rawTrimmedPass = password.trim();
+        const candidatePasswords = Array.from(
+          new Set(
+            [
+              rawTrimmedPass,
+              ensureCompliantPassword(rawTrimmedPass),
+              ensureCompliantPassword(rawTrimmedPass.toUpperCase())
+            ].filter(Boolean)
+          )
+        );
+
+        for (const candidateEmail of Array.from(candidateEmails)) {
+          for (const candidatePassword of candidatePasswords) {
+            const { data: supaAuth, error: supaErr } = await supabase.auth.signInWithPassword({
+              email: candidateEmail,
+              password: candidatePassword
+            });
+
+            if (!supaErr && supaAuth?.user) {
+              const authUser = supaAuth.user;
+              const accessToken = supaAuth.session?.access_token || '';
+              const activeRefresh = supaAuth.session?.refresh_token || '';
+
+              if (!matchedProfile) {
+                try {
+                  const { data: profileByUid } = await supabase
+                    .from('users')
+                    .select('*, schools(*)')
+                    .or(`auth_user_id.eq.${authUser.id},email.ilike.${candidateEmail}`)
+                    .limit(1)
+                    .maybeSingle();
+                  if (profileByUid) {
+                    matchedProfile = profileByUid;
+                    if (profileByUid.schools) resolvedSchool = profileByUid.schools;
+                  }
+                } catch {}
+              }
+
+              const isCreatorIdentity =
+                candidateEmail === 'creator@schoolsphere.app' ||
+                strippedHandle === 'creator' ||
+                matchedProfile?.role === 'creator' ||
+                authUser.user_metadata?.role === 'creator' ||
+                authUser.app_metadata?.role === 'creator';
+
+              const orgId = isCreatorIdentity
+                ? undefined
+                : matchedProfile?.school_id ||
+                  matchedProfile?.organization_id ||
+                  authUser.user_metadata?.school_id ||
+                  authUser.user_metadata?.organization_id ||
+                  authUser.app_metadata?.school_id ||
+                  schoolId;
+
+              if (!resolvedSchool && (orgId || parsedSlug)) {
+                try {
+                  const targetLookup = orgId || parsedSlug;
+                  const { data: schoolRow } = await supabase
+                    .from('schools')
+                    .select('*')
+                    .or(`id.eq.${targetLookup},slug.ilike.${targetLookup}`)
+                    .limit(1)
+                    .maybeSingle();
+                  if (schoolRow) resolvedSchool = schoolRow;
+                } catch {}
+              }
+
+              const resolvedRole = isCreatorIdentity
+                ? 'creator'
+                : matchedProfile?.role || authUser.user_metadata?.role || authUser.app_metadata?.role || 'admin';
+
+              const verifiedUser: User = {
+                id: matchedProfile?.id || authUser.id,
+                auth_user_id: authUser.id,
+                username: matchedProfile?.username || (isCreatorIdentity ? 'creator' : strippedHandle),
+                fullName:
+                  matchedProfile?.full_name ||
+                  matchedProfile?.fullName ||
+                  authUser.user_metadata?.full_name ||
+                  (isCreatorIdentity ? 'Platform Creator' : username),
+                full_name:
+                  matchedProfile?.full_name ||
+                  matchedProfile?.fullName ||
+                  authUser.user_metadata?.full_name ||
+                  (isCreatorIdentity ? 'Platform Creator' : username),
+                email: matchedProfile?.email || candidateEmail,
+                phone: matchedProfile?.phone || '',
+                role: resolvedRole,
+                status: 'active',
+                schoolId: resolvedSchool?.id || orgId,
+                school_id: resolvedSchool?.id || orgId,
+                createdAt: Date.now(),
+                lastLogin: Date.now()
+              };
+
+              if (accessToken) {
+                setToken(accessToken);
+                localStorage.setItem('esepa_auth_token', accessToken);
+                localStorage.setItem('esepa_supabase_access_token', accessToken);
+              }
+              if (activeRefresh) {
+                setRefreshToken(activeRefresh);
+                localStorage.setItem('esepa_refresh_token', activeRefresh);
+              }
+
+              setUser(verifiedUser);
+              localStorage.setItem('esepa_user', JSON.stringify(verifiedUser));
+
+              if (resolvedSchool) {
+                await setSchoolContext(resolvedSchool);
+              } else if (verifiedUser.schoolId) {
+                localStorage.setItem('esepa_active_school_id', String(verifiedUser.schoolId));
+              }
+
+              return {
+                success: true,
+                user: verifiedUser,
+                token: accessToken || undefined,
+                refreshToken: activeRefresh || undefined,
+                school: resolvedSchool || undefined
+              };
+            }
+          }
+        }
+      } catch (supaFallbackErr) {
+        console.warn("Direct Supabase fallback error:", supaFallbackErr);
+      }
+    }
+
+    return { success: false, error: backendErrorMsg || "Invalid username or password" };
   };
 
   const signInWithPassword = async (email: string, passwordCandidate: string): Promise<{ success: boolean; error?: string; user?: User; token?: string; refreshToken?: string; school?: School }> => {

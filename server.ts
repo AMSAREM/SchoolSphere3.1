@@ -50,6 +50,10 @@ const EXPLICIT_ALLOWED_ORIGINS = new Set<string>(
     "https://ais-pre-2m4lcq44pyuwmghy2bv5zn-689154690670.europe-west2.run.app",
     "https://schoolsphere.app",
     "https://www.schoolsphere.app",
+    "https://schoolsphere.xyz",
+    "https://www.schoolsphere.xyz",
+    "https://schoolsphere.xyz",
+    "https://www.schoolsphere.xyz",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     ...(process.env.APP_URL ? [process.env.APP_URL.trim().replace(/\/+$/, "")] : []),
@@ -27004,6 +27008,11 @@ NOTIFY pgrst, 'reload schema';`;
       res.status(404).json({ success: false, error: `API endpoint ${req.method} ${req.path} not found` });
     });
 
+    // Never serve index.html (text/html) for missing static assets (/assets/* or hashed .css/.js/.mjs/.map files)
+    app.get(/^\/assets\/.*|\.(css|js|mjs|map|wasm|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf)$/i, (req, res) => {
+      res.status(404).type('text/plain').send(`Asset not found: ${req.path}`);
+    });
+
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       const indexHtmlPath = path.join(distPath, 'index.html');
@@ -27015,7 +27024,7 @@ NOTIFY pgrst, 'reload schema';`;
     });
   }
 
-  if (process.env.NODE_ENV !== "test") {
+  if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
     });
@@ -27034,7 +27043,7 @@ NOTIFY pgrst, 'reload schema';`;
   }
 }
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   startServer();
 }
 

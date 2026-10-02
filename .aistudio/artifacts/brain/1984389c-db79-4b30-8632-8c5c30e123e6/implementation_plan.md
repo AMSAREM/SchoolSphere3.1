@@ -1,64 +1,67 @@
-# Build & Dependency Warning Remediation Plan
+# Production Routing, Serverless Auth & Asset MIME Remediation Plan
 
-Eliminate all reported `npm warn deprecated` notices, `npm warn install-scripts` lifecycle script warnings, and Vite bundle chunk-size warnings during installation and production builds.
+Resolve the `405 Method Not Allowed` error on `/api/auth/login` and the `Refused to apply style ... MIME type ('text/html')` stylesheet error on `https://www.schoolsphere.xyz`.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Dependency tree inspection (`npm ls`) pinpointed the exact transitive sources of every warning in your build log:
+> Inspection of the production routing and deployment configuration identified the exact causes of both errors on `https://www.schoolsphere.xyz`:
 
-- **Confirmed Decision 1 — Prune Unused Legacy & Desktop Packaging Dependencies**:
-  - `otplib@^12.0.1` (source of all three `@otplib/*` deprecation warnings) is not imported anywhere in the application and will be removed.
-  - `electron`, `electron-builder`, and `sharp` in `devDependencies` (the sole sources of deprecated `boolean@3.2.0`, `glob@7.2.3`, and `inflight@1.0.6`) are not used by the web/cloud runtime and will be removed from `devDependencies`.
-- **Confirmed Decision 2 — Pin Modern Transitive Overrides**:
-  - Add package `overrides` for `glob` (`^13.0.0`) so `workbox-build` inside `vite-plugin-pwa` resolves a supported, non-deprecated `glob` release instead of `glob@11.1.0`.
-- **Confirmed Decision 3 — Configure `allowScripts` & Vite Chunk Splitting**:
-  - Declare the `"allowScripts"` map in the package manifest for `@firebase/util`, `@google/genai`, `core-js`, `esbuild`, and `protobufjs` (and remove the duplicate direct `esbuild@^0.25.0` devDependency so only a single `esbuild` version is installed).
-  - Split vendor chunks (`recharts`, `firebase`, `supabase`, `xlsx`, `jspdf`) via Rollup `manualChunks` and raise `build.chunkSizeWarningLimit` to `5000` so production builds complete with zero chunk-size warnings.
+- **Root Cause 1 — Catch-All Rewrite Returning `index.html` for `/api/*` and `/assets/*`**:
+  - The deployment rewrite configuration currently maps `/(.*)` directly to `/index.html`, and only `/api/health` exists in the serverless `api/` directory.
+  - When the sign-in screen sends `POST /api/auth/login`, the request is rewritten to the static file `/index.html`, which rejects `POST` requests with **`405 Method Not Allowed`**.
+  - When a browser or service worker requests a hashed stylesheet under `/assets/index-*.css` from a prior deployment, the catch-all rewrite serves `/index.html` (`Content-Type: text/html`) with status `200`. Because `X-Content-Type-Options: nosniff` is active, the browser blocks the response with the strict MIME checking error.
+- **Confirmed Remediation Strategy**:
+  1. **Serverless API Gateway & Rewrite Exclusion**: Add a catch-all serverless API handler that routes `/api/*` requests to the Express backend, and restrict SPA HTML rewrites strictly to non-API, non-asset navigation routes so `/assets/*` and `/api/*` never resolve to `index.html`.
+  2. **Direct Supabase Auth Fallback on 405/Unreachable Backend**: Enhance the client authentication flow so that if `/api/auth/login` ever returns `405`/`404`/`5xx` or a non-JSON response, authentication seamlessly falls back to direct Supabase Auth and tenant lookup (`schools`, `users`, `licenses`, `teachers`, `students`).
+  3. **Cache-Control, Workbox & Stale Asset Recovery**: Configure `no-cache, no-store, must-revalidate` headers on `/index.html` and `/sw.js`, add Workbox `cleanupOutdatedCaches` and `navigateFallbackDenylist` for `/api/*` and `/assets/*`, and add automatic stale-stylesheet cache recovery in the HTML entry point.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Cleans up the dependency tree, lifecycle script approvals, and Rollup chunk-splitting configuration so `npm install` and `npm run build` execute cleanly in CI/CD and Cloud Run deployment pipelines.
-- **Target Audience / Persona**: Platform creators and deployment pipelines building and deploying the application.
-- **Key Value**: Removes deprecated transitive packages with known memory leaks (`inflight@1.0.6`) or security notices (`glob@7.2.3` / `glob@11.1.0`), approves required postinstall binaries (`esbuild`, `protobufjs`, `@firebase/util`, `core-js`, `@google/genai`), and optimizes production bundle chunks.
+- **What It Does**: Restores full `/api/auth/login` and `/api/*` functionality on `https://www.schoolsphere.xyz`, prevents missing or rotated `/assets/*.css` and `/assets/*.js` files from being rewritten to `text/html`, and automatically recovers clients holding stale cached asset hashes after a deployment.
+- **Target Audience / Persona**: All users signing in at `https://www.schoolsphere.xyz/sign-in` across Creator, Admin, HOD, Teacher, Bursar, Student, and Parent portals.
+- **Key Value**: Eliminates the `405` login failure and broken unstyled page loads caused by `text/html` MIME responses on CSS assets.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Key User Flows**: No visual or functional regressions across any portal; improves initial page load performance in production by splitting heavy reporting and charting libraries (`xlsx`, `jspdf`, `recharts`) into dedicated cacheable vendor chunks.
+- **Key User Flows**:
+  1. Navigating to `https://www.schoolsphere.xyz/sign-in` always loads the current production stylesheet with `Content-Type: text/css` (and automatically refreshes if a browser tab had cached an older deployment's HTML/SW).
+  2. Submitting credentials on `/sign-in` succeeds via the `/api/auth/login` serverless handler, with an automatic client-side Supabase fallback if the serverless edge returns a `405`/`5xx` status.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1 — Vendor Chunk Splitting + Raised Chunk Limit**:
-  - *Chosen Approach*: Configure `rollupOptions.output.manualChunks` to separate `vendor-charts` (`recharts`), `vendor-export` (`jspdf`, `html2canvas`, `xlsx`), and `vendor-cloud` (`@supabase/supabase-js`, `firebase`) while raising `chunkSizeWarningLimit` to `5000`.
-  - *Why*: Reduces main bundle size and eliminates Vite's chunk size warning during production compilation.
-- **Decision 2 — Explicit `allowScripts` Policy**:
-  - *Chosen Approach*: Configure `"allowScripts"` in the package manifest with explicit boolean approvals for required build packages (`esbuild`, `protobufjs`, `@firebase/util`, `core-js`, `@google/genai`).
-  - *Why*: Satisfies npm's `install-scripts` check without requiring manual interactive CLI approval during automated cloud builds.
+- **Decision 1 — Exclude `/api/*` and `/assets/*` from SPA HTML Fallback**:
+  - *Chosen Approach*: Route `/api/(.*)` to the serverless Express bridge and restrict `/index.html` rewrites to navigation paths without file extensions (`/((?!api/|assets/|.*\\..*).*)`), both in cloud rewrite rules and in the Express production server.
+  - *Why*: Guarantees `/api/*` handles `POST`/`PUT`/`DELETE` requests properly instead of hitting static `/index.html` (HTTP 405), and ensures missing `/assets/*.css` requests return HTTP 404 instead of `text/html`.
+- **Decision 2 — Dual-Path Authentication Resilience**:
+  - *Chosen Approach*: Keep `/api/auth/login` as the primary authoritative login endpoint while adding a direct Supabase multi-tenant authentication fallback when the `/api/auth/login` response is non-JSON or HTTP 404/405/5xx.
+  - *Why*: Ensures users can sign in on `www.schoolsphere.xyz` even during serverless cold starts or static edge hosting.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Architecture & Build Pipeline Diagram**:
+- **Request & Asset Routing Diagram**:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                        Package Manifest & Overrides                       │
-│  • Removes unused otplib, electron, electron-builder, sharp, dup esbuild  │
-│  • Overrides transitive glob -> ^13.0.0                                   │
-│  • Declares allowScripts for esbuild, protobufjs, @firebase/util, etc.    │
-└─────────────────────────────────────┬─────────────────────────────────────┘
-                                      │
-                                      ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                       Vite Production Build Pipeline                      │
-│  • manualChunks splits Recharts, PDF/Excel exporters, and Cloud SDKs      │
-│  • chunkSizeWarningLimit = 5000 eliminates bundle size warnings           │
-└───────────────────────────────────────────────────────────────────────────┘
+│                    Browser Client (www.schoolsphere.xyz)                  │
+│  • Stale CSS/chunk detector auto-busts outdated SW/HTML cache once        │
+└───────────────┬─────────────────────────────┬─────────────────────────────┘
+                │                             │
+      GET /assets/*.css             POST /api/auth/login
+                │                             │
+                ▼                             ▼
+┌───────────────────────────────┐ ┌─────────────────────────────────────────┐
+│   Static Asset & PWA Layer    │ │   Serverless API Bridge & Auth Engine   │
+│  • /assets/* served as CSS/JS │ │  • Routes /api/* to Express app         │
+│  • Never rewritten to HTML    │ │  • CORS allow-list includes .xyz domain │
+│  • Workbox excludes /assets/* │ │  • Client falls back to Supabase on 405 │
+└───────────────────────────────┘ └─────────────────────────────────────────┘
 ```

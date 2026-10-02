@@ -111,6 +111,75 @@
           if (isBenignDevError(msg)) return;
           return origWarn.apply(console, arguments);
         };
+
+        function recoverFromStaleDeploymentAssets() {
+          try {
+            var now = Date.now();
+            var lastReload = Number(sessionStorage.getItem('esepa_asset_reload_ts') || '0');
+            if (now - lastReload < 15000) return;
+            sessionStorage.setItem('esepa_asset_reload_ts', String(now));
+
+            var cleanupPromises = [];
+            if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+              cleanupPromises.push(
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  return Promise.all(
+                    regs.map(function (r) {
+                      return r.unregister();
+                    })
+                  );
+                })
+              );
+            }
+            if ('caches' in window && window.caches.keys) {
+              cleanupPromises.push(
+                window.caches.keys().then(function (keys) {
+                  return Promise.all(
+                    keys.map(function (k) {
+                      return window.caches.delete(k);
+                    })
+                  );
+                })
+              );
+            }
+            Promise.all(cleanupPromises)
+              .catch(function () {})
+              .finally(function () {
+                var url = new URL(window.location.href);
+                url.searchParams.set('_v', String(now));
+                window.location.replace(url.toString());
+              });
+          } catch (e) {}
+        }
+
+        window.addEventListener('vite:preloadError', function (event) {
+          if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+          }
+          recoverFromStaleDeploymentAssets();
+        });
+
+        try {
+          if (window.location.search.indexOf('_v=') !== -1 && window.history && window.history.replaceState) {
+            var cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('_v');
+            window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+          }
+        } catch (e) {}
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event && event.target;
+            if (target && (target.tagName === 'LINK' || target.tagName === 'SCRIPT')) {
+              var assetUrl = String(target.href || target.src || '');
+              if (assetUrl.indexOf('/assets/') !== -1) {
+                recoverFromStaleDeploymentAssets();
+              }
+            }
+          },
+          true
+        );
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
