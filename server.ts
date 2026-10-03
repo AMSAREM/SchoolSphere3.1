@@ -2166,6 +2166,7 @@ async function doStartServer() {
     }
 
     const userRole = String(req.user?.role || '').toLowerCase();
+    const isSuperOrAdmin = userRole === 'super_admin' || userRole === 'creator' || userRole === 'admin';
     const isSuper = userRole === 'super_admin' || userRole === 'creator';
     const userSchoolId = String(req.user?.school_id || req.user?.schoolId || '').trim();
     const requestedSchoolId = String(
@@ -2181,33 +2182,41 @@ async function doStartServer() {
     const validUserSchoolId = (userSchoolId && userSchoolId !== '00000000-0000-0000-0000-000000000001') ? userSchoolId : '';
     const validRequestedSchoolId = (requestedSchoolId && requestedSchoolId !== '00000000-0000-0000-0000-000000000001') ? requestedSchoolId : '';
 
-    if (!isSuper) {
-      if (!validUserSchoolId) {
-        return {
-          schoolId: '',
-          isSuper: false,
-          forbidden: true,
-          error: 'Tenant isolation policy violation: User account is not assigned to a valid school tenant.'
-        };
-      }
-      if (validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId) {
-        return {
-          schoolId: validUserSchoolId,
-          isSuper: false,
-          forbidden: true,
-          error: 'Cross-tenant access denied: You can only access or modify data belonging to your assigned school.'
-        };
-      }
+    // Super admin and creator have platform-wide access
+    if (isSuper) {
       return {
-        schoolId: validUserSchoolId,
-        isSuper: false,
+        schoolId: validRequestedSchoolId || validUserSchoolId,
+        isSuper: true,
         forbidden: false
       };
     }
 
+    // Standard tenant users (admin, teacher, staff, student)
+    // If the token itself had missing school_id, but the user is an admin and requested a school:
+    const effectiveSchoolId = validUserSchoolId || (userRole === 'admin' ? validRequestedSchoolId : '');
+
+    if (!effectiveSchoolId) {
+      return {
+        schoolId: '',
+        isSuper: false,
+        forbidden: true,
+        error: 'Tenant isolation policy violation: User account is not assigned to a valid school tenant.'
+      };
+    }
+
+    // Enforce strict cross-tenant boundary: a user assigned to School B cannot access School A
+    if (validUserSchoolId && validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId) {
+      return {
+        schoolId: validUserSchoolId,
+        isSuper: false,
+        forbidden: true,
+        error: 'Cross-tenant access denied: You can only access or modify data belonging to your assigned school.'
+      };
+    }
+
     return {
-      schoolId: validRequestedSchoolId || validUserSchoolId,
-      isSuper: true,
+      schoolId: effectiveSchoolId,
+      isSuper: false,
       forbidden: false
     };
   }

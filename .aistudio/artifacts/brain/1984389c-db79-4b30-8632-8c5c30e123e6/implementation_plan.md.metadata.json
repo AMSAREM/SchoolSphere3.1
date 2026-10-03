@@ -1,6 +1,6 @@
 {
-  "summary":  "Resolution plan for Google Search Console 'Couldn't fetch / Pending' sitemap status on https://www.schoolsphere.xyz/sitemap.xml.",
-  "updatedAt":  "2026-10-03T21:24:44.660211696Z",
+  "summary":  "Architectural resolution plan for network authorization and permission diagnostics across schoolsphere.xyz, covering Supabase REST 42501 fallback, refresh token expiration handling, and multi-tenant school scoping with creator/admin overrides.",
+  "updatedAt":  "2026-10-03T21:59:23.802849824Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

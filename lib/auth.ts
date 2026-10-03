@@ -162,39 +162,80 @@ export function verifyAuthToken(token: string): AuthJwtPayload | null {
 export async function verifySupabaseSessionToken(token: string): Promise<AuthJwtPayload | null> {
   if (!token || typeof token !== 'string') return null;
 
-  const syncVerified = verifyAuthToken(token);
-  if (syncVerified) {
-    return syncVerified;
+  let payload: AuthJwtPayload | null = verifyAuthToken(token);
+
+  if (!payload) {
+    try {
+      const adminClient = getSupabaseAdmin();
+      if (typeof adminClient?.auth?.getUser !== 'function') {
+        return null;
+      }
+
+      const { data, error } = await adminClient.auth.getUser(token);
+      if (error || !data?.user?.id) {
+        return null;
+      }
+
+      const authUser = data.user;
+      payload = buildPayloadFromClaims({
+        sub: authUser.id,
+        email: authUser.email,
+        user_metadata: authUser.user_metadata,
+        app_metadata: authUser.app_metadata,
+      });
+    } catch {
+      return null;
+    }
   }
 
-  try {
-    const adminClient = getSupabaseAdmin();
-    if (typeof adminClient?.auth?.getUser !== 'function') {
-      return null;
+  // If school_id is missing from token claims, hydrate from public.users table
+  if (payload && !payload.school_id) {
+    try {
+      const adminClient = getSupabaseAdmin();
+      const userIdOrSub = payload.auth_user_id || payload.sub || payload.id;
+      const userEmail = payload.email;
+      const orClauses: string[] = [];
+      if (userIdOrSub) orClauses.push(`auth_user_id.eq.${userIdOrSub}`);
+      if (userEmail) orClauses.push(`email.ilike.${userEmail}`);
+
+      if (orClauses.length > 0) {
+        const { data: dbUser } = await adminClient
+          .from('users')
+          .select('id, school_id, role, username, full_name')
+          .or(orClauses.join(','))
+          .limit(1)
+          .maybeSingle();
+
+        if (dbUser) {
+          if (dbUser.school_id) {
+            payload.school_id = String(dbUser.school_id);
+            payload.schoolId = String(dbUser.school_id);
+            payload.organization_id = String(dbUser.school_id);
+          }
+          if (dbUser.role && (!payload.role || payload.role === 'authenticated' || payload.role === 'user' || payload.role === 'admin')) {
+            payload.role = dbUser.role;
+          }
+          if (dbUser.username) {
+            payload.username = dbUser.username;
+          }
+          if (dbUser.full_name) {
+            payload.fullName = dbUser.full_name;
+          }
+        }
+      }
+    } catch {
+      // Non-blocking enrichment fallback
     }
+  }
 
-    const { data, error } = await adminClient.auth.getUser(token);
-    if (error || !data?.user?.id) {
-      return null;
-    }
-
-    const authUser = data.user;
-    const payload = buildPayloadFromClaims({
-      sub: authUser.id,
-      email: authUser.email,
-      user_metadata: authUser.user_metadata,
-      app_metadata: authUser.app_metadata,
-    });
-
+  if (payload) {
     verifiedTokenCache.set(token, {
       payload,
       expiresAt: Date.now() + VERIFIED_TOKEN_CACHE_TTL_MS,
     });
-
-    return payload;
-  } catch {
-    return null;
   }
+
+  return payload;
 }
 
 /**

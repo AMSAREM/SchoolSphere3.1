@@ -199,34 +199,65 @@ function verifyAuthToken(token) {
 }
 async function verifySupabaseSessionToken(token) {
   if (!token || typeof token !== "string") return null;
-  const syncVerified = verifyAuthToken(token);
-  if (syncVerified) {
-    return syncVerified;
+  let payload = verifyAuthToken(token);
+  if (!payload) {
+    try {
+      const adminClient = getSupabaseAdmin();
+      if (typeof adminClient?.auth?.getUser !== "function") {
+        return null;
+      }
+      const { data, error } = await adminClient.auth.getUser(token);
+      if (error || !data?.user?.id) {
+        return null;
+      }
+      const authUser = data.user;
+      payload = buildPayloadFromClaims({
+        sub: authUser.id,
+        email: authUser.email,
+        user_metadata: authUser.user_metadata,
+        app_metadata: authUser.app_metadata
+      });
+    } catch {
+      return null;
+    }
   }
-  try {
-    const adminClient = getSupabaseAdmin();
-    if (typeof adminClient?.auth?.getUser !== "function") {
-      return null;
+  if (payload && !payload.school_id) {
+    try {
+      const adminClient = getSupabaseAdmin();
+      const userIdOrSub = payload.auth_user_id || payload.sub || payload.id;
+      const userEmail = payload.email;
+      const orClauses = [];
+      if (userIdOrSub) orClauses.push(`auth_user_id.eq.${userIdOrSub}`);
+      if (userEmail) orClauses.push(`email.ilike.${userEmail}`);
+      if (orClauses.length > 0) {
+        const { data: dbUser } = await adminClient.from("users").select("id, school_id, role, username, full_name").or(orClauses.join(",")).limit(1).maybeSingle();
+        if (dbUser) {
+          if (dbUser.school_id) {
+            payload.school_id = String(dbUser.school_id);
+            payload.schoolId = String(dbUser.school_id);
+            payload.organization_id = String(dbUser.school_id);
+          }
+          if (dbUser.role && (!payload.role || payload.role === "authenticated" || payload.role === "user" || payload.role === "admin")) {
+            payload.role = dbUser.role;
+          }
+          if (dbUser.username) {
+            payload.username = dbUser.username;
+          }
+          if (dbUser.full_name) {
+            payload.fullName = dbUser.full_name;
+          }
+        }
+      }
+    } catch {
     }
-    const { data, error } = await adminClient.auth.getUser(token);
-    if (error || !data?.user?.id) {
-      return null;
-    }
-    const authUser = data.user;
-    const payload = buildPayloadFromClaims({
-      sub: authUser.id,
-      email: authUser.email,
-      user_metadata: authUser.user_metadata,
-      app_metadata: authUser.app_metadata
-    });
+  }
+  if (payload) {
     verifiedTokenCache.set(token, {
       payload,
       expiresAt: Date.now() + VERIFIED_TOKEN_CACHE_TTL_MS
     });
-    return payload;
-  } catch {
-    return null;
   }
+  return payload;
 }
 async function authenticateToken(req, res, next) {
   try {
@@ -3531,6 +3562,7 @@ async function doStartServer() {
       };
     }
     const userRole = String(req.user?.role || "").toLowerCase();
+    const isSuperOrAdmin = userRole === "super_admin" || userRole === "creator" || userRole === "admin";
     const isSuper = userRole === "super_admin" || userRole === "creator";
     const userSchoolId = String(req.user?.school_id || req.user?.schoolId || "").trim();
     const requestedSchoolId = String(
@@ -3538,32 +3570,33 @@ async function doStartServer() {
     ).trim();
     const validUserSchoolId = userSchoolId && userSchoolId !== "00000000-0000-0000-0000-000000000001" ? userSchoolId : "";
     const validRequestedSchoolId = requestedSchoolId && requestedSchoolId !== "00000000-0000-0000-0000-000000000001" ? requestedSchoolId : "";
-    if (!isSuper) {
-      if (!validUserSchoolId) {
-        return {
-          schoolId: "",
-          isSuper: false,
-          forbidden: true,
-          error: "Tenant isolation policy violation: User account is not assigned to a valid school tenant."
-        };
-      }
-      if (validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId) {
-        return {
-          schoolId: validUserSchoolId,
-          isSuper: false,
-          forbidden: true,
-          error: "Cross-tenant access denied: You can only access or modify data belonging to your assigned school."
-        };
-      }
+    if (isSuper) {
       return {
-        schoolId: validUserSchoolId,
-        isSuper: false,
+        schoolId: validRequestedSchoolId || validUserSchoolId,
+        isSuper: true,
         forbidden: false
       };
     }
+    const effectiveSchoolId = validUserSchoolId || (userRole === "admin" ? validRequestedSchoolId : "");
+    if (!effectiveSchoolId) {
+      return {
+        schoolId: "",
+        isSuper: false,
+        forbidden: true,
+        error: "Tenant isolation policy violation: User account is not assigned to a valid school tenant."
+      };
+    }
+    if (validUserSchoolId && validRequestedSchoolId && validRequestedSchoolId !== validUserSchoolId) {
+      return {
+        schoolId: validUserSchoolId,
+        isSuper: false,
+        forbidden: true,
+        error: "Cross-tenant access denied: You can only access or modify data belonging to your assigned school."
+      };
+    }
     return {
-      schoolId: validRequestedSchoolId || validUserSchoolId,
-      isSuper: true,
+      schoolId: effectiveSchoolId,
+      isSuper: false,
       forbidden: false
     };
   }

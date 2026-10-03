@@ -683,6 +683,68 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
         ? targetSchoolId
         : null;
 
+    // 1. Primary High-Performance Server Batch Sync (/api/academic/sync-tenant)
+    // Uses service-role authorization on the backend, bypassing client-side 42501 permission blocks and cold-start latency
+    if (targetSchoolId) {
+      try {
+        const batchRes = await fetch(`/api/academic/sync-tenant/${encodeURIComponent(targetSchoolId)}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-school-id': targetSchoolId,
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+        if (batchRes.ok) {
+          const batchJson = await batchRes.json();
+          if (batchJson.success && batchJson.data) {
+            const d = batchJson.data;
+            let batchSynced = false;
+            if (Array.isArray(d.classes)) {
+              await reconcileClassesInDexie(d.classes, true);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.teachers)) {
+              await reconcileTeachersInDexie(d.teachers, true);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.subjects)) {
+              await reconcileSubjectsInDexie(d.subjects, true);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.students)) {
+              await reconcileStudentsInDexie(d.students, true);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.attendance)) {
+              if (d.attendance.length === 0) await db.attendance.clear();
+              else await reconcileAttendanceInDexie(d.attendance);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.results)) {
+              if (d.results.length === 0) await db.results.clear();
+              else await reconcileResultsInDexie(d.results);
+              batchSynced = true;
+            }
+            if (Array.isArray(d.termReports || d.term_reports)) {
+              const tr = d.termReports || d.term_reports;
+              if (tr.length === 0) await db.termReports.clear();
+              else await reconcileTermReportsInDexie(tr);
+              batchSynced = true;
+            }
+            if (batchSynced) {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('database-reconciled', { detail: { timestamp: Date.now() } }));
+              }
+              return true;
+            }
+          }
+        }
+      } catch (batchErr) {
+        console.warn('Notice in academic batch sync, falling back to table query:', batchErr);
+      }
+    }
+
+    // 2. Secondary Table-by-Table Query with Server Proxy Fallback on 42501 (Permission Denied)
     const queryTable = async (tableName: string) => {
       try {
         let q: any = supabase.from(tableName).select('*');
@@ -690,7 +752,24 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
           q = q.eq('school_id', validSchoolFilter);
         }
         const { data, error } = await q;
-        return !error && Array.isArray(data) ? data : null;
+        if (!error && Array.isArray(data)) {
+          return data;
+        }
+
+        // Fall back to server proxy if direct Supabase REST fails (e.g. 42501 Permission Denied or 401)
+        const proxyRes = await fetch(`/api/${tableName}?school_id=${encodeURIComponent(validSchoolFilter || '')}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(validSchoolFilter ? { 'x-school-id': validSchoolFilter } : {}),
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          if (Array.isArray(proxyData)) return proxyData;
+          if (proxyData && Array.isArray(proxyData.data)) return proxyData.data;
+        }
+        return null;
       } catch {
         return null;
       }

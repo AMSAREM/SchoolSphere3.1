@@ -233,14 +233,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
               }
             } else {
-              logout();
+              logout(true);
             }
           } catch (refreshErr) {
-            console.warn("Token refresh failed:", refreshErr);
-            logout();
+            console.warn("Token refresh failed (400 / invalid token):", refreshErr);
+            logout(true);
           }
         } else {
-          logout();
+          logout(true);
         }
       }
     } catch (err) {
@@ -289,8 +289,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshSession();
     }
 
-    // Listen to Supabase Auth State Changes (e.g. Magic Link OTP callback)
+    // Handle global session-expired events (e.g. 400 Bad Request on refresh or 401 unrecoverable)
+    const handleSessionExpired = () => {
+      console.warn("Session expired event received. Clearing local credentials and redirecting to /sign-in");
+      logout(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('schoolsphere:session-expired', handleSessionExpired);
+    }
+
+    // Listen to Supabase Auth State Changes (e.g. Magic Link OTP callback, signout, token refresh failure)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
+      if (event === 'SIGNED_OUT') {
+        logout(true);
+        return;
+      }
+      if (event === 'TOKEN_REFRESH_FINISHED' && !session) {
+        console.warn("Supabase TOKEN_REFRESH_FINISHED without valid session (refresh token expired/revoked)");
+        logout(true);
+        return;
+      }
       if (event === 'SIGNED_IN' && session?.user) {
         const email = session.user.email?.toLowerCase();
         if (!email) return;
@@ -371,6 +389,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       authListener?.subscription?.unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('schoolsphere:session-expired', handleSessionExpired);
+      }
     };
   }, []);
 
@@ -919,7 +940,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result.success;
   };
 
-  const logout = () => {
+  const logout = (redirectToSignIn = false) => {
     if (user) {
       sendSessionLogout({
         userId: user.id,
@@ -937,8 +958,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('esepa_refresh_token');
     localStorage.removeItem('esepa_supabase_access_token');
     localStorage.removeItem('esepa_active_school_id');
+    localStorage.removeItem('esepa_active_school');
+    localStorage.removeItem('esepa_active_license');
     supabase.auth.signOut().catch(() => {});
     clearTenantLocalDatabase().catch(() => {});
+
+    if (redirectToSignIn && typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/sign-in' && currentPath !== '/' && currentPath !== '/privacy' && currentPath !== '/terms') {
+        window.location.href = '/sign-in?expired=1';
+      }
+    }
   };
 
   const register = async (

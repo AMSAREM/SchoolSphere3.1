@@ -63,6 +63,106 @@ export async function resolveActiveSchoolId(): Promise<string> {
   return currentId || '';
 }
 
+let isRefreshingSession = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+export async function silentRefreshToken(): Promise<string | null> {
+  if (typeof localStorage === 'undefined') return null;
+  const refreshToken = localStorage.getItem('esepa_refresh_token');
+  if (!refreshToken) return null;
+
+  if (isRefreshingSession && refreshPromise) {
+    return refreshPromise;
+  }
+
+  isRefreshingSession = true;
+  refreshPromise = (async () => {
+    try {
+      // 1. Try Supabase Auth direct refresh
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+      if (!error && data?.session?.access_token) {
+        const newAccess = data.session.access_token;
+        const newRefresh = data.session.refresh_token || refreshToken;
+        localStorage.setItem('esepa_auth_token', newAccess);
+        localStorage.setItem('esepa_supabase_access_token', newAccess);
+        localStorage.setItem('esepa_refresh_token', newRefresh);
+        return newAccess;
+      }
+
+      // 2. Try server refresh route
+      const resp = await fetch('/api/auth/refresh-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      });
+
+      if (resp.ok) {
+        const body = await resp.json();
+        const newAccess = body.supabaseAccessToken || body.token;
+        const newRefresh = body.supabaseRefreshToken || body.refreshToken || refreshToken;
+        if (newAccess) {
+          localStorage.setItem('esepa_auth_token', newAccess);
+          localStorage.setItem('esepa_supabase_access_token', newAccess);
+          localStorage.setItem('esepa_refresh_token', newRefresh);
+          return newAccess;
+        }
+      }
+
+      // If refresh explicitly returned 400 or failed, session is permanently expired
+      if (resp.status === 400 || (error && (error as any).status === 400)) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('schoolsphere:session-expired'));
+        }
+      }
+      return null;
+    } catch {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('schoolsphere:session-expired'));
+      }
+      return null;
+    } finally {
+      isRefreshingSession = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+export async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const targetSchoolId = (init.headers as any)?.['x-school-id'] || (await resolveActiveSchoolId());
+  const defaultHeaders = getApiHeaders(targetSchoolId || undefined);
+  const mergedHeaders = {
+    ...defaultHeaders,
+    ...(init.headers || {})
+  };
+
+  const response = await fetch(input, {
+    ...init,
+    headers: mergedHeaders
+  });
+
+  if (response.status === 401) {
+    const refreshedToken = await silentRefreshToken();
+    if (refreshedToken) {
+      const retryHeaders = {
+        ...mergedHeaders,
+        Authorization: `Bearer ${refreshedToken}`
+      };
+      return fetch(input, {
+        ...init,
+        headers: retryHeaders
+      });
+    } else {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('schoolsphere:session-expired'));
+      }
+    }
+  }
+
+  return response;
+}
+
 // ==========================================
 // 1. STUDENTS API
 // ==========================================
