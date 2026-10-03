@@ -5,6 +5,7 @@ import { syncTenantAcademicData } from '../lib/api';
 import { AppPermission, UserRole, hasPermission as checkPermission, canAccessModule as checkModuleAccess, getRoleInfo } from '../lib/permissions';
 import { recordUserLogin, sendSessionHeartbeat, sendSessionLogout, mapAuthErrorMessage } from '../lib/authTelemetry';
 import { normalizeEmail } from '../lib/emailValidation';
+import { presenceService } from '../lib/presenceService';
 
 interface RegisterOrgPayload {
   organizationName: string;
@@ -408,45 +409,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('focus', handleVisibilityOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
-    // Join Supabase Realtime Presence channel for instant multi-client presence
+    // Track presence via shared presenceService
     const presenceKey = String(user.auth_user_id || user.id || user.email || user.username || 'session');
-    let presenceChannel: any = null;
-    try {
-      presenceChannel = supabase.channel('schoolsphere:live_presence', {
-        config: { presence: { key: presenceKey } }
-      });
-      presenceChannel.subscribe(async (status: string) => {
-        if (status === 'SUBSCRIBED') {
-          try {
-            await presenceChannel.track({
-              userId: user.id,
-              authUserId: user.auth_user_id,
-              username: user.username,
-              fullName: user.fullName || (user as any).full_name || user.username,
-              email: user.email,
-              role: user.role,
-              schoolId: user.schoolId || user.school_id || school?.id || null,
-              schoolName: resolvedSchoolName,
-              loginTimestamp: user.lastLogin || Date.now(),
-              lastActiveTimestamp: Date.now(),
-              authStatus: 'Authenticated',
-              isOnline: true
-            });
-          } catch {}
-        }
-      });
-    } catch {}
+    presenceService.trackPresence({
+      userId: user.id,
+      authUserId: user.auth_user_id,
+      username: user.username,
+      fullName: user.fullName || (user as any).full_name || user.username,
+      email: user.email,
+      role: user.role,
+      schoolId: user.schoolId || user.school_id || school?.id || null,
+      schoolName: resolvedSchoolName,
+      loginTimestamp: user.lastLogin || Date.now(),
+      lastActiveTimestamp: Date.now(),
+      authStatus: 'Authenticated',
+      isOnline: true
+    }, presenceKey).catch(() => {});
 
     return () => {
       clearInterval(hbInterval);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      if (presenceChannel) {
-        try {
-          presenceChannel.untrack();
-          supabase.removeChannel(presenceChannel);
-        } catch {}
-      }
+      presenceService.untrackPresence().catch(() => {});
     };
   }, [user?.id, user?.username, user?.role, user?.school_id, school?.id, school?.name]);
 

@@ -38,6 +38,7 @@ import { cn } from '../lib/utils';
 import { getGoogleAccessToken, clearGoogleAccessToken } from '../lib/gmailService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase/client';
+import { presenceService } from '../lib/presenceService';
 import { getApiHeaders } from '../lib/api';
 import {
   fetchTenantLicenseStatus,
@@ -440,11 +441,27 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
       fetchCreatorTelemetry();
     }, 8000);
 
-    // Subscribe to Supabase Realtime Postgres Changes + Live Presence Channel
+    // Subscribe to Supabase Realtime Postgres Changes + Live Presence Channel via presenceService
     let dbRealtimeChannel: any = null;
-    let presenceMonitorChannel: any = null;
+
+    // Use shared presence service to observe live presence without post-subscribe callback conflicts
+    const unsubscribePresence = presenceService.subscribeToPresence((extracted) => {
+      setChannelPresenceUsers(extracted);
+      setIsRealtimeConnected(true);
+      fetchCreatorTelemetry();
+    });
 
     try {
+      const existingDbChannels = typeof supabase.getChannels === 'function' ? supabase.getChannels() : [];
+      const staleChannel = existingDbChannels.find((c: any) =>
+        c.topic === 'realtime:creator_dashboard_postgres_changes' || c.subTopic === 'creator_dashboard_postgres_changes'
+      );
+      if (staleChannel) {
+        try {
+          supabase.removeChannel(staleChannel);
+        } catch {}
+      }
+
       dbRealtimeChannel = supabase
         .channel('creator_dashboard_postgres_changes')
         .on('postgres_changes', { event: '*', schema: 'public' }, () => {
@@ -455,65 +472,17 @@ export default function CreatorHub({ onLicenseChange, onExit }: CreatorHubProps)
             setIsRealtimeConnected(true);
           }
         });
-
-      presenceMonitorChannel = supabase.channel('schoolsphere:live_presence');
-      const syncPresenceState = () => {
-        try {
-          const state = presenceMonitorChannel.presenceState() || {};
-          const extracted: any[] = [];
-          Object.values(state).forEach((presences: any) => {
-            if (Array.isArray(presences)) {
-              presences.forEach((p: any) => {
-                if (p && (p.username || p.email || p.userId)) {
-                  extracted.push({
-                    ...p,
-                    isOnline: true,
-                    lastActiveTimestamp: Number(p.lastActiveTimestamp || Date.now()),
-                    loginTimestamp: Number(p.loginTimestamp || Date.now()),
-                    authStatus: p.authStatus || 'Authenticated'
-                  });
-                }
-              });
-            }
-          });
-          setChannelPresenceUsers(extracted);
-        } catch {}
-      };
-
-      presenceMonitorChannel
-        .on('presence', { event: 'sync' }, () => {
-          syncPresenceState();
-          fetchCreatorTelemetry();
-        })
-        .on('presence', { event: 'join' }, () => {
-          syncPresenceState();
-          fetchCreatorTelemetry();
-        })
-        .on('presence', { event: 'leave' }, () => {
-          syncPresenceState();
-          fetchCreatorTelemetry();
-        })
-        .subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            setIsRealtimeConnected(true);
-            syncPresenceState();
-          }
-        });
     } catch (rtErr) {
-      console.warn('Supabase Realtime subscription notice:', rtErr);
+      console.warn('Supabase Realtime postgres_changes subscription notice:', rtErr);
     }
 
     return () => {
       window.removeEventListener('esepa_licenses_updated', handleLicensesUpdated);
       clearInterval(liveInterval);
+      unsubscribePresence();
       if (dbRealtimeChannel) {
         try {
           supabase.removeChannel(dbRealtimeChannel);
-        } catch {}
-      }
-      if (presenceMonitorChannel) {
-        try {
-          supabase.removeChannel(presenceMonitorChannel);
         } catch {}
       }
     };
