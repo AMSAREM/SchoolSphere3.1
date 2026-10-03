@@ -1794,25 +1794,24 @@ async function doStartServer() {
       res.setHeader('Content-Type', 'text/plain');
       return res.sendFile(robotsPath);
     }
-    res.setHeader('Content-Type', 'text/plain');
-    res.send("User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /creator\nSitemap: https://schoolsphere.app/sitemap.xml\n");
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send("User-agent: *\nAllow: /\nAllow: /sign-in\nAllow: /portal\nAllow: /sitemap.xml\nAllow: /privacy\nAllow: /terms\nDisallow: /api/\nDisallow: /creator\nDisallow: /admin/\nSitemap: https://www.schoolsphere.xyz/sitemap.xml\n");
   });
 
   app.get("/sitemap.xml", (req, res) => {
     const sitemapPath = path.join(process.cwd(), 'public', 'sitemap.xml');
     if (fs.existsSync(sitemapPath)) {
-      res.setHeader('Content-Type', 'application/xml');
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       return res.sendFile(sitemapPath);
     }
-    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://schoolsphere.app/</loc><priority>1.0</priority></url>
-  <url><loc>https://schoolsphere.app/login</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/portal</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/sitemap</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/privacy</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/terms</loc><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/</loc><lastmod>2026-10-03</lastmod><priority>1.0</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/sign-in</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/portal</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/privacy</loc><lastmod>2026-10-03</lastmod><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/terms</loc><lastmod>2026-10-03</lastmod><priority>0.5</priority></url>
 </urlset>`);
   });
 
