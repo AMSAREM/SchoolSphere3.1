@@ -14,11 +14,37 @@
       "destination": "/api/[...path]"
     },
     {
-      "source": "/((?!api/|assets/|sw\\.js|workbox-.*\\.js|manifest\\.webmanifest|.*\\.(?:css|js|mjs|map|json|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot)$).*)",
+      "source": "/((?!api/|assets/|sw\\.js|workbox-.*\\.js|manifest\\.webmanifest|.*\\.(?:css|js|mjs|map|json|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|xml|txt)$).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/xml; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400"
+        }
+      ]
+    },
     {
       "source": "/assets/(.*)",
       "headers": [

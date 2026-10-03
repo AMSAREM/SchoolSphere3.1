@@ -950,7 +950,7 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/xml/);
       expect(res.text).toContain('urlset');
-      expect(res.text).toContain('schoolsphere.app');
+      expect(res.text).toMatch(/schoolsphere\.(xyz|app)/);
     });
   });
 
