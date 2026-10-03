@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server';
-import type { AuthJwtPayload } from './auth';
-import { validateEmail, normalizeEmail } from '../src/lib/emailValidation';
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server.ts';
+import type { AuthJwtPayload } from './auth.ts';
+import { validateEmail, normalizeEmail } from '../src/lib/emailValidation.ts';
 
 export interface RegisterOrgInput {
   organizationName: string;

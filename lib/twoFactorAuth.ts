@@ -3,7 +3,7 @@
  * Provides TOTP-based 2FA for enhanced security, especially for admin accounts
  */
 
-import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server';
+import { getSupabaseAdmin, createAuthenticatedSupabaseClient } from './supabase/server.ts';
 import crypto from 'crypto';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

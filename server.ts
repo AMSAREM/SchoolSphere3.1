@@ -5,9 +5,9 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import dns from "dns";
 import nodemailer from "nodemailer";
-import { getSupabaseAdmin, getSupabaseUrlStrict, createAuthenticatedSupabaseClient, getCreatorAuthenticatedClient, runWithRequestToken } from "./lib/supabase/server";
-import { authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, type AuthenticatedRequest } from "./lib/auth";
-import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger";
+import { getSupabaseAdmin, getSupabaseUrlStrict, createAuthenticatedSupabaseClient, getCreatorAuthenticatedClient, runWithRequestToken } from "./lib/supabase/server.ts";
+import { authenticateToken, optionalAuthenticateToken, requireRoles, requireSchoolScope, verifyAuthToken, type AuthenticatedRequest } from "./lib/auth.ts";
+import { createAuditLog, extractIpAddress, AuditAction, EntityType, getAuditLogs, getSecurityAlerts } from "./lib/auditLogger.ts";
 import type { Request, Response, NextFunction } from 'express';
 import { 
   setupTwoFactorAuth, 
@@ -17,7 +17,7 @@ import {
   isTwoFactorEnabled,
   getTwoFactorSettings,
   generateQRCodeDataURL 
-} from "./lib/twoFactorAuth";
+} from "./lib/twoFactorAuth.ts";
 import { 
   registerOrganization, 
   createWorkerInvitation, 
@@ -30,7 +30,7 @@ import {
   recordUserSessionHeartbeat,
   markUserSessionOffline,
   getActiveUserSessions
-} from "./lib/multiTenantAuth";
+} from "./lib/multiTenantAuth.ts";
 
 dotenv.config();
 
@@ -38,9 +38,37 @@ function getResolvedSupabaseUrl(): string {
   return getSupabaseUrlStrict();
 }
 
-const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+function resolvePort(): number {
+  for (let i = 0; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg === '--port' || arg === '-p') {
+      const val = Number(process.argv[i + 1]);
+      if (val && !isNaN(val)) return val;
+    }
+    if (arg.startsWith('--port=')) {
+      const val = Number(arg.split('=')[1]);
+      if (val && !isNaN(val)) return val;
+    }
+  }
+  if (process.env.APP_PORT) {
+    const p = Number(process.env.APP_PORT);
+    if (p && !isNaN(p)) return p;
+  }
+  if (process.env.DEFAULT_APP_PORT) {
+    const p = Number(process.env.DEFAULT_APP_PORT);
+    if (p && !isNaN(p)) return p;
+  }
+  const envPort = process.env.PORT ? Number(process.env.PORT) : 0;
+  // If running behind Nginx or container proxy on port 8080, bind the app to port 3000
+  if (envPort && envPort !== 8080 && String(envPort) !== String(process.env.NGINX_PORT || '8080')) {
+    return envPort;
+  }
+  return 3000;
+}
 
+const PORT = resolvePort();
+
+const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 // Propagate caller's Authorization Bearer token into AsyncLocalStorage for serverless Supabase RLS queries
@@ -27062,7 +27090,11 @@ NOTIFY pgrst, 'reload schema';`;
   });
 
   // Vite middleware for development (loaded dynamically so production/Vercel never imports vite)
-  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const isProduction = process.env.NODE_ENV === "production" || hasDist;
+
+  if (!isProduction && process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
@@ -27079,8 +27111,7 @@ NOTIFY pgrst, 'reload schema';`;
       next();
     });
     app.use(vite.middlewares);
-  } else if (process.env.NODE_ENV === "production") {
-    const distPath = path.join(process.cwd(), 'dist');
+  } else if (isProduction) {
     // Serves static assets with aggressive caching headers for instant client loading, excluding index.html
     app.use(express.static(distPath, {
       maxAge: '1y',

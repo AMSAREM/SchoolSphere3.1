@@ -1727,8 +1727,34 @@ dotenv3.config();
 function getResolvedSupabaseUrl() {
   return getSupabaseUrlStrict();
 }
+function resolvePort() {
+  for (let i = 0; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg === "--port" || arg === "-p") {
+      const val = Number(process.argv[i + 1]);
+      if (val && !isNaN(val)) return val;
+    }
+    if (arg.startsWith("--port=")) {
+      const val = Number(arg.split("=")[1]);
+      if (val && !isNaN(val)) return val;
+    }
+  }
+  if (process.env.APP_PORT) {
+    const p = Number(process.env.APP_PORT);
+    if (p && !isNaN(p)) return p;
+  }
+  if (process.env.DEFAULT_APP_PORT) {
+    const p = Number(process.env.DEFAULT_APP_PORT);
+    if (p && !isNaN(p)) return p;
+  }
+  const envPort = process.env.PORT ? Number(process.env.PORT) : 0;
+  if (envPort && envPort !== 8080 && String(envPort) !== String(process.env.NGINX_PORT || "8080")) {
+    return envPort;
+  }
+  return 3e3;
+}
+var PORT = resolvePort();
 var app = express();
-var PORT = Number(process.env.PORT) || 3e3;
 app.use(express.json({ limit: "50mb" }));
 app.use((req, _res, next) => {
   const authHeader = String(req.headers.authorization || "").trim();
@@ -3269,24 +3295,23 @@ async function doStartServer() {
       res.setHeader("Content-Type", "text/plain");
       return res.sendFile(robotsPath);
     }
-    res.setHeader("Content-Type", "text/plain");
-    res.send("User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /creator\nSitemap: https://schoolsphere.app/sitemap.xml\n");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send("User-agent: *\nAllow: /\nAllow: /sign-in\nAllow: /portal\nAllow: /sitemap.xml\nAllow: /privacy\nAllow: /terms\nDisallow: /api/\nDisallow: /creator\nDisallow: /admin/\nSitemap: https://www.schoolsphere.xyz/sitemap.xml\n");
   });
   app.get("/sitemap.xml", (req, res) => {
     const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
     if (fs.existsSync(sitemapPath)) {
-      res.setHeader("Content-Type", "application/xml");
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
       return res.sendFile(sitemapPath);
     }
-    res.setHeader("Content-Type", "application/xml");
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://schoolsphere.app/</loc><priority>1.0</priority></url>
-  <url><loc>https://schoolsphere.app/login</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/portal</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/sitemap</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/privacy</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/terms</loc><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/</loc><lastmod>2026-10-03</lastmod><priority>1.0</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/sign-in</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/portal</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/privacy</loc><lastmod>2026-10-03</lastmod><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/terms</loc><lastmod>2026-10-03</lastmod><priority>0.5</priority></url>
 </urlset>`);
   });
   const resetTokens = /* @__PURE__ */ new Map();
@@ -23527,7 +23552,10 @@ NOTIFY pgrst, 'reload schema';`;
       error: sanitizeErrorMessage(err)
     });
   });
-  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
+  const distPath = path.join(process.cwd(), "dist");
+  const hasDist = fs.existsSync(path.join(distPath, "index.html"));
+  const isProduction = process.env.NODE_ENV === "production" || hasDist;
+  if (!isProduction && process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
@@ -23544,8 +23572,7 @@ NOTIFY pgrst, 'reload schema';`;
       next();
     });
     app.use(vite.middlewares);
-  } else if (process.env.NODE_ENV === "production") {
-    const distPath = path.join(process.cwd(), "dist");
+  } else if (isProduction) {
     app.use(express.static(distPath, {
       maxAge: "1y",
       etag: true,

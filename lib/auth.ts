@@ -8,7 +8,7 @@
 import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
-import { getSupabaseAdmin, getSupabaseUrlStrict } from './supabase/server';
+import { getSupabaseAdmin, getSupabaseUrlStrict } from './supabase/server.ts';
 
 dotenv.config();
 
