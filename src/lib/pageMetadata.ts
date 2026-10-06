@@ -215,6 +215,30 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
       }
     }
   },
+  boarding: {
+    id: 'boarding',
+    path: '/boarding',
+    title: 'Boarding & Residential Management',
+    shortTitle: 'Boarding System',
+    category: 'Residential Life',
+    subtitle: 'Houses, dormitory room allocations, multi-stage exeat passes, evening roll calls, and sick bay logs.',
+    roleOverrides: {
+      student: {
+        title: 'My Boarding House & Exeat Passes',
+        shortTitle: 'My Boarding',
+        category: 'Student Portal',
+        subtitle: 'View allocated room, bed space, housemaster details, and request exeat leave passes.',
+        path: '/my-boarding'
+      },
+      parent: {
+        title: 'Ward Boarding & Exeat Authorizations',
+        shortTitle: 'Ward Boarding',
+        category: 'Parent Portal',
+        subtitle: 'Ward dormitory placement, exeat departure notifications, and sick bay medical visits.',
+        path: '/ward-boarding'
+      }
+    }
+  },
   siren: {
     id: 'siren',
     title: 'Automated Campus Siren Console',

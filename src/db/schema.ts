@@ -439,6 +439,130 @@ export interface SalaryAdvanceDBRecord {
   approvedAt?: number | null;
 }
 
+export interface BoardingHouse {
+  id: string;
+  schoolId?: string;
+  name: string;
+  code: string;
+  gender: 'Boys' | 'Girls' | 'Mixed';
+  housemasterName: string;
+  housemasterPhone: string;
+  assistantName?: string;
+  motto?: string;
+  color?: string;
+  capacity: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BoardingRoom {
+  id: string;
+  schoolId?: string;
+  houseId: string;
+  roomNumber: string;
+  floor: string;
+  capacity: number;
+  gender: 'Boys' | 'Girls' | 'Mixed';
+  prefectName?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BoardingAllocation {
+  id: string;
+  schoolId?: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  gender: 'Male' | 'Female' | string;
+  houseId: string;
+  houseName: string;
+  roomId: string;
+  roomNumber: string;
+  bedNumber: string;
+  bedType: 'Single' | 'Bunk Top' | 'Bunk Bottom' | string;
+  academicYear?: string;
+  term?: string;
+  status: 'active' | 'vacated' | 'transferred';
+  assignedAt: number;
+  notes?: string;
+}
+
+export interface BoardingExeat {
+  id: string;
+  schoolId?: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  houseId: string;
+  houseName: string;
+  passCode: string;
+  exeatType: 'Day Exeat' | 'Weekend Exeat' | 'Medical / Clinic' | 'Special / Family' | 'Mid-Term Exeat' | string;
+  reason: string;
+  destination: string;
+  parentConsent: boolean;
+  parentName: string;
+  parentPhone: string;
+  departureDate: string;
+  expectedReturnDate: string;
+  status: 'pending' | 'approved' | 'rejected' | 'checked_out' | 'checked_in' | 'overdue';
+  approvedBy?: string;
+  approvedAt?: number;
+  checkedOutAt?: number;
+  checkedOutBy?: string;
+  checkedInAt?: number;
+  checkedInBy?: string;
+  remarks?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BoardingRollCallRecord {
+  studentId: string;
+  studentName: string;
+  status: 'present' | 'absent' | 'exeat' | 'sick';
+  remarks?: string;
+}
+
+export interface BoardingRollCall {
+  id: string;
+  schoolId?: string;
+  houseId: string;
+  houseName: string;
+  rollDate: string;
+  sessionType: 'morning' | 'evening' | 'lights_out' | string;
+  conductedBy: string;
+  records: BoardingRollCallRecord[];
+  summary: {
+    total: number;
+    present: number;
+    absent: number;
+    exeat: number;
+    sick: number;
+  };
+  notes?: string;
+  createdAt: number;
+}
+
+export interface BoardingMedicalLog {
+  id: string;
+  schoolId?: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  houseId: string;
+  houseName: string;
+  visitDate: string;
+  complaint: string;
+  vitals?: string;
+  treatmentGiven: string;
+  attendingStaff: string;
+  status: 'treated' | 'admitted_to_sickbay' | 'referred_to_hospital' | 'discharged';
+  admittedAt?: number;
+  dischargedAt?: number;
+  createdAt: number;
+}
+
 export class SchoolDB extends Dexie {
   students!: Table<Student>;
   attendance!: Table<Attendance>;
@@ -462,6 +586,12 @@ export class SchoolDB extends Dexie {
   salaryProfiles!: Table<StaffSalaryProfileRecord>;
   payslips!: Table<PayslipDBRecord>;
   salaryAdvances!: Table<SalaryAdvanceDBRecord>;
+  boardingHouses!: Table<BoardingHouse>;
+  boardingRooms!: Table<BoardingRoom>;
+  boardingAllocations!: Table<BoardingAllocation>;
+  boardingExeats!: Table<BoardingExeat>;
+  boardingRollCalls!: Table<BoardingRollCall>;
+  boardingMedicalLogs!: Table<BoardingMedicalLog>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -654,6 +784,36 @@ export class SchoolDB extends Dexie {
       salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
       payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
       salaryAdvances: 'id, schoolId, staffId, status, requestedAt'
+    });
+    this.version(18).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date',
+      salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
+      payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
+      salaryAdvances: 'id, schoolId, staffId, status, requestedAt',
+      boardingHouses: 'id, schoolId, name, gender, housemasterName',
+      boardingRooms: 'id, schoolId, houseId, roomNumber, floor',
+      boardingAllocations: 'id, schoolId, studentId, houseId, roomId, status, assignedAt',
+      boardingExeats: 'id, schoolId, studentId, houseId, passCode, status, departureDate, expectedReturnDate',
+      boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
+      boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status'
     });
   }
 }

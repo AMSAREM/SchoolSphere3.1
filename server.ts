@@ -11971,6 +11971,1121 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
+  // =========================================================================
+  // SCHOOLSPHERE BOARDING & RESIDENTIAL MANAGEMENT SUPABASE ENGINE
+  // Connects to: boarding_houses, boarding_rooms, boarding_allocations,
+  //              boarding_exeats, boarding_roll_calls, boarding_medical_logs
+  // =========================================================================
+
+  const BOARDING_DDL_SQL = `-- SchoolSphere Boarding System Tables for Supabase
+CREATE TABLE IF NOT EXISTS public.boarding_houses (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  name VARCHAR(150) NOT NULL,
+  code VARCHAR(50) NOT NULL DEFAULT '',
+  gender VARCHAR(20) NOT NULL DEFAULT 'Mixed',
+  housemaster_name VARCHAR(150) NOT NULL DEFAULT '',
+  housemaster_phone VARCHAR(60) NOT NULL DEFAULT '',
+  assistant_name VARCHAR(150) NOT NULL DEFAULT '',
+  motto VARCHAR(255) NOT NULL DEFAULT '',
+  color VARCHAR(40) NOT NULL DEFAULT '#2563EB',
+  capacity INTEGER NOT NULL DEFAULT 50,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_houses_school
+  ON public.boarding_houses (school_id, name);
+
+CREATE TABLE IF NOT EXISTS public.boarding_rooms (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  house_id VARCHAR(120) NOT NULL,
+  room_number VARCHAR(60) NOT NULL,
+  floor VARCHAR(50) NOT NULL DEFAULT 'Ground Floor',
+  capacity INTEGER NOT NULL DEFAULT 8,
+  gender VARCHAR(20) NOT NULL DEFAULT 'Mixed',
+  prefect_name VARCHAR(150) NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_rooms_house
+  ON public.boarding_rooms (school_id, house_id);
+
+CREATE TABLE IF NOT EXISTS public.boarding_allocations (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id VARCHAR(80) NOT NULL,
+  student_name VARCHAR(255) NOT NULL DEFAULT '',
+  class_name VARCHAR(80) NOT NULL DEFAULT '',
+  gender VARCHAR(20) NOT NULL DEFAULT '',
+  house_id VARCHAR(120) NOT NULL,
+  house_name VARCHAR(150) NOT NULL DEFAULT '',
+  room_id VARCHAR(120) NOT NULL,
+  room_number VARCHAR(60) NOT NULL DEFAULT '',
+  bed_number VARCHAR(50) NOT NULL DEFAULT 'Bed 1',
+  bed_type VARCHAR(40) NOT NULL DEFAULT 'Single',
+  academic_year VARCHAR(40) NOT NULL DEFAULT '',
+  term VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(40) NOT NULL DEFAULT 'active',
+  assigned_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  notes TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_allocations_school_student
+  ON public.boarding_allocations (school_id, student_id);
+
+CREATE TABLE IF NOT EXISTS public.boarding_exeats (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id VARCHAR(80) NOT NULL,
+  student_name VARCHAR(255) NOT NULL DEFAULT '',
+  class_name VARCHAR(80) NOT NULL DEFAULT '',
+  house_id VARCHAR(120) NOT NULL,
+  house_name VARCHAR(150) NOT NULL DEFAULT '',
+  pass_code VARCHAR(40) NOT NULL,
+  exeat_type VARCHAR(50) NOT NULL DEFAULT 'Weekend Exeat',
+  reason TEXT NOT NULL DEFAULT '',
+  destination TEXT NOT NULL DEFAULT '',
+  parent_consent BOOLEAN NOT NULL DEFAULT TRUE,
+  parent_name VARCHAR(150) NOT NULL DEFAULT '',
+  parent_phone VARCHAR(60) NOT NULL DEFAULT '',
+  departure_date VARCHAR(60) NOT NULL,
+  expected_return_date VARCHAR(60) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'pending',
+  approved_by VARCHAR(150) NULL,
+  approved_at BIGINT NULL,
+  checked_out_at BIGINT NULL,
+  checked_out_by VARCHAR(150) NULL,
+  checked_in_at BIGINT NULL,
+  checked_in_by VARCHAR(150) NULL,
+  remarks TEXT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_exeats_school_status
+  ON public.boarding_exeats (school_id, status);
+
+CREATE TABLE IF NOT EXISTS public.boarding_roll_calls (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  house_id VARCHAR(120) NOT NULL,
+  house_name VARCHAR(150) NOT NULL DEFAULT '',
+  roll_date VARCHAR(30) NOT NULL,
+  session_type VARCHAR(40) NOT NULL DEFAULT 'evening',
+  conducted_by VARCHAR(150) NOT NULL DEFAULT '',
+  records JSONB NOT NULL DEFAULT '[]'::jsonb,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  notes TEXT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_roll_calls_school_date
+  ON public.boarding_roll_calls (school_id, roll_date, house_id);
+
+CREATE TABLE IF NOT EXISTS public.boarding_medical_logs (
+  id VARCHAR(120) PRIMARY KEY,
+  school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  student_id VARCHAR(80) NOT NULL,
+  student_name VARCHAR(255) NOT NULL DEFAULT '',
+  class_name VARCHAR(80) NOT NULL DEFAULT '',
+  house_id VARCHAR(120) NOT NULL,
+  house_name VARCHAR(150) NOT NULL DEFAULT '',
+  visit_date VARCHAR(30) NOT NULL,
+  complaint TEXT NOT NULL DEFAULT '',
+  vitals VARCHAR(150) NOT NULL DEFAULT '',
+  treatment_given TEXT NOT NULL DEFAULT '',
+  attending_staff VARCHAR(150) NOT NULL DEFAULT '',
+  status VARCHAR(40) NOT NULL DEFAULT 'treated',
+  admitted_at BIGINT NULL,
+  discharged_at BIGINT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
+  ON public.boarding_medical_logs (school_id, student_id);`;
+
+  async function resolveBoardingSchoolId(req: any): Promise<string> {
+    return resolveStrictModuleSchoolId(req);
+  }
+
+  function mapRowToBoardingHouse(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      name: String(row.name || ''),
+      code: String(row.code || ''),
+      gender: (row.gender || 'Mixed') as 'Boys' | 'Girls' | 'Mixed',
+      housemasterName: String(row.housemaster_name ?? row.housemasterName ?? ''),
+      housemasterPhone: String(row.housemaster_phone ?? row.housemasterPhone ?? ''),
+      assistantName: String(row.assistant_name ?? row.assistantName ?? ''),
+      motto: String(row.motto || ''),
+      color: String(row.color || '#2563EB'),
+      capacity: Number(row.capacity || 50),
+      createdAt: Number(row.created_at ?? row.createdAt ?? Date.now()),
+      updatedAt: Number(row.updated_at ?? row.updatedAt ?? Date.now())
+    };
+  }
+
+  function mapRowToBoardingRoom(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      houseId: String(row.house_id || row.houseId || ''),
+      roomNumber: String(row.room_number ?? row.roomNumber ?? ''),
+      floor: String(row.floor || 'Ground Floor'),
+      capacity: Number(row.capacity || 8),
+      gender: (row.gender || 'Mixed') as 'Boys' | 'Girls' | 'Mixed',
+      prefectName: String(row.prefect_name ?? row.prefectName ?? ''),
+      createdAt: Number(row.created_at ?? row.createdAt ?? Date.now()),
+      updatedAt: Number(row.updated_at ?? row.updatedAt ?? Date.now())
+    };
+  }
+
+  function mapRowToBoardingAllocation(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      studentId: String(row.student_id ?? row.studentId ?? ''),
+      studentName: String(row.student_name ?? row.studentName ?? ''),
+      className: String(row.class_name ?? row.className ?? ''),
+      gender: String(row.gender || ''),
+      houseId: String(row.house_id ?? row.houseId ?? ''),
+      houseName: String(row.house_name ?? row.houseName ?? ''),
+      roomId: String(row.room_id ?? row.roomId ?? ''),
+      roomNumber: String(row.room_number ?? row.roomNumber ?? ''),
+      bedNumber: String(row.bed_number ?? row.bedNumber ?? 'Bed 1'),
+      bedType: String(row.bed_type ?? row.bedType ?? 'Single'),
+      academicYear: String(row.academic_year ?? row.academicYear ?? ''),
+      term: String(row.term || ''),
+      status: (row.status || 'active') as 'active' | 'vacated' | 'transferred',
+      assignedAt: Number(row.assigned_at ?? row.assignedAt ?? Date.now()),
+      notes: row.notes || undefined
+    };
+  }
+
+  function mapRowToBoardingExeat(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      studentId: String(row.student_id ?? row.studentId ?? ''),
+      studentName: String(row.student_name ?? row.studentName ?? ''),
+      className: String(row.class_name ?? row.className ?? ''),
+      houseId: String(row.house_id ?? row.houseId ?? ''),
+      houseName: String(row.house_name ?? row.houseName ?? ''),
+      passCode: String(row.pass_code ?? row.passCode ?? ''),
+      exeatType: String(row.exeat_type ?? row.exeatType ?? 'Weekend Exeat'),
+      reason: String(row.reason || ''),
+      destination: String(row.destination || ''),
+      parentConsent: Boolean(row.parent_consent ?? row.parentConsent ?? true),
+      parentName: String(row.parent_name ?? row.parentName ?? ''),
+      parentPhone: String(row.parent_phone ?? row.parentPhone ?? ''),
+      departureDate: String(row.departure_date ?? row.departureDate ?? ''),
+      expectedReturnDate: String(row.expected_return_date ?? row.expectedReturnDate ?? ''),
+      status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected' | 'checked_out' | 'checked_in' | 'overdue',
+      approvedBy: row.approved_by || row.approvedBy || undefined,
+      approvedAt: row.approved_at ? Number(row.approved_at) : (row.approvedAt ? Number(row.approvedAt) : undefined),
+      checkedOutAt: row.checked_out_at ? Number(row.checked_out_at) : (row.checkedOutAt ? Number(row.checkedOutAt) : undefined),
+      checkedOutBy: row.checked_out_by || row.checkedOutBy || undefined,
+      checkedInAt: row.checked_in_at ? Number(row.checked_in_at) : (row.checkedInAt ? Number(row.checkedInAt) : undefined),
+      checkedInBy: row.checked_in_by || row.checkedInBy || undefined,
+      remarks: row.remarks || undefined,
+      createdAt: Number(row.created_at ?? row.createdAt ?? Date.now()),
+      updatedAt: Number(row.updated_at ?? row.updatedAt ?? Date.now())
+    };
+  }
+
+  function mapRowToBoardingRollCall(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    const rawRecords = row.records;
+    const rawSummary = row.summary;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      houseId: String(row.house_id ?? row.houseId ?? ''),
+      houseName: String(row.house_name ?? row.houseName ?? ''),
+      rollDate: String(row.roll_date ?? row.rollDate ?? ''),
+      sessionType: String(row.session_type ?? row.sessionType ?? 'evening'),
+      conductedBy: String(row.conducted_by ?? row.conductedBy ?? ''),
+      records: Array.isArray(rawRecords) ? rawRecords : (typeof rawRecords === 'string' ? JSON.parse(rawRecords) : []),
+      summary: rawSummary && typeof rawSummary === 'object' ? rawSummary : (typeof rawSummary === 'string' ? JSON.parse(rawSummary) : { total: 0, present: 0, absent: 0, exeat: 0, sick: 0 }),
+      notes: row.notes || undefined,
+      createdAt: Number(row.created_at ?? row.createdAt ?? Date.now())
+    };
+  }
+
+  function mapRowToBoardingMedicalLog(row: any) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: String(row.id || ''),
+      schoolId: row.school_id || row.schoolId || undefined,
+      studentId: String(row.student_id ?? row.studentId ?? ''),
+      studentName: String(row.student_name ?? row.studentName ?? ''),
+      className: String(row.class_name ?? row.className ?? ''),
+      houseId: String(row.house_id ?? row.houseId ?? ''),
+      houseName: String(row.house_name ?? row.houseName ?? ''),
+      visitDate: String(row.visit_date ?? row.visitDate ?? ''),
+      complaint: String(row.complaint || ''),
+      vitals: String(row.vitals || ''),
+      treatmentGiven: String(row.treatment_given ?? row.treatmentGiven ?? ''),
+      attendingStaff: String(row.attending_staff ?? row.attendingStaff ?? ''),
+      status: (row.status || 'treated') as 'treated' | 'admitted_to_sickbay' | 'referred_to_hospital' | 'discharged',
+      admittedAt: row.admitted_at ? Number(row.admitted_at) : (row.admittedAt ? Number(row.admittedAt) : undefined),
+      dischargedAt: row.discharged_at ? Number(row.discharged_at) : (row.dischargedAt ? Number(row.dischargedAt) : undefined),
+      createdAt: Number(row.created_at ?? row.createdAt ?? Date.now())
+    };
+  }
+
+  async function loadBoardingFromSupabase(schoolId: string) {
+    const adminClient = getSupabaseAdmin();
+    const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+
+    let houses: any[] = [];
+    let rooms: any[] = [];
+    let allocations: any[] = [];
+    let exeats: any[] = [];
+    let rollCalls: any[] = [];
+    let medicalLogs: any[] = [];
+
+    // 1. Fetch relational tables
+    try {
+      let qH = adminClient.from('boarding_houses').select('*').order('name', { ascending: true });
+      if (validSchoolUuid) qH = qH.eq('school_id', validSchoolUuid);
+      const { data: hRows } = await qH;
+      if (Array.isArray(hRows)) houses = hRows.map(mapRowToBoardingHouse).filter(Boolean);
+    } catch {}
+
+    try {
+      let qR = adminClient.from('boarding_rooms').select('*').order('room_number', { ascending: true });
+      if (validSchoolUuid) qR = qR.eq('school_id', validSchoolUuid);
+      const { data: rRows } = await qR;
+      if (Array.isArray(rRows)) rooms = rRows.map(mapRowToBoardingRoom).filter(Boolean);
+    } catch {}
+
+    try {
+      let qA = adminClient.from('boarding_allocations').select('*').order('assigned_at', { ascending: false });
+      if (validSchoolUuid) qA = qA.eq('school_id', validSchoolUuid);
+      const { data: aRows } = await qA;
+      if (Array.isArray(aRows)) allocations = aRows.map(mapRowToBoardingAllocation).filter(Boolean);
+    } catch {}
+
+    try {
+      let qE = adminClient.from('boarding_exeats').select('*').order('created_at', { ascending: false });
+      if (validSchoolUuid) qE = qE.eq('school_id', validSchoolUuid);
+      const { data: eRows } = await qE;
+      if (Array.isArray(eRows)) exeats = eRows.map(mapRowToBoardingExeat).filter(Boolean);
+    } catch {}
+
+    try {
+      let qRC = adminClient.from('boarding_roll_calls').select('*').order('created_at', { ascending: false }).limit(60);
+      if (validSchoolUuid) qRC = qRC.eq('school_id', validSchoolUuid);
+      const { data: rcRows } = await qRC;
+      if (Array.isArray(rcRows)) rollCalls = rcRows.map(mapRowToBoardingRollCall).filter(Boolean);
+    } catch {}
+
+    try {
+      let qM = adminClient.from('boarding_medical_logs').select('*').order('created_at', { ascending: false }).limit(100);
+      if (validSchoolUuid) qM = qM.eq('school_id', validSchoolUuid);
+      const { data: mRows } = await qM;
+      if (Array.isArray(mRows)) medicalLogs = mRows.map(mapRowToBoardingMedicalLog).filter(Boolean);
+    } catch {}
+
+    // Fallback: Check streams.boarding_system if relational empty
+    if (houses.length === 0 && validSchoolUuid) {
+      try {
+        const { data: schSettings } = await adminClient
+          .from('school_settings')
+          .select('streams')
+          .eq('school_id', validSchoolUuid)
+          .limit(1)
+          .maybeSingle();
+        const bStream = schSettings?.streams?.boarding_system;
+        if (bStream && typeof bStream === 'object') {
+          if (Array.isArray(bStream.houses) && bStream.houses.length > 0) houses = bStream.houses;
+          if (Array.isArray(bStream.rooms) && bStream.rooms.length > 0) rooms = bStream.rooms;
+          if (Array.isArray(bStream.allocations) && bStream.allocations.length > 0) allocations = bStream.allocations;
+          if (Array.isArray(bStream.exeats) && bStream.exeats.length > 0) exeats = bStream.exeats;
+          if (Array.isArray(bStream.rollCalls) && bStream.rollCalls.length > 0) rollCalls = bStream.rollCalls;
+          if (Array.isArray(bStream.medicalLogs) && bStream.medicalLogs.length > 0) medicalLogs = bStream.medicalLogs;
+        }
+      } catch {}
+    }
+
+    // Default Seed Houses if school has none configured
+    if (houses.length === 0) {
+      const now = Date.now();
+      houses = [
+        {
+          id: `h-aggrey-${schoolId.substring(0, 8)}`,
+          schoolId,
+          name: 'Aggrey House',
+          code: 'AGG-01',
+          gender: 'Boys',
+          housemasterName: 'Mr. Emmanuel Mensah',
+          housemasterPhone: '0244123456',
+          assistantName: 'Mr. Samuel Boakye',
+          motto: 'Only the best is good enough for Africa',
+          color: '#2563EB',
+          capacity: 80,
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: `h-guggisberg-${schoolId.substring(0, 8)}`,
+          schoolId,
+          name: 'Guggisberg House',
+          code: 'GUG-02',
+          gender: 'Boys',
+          housemasterName: 'Mr. David Osei',
+          housemasterPhone: '0208987654',
+          assistantName: 'Mr. Francis Quaye',
+          motto: 'Forward Ever',
+          color: '#059669',
+          capacity: 80,
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: `h-asantewaa-${schoolId.substring(0, 8)}`,
+          schoolId,
+          name: 'Yaa Asantewaa House',
+          code: 'YAA-03',
+          gender: 'Girls',
+          housemasterName: 'Mrs. Abigail Mensah',
+          housemasterPhone: '0551122334',
+          assistantName: 'Ms. Grace Addo',
+          motto: 'Courage and Strength',
+          color: '#D97706',
+          capacity: 80,
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: `h-nkrumah-${schoolId.substring(0, 8)}`,
+          schoolId,
+          name: 'Nkrumah House',
+          code: 'NKR-04',
+          gender: 'Mixed',
+          housemasterName: 'Dr. Kwame Appiah',
+          housemasterPhone: '0277889900',
+          assistantName: 'Mrs. Rebecca Darko',
+          motto: 'Unity, Service, and Excellence',
+          color: '#7C3AED',
+          capacity: 100,
+          createdAt: now,
+          updatedAt: now
+        }
+      ];
+
+      rooms = [
+        { id: `r-agg-101`, schoolId, houseId: houses[0].id, roomNumber: 'Block A - Room 101', floor: 'Ground Floor', capacity: 12, gender: 'Boys', prefectName: 'Kofi Owusu', createdAt: now, updatedAt: now },
+        { id: `r-agg-102`, schoolId, houseId: houses[0].id, roomNumber: 'Block A - Room 102', floor: 'Ground Floor', capacity: 12, gender: 'Boys', prefectName: 'Kwesi Appiah', createdAt: now, updatedAt: now },
+        { id: `r-gug-201`, schoolId, houseId: houses[1].id, roomNumber: 'Block B - Room 201', floor: '1st Floor', capacity: 12, gender: 'Boys', prefectName: 'Michael Ofori', createdAt: now, updatedAt: now },
+        { id: `r-yaa-301`, schoolId, houseId: houses[2].id, roomNumber: 'Block C - Room 301', floor: 'Ground Floor', capacity: 12, gender: 'Girls', prefectName: 'Serwaa Akoto', createdAt: now, updatedAt: now }
+      ];
+
+      // Save defaults to Supabase in background
+      saveBoardingToSupabase(schoolId, houses, rooms, [], [], [], []).catch(() => {});
+    }
+
+    return {
+      houses,
+      rooms,
+      allocations,
+      exeats,
+      rollCalls,
+      medicalLogs
+    };
+  }
+
+  async function saveBoardingToSupabase(
+    schoolId: string,
+    houses: any[],
+    rooms: any[],
+    allocations: any[],
+    exeats: any[],
+    rollCalls: any[],
+    medicalLogs: any[]
+  ) {
+    const adminClient = getSupabaseAdmin();
+    const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+
+    // 1. Mirror stream backup into public.school_settings
+    try {
+      if (validSchoolUuid) {
+        const { data: existing } = await adminClient
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', validSchoolUuid)
+          .limit(1)
+          .maybeSingle();
+        const prevStreams = (existing?.streams && typeof existing.streams === 'object' && !Array.isArray(existing.streams))
+          ? { ...(existing.streams as Record<string, any>) }
+          : {};
+        prevStreams.boarding_system = {
+          schoolId,
+          houses,
+          rooms,
+          allocations,
+          exeats,
+          rollCalls,
+          medicalLogs,
+          updatedAt: Date.now()
+        };
+        await adminClient.from('school_settings').upsert([{
+          school_id: validSchoolUuid,
+          grade_boundaries: existing?.grade_boundaries || [],
+          terms: existing?.terms || [],
+          streams: prevStreams,
+          updated_at: Date.now()
+        }], { onConflict: 'school_id' });
+      }
+    } catch {}
+
+    // 2. Upsert relational boarding_houses
+    if (houses.length > 0) {
+      try {
+        const rows = houses.map((h: any) => ({
+          id: String(h.id),
+          school_id: validSchoolUuid,
+          name: String(h.name || ''),
+          code: String(h.code || ''),
+          gender: String(h.gender || 'Mixed'),
+          housemaster_name: String(h.housemasterName || h.housemaster_name || ''),
+          housemaster_phone: String(h.housemasterPhone || h.housemaster_phone || ''),
+          assistant_name: String(h.assistantName || h.assistant_name || ''),
+          motto: String(h.motto || ''),
+          color: String(h.color || '#2563EB'),
+          capacity: Number(h.capacity || 50),
+          created_at: Number(h.createdAt || h.created_at || Date.now()),
+          updated_at: Number(h.updatedAt || h.updated_at || Date.now())
+        }));
+        await adminClient.from('boarding_houses').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 3. Upsert relational boarding_rooms
+    if (rooms.length > 0) {
+      try {
+        const rows = rooms.map((r: any) => ({
+          id: String(r.id),
+          school_id: validSchoolUuid,
+          house_id: String(r.houseId || r.house_id || ''),
+          room_number: String(r.roomNumber || r.room_number || ''),
+          floor: String(r.floor || 'Ground Floor'),
+          capacity: Number(r.capacity || 8),
+          gender: String(r.gender || 'Mixed'),
+          prefect_name: String(r.prefectName || r.prefect_name || ''),
+          created_at: Number(r.createdAt || r.created_at || Date.now()),
+          updated_at: Number(r.updatedAt || r.updated_at || Date.now())
+        }));
+        await adminClient.from('boarding_rooms').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 4. Upsert relational boarding_allocations
+    if (allocations.length > 0) {
+      try {
+        const rows = allocations.map((a: any) => ({
+          id: String(a.id),
+          school_id: validSchoolUuid,
+          student_id: String(a.studentId || a.student_id || ''),
+          student_name: String(a.studentName || a.student_name || ''),
+          class_name: String(a.className || a.class_name || ''),
+          gender: String(a.gender || ''),
+          house_id: String(a.houseId || a.house_id || ''),
+          house_name: String(a.houseName || a.house_name || ''),
+          room_id: String(a.roomId || a.room_id || ''),
+          room_number: String(a.roomNumber || a.room_number || ''),
+          bed_number: String(a.bedNumber || a.bed_number || 'Bed 1'),
+          bed_type: String(a.bedType || a.bed_type || 'Single'),
+          academic_year: String(a.academicYear || a.academic_year || ''),
+          term: String(a.term || ''),
+          status: String(a.status || 'active'),
+          assigned_at: Number(a.assignedAt || a.assigned_at || Date.now()),
+          notes: a.notes || null
+        }));
+        await adminClient.from('boarding_allocations').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 5. Upsert relational boarding_exeats
+    if (exeats.length > 0) {
+      try {
+        const rows = exeats.map((e: any) => ({
+          id: String(e.id),
+          school_id: validSchoolUuid,
+          student_id: String(e.studentId || e.student_id || ''),
+          student_name: String(e.studentName || e.student_name || ''),
+          class_name: String(e.className || e.class_name || ''),
+          house_id: String(e.houseId || e.house_id || ''),
+          house_name: String(e.houseName || e.house_name || ''),
+          pass_code: String(e.passCode || e.pass_code || `EXT-${Date.now().toString().slice(-6)}`),
+          exeat_type: String(e.exeatType || e.exeat_type || 'Weekend Exeat'),
+          reason: String(e.reason || ''),
+          destination: String(e.destination || ''),
+          parent_consent: Boolean(e.parentConsent ?? e.parent_consent ?? true),
+          parent_name: String(e.parentName || e.parent_name || ''),
+          parent_phone: String(e.parentPhone || e.parent_phone || ''),
+          departure_date: String(e.departureDate || e.departure_date || ''),
+          expected_return_date: String(e.expectedReturnDate || e.expected_return_date || ''),
+          status: String(e.status || 'pending'),
+          approved_by: e.approvedBy || e.approved_by || null,
+          approved_at: e.approvedAt ? Number(e.approvedAt) : (e.approved_at ? Number(e.approved_at) : null),
+          checked_out_at: e.checkedOutAt ? Number(e.checkedOutAt) : (e.checked_out_at ? Number(e.checked_out_at) : null),
+          checked_out_by: e.checkedOutBy || e.checked_out_by || null,
+          checked_in_at: e.checkedInAt ? Number(e.checkedInAt) : (e.checked_in_at ? Number(e.checked_in_at) : null),
+          checked_in_by: e.checkedInBy || e.checked_in_by || null,
+          remarks: e.remarks || null,
+          created_at: Number(e.createdAt || e.created_at || Date.now()),
+          updated_at: Number(e.updatedAt || e.updated_at || Date.now())
+        }));
+        await adminClient.from('boarding_exeats').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 6. Upsert relational boarding_roll_calls
+    if (rollCalls.length > 0) {
+      try {
+        const rows = rollCalls.map((rc: any) => ({
+          id: String(rc.id),
+          school_id: validSchoolUuid,
+          house_id: String(rc.houseId || rc.house_id || ''),
+          house_name: String(rc.houseName || rc.house_name || ''),
+          roll_date: String(rc.rollDate || rc.roll_date || ''),
+          session_type: String(rc.sessionType || rc.session_type || 'evening'),
+          conducted_by: String(rc.conductedBy || rc.conducted_by || ''),
+          records: rc.records || [],
+          summary: rc.summary || {},
+          notes: rc.notes || null,
+          created_at: Number(rc.createdAt || rc.created_at || Date.now())
+        }));
+        await adminClient.from('boarding_roll_calls').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+
+    // 7. Upsert relational boarding_medical_logs
+    if (medicalLogs.length > 0) {
+      try {
+        const rows = medicalLogs.map((m: any) => ({
+          id: String(m.id),
+          school_id: validSchoolUuid,
+          student_id: String(m.studentId || m.student_id || ''),
+          student_name: String(m.studentName || m.student_name || ''),
+          class_name: String(m.className || m.class_name || ''),
+          house_id: String(m.houseId || m.house_id || ''),
+          house_name: String(m.houseName || m.house_name || ''),
+          visit_date: String(m.visitDate || m.visit_date || ''),
+          complaint: String(m.complaint || ''),
+          vitals: String(m.vitals || ''),
+          treatment_given: String(m.treatmentGiven || m.treatment_given || ''),
+          attending_staff: String(m.attendingStaff || m.attending_staff || ''),
+          status: String(m.status || 'treated'),
+          admitted_at: m.admittedAt ? Number(m.admittedAt) : (m.admitted_at ? Number(m.admitted_at) : null),
+          discharged_at: m.dischargedAt ? Number(m.dischargedAt) : (m.discharged_at ? Number(m.discharged_at) : null),
+          created_at: Number(m.createdAt || m.created_at || Date.now())
+        }));
+        await adminClient.from('boarding_medical_logs').upsert(rows, { onConflict: 'id' });
+      } catch {}
+    }
+  }
+
+  // --- Boarding Management API Endpoints ---
+
+  app.get("/api/boarding/data", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const data = await loadBoardingFromSupabase(schoolId);
+
+      const totalCapacity = data.houses.reduce((acc: number, h: any) => acc + (Number(h.capacity) || 0), 0);
+      const activeAllocations = data.allocations.filter((a: any) => a.status === 'active');
+      const activeExeats = data.exeats.filter((e: any) => e.status === 'approved' || e.status === 'checked_out');
+      const admittedSickBay = data.medicalLogs.filter((m: any) => m.status === 'admitted_to_sickbay');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayRollCalls = data.rollCalls.filter((rc: any) => rc.rollDate === todayStr);
+
+      const stats = {
+        totalHouses: data.houses.length,
+        totalRooms: data.rooms.length,
+        totalCapacity,
+        totalBoarders: activeAllocations.length,
+        occupancyRate: totalCapacity > 0 ? Math.round((activeAllocations.length / totalCapacity) * 100) : 0,
+        activeExeatsCount: activeExeats.length,
+        sickBayCount: admittedSickBay.length,
+        todayRollCallCompleted: todayRollCalls.length > 0,
+        todayRollCallCount: todayRollCalls.length
+      };
+
+      return res.json({
+        success: true,
+        schoolId,
+        ...data,
+        stats,
+        boardingSql: BOARDING_DDL_SQL,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/boarding/sync", authenticateToken, async (req: any, res) => {
+    try {
+      const raw = req.body || {};
+      const schoolId = await resolveBoardingSchoolId(req);
+      const houses = Array.isArray(raw.houses) ? raw.houses : [];
+      const rooms = Array.isArray(raw.rooms) ? raw.rooms : [];
+      const allocations = Array.isArray(raw.allocations) ? raw.allocations : [];
+      const exeats = Array.isArray(raw.exeats) ? raw.exeats : [];
+      const rollCalls = Array.isArray(raw.rollCalls) ? raw.rollCalls : [];
+      const medicalLogs = Array.isArray(raw.medicalLogs) ? raw.medicalLogs : [];
+
+      await saveBoardingToSupabase(schoolId, houses, rooms, allocations, exeats, rollCalls, medicalLogs);
+
+      if (raw.auditAction) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.from('audit_logs').insert([
+            {
+              school_id: isUuidFormat(schoolId) ? schoolId : null,
+              action: String(raw.auditAction),
+              details: JSON.stringify({
+                housesCount: houses.length,
+                allocationsCount: allocations.length,
+                exeatsCount: exeats.length
+              }),
+              created_at: Date.now()
+            }
+          ]);
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        schoolId,
+        syncedAt: Date.now()
+      });
+    } catch (err: any) {
+      if (isTenantAccessError(err)) {
+        return res.status(err.statusCode).json({ success: false, error: err.message });
+      }
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // House CRUD
+  app.post("/api/boarding/houses", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const house = {
+        id: body.id || `house-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        name: String(body.name || '').trim(),
+        code: String(body.code || '').trim(),
+        gender: body.gender || 'Mixed',
+        housemasterName: String(body.housemasterName || '').trim(),
+        housemasterPhone: String(body.housemasterPhone || '').trim(),
+        assistantName: String(body.assistantName || '').trim(),
+        motto: String(body.motto || '').trim(),
+        color: body.color || '#2563EB',
+        capacity: Number(body.capacity) || 50,
+        createdAt: body.createdAt || now,
+        updatedAt: now
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_houses').upsert([{
+        id: house.id,
+        school_id: validSchoolUuid,
+        name: house.name,
+        code: house.code,
+        gender: house.gender,
+        housemaster_name: house.housemasterName,
+        housemaster_phone: house.housemasterPhone,
+        assistant_name: house.assistantName,
+        motto: house.motto,
+        color: house.color,
+        capacity: house.capacity,
+        created_at: house.createdAt,
+        updated_at: house.updatedAt
+      }], { onConflict: 'id' });
+
+      return res.json({ success: true, house });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/boarding/houses/:id", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const houseId = req.params.id;
+      const adminClient = getSupabaseAdmin();
+      let q = adminClient.from('boarding_houses').delete().eq('id', houseId);
+      if (isUuidFormat(schoolId)) q = q.eq('school_id', schoolId);
+      await q;
+      return res.json({ success: true, deletedId: houseId });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Room CRUD
+  app.post("/api/boarding/rooms", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const room = {
+        id: body.id || `room-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        houseId: String(body.houseId || ''),
+        roomNumber: String(body.roomNumber || '').trim(),
+        floor: String(body.floor || 'Ground Floor').trim(),
+        capacity: Number(body.capacity) || 8,
+        gender: body.gender || 'Mixed',
+        prefectName: String(body.prefectName || '').trim(),
+        createdAt: body.createdAt || now,
+        updatedAt: now
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_rooms').upsert([{
+        id: room.id,
+        school_id: validSchoolUuid,
+        house_id: room.houseId,
+        room_number: room.roomNumber,
+        floor: room.floor,
+        capacity: room.capacity,
+        gender: room.gender,
+        prefect_name: room.prefectName,
+        created_at: room.createdAt,
+        updated_at: room.updatedAt
+      }], { onConflict: 'id' });
+
+      return res.json({ success: true, room });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/boarding/rooms/:id", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const roomId = req.params.id;
+      const adminClient = getSupabaseAdmin();
+      let q = adminClient.from('boarding_rooms').delete().eq('id', roomId);
+      if (isUuidFormat(schoolId)) q = q.eq('school_id', schoolId);
+      await q;
+      return res.json({ success: true, deletedId: roomId });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Bed Allocation
+  app.post("/api/boarding/allocations", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const allocation = {
+        id: body.id || `alloc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        studentId: String(body.studentId || ''),
+        studentName: String(body.studentName || ''),
+        className: String(body.className || ''),
+        gender: String(body.gender || ''),
+        houseId: String(body.houseId || ''),
+        houseName: String(body.houseName || ''),
+        roomId: String(body.roomId || ''),
+        roomNumber: String(body.roomNumber || ''),
+        bedNumber: String(body.bedNumber || 'Bed 1'),
+        bedType: body.bedType || 'Single',
+        academicYear: body.academicYear || '',
+        term: body.term || '',
+        status: body.status || 'active',
+        assignedAt: body.assignedAt || now,
+        notes: body.notes || ''
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_allocations').upsert([{
+        id: allocation.id,
+        school_id: validSchoolUuid,
+        student_id: allocation.studentId,
+        student_name: allocation.studentName,
+        class_name: allocation.className,
+        gender: allocation.gender,
+        house_id: allocation.houseId,
+        house_name: allocation.houseName,
+        room_id: allocation.roomId,
+        room_number: allocation.roomNumber,
+        bed_number: allocation.bedNumber,
+        bed_type: allocation.bedType,
+        academic_year: allocation.academicYear,
+        term: allocation.term,
+        status: allocation.status,
+        assigned_at: allocation.assignedAt,
+        notes: allocation.notes || null
+      }], { onConflict: 'id' });
+
+      // Update student table's house field for consistency
+      if (allocation.studentId && allocation.houseName) {
+        try {
+          let qStu = adminClient.from('students').update({ house: allocation.houseName }).eq('student_id', allocation.studentId);
+          if (validSchoolUuid) qStu = qStu.eq('school_id', validSchoolUuid);
+          await qStu;
+        } catch {}
+      }
+
+      return res.json({ success: true, allocation });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/boarding/allocations/:id", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const allocId = req.params.id;
+      const adminClient = getSupabaseAdmin();
+      let q = adminClient.from('boarding_allocations').delete().eq('id', allocId);
+      if (isUuidFormat(schoolId)) q = q.eq('school_id', schoolId);
+      await q;
+      return res.json({ success: true, deletedId: allocId });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Exeats (Leave passes)
+  app.post("/api/boarding/exeats", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const codeSuffix = Math.floor(1000 + Math.random() * 9000);
+      const exeat = {
+        id: body.id || `exeat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        studentId: String(body.studentId || ''),
+        studentName: String(body.studentName || ''),
+        className: String(body.className || ''),
+        houseId: String(body.houseId || ''),
+        houseName: String(body.houseName || ''),
+        passCode: body.passCode || `EXT-${new Date().getFullYear()}-${codeSuffix}`,
+        exeatType: body.exeatType || 'Weekend Exeat',
+        reason: String(body.reason || ''),
+        destination: String(body.destination || ''),
+        parentConsent: Boolean(body.parentConsent ?? true),
+        parentName: String(body.parentName || ''),
+        parentPhone: String(body.parentPhone || ''),
+        departureDate: String(body.departureDate || ''),
+        expectedReturnDate: String(body.expectedReturnDate || ''),
+        status: body.status || 'pending',
+        approvedBy: body.approvedBy || null,
+        approvedAt: body.approvedAt || null,
+        remarks: body.remarks || '',
+        createdAt: body.createdAt || now,
+        updatedAt: now
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_exeats').upsert([{
+        id: exeat.id,
+        school_id: validSchoolUuid,
+        student_id: exeat.studentId,
+        student_name: exeat.studentName,
+        class_name: exeat.className,
+        house_id: exeat.houseId,
+        house_name: exeat.houseName,
+        pass_code: exeat.passCode,
+        exeat_type: exeat.exeatType,
+        reason: exeat.reason,
+        destination: exeat.destination,
+        parent_consent: exeat.parentConsent,
+        parent_name: exeat.parentName,
+        parent_phone: exeat.parentPhone,
+        departure_date: exeat.departureDate,
+        expected_return_date: exeat.expectedReturnDate,
+        status: exeat.status,
+        approved_by: exeat.approvedBy,
+        approved_at: exeat.approvedAt,
+        remarks: exeat.remarks || null,
+        created_at: exeat.createdAt,
+        updated_at: exeat.updatedAt
+      }], { onConflict: 'id' });
+
+      return res.json({ success: true, exeat });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.patch("/api/boarding/exeats/:id/status", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const exeatId = req.params.id;
+      const { status, remarks, actorName } = req.body || {};
+      const now = Date.now();
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+
+      const updatePayload: any = {
+        status,
+        updated_at: now
+      };
+      if (remarks) updatePayload.remarks = remarks;
+
+      if (status === 'approved') {
+        updatePayload.approved_by = actorName || req.user?.fullName || req.user?.username || 'Housemaster';
+        updatePayload.approved_at = now;
+      } else if (status === 'checked_out') {
+        updatePayload.checked_out_at = now;
+        updatePayload.checked_out_by = actorName || req.user?.fullName || req.user?.username || 'Gate Officer';
+      } else if (status === 'checked_in') {
+        updatePayload.checked_in_at = now;
+        updatePayload.checked_in_by = actorName || req.user?.fullName || req.user?.username || 'Housemaster / Gate';
+      }
+
+      let q = adminClient.from('boarding_exeats').update(updatePayload).eq('id', exeatId);
+      if (validSchoolUuid) q = q.eq('school_id', validSchoolUuid);
+      const { data, error } = await q;
+
+      if (error) {
+        throw error;
+      }
+
+      return res.json({ success: true, exeatId, status, updatedPayload: updatePayload });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Roll Calls
+  app.post("/api/boarding/roll-calls", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const rollCall = {
+        id: body.id || `rc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        houseId: String(body.houseId || ''),
+        houseName: String(body.houseName || ''),
+        rollDate: String(body.rollDate || new Date().toISOString().split('T')[0]),
+        sessionType: body.sessionType || 'evening',
+        conductedBy: String(body.conductedBy || req.user?.fullName || 'Housemaster'),
+        records: Array.isArray(body.records) ? body.records : [],
+        summary: body.summary || {},
+        notes: body.notes || '',
+        createdAt: body.createdAt || now
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_roll_calls').upsert([{
+        id: rollCall.id,
+        school_id: validSchoolUuid,
+        house_id: rollCall.houseId,
+        house_name: rollCall.houseName,
+        roll_date: rollCall.rollDate,
+        session_type: rollCall.sessionType,
+        conducted_by: rollCall.conductedBy,
+        records: rollCall.records,
+        summary: rollCall.summary,
+        notes: rollCall.notes || null,
+        created_at: rollCall.createdAt
+      }], { onConflict: 'id' });
+
+      return res.json({ success: true, rollCall });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // Medical Logs (Sick bay)
+  app.post("/api/boarding/medical-logs", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const body = req.body || {};
+      const now = Date.now();
+      const medLog = {
+        id: body.id || `med-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId,
+        studentId: String(body.studentId || ''),
+        studentName: String(body.studentName || ''),
+        className: String(body.className || ''),
+        houseId: String(body.houseId || ''),
+        houseName: String(body.houseName || ''),
+        visitDate: String(body.visitDate || new Date().toISOString().split('T')[0]),
+        complaint: String(body.complaint || ''),
+        vitals: String(body.vitals || ''),
+        treatmentGiven: String(body.treatmentGiven || ''),
+        attendingStaff: String(body.attendingStaff || req.user?.fullName || 'Matron / Nurse'),
+        status: body.status || 'treated',
+        admittedAt: body.admittedAt || null,
+        dischargedAt: body.dischargedAt || null,
+        createdAt: body.createdAt || now
+      };
+
+      const adminClient = getSupabaseAdmin();
+      const validSchoolUuid = isUuidFormat(schoolId) ? schoolId : null;
+      await adminClient.from('boarding_medical_logs').upsert([{
+        id: medLog.id,
+        school_id: validSchoolUuid,
+        student_id: medLog.studentId,
+        student_name: medLog.studentName,
+        class_name: medLog.className,
+        house_id: medLog.houseId,
+        house_name: medLog.houseName,
+        visit_date: medLog.visitDate,
+        complaint: medLog.complaint,
+        vitals: medLog.vitals,
+        treatment_given: medLog.treatmentGiven,
+        attending_staff: medLog.attendingStaff,
+        status: medLog.status,
+        admitted_at: medLog.admittedAt,
+        discharged_at: medLog.dischargedAt,
+        created_at: medLog.createdAt
+      }], { onConflict: 'id' });
+
+      return res.json({ success: true, medicalLog: medLog });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/boarding/medical-logs/:id", authenticateToken, async (req: any, res) => {
+    try {
+      const schoolId = await resolveBoardingSchoolId(req);
+      const logId = req.params.id;
+      const adminClient = getSupabaseAdmin();
+      let q = adminClient.from('boarding_medical_logs').delete().eq('id', logId);
+      if (isUuidFormat(schoolId)) q = q.eq('school_id', schoolId);
+      await q;
+      return res.json({ success: true, deletedId: logId });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Get license keys for a specific client school from Supabase
   app.get("/api/license/school/:schoolName", async (req, res) => {
     try {

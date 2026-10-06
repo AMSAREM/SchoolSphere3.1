@@ -4771,3 +4771,273 @@ export const inventoryApi = {
   }
 };
 
+/**
+ * Reconciles Boarding System data into Dexie IndexedDB
+ */
+export async function reconcileBoardingInDexie(data: {
+  houses?: any[];
+  rooms?: any[];
+  allocations?: any[];
+  exeats?: any[];
+  rollCalls?: any[];
+  medicalLogs?: any[];
+}) {
+  try {
+    if (Array.isArray(data.houses)) {
+      for (const h of data.houses) {
+        if (h?.id) await db.boardingHouses.put(h);
+      }
+    }
+    if (Array.isArray(data.rooms)) {
+      for (const r of data.rooms) {
+        if (r?.id) await db.boardingRooms.put(r);
+      }
+    }
+    if (Array.isArray(data.allocations)) {
+      for (const a of data.allocations) {
+        if (a?.id) await db.boardingAllocations.put(a);
+      }
+    }
+    if (Array.isArray(data.exeats)) {
+      for (const e of data.exeats) {
+        if (e?.id) await db.boardingExeats.put(e);
+      }
+    }
+    if (Array.isArray(data.rollCalls)) {
+      for (const rc of data.rollCalls) {
+        if (rc?.id) await db.boardingRollCalls.put(rc);
+      }
+    }
+    if (Array.isArray(data.medicalLogs)) {
+      for (const m of data.medicalLogs) {
+        if (m?.id) await db.boardingMedicalLogs.put(m);
+      }
+    }
+  } catch (err) {
+    console.warn('Dexie boarding reconcile warning:', err);
+  }
+}
+
+/**
+ * Centralized Boarding System API client connected to Supabase
+ */
+export const boardingApi = {
+  fetchData: async (schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/data', {
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to load boarding data from Supabase');
+    }
+    await reconcileBoardingInDexie(data);
+    return data;
+  },
+
+  syncAll: async (payload: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/sync', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({
+        ...payload,
+        schoolId: activeSchoolId
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to synchronize boarding records with Supabase');
+    }
+    await reconcileBoardingInDexie(payload);
+    return data;
+  },
+
+  saveHouse: async (house: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/houses', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...house, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to save boarding house');
+    }
+    if (data.house) {
+      await db.boardingHouses.put(data.house);
+    }
+    return data.house || house;
+  },
+
+  deleteHouse: async (houseId: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/boarding/houses/${encodeURIComponent(houseId)}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete boarding house');
+    }
+    await db.boardingHouses.delete(houseId);
+    return data;
+  },
+
+  saveRoom: async (room: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/rooms', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...room, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to save room');
+    }
+    if (data.room) {
+      await db.boardingRooms.put(data.room);
+    }
+    return data.room || room;
+  },
+
+  deleteRoom: async (roomId: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/boarding/rooms/${encodeURIComponent(roomId)}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete room');
+    }
+    await db.boardingRooms.delete(roomId);
+    return data;
+  },
+
+  assignBed: async (allocation: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/allocations', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...allocation, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to allocate bed');
+    }
+    if (data.allocation) {
+      await db.boardingAllocations.put(data.allocation);
+    }
+    return data.allocation || allocation;
+  },
+
+  deleteAllocation: async (allocId: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/boarding/allocations/${encodeURIComponent(allocId)}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to vacate bed space');
+    }
+    await db.boardingAllocations.delete(allocId);
+    return data;
+  },
+
+  submitExeat: async (exeat: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/exeats', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...exeat, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to submit exeat request');
+    }
+    if (data.exeat) {
+      await db.boardingExeats.put(data.exeat);
+    }
+    return data.exeat || exeat;
+  },
+
+  updateExeatStatus: async (
+    exeatId: string,
+    status: 'pending' | 'approved' | 'rejected' | 'checked_out' | 'checked_in' | 'overdue',
+    remarks?: string,
+    actorName?: string,
+    schoolId?: string
+  ) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/boarding/exeats/${encodeURIComponent(exeatId)}/status`, {
+      method: 'PATCH',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ status, remarks, actorName, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to update exeat status');
+    }
+    const existing = await db.boardingExeats.get(exeatId);
+    if (existing) {
+      await db.boardingExeats.put({
+        ...existing,
+        ...data.updatedPayload,
+        status
+      });
+    }
+    return data;
+  },
+
+  saveRollCall: async (rollCall: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/roll-calls', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...rollCall, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to submit roll call records');
+    }
+    if (data.rollCall) {
+      await db.boardingRollCalls.put(data.rollCall);
+    }
+    return data.rollCall || rollCall;
+  },
+
+  saveMedicalLog: async (log: any, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch('/api/boarding/medical-logs', {
+      method: 'POST',
+      headers: getApiHeaders(activeSchoolId),
+      body: JSON.stringify({ ...log, schoolId: activeSchoolId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to save medical log');
+    }
+    if (data.medicalLog) {
+      await db.boardingMedicalLogs.put(data.medicalLog);
+    }
+    return data.medicalLog || log;
+  },
+
+  deleteMedicalLog: async (logId: string, schoolId?: string) => {
+    const activeSchoolId = schoolId || (await resolveActiveSchoolId());
+    const res = await fetch(`/api/boarding/medical-logs/${encodeURIComponent(logId)}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(activeSchoolId)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'Failed to delete medical record');
+    }
+    await db.boardingMedicalLogs.delete(logId);
+    return data;
+  }
+};
+
+

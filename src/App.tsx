@@ -42,7 +42,8 @@ import {
   Activity,
   ClipboardCheck,
   UserCheck,
-  Wallet
+  Wallet,
+  Bed
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -69,6 +70,7 @@ import TenantSwitcher from './components/TenantSwitcher';
 import LessonNotes from './components/LessonNotes';
 import DutyRosterManagement from './components/DutyRosterManagement';
 import PayrollManagement from './components/PayrollManagement';
+import BoardingManagement from './components/BoardingManagement';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -87,7 +89,7 @@ import { ClientSupportWidget } from './components/ClientSupportWidget';
 import { getPageIdentity } from './lib/pageMetadata';
 import { PageHeaderBanner } from './components/PageHeaderBanner';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'boarding' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
 const ALL_DEFAULT_MODULES = [
   'students',
@@ -95,6 +97,7 @@ const ALL_DEFAULT_MODULES = [
   'timetable',
   'duty_roster',
   'payroll',
+  'boarding',
   'lesson_notes',
   'attendance',
   'results',
@@ -822,6 +825,7 @@ function AppContent() {
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -842,6 +846,7 @@ function AppContent() {
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -862,6 +867,7 @@ function AppContent() {
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'evoting', label: 'E-Voting Portal', icon: Vote },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -880,6 +886,7 @@ function AppContent() {
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'payroll', label: 'My Payslips', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
@@ -895,6 +902,7 @@ function AppContent() {
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'payroll', label: 'My Payslips', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
@@ -904,6 +912,7 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
+        { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
       ];
@@ -936,7 +945,7 @@ function AppContent() {
     }
 
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'duty_roster', 'payroll', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
+      const isCore = ['dashboard', 'duty_roster', 'payroll', 'boarding', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1520,6 +1529,7 @@ function AppContent() {
                 {activeView === 'reports' && <ReportTerminal />}
                 {activeView === 'fees' && <FeeManagement />}
                 {activeView === 'payroll' && <PayrollManagement />}
+                {activeView === 'boarding' && <BoardingManagement />}
                 {activeView === 'siren' && <SirenTerminal />}
                 {activeView === 'users' && (
                   <PermissionGuard permission="users:create" onNavigateHome={() => setActiveView('dashboard')}>
