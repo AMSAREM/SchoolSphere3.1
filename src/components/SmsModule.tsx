@@ -712,24 +712,24 @@ export default function SmsModule() {
 
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8 min-w-0 max-w-full overflow-x-hidden">
       {/* Top Banner Header */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between pb-6 border-b border-slate-200/60 gap-6">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between pb-4 sm:pb-6 border-b border-slate-200/60 gap-4 sm:gap-6 w-full">
         <div className="space-y-1">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full uppercase tracking-widest">
             <Radio className="w-3 h-3 animate-pulse text-indigo-600" />
             Outbound SMS Telephony
           </span>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Parent-Teacher Communicator</h1>
-          <p className="text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Parent-Teacher Communicator</h1>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">
             Dispatch urgent student reports, alerts, absent warnings, and fee reminder broadcasts securely through the school's virtual carrier network.
           </p>
         </div>
 
         {/* Floating Credit Balance Widget */}
-        <div className="flex items-center gap-5 bg-white border border-slate-200/80 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-start gap-3 sm:gap-5 bg-white border border-slate-200/80 p-3 sm:p-4 rounded-2xl shadow-xs hover:shadow-md transition-all duration-300 w-full sm:w-auto">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl ring-4 ring-indigo-50/50">
+            <div className="p-2.5 sm:p-3 bg-indigo-50 text-indigo-600 rounded-xl ring-4 ring-indigo-50/50">
               <Coins className="w-5 h-5" />
             </div>
             <div>
@@ -744,7 +744,7 @@ export default function SmsModule() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
-                <p className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none">
                   {smsCredits.toLocaleString()}
                 </p>
                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide">Credits</span>
@@ -761,7 +761,7 @@ export default function SmsModule() {
           </div>
           <button
             onClick={() => setIsTopUpOpen(true)}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md hover:shadow-indigo-500/10 active:scale-95 shrink-0 cursor-pointer"
+            className="px-3.5 sm:px-4 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md hover:shadow-indigo-500/10 active:scale-95 shrink-0 cursor-pointer min-h-[40px]"
           >
             Recharge
           </button>
@@ -769,7 +769,7 @@ export default function SmsModule() {
       </div>
 
       {/* Tabs Menu Navigation */}
-      <div className="flex flex-wrap bg-slate-100/80 p-1.5 rounded-2xl gap-1 max-w-3xl border border-slate-200/40">
+      <div className="flex overflow-x-auto no-scrollbar sm:flex-wrap bg-slate-100/80 p-1.5 rounded-2xl gap-1 max-w-3xl border border-slate-200/40 w-full touch-pan-x">
         {[
           { id: 'dashboard', label: 'Dashboard Logs', icon: MessageSquare },
           { id: 'compose', label: 'Compose Broadcast', icon: Send },
@@ -783,14 +783,14 @@ export default function SmsModule() {
               key={tab.id}
               id={`nav-sms-tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer border ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-extrabold text-[11px] sm:text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer border min-h-[44px] shrink-0 ${
                 isActive
                   ? 'bg-white border-slate-200/50 text-indigo-600 shadow-xs'
                   : 'bg-transparent border-transparent text-slate-500 hover:text-slate-800 hover:bg-white/40'
               }`}
             >
               <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-              <span>{tab.label}</span>
+              <span className="whitespace-nowrap">{tab.label}</span>
             </button>
           );
         })}

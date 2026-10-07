@@ -271,6 +271,27 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
     category: 'Finance & Bursary',
     subtitle: 'Storehouse stock tracking, asset issuance logs, low-stock alerts, and institutional expenditure ledger.'
   },
+  sms: {
+    id: 'sms',
+    title: 'Bulk SMS & Parent Communication Console',
+    shortTitle: 'Bulk SMS & Alerts',
+    category: 'Communications & Alerts',
+    subtitle: 'Outbound telecommunication gateway, parent SMS broadcasts, fee debtor reminders, and automated absence alerts.',
+    roleOverrides: {
+      accountant: {
+        title: 'Fee Debtor SMS Reminders',
+        shortTitle: 'Fee SMS',
+        category: 'Finance & Bursary',
+        subtitle: 'Dispatch automated fee arrears alerts and mobile money payment instructions directly to parents.'
+      },
+      bursar: {
+        title: 'Fee Debtor SMS Reminders',
+        shortTitle: 'Fee SMS',
+        category: 'Finance & Bursary',
+        subtitle: 'Dispatch automated fee arrears alerts and mobile money payment instructions directly to parents.'
+      }
+    }
+  },
   users: {
     id: 'users',
     title: 'User Accounts & Role Permissions',

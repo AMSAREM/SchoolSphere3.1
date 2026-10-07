@@ -75,7 +75,7 @@ export const PageHeaderBanner: React.FC<PageHeaderBannerProps> = ({
     <section
       aria-label="Page Identity Header"
       className={cn(
-        'mb-4 sm:mb-6 bg-white rounded-2xl border border-[#bac4c6]/80 px-4 py-3.5 sm:px-6 sm:py-4 shadow-2xs print:hidden',
+        'mb-2.5 sm:mb-4 bg-white rounded-2xl border border-[#bac4c6]/80 px-3 py-2.5 sm:px-5 sm:py-3.5 shadow-2xs print:hidden',
         className
       )}
     >
