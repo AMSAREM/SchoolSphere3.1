@@ -12,7 +12,7 @@ let isProcessingPrint = false;
  * Triggers the browser's print dialog with best-practices for enterprise applications.
  * Handles focus, processing state, and ensures UI settles before printing.
  */
-export function triggerPrint(elementId?: string, title?: string) {
+export function triggerPrint() {
   if (isProcessingPrint) return;
   
   try {

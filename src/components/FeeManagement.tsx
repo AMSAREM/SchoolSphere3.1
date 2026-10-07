@@ -1170,7 +1170,7 @@ export default function FeeManagement() {
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <button 
                   type="button"
-                  onClick={triggerPrint}
+                  onClick={() => triggerPrint()}
                   className="flex items-center justify-center gap-1.5 sm:gap-2 bg-white border border-slate-200 text-slate-700 px-3 sm:px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold hover:bg-slate-50 transition-all min-h-[40px] sm:min-h-[42px] shadow-xs cursor-pointer whitespace-nowrap"
                 >
                   <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 shrink-0" />
@@ -1988,7 +1988,7 @@ export default function FeeManagement() {
               {activeTab === 'dashboard' && (
                 <>
                   <button 
-                    onClick={triggerPrint}
+                    onClick={() => triggerPrint()}
                     className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl sm:rounded-full text-white font-bold transition-all text-[11px] sm:text-xs min-h-[40px] sm:min-h-[44px] cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 text-[#faae57] shrink-0" />

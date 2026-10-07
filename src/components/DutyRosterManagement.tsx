@@ -398,8 +398,7 @@ export default function DutyRosterManagement({ embedded = false }: { embedded?: 
     const ok = await confirm({
       title: 'Remove Duty Assignment',
       message: `Remove ${item.teacherName} from Week ${item.weekNumber} (${item.dutyPost})?`,
-      confirmText: 'Remove',
-      type: 'danger'
+      confirmText: 'Remove'
     });
     if (!ok) return;
     const nextList = assignments.filter((a) => a.id !== item.id);
@@ -644,7 +643,7 @@ export default function DutyRosterManagement({ embedded = false }: { embedded?: 
 
             <button
               type="button"
-              onClick={triggerPrint}
+              onClick={() => triggerPrint()}
               className="px-3 py-2 rounded-xl border border-[#bac4c6] bg-[#f6f8f7] hover:bg-white text-[#1c4a59] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
             >
               <Printer className="w-3.5 h-3.5" />

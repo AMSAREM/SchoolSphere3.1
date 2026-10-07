@@ -97,7 +97,7 @@ export default function AcademicManagement() {
         {activeTab !== 'duty_roster' && (
           <button 
             type="button"
-            onClick={triggerPrint}
+            onClick={() => triggerPrint()}
             title="Print Active List"
             className="print:hidden flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 my-1.5 text-[#1c4a59] hover:text-[#1f2a2e] bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] rounded-xl transition-colors text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.98]"
           >

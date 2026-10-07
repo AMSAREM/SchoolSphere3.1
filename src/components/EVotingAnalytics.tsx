@@ -459,7 +459,7 @@ export default function EVotingAnalytics({
 
             <button
               type="button"
-              onClick={triggerPrint}
+              onClick={() => triggerPrint()}
               disabled={!activePoll}
               className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap"
             >

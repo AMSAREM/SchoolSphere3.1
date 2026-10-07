@@ -174,9 +174,9 @@ export default function ResultsTerminal() {
         return db.results
           .where('studentId')
           .equals(targetId)
-          .toArray();
+          .toArray() as Promise<Result[]>;
       }
-      return Promise.resolve([]);
+      return Promise.resolve([]) as Promise<Result[]>;
     },
     [isStudent, studentRecord, selectedWard, user]
   ) || [];
@@ -194,7 +194,7 @@ export default function ResultsTerminal() {
   const existingResults = useLiveQuery(
     () => db.results.where('class').equals(selectedClass)
       .and(r => r.subject === selectedSubject && r.term === selectedTerm)
-      .toArray(),
+      .toArray() as Promise<Result[]>,
     [selectedClass, selectedSubject, selectedTerm]
   ) || [];
 
@@ -1395,7 +1395,7 @@ export default function ResultsTerminal() {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={triggerPrint}
+                      onClick={() => triggerPrint()}
                       className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg font-bold hover:bg-slate-50 transition-all h-9 sm:h-10 text-xs sm:text-sm shadow-sm cursor-pointer"
                     >
                       <Printer className="w-4 h-4 text-indigo-600" />
@@ -1656,7 +1656,7 @@ export default function ResultsTerminal() {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={triggerPrint}
+                      onClick={() => triggerPrint()}
                       className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg font-bold hover:bg-slate-50 transition-all h-9 sm:h-10 text-xs sm:text-sm shadow-sm cursor-pointer"
                     >
                       <Printer className="w-4 h-4 text-indigo-600" />
@@ -2585,7 +2585,7 @@ export default function ResultsTerminal() {
                 <div className="flex items-center justify-end gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={triggerPrint}
+                    onClick={() => triggerPrint()}
                     className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg font-bold hover:bg-slate-50 transition-all h-9 sm:h-10 text-xs sm:text-sm shadow-sm cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 shrink-0" />

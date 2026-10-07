@@ -13,6 +13,16 @@ export interface PageIdentityMeta {
   category: string;
   subtitle: string;
   roleOverrides?: Record<string, PageIdentityOverride>;
+  path?: string;
+}
+
+export interface PageIdentityMeta {
+  id: string;
+  title: string;
+  shortTitle: string;
+  category: string;
+  subtitle: string;
+  roleOverrides?: Record<string, PageIdentityOverride>;
 }
 
 export const VIEW_METADATA: Record<string, PageIdentityMeta> = {

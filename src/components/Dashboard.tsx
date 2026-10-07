@@ -825,7 +825,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button 
-            onClick={triggerPrint}
+            onClick={() => triggerPrint()}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-[#bac4c6] rounded-full text-[#1f2a2e] font-bold hover:bg-[#f6f8f7] transition-all shadow-2xs active:scale-[0.97] min-h-[40px] text-xs cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5 text-[#1c4a59]" />

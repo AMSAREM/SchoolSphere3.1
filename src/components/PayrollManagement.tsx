@@ -1395,7 +1395,7 @@ export default function PayrollManagement() {
         <div className="flex items-center gap-2 py-1.5">
           <button
             type="button"
-            onClick={triggerPrint}
+            onClick={() => triggerPrint()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] rounded-xl cursor-pointer whitespace-nowrap"
           >
             <Printer className="w-3.5 h-3.5" />

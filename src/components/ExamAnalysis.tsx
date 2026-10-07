@@ -1308,7 +1308,7 @@ export default function ExamAnalysis() {
               <h3 className="font-extrabold text-slate-800 text-lg">WAEC Grade Analysis Card</h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={triggerPrint}
+                  onClick={() => triggerPrint()}
                   className="flex items-center gap-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase transition-all shadow-sm cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />

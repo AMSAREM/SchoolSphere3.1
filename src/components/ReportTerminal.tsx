@@ -503,7 +503,7 @@ export default function ReportTerminal() {
             <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 print:hidden">
               <span className="font-bold text-slate-800 text-xs sm:text-sm">Fee Collection performance metrics visualization</span>
               <button 
-                onClick={triggerPrint}
+                onClick={() => triggerPrint()}
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer w-full sm:w-auto"
               >
                 <Printer className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -766,7 +766,7 @@ export default function ReportTerminal() {
               <span className="font-bold text-slate-800 text-xs sm:text-sm">Class-by-Class Revenue Billings & Receivables Broadsheet</span>
               <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto min-w-0">
                 <button 
-                  onClick={triggerPrint}
+                  onClick={() => triggerPrint()}
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-slate-50 text-xs h-10 transition-all cursor-pointer min-w-0"
                 >
                   <Printer className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -941,7 +941,7 @@ export default function ReportTerminal() {
                 <div className="hidden lg:block lg:flex-1" />
                 <div className="col-span-2 lg:w-auto grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full min-w-0">
                   <button 
-                    onClick={triggerPrint}
+                    onClick={() => triggerPrint()}
                     className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm h-10 sm:h-11 active:scale-95 cursor-pointer"
                   >
                     <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -1155,7 +1155,7 @@ export default function ReportTerminal() {
                   </button>
                 </div>
                 <button 
-                  onClick={triggerPrint}
+                  onClick={() => triggerPrint()}
                   className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm h-10 sm:h-11 active:scale-95 cursor-pointer"
                 >
                   <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -1319,7 +1319,7 @@ export default function ReportTerminal() {
                         </button>
                       </div>
                       <button 
-                        onClick={triggerPrint}
+                        onClick={() => triggerPrint()}
                         className="w-full sm:w-auto min-w-0 flex items-center justify-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 text-slate-800 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm text-xs h-10 cursor-pointer"
                       >
                          <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -1477,7 +1477,7 @@ export default function ReportTerminal() {
                   <span>{isExportingPDF ? 'Generating...' : 'Save PDF'}</span>
                 </button>
                 <button 
-                  onClick={triggerPrint}
+                  onClick={() => triggerPrint()}
                   className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />

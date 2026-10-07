@@ -37,6 +37,7 @@ import { supabase } from '../lib/supabase/client';
 // Standard timetable slot structure
 interface TimetableSlot {
   id: string;
+  name: string;          // e.g., "Mathematics Period 1"
   classId: string;       // e.g., "Basic 1"
   subjectName: string;   // e.g., "Mathematics"
   teacherName: string;   // e.g., "Mr. Kwame Boateng"
@@ -1087,6 +1088,7 @@ export default function TimetableManagement() {
       // Teachers suggest slots - check for collision in the situation of no collision
       const newSlotTemp: TimetableSlot = {
         id: `temp-${Date.now()}`,
+        name: `${formSubject.trim()} Period`,
         classId: formClass.trim(),
         subjectName: formSubject.trim(),
         teacherName: formTeacher.trim(),
@@ -1162,6 +1164,7 @@ export default function TimetableManagement() {
 
     const newSlot: TimetableSlot = {
       id: editingSlotId || `slot-${Date.now()}`,
+      name: `${formSubject.trim()} Period`,
       classId: formClass.trim(),
       subjectName: formSubject.trim(),
       teacherName: formTeacher.trim(),
@@ -1245,6 +1248,7 @@ export default function TimetableManagement() {
 
     const newSlot: TimetableSlot = {
       id: `slot-${Date.now()}`,
+      name: `${sug.subjectName} Period`,
       classId: sug.classId,
       subjectName: sug.subjectName,
       teacherName: sug.teacherName,
@@ -1735,6 +1739,7 @@ export default function TimetableManagement() {
 
       virtualSlots.push({
         id: `virtual-${results.length}`,
+        name: `${combo.subjectName} Period`,
         classId: combo.classId,
         subjectName: combo.subjectName,
         teacherName: combo.teacherName,
@@ -1892,6 +1897,7 @@ export default function TimetableManagement() {
       } else {
         const newSlot: TimetableSlot = {
           id: `slot-${Date.now()}`,
+          name: `${rec.subjectName} Period`,
           classId: rec.classId,
           subjectName: rec.subjectName,
           teacherName: rec.teacherName,
@@ -2228,6 +2234,7 @@ export default function TimetableManagement() {
           if (!classId || !subjectName) continue;
           validSlots.push({
             id: String(r.id || `csv-slot-${Date.now()}-${idx}`),
+            name: `${subjectName} Period`,
             classId,
             subjectName,
             teacherName,
@@ -2711,7 +2718,7 @@ export default function TimetableManagement() {
 
         <button 
           type="button"
-          onClick={triggerPrint}
+          onClick={() => triggerPrint()}
           title="Print Timetable"
           className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 sm:my-1.5 bg-[#f6f8f7] hover:bg-[#e1c594]/35 border border-[#bac4c6] text-[#1c4a59] rounded-xl text-xs font-bold transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer min-h-[38px]"
         >

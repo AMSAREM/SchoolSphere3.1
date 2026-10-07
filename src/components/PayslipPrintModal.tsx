@@ -37,7 +37,7 @@ export function PayslipPrintModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={triggerPrint}
+              onClick={() => triggerPrint()}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#faae57] hover:bg-[#f59e36] text-[#1f2a2e] font-bold text-xs rounded-xl transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
