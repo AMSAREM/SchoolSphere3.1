@@ -3,7 +3,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 
 // In-Memory Supabase mock database for hermetic test execution
-const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
+const { testSupabaseDB, mockSupabaseClient, supabaseServerMock } = vi.hoisted(() => {
   const db: Record<string, any[]> = {
     schools: [
       { id: 'school-uuid-a', name: 'School A Academy', slug: 'school-a', status: 'active' },
@@ -230,18 +230,20 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
     }
   };
 
-  return { testSupabaseDB: db, mockSupabaseClient: client };
-});
+  const supabaseServerMock = {
+    getSupabaseAdmin: () => client,
+    getSupabaseUrlStrict: () => 'https://niavmonyfwqlryppgksy.supabase.co',
+    createAuthenticatedSupabaseClient: () => client,
+    getCreatorAuthenticatedClient: async () => client,
+    runWithRequestToken: (_token: any, fn: () => any) => fn(),
+    getCurrentRequestToken: () => null,
+    getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
+      return db.schools.find((s: any) => s.name === schoolName || s.slug === schoolName) || null;
+    }
+  };
 
-const supabaseServerMock = {
-  getSupabaseAdmin: () => mockSupabaseClient,
-  getSupabaseUrlStrict: () => 'https://niavmonyfwqlryppgksy.supabase.co',
-  createAuthenticatedSupabaseClient: () => mockSupabaseClient,
-  getCreatorAuthenticatedClient: async () => mockSupabaseClient,
-  getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
-    return testSupabaseDB.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
-  }
-};
+  return { testSupabaseDB: db, mockSupabaseClient: client, supabaseServerMock };
+});
 
 vi.mock('../lib/supabase/server.ts', () => supabaseServerMock);
 vi.mock('../lib/supabase/server.js', () => supabaseServerMock);
@@ -834,7 +836,7 @@ describe('Security & API Endpoints Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/xml/);
       expect(res.text).toContain('urlset');
-      expect(res.text).toContain('schoolsphere.app');
+      expect(res.text).toContain('schoolsphere');
     });
   });
 

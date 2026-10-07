@@ -33,6 +33,11 @@ import {
   markUserSessionOffline,
   getActiveUserSessions
 } from "./lib/multiTenantAuth.ts";
+import {
+  resolveRouteSeo,
+  injectRouteMetadata,
+  renderNotFoundHtml
+} from "./lib/serverSeo.ts";
 
 dotenv.config();
 
@@ -80,6 +85,29 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
+// Canonical Domain 301 Apex-to-WWW Redirection
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const host = (req.headers["x-forwarded-host"] || req.headers.host || "").toString().toLowerCase().split(":")[0];
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "http").toString().toLowerCase();
+  const rawPath = (req.originalUrl || req.url || "").split("?")[0].toLowerCase();
+  const isDirectCrawlerOrVerificationPath =
+    rawPath === "/sitemap.xml" ||
+    rawPath === "/robots.txt" ||
+    /^\/google[a-zA-Z0-9_-]+\.html$/.test(rawPath);
+
+  if (host === "schoolsphere.xyz" && !isDirectCrawlerOrVerificationPath) {
+    const targetUrl = `https://www.schoolsphere.xyz${req.originalUrl || req.url || ""}`;
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.redirect(301, targetUrl);
+  }
+  if ((host === "www.schoolsphere.xyz" || host === "schoolsphere.xyz") && proto === "http" && !req.headers["x-forwarded-ssl"] && !isDirectCrawlerOrVerificationPath) {
+    const targetUrl = `https://${host}${req.originalUrl || req.url || ""}`;
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.redirect(301, targetUrl);
+  }
   next();
 });
 
@@ -1742,19 +1770,27 @@ async function doStartServer() {
   app.get("/sitemap.xml", (req, res) => {
     const sitemapPath = path.join(process.cwd(), 'public', 'sitemap.xml');
     if (fs.existsSync(sitemapPath)) {
-      res.setHeader('Content-Type', 'application/xml');
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.sendFile(sitemapPath);
     }
-    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://schoolsphere.app/</loc><priority>1.0</priority></url>
-  <url><loc>https://schoolsphere.app/login</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/portal</loc><priority>0.8</priority></url>
-  <url><loc>https://schoolsphere.app/sitemap</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/privacy</loc><priority>0.5</priority></url>
-  <url><loc>https://schoolsphere.app/terms</loc><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/</loc><priority>1.0</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/sign-in</loc><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/portal</loc><priority>0.8</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/privacy</loc><priority>0.5</priority></url>
+  <url><loc>https://www.schoolsphere.xyz/terms</loc><priority>0.5</priority></url>
 </urlset>`);
+  });
+
+  app.get(/^\/(google[a-zA-Z0-9_-]+)\.html$/, (req, res) => {
+    const token = req.params[0];
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.status(200).send(`google-site-verification: ${token}.html`);
   });
 
   // ----------------------------------------------------
@@ -3810,7 +3846,8 @@ async function doStartServer() {
 
           // If a school hint/scope was explicitly requested (e.g. @slug or schoolSlug/schoolId in body),
           // ensure the candidate belongs to this target school (unless platform creator / super_admin)
-          if (hintSchoolId || hintSchoolSlug) {
+          const isDirectEmailMatch = !!(uEmail && (uEmail === rawUsernameInput || uEmail === strippedUsernameInput));
+          if ((rawHintFromBody || !isDirectEmailMatch) && (hintSchoolId || hintSchoolSlug)) {
             if (u.role !== 'creator' && u.role !== 'super_admin') {
               if (hintSchoolId && uSchoolId && hintSchoolId.toLowerCase() !== uSchoolId.toLowerCase()) {
                 return false;
@@ -28644,21 +28681,24 @@ NOTIFY pgrst, 'reload schema';`;
     });
   });
 
-  // Vite middleware for development (loaded dynamically so production never imports vite)
+  let viteDevServer: any = null;
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
+    viteDevServer = await createViteServer({
       server: {
         middlewareMode: true,
         hmr: false,
       },
-      appType: "spa",
+      appType: "custom",
     });
-    app.use(vite.middlewares);
-  } else if (process.env.NODE_ENV === "production") {
-    const distPath = path.join(process.cwd(), 'dist');
-    // Serves static assets with aggressive caching headers for instant client loading, excluding index.html
+    app.use(viteDevServer.middlewares);
+  }
+
+  const distPath = path.join(process.cwd(), 'dist');
+  if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
+      index: false,
+      redirect: false,
       maxAge: '1y',
       etag: true,
       setHeaders: (res, filePath) => {
@@ -28669,21 +28709,53 @@ NOTIFY pgrst, 'reload schema';`;
         }
       }
     }));
-    // Catch-all for API routes to prevent HTML index fallback
-    app.all('/api/*', (req, res) => {
-      res.status(404).json({ success: false, error: `API endpoint ${req.method} ${req.path} not found` });
-    });
-
-    app.get('*', (req, res) => {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      const indexHtmlPath = path.join(distPath, 'index.html');
-      if (fs.existsSync(indexHtmlPath)) {
-        res.sendFile(indexHtmlPath);
-      } else {
-        res.status(200).send('<!doctype html><html><head><title>SchoolSphere</title></head><body><div id="root">Server running</div></body></html>');
-      }
-    });
   }
+
+  // Catch-all for API routes to prevent HTML index fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ success: false, error: `API endpoint ${req.method} ${req.path} not found` });
+  });
+
+  app.get(/^\/assets\/.*|\.(css|js|mjs|map|wasm|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf)$/i, (req, res) => {
+    res.status(404).type('text/plain').send(`Asset not found: ${req.path}`);
+  });
+
+  app.get('*', async (req, res, next) => {
+    if (res.headersSent) return;
+    const rawPath = req.path;
+    const routeMeta = resolveRouteSeo(rawPath);
+    if (!routeMeta) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.status(404).type('html').send(renderNotFoundHtml(rawPath));
+    }
+    try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      let template = '';
+      const distIndex = path.join(distPath, 'index.html');
+      const rootIndex = path.join(process.cwd(), 'index.html');
+      if (fs.existsSync(distIndex)) {
+        template = fs.readFileSync(distIndex, 'utf8');
+      } else if (fs.existsSync(rootIndex)) {
+        template = fs.readFileSync(rootIndex, 'utf8');
+      } else {
+        template = '<!doctype html><html><head><title>SchoolSphere</title></head><body><div id="root"></div></body></html>';
+      }
+      const verificationToken = process.env.GOOGLE_SITE_VERIFICATION || process.env.VITE_GOOGLE_SITE_VERIFICATION || '';
+      template = template.replace(/%VITE_GOOGLE_SITE_VERIFICATION%/g, verificationToken);
+      if (viteDevServer) {
+        try {
+          template = await viteDevServer.transformIndexHtml(req.originalUrl || req.url, template);
+        } catch (transformErr) {
+          console.warn('[Vite Transform Error]:', transformErr);
+        }
+      }
+      const enrichedHtml = injectRouteMetadata(template, routeMeta, verificationToken);
+      return res.status(200).type('html').send(enrichedHtml);
+    } catch (err) {
+      console.error('[SPA Route Handler Error]:', err);
+      return next(err);
+    }
+  });
 
   if (process.env.NODE_ENV !== "test") {
     const server = app.listen(PORT, "0.0.0.0", () => {
