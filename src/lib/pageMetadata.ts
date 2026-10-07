@@ -3,6 +3,7 @@ export interface PageIdentityOverride {
   shortTitle?: string;
   category?: string;
   subtitle?: string;
+  path?: string;
 }
 
 export interface PageIdentityMeta {

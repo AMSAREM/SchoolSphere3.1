@@ -360,6 +360,7 @@ export default function TimetableManagement() {
     const normEnd = rawStart === '00:00' ? '08:45' : rawEnd;
     return {
       id: String(raw?.id || raw?.slot_id || raw?.slotId || raw?.entryId || raw?.entry_id || `slot-${Date.now()}`),
+      name: String(raw?.name || raw?.subjectName || raw?.subject_name || '').trim(),
       classId: String(raw?.classId || raw?.class_id || raw?.class_name || '').trim(),
       subjectName: String(raw?.subjectName || raw?.subject_name || '').trim(),
       teacherName: String(raw?.teacherName || raw?.teacher_name || '').trim(),

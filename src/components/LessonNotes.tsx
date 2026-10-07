@@ -33,11 +33,11 @@ import {
   Award,
   ChevronRight
 } from 'lucide-react';
-import { ToastType } from './Toast';
+import { NotificationType } from '../contexts/NotificationContext';
 
 interface LessonNotesProps {
   onNavigate?: (tab: string) => void;
-  showToast: (message: string, type?: ToastType) => void;
+  showToast: (message: string, type?: NotificationType) => void;
   currentUser?: {
     id?: number;
     username: string;
@@ -352,7 +352,7 @@ export default function LessonNotes({ showToast, currentUser }: LessonNotesProps
   const handleEditNote = (note: LessonNote) => {
     setEditingNote(note);
     setEntryMode(note.pdfFileUrl || note.pdfData || note.pdfFileName ? 'hybrid' : 'structured');
-    setFormTerm(note.term || 'Term 1');
+    setFormTerm((note.term === 'Term 1' || note.term === 'Term 2' || note.term === 'Term 3') ? note.term : 'Term 1');
     setFormWeek(note.weekNumber || 1);
     setFormClass(note.class || classOptions[0] || 'JHS 1');
     setFormSubject(note.subject || subjectOptions[0] || 'Mathematics');

@@ -264,6 +264,14 @@ function getFromFallback(table: string, schoolId?: string | null) {
   });
 }
 
+function getRegisteredUsers(): any[] {
+  return getFromFallback('users');
+}
+
+function saveRegisteredUsers(users: any[]) {
+  localFallbackDb.users = users;
+}
+
 // Sanitize error messages to prevent stack traces or internal details from leaking to client/user
 function sanitizeErrorMessage(err: any): string {
   if (!err) return "An unexpected error occurred.";
@@ -6519,7 +6527,7 @@ async function doStartServer() {
           fullName: cleanFullName,
           role: safeRole,
           schoolId: targetSchool,
-          password: rawPasswordStr || undefined,
+          rawPassword: rawPasswordStr || undefined,
           existingAuthUserId: authUserId || savedRow.auth_user_id || null,
           issueSession: false
         });
@@ -11358,6 +11366,41 @@ NOTIFY pgrst, 'reload schema';`;
     } catch {}
 
     return rawCandidate || 'default';
+  }
+
+  async function resolveStrictModuleSchoolId(req: any): Promise<string> {
+    const rawCandidate = String(
+      req.body?.schoolId ||
+        req.query?.schoolId ||
+        req.user?.school_id ||
+        req.headers?.['x-school-id'] ||
+        ''
+    ).trim();
+
+    if (isUuidFormat(rawCandidate)) return rawCandidate;
+
+    try {
+      const adminClient = getSupabaseAdmin();
+      const { data: firstSchool } = await adminClient
+        .from('schools')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (firstSchool?.id) return String(firstSchool.id);
+    } catch {}
+
+    return rawCandidate || 'default';
+  }
+
+  function isTenantAccessError(err: any): boolean {
+    if (!err) return false;
+    const message = String(err.message || err).toLowerCase();
+    return message.includes('tenant') || message.includes('school_id') || message.includes('permission denied');
+  }
+
+  async function hashPassword(password: string): Promise<string> {
+    const salt = await bcrypt.genSalt(10);
+    return await bcrypt.hash(password, salt);
   }
 
   function mapRowToSalaryProfile(row: any) {
