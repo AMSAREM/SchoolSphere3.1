@@ -11058,6 +11058,405 @@ async function doStartServer() {
     }
   });
 
+  // =========================================================================
+  // CLIENT PITCH PROPOSALS & ATTACHED FILES REPOSITORY (Database Connected)
+  // =========================================================================
+  function normalizeProposalRecord(raw: any): any {
+    const now = Date.now();
+    const id = String(raw.id || `prop-${now}`);
+    const schoolName = String(raw.schoolName || raw.school_name || raw.school || 'Prospective School').trim();
+    const contactPerson = String(raw.contactPerson || raw.contact_person || 'Principal / Proprietor').trim();
+    const phone = String(raw.phone || '').trim();
+    const email = String(raw.email || '').trim();
+    const location = String(raw.location || 'Accra, Ghana').trim();
+    const studentsCount = Number(raw.studentsCount ?? raw.students_count ?? 350);
+    const tier = String(raw.tier || 'Standard');
+    const currency = String(raw.currency || 'GHS');
+    
+    let selectedModules = raw.selectedModules ?? raw.selected_modules;
+    if (typeof selectedModules === 'string') {
+      try { selectedModules = JSON.parse(selectedModules); } catch { selectedModules = []; }
+    }
+    if (!Array.isArray(selectedModules)) selectedModules = [];
+
+    let modulePrices = raw.modulePrices ?? raw.module_prices;
+    if (typeof modulePrices === 'string') {
+      try { modulePrices = JSON.parse(modulePrices); } catch { modulePrices = {}; }
+    }
+    if (!modulePrices || typeof modulePrices !== 'object') modulePrices = {};
+
+    let addOns = raw.addOns ?? raw.add_ons;
+    if (typeof addOns === 'string') {
+      try { addOns = JSON.parse(addOns); } catch { addOns = []; }
+    }
+    if (!Array.isArray(addOns)) addOns = [];
+
+    const discountPercent = Number(raw.discountPercent ?? raw.discount_percent ?? 0);
+    const billingFrequency = String(raw.billingFrequency || raw.billing_frequency || 'annual');
+    const status = String(raw.status || 'Draft');
+    const createdAt = String(raw.createdAt || raw.created_at || new Date(now).toLocaleDateString());
+    const updatedAt = Number(raw.updatedAt ?? raw.updated_at ?? now);
+    const totalPerTerm = Number(raw.totalPerTerm ?? raw.total_per_term ?? 0);
+    const totalAnnual = Number(raw.totalAnnual ?? raw.total_annual ?? 0);
+    const notes = String(raw.notes || '');
+
+    let rawFiles = raw.files;
+    if (typeof rawFiles === 'string') {
+      try { rawFiles = JSON.parse(rawFiles); } catch { rawFiles = []; }
+    }
+    const files = Array.isArray(rawFiles)
+      ? rawFiles.map((f: any) => ({
+          id: String(f.id || `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+          name: String(f.name || f.fileName || 'document.pdf'),
+          size: Number(f.size || f.fileSize || 0),
+          type: String(f.type || f.fileType || 'application/pdf'),
+          url: f.url ? String(f.url) : undefined,
+          dataUrl: f.dataUrl ? String(f.dataUrl) : (f.url ? String(f.url) : undefined),
+          uploadedAt: f.uploadedAt || f.uploaded_at || now,
+          category: String(f.category || 'other'),
+          description: String(f.description || '')
+        }))
+      : [];
+
+    return {
+      id,
+      schoolName,
+      contactPerson,
+      phone,
+      email,
+      location,
+      studentsCount,
+      tier,
+      currency,
+      selectedModules,
+      modulePrices,
+      addOns,
+      discountPercent,
+      billingFrequency,
+      status,
+      createdAt,
+      updatedAt,
+      totalPerTerm,
+      totalAnnual,
+      notes,
+      files
+    };
+  }
+
+  const DEFAULT_INITIAL_PROPOSALS = [
+    {
+      id: 'prop-sample-1',
+      schoolName: 'Achimota Heritage Academy',
+      contactPerson: 'Dr. Peter Osei (Headmaster)',
+      phone: '+233 55 423 4590',
+      email: 'head@heritageacademy.edu.gh',
+      location: 'Achimota, Accra',
+      studentsCount: 450,
+      tier: 'Standard',
+      currency: 'GHS',
+      selectedModules: ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees'],
+      modulePrices: { students: 150, academic: 150, timetable: 180, attendance: 200, results: 250, reports: 300, fees: 350 },
+      addOns: ['branding', 'training'],
+      discountPercent: 10,
+      billingFrequency: 'annual',
+      status: 'Presented',
+      createdAt: new Date().toLocaleDateString(),
+      totalPerTerm: 2850,
+      totalAnnual: 7695,
+      notes: 'Requested live demo on Saturday PTA board meeting.',
+      files: [
+        {
+          id: 'file-demo-1',
+          name: 'Achimota_Heritage_Proposal_Executive_Brief.pdf',
+          size: 245000,
+          type: 'application/pdf',
+          uploadedAt: Date.now() - 86400000,
+          category: 'proposal_doc',
+          description: 'Official SchoolSphere multi-term digitalization quotation'
+        }
+      ]
+    },
+    {
+      id: 'prop-sample-2',
+      schoolName: 'Morning Star Model College',
+      contactPerson: 'Mrs. Abigail Mensah',
+      phone: '+233 24 112 3456',
+      email: 'admin@morningstar.edu.gh',
+      location: 'Kumasi, Ashanti',
+      studentsCount: 680,
+      tier: 'Professional',
+      currency: 'GHS',
+      selectedModules: ['students', 'academic', 'timetable', 'attendance', 'results', 'reports', 'fees', 'boarding', 'payroll', 'siren'],
+      modulePrices: { students: 150, academic: 150, timetable: 180, attendance: 200, results: 250, reports: 300, fees: 350, boarding: 220, payroll: 240, siren: 120 },
+      addOns: ['branding', 'training', 'migration', 'vip_support'],
+      discountPercent: 15,
+      billingFrequency: 'annual',
+      status: 'Pitch Scheduled',
+      createdAt: new Date().toLocaleDateString(),
+      totalPerTerm: 3900,
+      totalAnnual: 9945,
+      notes: 'Heavy focus on stopping fee arrears with Mobile Money integration.',
+      files: [
+        {
+          id: 'file-demo-2',
+          name: 'Morning_Star_Fee_Collection_Case_Study.pdf',
+          size: 184000,
+          type: 'application/pdf',
+          uploadedAt: Date.now() - 43200000,
+          category: 'pitch_deck',
+          description: 'MoMo Zero-Arrears reconciliation presentation deck'
+        }
+      ]
+    }
+  ];
+
+  async function loadAllProposalsFromSupabase(): Promise<any[]> {
+    const adminClient = getSupabaseAdmin();
+    // 1. Check client_proposals dedicated table
+    try {
+      const { data, error } = await adminClient
+        .from('client_proposals')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(normalizeProposalRecord);
+      }
+    } catch {}
+
+    // 2. Fallback to settings array 'platform_client_proposals'
+    try {
+      const fallback = await readSupabaseSettingList('platform_client_proposals');
+      if (Array.isArray(fallback) && fallback.length > 0) {
+        return fallback.map(normalizeProposalRecord);
+      }
+    } catch {}
+
+    // 3. Return default initial list and persist to settings
+    try {
+      await writeSupabaseSettingList('platform_client_proposals', DEFAULT_INITIAL_PROPOSALS);
+    } catch {}
+    return DEFAULT_INITIAL_PROPOSALS.map(normalizeProposalRecord);
+  }
+
+  // GET /api/proposals - List all client pitch proposals from database
+  app.get("/api/proposals", optionalAuthenticateToken, async (_req, res) => {
+    try {
+      const proposals = await loadAllProposalsFromSupabase();
+      return res.json({ success: true, proposals, total: proposals.length });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/proposals - Save or create proposal in database
+  app.post("/api/proposals", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const raw = req.body || {};
+      const normalized = normalizeProposalRecord({ ...raw, updatedAt: Date.now() });
+      const adminClient = getSupabaseAdmin();
+
+      // Attempt upsert to client_proposals table
+      try {
+        await adminClient
+          .from('client_proposals')
+          .upsert([{
+            id: normalized.id,
+            school_name: normalized.schoolName,
+            contact_person: normalized.contactPerson,
+            phone: normalized.phone,
+            email: normalized.email,
+            location: normalized.location,
+            students_count: normalized.studentsCount,
+            tier: normalized.tier,
+            currency: normalized.currency,
+            selected_modules: normalized.selectedModules,
+            module_prices: normalized.modulePrices,
+            add_ons: normalized.addOns,
+            discount_percent: normalized.discountPercent,
+            billing_frequency: normalized.billingFrequency,
+            status: normalized.status,
+            total_per_term: normalized.totalPerTerm,
+            total_annual: normalized.totalAnnual,
+            notes: normalized.notes,
+            files: normalized.files,
+            created_at: normalized.createdAt,
+            updated_at: normalized.updatedAt
+          }], { onConflict: 'id' });
+      } catch {}
+
+      // Always update settings array 'platform_client_proposals' for resiliency
+      const currentList = await loadAllProposalsFromSupabase();
+      const updatedList = [
+        normalized,
+        ...currentList.filter((p: any) => String(p.id) !== String(normalized.id) && p.schoolName.toLowerCase() !== normalized.schoolName.toLowerCase())
+      ];
+      await writeSupabaseSettingList('platform_client_proposals', updatedList);
+
+      return res.status(201).json({ success: true, proposal: normalized });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // PUT /api/proposals/:id - Update proposal in database
+  app.put("/api/proposals/:id", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const raw = req.body || {};
+      const currentList = await loadAllProposalsFromSupabase();
+      const existing = currentList.find((p: any) => String(p.id) === String(id));
+      const merged = normalizeProposalRecord({ ...(existing || {}), ...raw, id, updatedAt: Date.now() });
+
+      const updatedList = currentList.map((p: any) => String(p.id) === String(id) ? merged : p);
+      await writeSupabaseSettingList('platform_client_proposals', updatedList);
+
+      return res.json({ success: true, proposal: merged });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/proposals/:id - Delete proposal from database
+  app.delete("/api/proposals/:id", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminClient = getSupabaseAdmin();
+      try {
+        await adminClient.from('client_proposals').delete().eq('id', id);
+      } catch {}
+
+      const currentList = await loadAllProposalsFromSupabase();
+      const filtered = currentList.filter((p: any) => String(p.id) !== String(id));
+      await writeSupabaseSettingList('platform_client_proposals', filtered);
+
+      return res.json({ success: true, id });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/proposals/:id/files - Upload and save file attached to proposal in database
+  app.post("/api/proposals/:id/files", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { fileName, fileData, fileType, fileSize, category, description } = req.body || {};
+      
+      if (!fileName || !fileData) {
+        return res.status(400).json({ success: false, error: "Missing required file name or file data payload." });
+      }
+
+      const fileId = `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+      const now = Date.now();
+
+      const newFile = {
+        id: fileId,
+        name: safeName,
+        size: Number(fileSize || 0),
+        type: String(fileType || 'application/octet-stream'),
+        dataUrl: String(fileData),
+        uploadedAt: now,
+        category: String(category || 'other'),
+        description: String(description || '').trim()
+      };
+
+      const currentList = await loadAllProposalsFromSupabase();
+      let targetProposal = currentList.find((p: any) => String(p.id) === String(id));
+
+      if (!targetProposal) {
+        targetProposal = normalizeProposalRecord({
+          id,
+          schoolName: safeName.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+          files: [newFile]
+        });
+        currentList.unshift(targetProposal);
+      } else {
+        targetProposal.files = [newFile, ...(targetProposal.files || []).filter((f: any) => f.name !== safeName)];
+        targetProposal.updatedAt = now;
+      }
+
+      await writeSupabaseSettingList('platform_client_proposals', currentList);
+
+      return res.status(201).json({
+        success: true,
+        file: newFile,
+        proposal: targetProposal
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/proposals/:id/files/:fileId - Delete file attachment from database
+  app.delete("/api/proposals/:id/files/:fileId", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const { id, fileId } = req.params;
+      const currentList = await loadAllProposalsFromSupabase();
+      const target = currentList.find((p: any) => String(p.id) === String(id));
+      
+      if (target) {
+        target.files = (target.files || []).filter((f: any) => String(f.id) !== String(fileId));
+        target.updatedAt = Date.now();
+        await writeSupabaseSettingList('platform_client_proposals', currentList);
+      }
+
+      return res.json({ success: true, fileId, filesCount: target?.files?.length ?? 0, proposal: target });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/proposals/:id/save-document-file - Package generated proposal document and save to database files
+  app.post("/api/proposals/:id/save-document-file", optionalAuthenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { htmlContent, title, fileName } = req.body || {};
+      const now = Date.now();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const safeTitle = String(title || 'Institutional_Proposal').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const resolvedFileName = fileName || `${safeTitle}_${dateStr}.html`;
+
+      const dataUri = `data:text/html;charset=utf-8,${encodeURIComponent(String(htmlContent || ''))}`;
+      const fileId = `file-doc-${now}`;
+
+      const docFile = {
+        id: fileId,
+        name: resolvedFileName,
+        size: Buffer.byteLength(String(htmlContent || ''), 'utf8'),
+        type: 'text/html',
+        dataUrl: dataUri,
+        uploadedAt: now,
+        category: 'proposal_doc',
+        description: `Formal Proposal Document snapshot generated on ${new Date().toLocaleDateString()}`
+      };
+
+      const currentList = await loadAllProposalsFromSupabase();
+      let target = currentList.find((p: any) => String(p.id) === String(id));
+
+      if (target) {
+        target.files = [docFile, ...(target.files || []).filter((f: any) => f.name !== resolvedFileName)];
+        target.updatedAt = now;
+      } else {
+        target = normalizeProposalRecord({
+          id,
+          schoolName: safeTitle.replace(/_/g, ' '),
+          files: [docFile]
+        });
+        currentList.unshift(target);
+      }
+
+      await writeSupabaseSettingList('platform_client_proposals', currentList);
+
+      return res.status(201).json({
+        success: true,
+        file: docFile,
+        proposal: target
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Two-Way Support Ticketing System (Supabase public.support_tickets + public.settings 'platform_support_tickets' + public.audit_logs)
   function normalizeSupportTicketRecord(raw: any): any {
     const now = Date.now();

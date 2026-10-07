@@ -44,10 +44,22 @@ import {
   Bed,
   CheckSquare,
   BookOpen,
-  BarChart3
+  BarChart3,
+  Paperclip,
+  UploadCloud,
+  Download,
+  Database,
+  FileUp,
+  FileSpreadsheet,
+  ExternalLink,
+  X,
+  FileCode,
+  HardDrive
 } from 'lucide-react';
 import { cn, formatCurrency, exportToPDF, triggerPrint } from '../../lib/utils';
 import { useNotifications } from '../../contexts/NotificationContext';
+import type { ProposalItem, ProposalFile } from '../../types';
+import { proposalsApi } from '../../lib/api';
 
 export interface PitchProposalStudioProps {
   onNavigateCreatorPanel?: (panelId: string) => void;
@@ -56,27 +68,6 @@ export interface PitchProposalStudioProps {
   initialContactPerson?: string;
   initialPhone?: string;
   initialEmail?: string;
-}
-
-interface ProposalItem {
-  id: string;
-  schoolName: string;
-  contactPerson: string;
-  phone: string;
-  email: string;
-  location: string;
-  studentsCount: number;
-  tier: string;
-  currency: string;
-  selectedModules: string[];
-  addOns: string[];
-  discountPercent: number;
-  billingFrequency: 'term' | 'annual' | 'biennial';
-  status: 'Draft' | 'Pitch Scheduled' | 'Presented' | 'Negotiation' | 'Deal Won';
-  createdAt: string;
-  totalPerTerm: number;
-  totalAnnual: number;
-  notes: string;
 }
 
 const DEFAULT_MODULES = [
@@ -89,11 +80,14 @@ const DEFAULT_MODULES = [
   { id: 'reports', label: 'Report Sheets Terminal', desc: 'One-click printable & digital terminal report cards', price: 300 },
   { id: 'fees', label: 'Fees & MoMo Ledger', desc: 'Tuition invoicing, instant Mobile Money & tamper receipts', price: 350 },
   { id: 'boarding', label: 'Boarding & Dormitories', desc: 'Hostel room allocations, house masters & exeat permits', price: 220 },
-  { id: 'duty_roster', label: 'Staff Duty & Lesson Notes', desc: 'Teacher supervision rotas & electronic lesson plan vetting', price: 180 },
+  { id: 'duty_roster', label: 'Staff Duty Roster', desc: 'Teacher weekly supervision rotas & campus activity oversight', price: 180 },
+  { id: 'lesson_notes', label: 'Lesson Notes & Vetting', desc: 'Digital lesson plan submissions, HOD feedback & approvals', price: 190 },
   { id: 'payroll', label: 'Payroll & Compensation', desc: 'Staff salary schedules, allowances, deductions & payslips', price: 240 },
   { id: 'siren', label: 'Siren & Bell Console', desc: 'Automated period bells & emergency campus alarms', price: 120 },
   { id: 'evoting', label: 'E-Voting Portal', desc: 'Paperless, auditable Student Council (SRC) elections', price: 150 },
-  { id: 'inventory', label: 'Inventory Registry', desc: 'Textbooks, science lab supplies & asset tracking', price: 180 }
+  { id: 'inventory', label: 'Inventory Registry', desc: 'Textbooks, science lab supplies & asset tracking', price: 180 },
+  { id: 'users', label: 'User Roles & Access Control', desc: 'Granular permissions, multi-role security & user directory', price: 160 },
+  { id: 'settings', label: 'School Settings & Branding', desc: 'Institutional crest, grading systems, terms & audit trails', price: 140 }
 ];
 
 const ADD_ON_SERVICES = [
@@ -131,6 +125,43 @@ export default function PitchProposalStudio({
   const [discountPercent, setDiscountPercent] = useState(10);
   const [proposalNotes, setProposalNotes] = useState('Includes dedicated onboarding and termly system updates. Valid for 30 days from presentation.');
   const [proposalRef, setProposalRef] = useState(() => `PROP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
+
+  // Adjustable Module Prices State
+  const [modulePrices, setModulePrices] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    DEFAULT_MODULES.forEach(m => { initial[m.id] = m.price; });
+    return initial;
+  });
+
+  const getModulePrice = (modId: string) => {
+    return typeof modulePrices[modId] === 'number' ? modulePrices[modId] : (DEFAULT_MODULES.find(m => m.id === modId)?.price || 0);
+  };
+
+  const updateModulePrice = (modId: string, price: number) => {
+    setModulePrices(prev => ({
+      ...prev,
+      [modId]: Math.max(0, price)
+    }));
+  };
+
+  const resetModulePrices = () => {
+    const initial: Record<string, number> = {};
+    DEFAULT_MODULES.forEach(m => { initial[m.id] = m.price; });
+    setModulePrices(initial);
+    showToast('Module prices reset to catalogue defaults.', 'info');
+  };
+
+  const applyBulkPriceMultiplier = (multiplier: number) => {
+    setModulePrices(prev => {
+      const updated: Record<string, number> = {};
+      DEFAULT_MODULES.forEach(m => {
+        const current = typeof prev[m.id] === 'number' ? prev[m.id] : m.price;
+        updated[m.id] = Math.round(current * multiplier);
+      });
+      return updated;
+    });
+    showToast(`Adjusted all module prices by ${multiplier > 1 ? '+' : ''}${Math.round((multiplier - 1) * 100)}%.`, 'info');
+  };
 
   // Saved proposals
   const [savedProposals, setSavedProposals] = useState<ProposalItem[]>(() => {
@@ -221,10 +252,9 @@ export default function PitchProposalStudio({
     // Per-student scaling factor (nominal overhead)
     const studentScale = Math.max(0, (studentsCount - 200) * 1.5);
 
-    // Modules cost
+    // Modules cost (using adjustable module rates)
     const modulesCost = selectedModules.reduce((acc, modId) => {
-      const m = DEFAULT_MODULES.find(x => x.id === modId);
-      return acc + (m?.price || 0);
+      return acc + getModulePrice(modId);
     }, 0);
 
     // Addons cost (one-time setup / annual bundle)
@@ -256,7 +286,7 @@ export default function PitchProposalStudio({
       perStudentPerTerm,
       perStudentPerDay
     };
-  }, [tier, studentsCount, selectedModules, selectedAddOns, discountPercent, billingFrequency]);
+  }, [tier, studentsCount, selectedModules, modulePrices, selectedAddOns, discountPercent, billingFrequency]);
 
   // Client ROI Calculator State
   const [currentPaperReamsCost, setCurrentPaperReamsCost] = useState(2400); // 24 boxes @ 100
@@ -291,7 +321,7 @@ export default function PitchProposalStudio({
     };
   }, [currentPaperReamsCost, currentTonerCost, currentReportPrintingFee, uncollectedArrearsPerTerm, staffHoursManualGrading, pricingCalculation]);
 
-  // 22 Comprehensive Strategic Pitch Slides covering All 14 Modules
+  // 25 Comprehensive Strategic Pitch Slides covering All 17 Modules
   const PITCH_SLIDES = [
     {
       number: '01',
@@ -335,19 +365,19 @@ export default function PitchProposalStudio({
       number: '03',
       tag: 'MASTER MODULES ECOSYSTEM',
       isOverviewHub: true,
-      title: 'Complete Suite of 14 Modular Functional Systems',
-      headline: 'A fully integrated ecosystem covering every academic, financial, and operational requirement.',
+      title: 'Complete Suite of 17 Modular Functional Systems',
+      headline: 'A fully integrated ecosystem covering every academic, financial, operational, and governance requirement.',
       points: [
-        'Academic Core: Students Biodata, Academics Portal, Timetables, Daily Attendance, Continuous SBA Results, Exam Analysis & Automated Reports.',
-        'Finance & Revenue: Tuition Billing, Mobile Money (MTN/Telecel/AT), Instant Digital Receipts, Arrears Ledgers & Staff Payroll.',
-        'Campus & Facilities: Boarding/Hostel Dorms, Exeat Gate Passes, Store Inventory & Asset Audits.',
-        'Governance & Staff: Teacher Supervision Duty Rosters, Digital Lesson Notes Vetting, Siren Console & SRC E-Voting.'
+        'Academic Core: Students Records, Academics Portal, Timetables, Daily Attendance, Continuous SBA Results, Exam Analysis & Automated Reports.',
+        'Finance & Operations: Tuition Billing, Mobile Money (MTN/Telecel/AT), Tamper Receipts, Arrears Ledgers, Staff Payroll & Inventory Assets.',
+        'Campus & Facilities: Boarding/Hostel Dorms, Exeat Gate Passes, Automated Campus Siren & Bell Console.',
+        'Governance & Staff: Teacher Supervision Duty Rosters, Digital Lesson Notes Vetting, SRC E-Voting, Multi-Role RBAC & Institutional Branding.'
       ],
-      statistic: '14 Integrated Modules',
+      statistic: '17 Integrated Modules',
       statisticSub: 'Selectively authorize modules per department or deploy the full institutional suite.',
       speakerNotes: {
         ask: '"Which specific area of your school currently requires the most manual supervision from your office?"',
-        metric: 'All 14 modules share the same unified student and staff database with zero double-entry of data.',
+        metric: 'All 17 modules share the same unified student and staff database with zero double-entry of data.',
         objection: 'Explain that the school does not have to turn on every module on Day 1; modules can be enabled progressively.'
       }
     },
@@ -542,28 +572,49 @@ export default function PitchProposalStudio({
     },
     {
       number: '13',
-      tag: 'MODULE 10: STAFF DUTY & LESSONS',
+      tag: 'MODULE 10: STAFF DUTY ROSTER',
       moduleKey: 'duty_roster',
-      persona: 'For Headteachers, HODs & Staff Coordinators',
-      title: 'Staff Supervision Duty Rosters & Digital Lesson Notes Vetting',
-      headline: 'Automate weekly teacher supervision rotations and streamline electronic lesson plan submissions and endorsements.',
+      persona: 'For Headteachers, Deputy Heads & Staff Coordinators',
+      title: 'Automated Campus Supervision Rotas & Activity Oversight',
+      headline: 'Distribute weekly supervision duties transparently across faculty and eliminate campus blindspots.',
       points: [
-        'Weekly Supervision Rosters: Automatically assign teachers to morning assembly, canteen, playground, and gate duty.',
-        'Electronic Lesson Notes: Teachers submit weekly lesson objectives, teaching materials, and assessment plans digitally.',
-        'HOD & Headteacher Vetting: Review, comment on, and endorse lesson notes online before the academic week begins.',
-        'Lesson Delivery Archive: Permanent digital archive of lesson materials for inspection and teacher appraisals.'
+        'Automated Supervision Rotas: Schedule faculty to morning devotion, canteen, campus grounds, and gate duties without favoritism.',
+        'Fair Distribution Algorithm: Prevents overburdening junior teachers by balancing weekend and weekday rotations equally.',
+        'Mobile Check-in Telemetry: Duty teachers log campus observations and handover notes directly from their smartphones.',
+        'Campus Discipline Logs: Record playground incidents and student decorum notes for administrative review.'
       ],
-      statistic: 'Zero Lost Lesson Books',
-      statisticSub: 'Replaces bulky physical lesson notebooks with streamlined digital submissions and transparent vetting.',
+      statistic: '100% Supervision Coverage',
+      statisticSub: 'Ensures zero campus blindspots and enhances student discipline and parent trust.',
       speakerNotes: {
-        ask: '"How much time does the Headteacher spend collecting and signing physical lesson note books on Monday mornings?"',
-        metric: 'HODs and Heads can vet lesson plans on their phones over the weekend and give instant structured feedback.',
-        objection: 'Teachers love typing lesson plans on phones/laptops instead of handwriting dozens of pages each Sunday.'
+        ask: '"Who coordinates staff supervision duty rotas at your school, and how do you track if teachers actually reported to their posts?"',
+        metric: 'Demonstrate automated duty rota generation: schedules an entire term of faculty duties in seconds.',
+        objection: 'Teachers receive their scheduled duty weeks on their personal calendar notifications.'
       }
     },
     {
       number: '14',
-      tag: 'MODULE 11: PAYROLL & COMPENSATION',
+      tag: 'MODULE 11: LESSON NOTES & VETTING',
+      moduleKey: 'lesson_notes',
+      persona: 'For Heads of Department (HODs) & Academic Deans',
+      title: 'Electronic Lesson Plan Submissions, Vetting & Approvals',
+      headline: 'Replace bulky handwritten lesson notebooks with structured electronic submissions and one-click feedback.',
+      points: [
+        'Paperless Lesson Note Submissions: Teachers submit curriculum strands, specific learning objectives, TLMs, and evaluation plans.',
+        'Remote Weekend Vetting Workflow: HODs and Headteachers vet, comment on, and endorse lesson plans from home with 1 click.',
+        'Curriculum Standards Alignment: Pre-loaded templates adhere to GES, NaCCA, and international syllabus formats.',
+        'Permanent Institutional Repository: Build a reusable institutional archive of exemplary lesson plans for future academic years.'
+      ],
+      statistic: 'Zero Lost Lesson Books',
+      statisticSub: 'Saves teachers 4 hours of tedious handwriting each weekend, shifting focus to active classroom delivery.',
+      speakerNotes: {
+        ask: '"How many hours does the Headteacher spend on Monday mornings vetting and physically signing physical lesson note books?"',
+        metric: 'HODs can vet lesson plans over the weekend on their phones and return structured pedagogical feedback before Monday assembly.',
+        objection: 'Teachers love typing lesson plans on phones/laptops instead of handwriting dozens of pages each week.'
+      }
+    },
+    {
+      number: '15',
+      tag: 'MODULE 12: PAYROLL & COMPENSATION',
       moduleKey: 'payroll',
       persona: 'For Bursars, School Directors & HR Officers',
       title: 'Automated Teacher Salary Schedules, Deductions & Payslips',
@@ -583,8 +634,8 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '15',
-      tag: 'MODULE 12: SIREN & CAMPUS BELL',
+      number: '16',
+      tag: 'MODULE 13: SIREN & CAMPUS BELL',
       moduleKey: 'siren',
       persona: 'For School Administrators, Prefects & Gate Personnel',
       title: 'Computerized Automated Period Bell & Emergency Siren Console',
@@ -604,8 +655,8 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '16',
-      tag: 'MODULE 13: SRC E-VOTING',
+      number: '17',
+      tag: 'MODULE 14: SRC E-VOTING',
       moduleKey: 'evoting',
       persona: 'For Electoral Commissioners, Prefects & Students',
       title: 'Paperless Student Council (SRC) Elections & Live Ballots',
@@ -625,8 +676,8 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '17',
-      tag: 'MODULE 14: INVENTORY REGISTRY',
+      number: '18',
+      tag: 'MODULE 15: INVENTORY REGISTRY',
       moduleKey: 'inventory',
       persona: 'For Storekeepers, Librarians & Science Lab Masters',
       title: 'Store Assets, Textbooks, Science Lab Supplies & Audits',
@@ -646,7 +697,49 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '18',
+      number: '19',
+      tag: 'MODULE 16: USER ROLES & ACCESS CONTROL',
+      moduleKey: 'users',
+      persona: 'For Proprietors, Principals & IT Administrators',
+      title: 'Multi-Role Security, Staff Permissions & System Audit Trails',
+      headline: 'Enforce bank-grade data privacy with strict role isolation between Headmasters, Bursars, Teachers, and Guardians.',
+      points: [
+        'Granular Permission Matrix: Ensure teachers only view scores for their assigned classes; tuition ledgers remain confidential.',
+        'Rapid Staff Onboarding: Issue secure login credentials, scoped usernames, and magic links with zero IT complexity.',
+        'Parent & Student Profiles: Scoped portal access allowing parents to check student progress without exposing school data.',
+        'Immutable Activity Audit Log: Track every login, score modification, and fee entry with exact staff timestamp.'
+      ],
+      statistic: 'Zero Data Leaks',
+      statisticSub: 'Strict RBAC isolation guarantees total administrative control and prevents score tampering.',
+      speakerNotes: {
+        ask: '"Can your teachers currently view fee collection balances, or could someone alter continuous assessment scores undetected?"',
+        metric: 'Show the User Management terminal with granular role toggle switches and complete audit activity trails.',
+        objection: 'Users can only access features authorized for their explicit role; permissions can be adjusted anytime.'
+      }
+    },
+    {
+      number: '20',
+      tag: 'MODULE 17: SCHOOL SETTINGS & BRANDING',
+      moduleKey: 'settings',
+      persona: 'For School Boards, Principals & Managing Directors',
+      title: 'Institutional Crest Branding, Academic Cycles & System Configurations',
+      headline: 'Tailor the entire platform to your school\'s unique identity, grading scales, term schedules, and official crest.',
+      points: [
+        'Custom Crest & Color Branding: Display your school\'s crest, motto, and theme colors on report cards, receipts, and portals.',
+        'Flexible Academic Cycles: Configure 3-term or 2-semester academic calendars with custom vacation and resumption dates.',
+        'Custom Grading Benchmark Scales: Customize grade boundaries (A1-F9, Cambridge A*-U, or percentages) to match your standard.',
+        'Automated Database Snapshots: Download full school data archives or restore historical records with 1-click administrative control.'
+      ],
+      statistic: '100% Brand Customization',
+      statisticSub: 'Projects an elite, prestigious institutional identity that parents admire and competitors cannot match.',
+      speakerNotes: {
+        ask: '"Does your school have unique grading benchmarks or a distinctive motto and crest you want reflected on all parent documents?"',
+        metric: 'Show the School Settings panel where changing the crest and colors updates every report card and receipt in real time.',
+        objection: 'Any grading formula or calendar division is supported out of the box.'
+      }
+    },
+    {
+      number: '21',
       tag: 'GUARDIAN ENGAGEMENT',
       title: 'Elevate Institutional Prestige & Deepen Parent Trust',
       headline: 'Turn your school into the premium choice in your district with modern parent communication.',
@@ -665,7 +758,7 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '19',
+      number: '22',
       tag: 'RESILIENT ENGINEERING',
       title: 'Built for Africa: Offline-First Operation with Cloud Sync',
       headline: 'Power cuts and fiber disruptions will never halt your administrative workflow.',
@@ -684,7 +777,7 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '20',
+      number: '23',
       tag: 'SECURITY & SOVEREIGNTY',
       title: 'Bank-Grade Security, Cryptographic Licenses & Data Privacy',
       headline: 'Your school\'s proprietary academic and financial data remains 100% under your ownership.',
@@ -703,7 +796,7 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '21',
+      number: '24',
       tag: 'PROVEN ROI & ECONOMICS',
       title: 'The Financial Equation: Pays for Itself in Less Than 45 Days',
       headline: 'SchoolSphere is not an expense — it is an active profit center for your institution.',
@@ -722,7 +815,7 @@ export default function PitchProposalStudio({
       }
     },
     {
-      number: '22',
+      number: '25',
       tag: 'WHITE-GLOVE ONBOARDING',
       title: 'Our 3-Day Turnkey Transition Plan: Zero Disruption',
       headline: 'We handle the entire setup, historical data import, and staff training so you don\'t lift a finger.',
@@ -788,6 +881,7 @@ export default function PitchProposalStudio({
       tier,
       currency,
       selectedModules,
+      modulePrices,
       addOns: selectedAddOns,
       discountPercent,
       billingFrequency,
@@ -812,6 +906,13 @@ export default function PitchProposalStudio({
     setTier(prop.tier);
     setCurrency((prop.currency as any) || 'GHS');
     setSelectedModules(prop.selectedModules || DEFAULT_MODULES.map(m => m.id));
+    if (prop.modulePrices) {
+      setModulePrices(prop.modulePrices);
+    } else {
+      const initial: Record<string, number> = {};
+      DEFAULT_MODULES.forEach(m => { initial[m.id] = m.price; });
+      setModulePrices(initial);
+    }
     setSelectedAddOns(prop.addOns || []);
     setDiscountPercent(prop.discountPercent || 0);
     setBillingFrequency(prop.billingFrequency || 'annual');
@@ -845,7 +946,8 @@ SchoolSphere is pleased to present this institutional proposal to modernize the 
 AUTHORIZED MODULE SCOPE:
 ${selectedModules.map(mId => {
   const m = DEFAULT_MODULES.find(x => x.id === mId);
-  return `• ${m?.label || mId}: ${m?.desc || ''}`;
+  const p = getModulePrice(mId);
+  return `• ${m?.label || mId} (${currencySymbol}${p}/term): ${m?.desc || ''}`;
 }).join('\n')}
 
 INCLUDED PROFESSIONAL SERVICES & ADD-ONS:
@@ -955,7 +1057,7 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
         {/* Studio Sub-Navigation Bar */}
         <div className="mt-6 pt-5 border-t border-indigo-900/60 flex flex-wrap items-center gap-2">
           {[
-            { id: 'pitch_deck', label: 'Client Pitch Deck', icon: Presentation, badge: '22 Slides (All 14 Modules)' },
+            { id: 'pitch_deck', label: 'Client Pitch Deck', icon: Presentation, badge: '25 Slides (All 17 Modules)' },
             { id: 'architect', label: 'Proposal Architect', icon: Calculator, badge: 'Quote Builder' },
             { id: 'document', label: 'Formal Proposal Document', icon: FileText, badge: 'PDF & Print' },
             { id: 'roi', label: 'Client ROI & Savings', icon: TrendingUp, badge: 'Calculations' },
@@ -1085,14 +1187,26 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             {/* Primary Slide Display */}
             <div className={cn('bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-md relative overflow-hidden flex flex-col justify-between min-h-[460px]', showPresenterNotes ? 'lg:col-span-8' : 'lg:col-span-12')}>
-              {/* Subtle top watermark */}
-              <div className="absolute top-4 right-6 text-right opacity-30 select-none">
-                <span className="text-6xl font-black text-slate-200 tracking-tighter block leading-none">
-                  {currentSlide.number}
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
-                  SchoolSphere Pitch
-                </span>
+              {/* Subtle top watermark with App Logo */}
+              <div className="absolute top-4 right-6 text-right select-none flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-slate-900 p-1 flex items-center justify-center shrink-0 shadow-xs border border-slate-700">
+                  <img
+                    src="/sch sphere logo1.png"
+                    alt="SchoolSphere"
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div className="text-right">
+                  <span className="text-3xl sm:text-4xl font-black text-slate-200 tracking-tighter block leading-none">
+                    {currentSlide.number}
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">
+                    SchoolSphere Pitch
+                  </span>
+                </div>
               </div>
 
               <div>
@@ -1130,8 +1244,8 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                                 <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-100/60 px-1.5 py-0.5 rounded">
                                   MODULE {String(modIdx + 1).padStart(2, '0')}
                                 </span>
-                                <span className="text-[10px] text-slate-400 group-hover:text-indigo-600 font-bold flex items-center gap-0.5">
-                                  Inspect Slide →
+                                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded group-hover:border-indigo-300">
+                                  {currencySymbol}{getModulePrice(mod.id)}/term
                                 </span>
                               </div>
                               <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-900">
@@ -1473,26 +1587,65 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
               </div>
             </div>
 
-            {/* Included Modules Checklist */}
+            {/* Included Modules Checklist with Adjustable Pricing */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
-                    Authorized Module Entitlements
+                    Authorized Module Entitlements & Pricing ({selectedModules.length}/17 Selected)
                   </h3>
                   <p className="text-[10px] text-slate-500">
-                    Select features included in this school's license agreement.
+                    Select features included and adjust the specific termly price for any module to tailor the commercial quote.
                   </p>
                 </div>
-                <div className="flex gap-2 text-[10px]">
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Quick Rates:</span>
                   <button
-                    onClick={() => setSelectedModules(DEFAULT_MODULES.map(m => m.id))}
-                    className="text-indigo-600 font-bold hover:underline cursor-pointer"
+                    type="button"
+                    onClick={resetModulePrices}
+                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded cursor-pointer transition"
                   >
-                    Select All
+                    Catalog Defaults
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyBulkPriceMultiplier(1.15)}
+                    className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded cursor-pointer transition"
+                  >
+                    +15%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyBulkPriceMultiplier(0.85)}
+                    className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded cursor-pointer transition"
+                  >
+                    -15%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModulePrices(prev => {
+                        const updated: Record<string, number> = {};
+                        DEFAULT_MODULES.forEach(m => { updated[m.id] = 0; });
+                        return updated;
+                      });
+                      showToast('All module fees set to 0 (Bundled Free with Base License).', 'info');
+                    }}
+                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded cursor-pointer transition"
+                  >
+                    Included Free
                   </button>
                   <span className="text-slate-300">|</span>
                   <button
+                    type="button"
+                    onClick={() => setSelectedModules(DEFAULT_MODULES.map(m => m.id))}
+                    className="text-indigo-600 font-bold hover:underline cursor-pointer"
+                  >
+                    All 17
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
                     onClick={() => setSelectedModules(['students', 'academic', 'results', 'reports', 'fees'])}
                     className="text-slate-500 font-bold hover:underline cursor-pointer"
                   >
@@ -1504,38 +1657,70 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {DEFAULT_MODULES.map(mod => {
                   const isChecked = selectedModules.includes(mod.id);
+                  const currentPrice = getModulePrice(mod.id);
                   return (
-                    <label
+                    <div
                       key={mod.id}
                       className={cn(
-                        'flex items-start gap-2.5 p-3 rounded-xl border text-left cursor-pointer transition select-none',
+                        'p-3 rounded-2xl border text-left transition select-none flex flex-col justify-between gap-2.5',
                         isChecked
-                          ? 'bg-indigo-50/40 border-indigo-200'
+                          ? 'bg-indigo-50/40 border-indigo-200 ring-1 ring-indigo-100 shadow-2xs'
                           : 'bg-slate-50/60 border-slate-200 hover:border-slate-300'
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isChecked) {
-                            setSelectedModules(selectedModules.filter(id => id !== mod.id));
-                          } else {
-                            setSelectedModules([...selectedModules, mod.id]);
-                          }
-                        }}
-                        className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      />
-                      <div>
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-bold text-slate-800">{mod.label}</span>
-                          <span className="text-[10px] font-bold text-slate-400">+{currencySymbol}{mod.price}</span>
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setSelectedModules(selectedModules.filter(id => id !== mod.id));
+                            } else {
+                              setSelectedModules([...selectedModules, mod.id]);
+                            }
+                          }}
+                          className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-slate-800">{mod.label}</span>
+                            <span className={cn(
+                              "text-[10px] font-black px-1.5 py-0.5 rounded border",
+                              isChecked
+                                ? "bg-indigo-100 text-indigo-800 border-indigo-200"
+                                : "bg-slate-100 text-slate-500 border-slate-200"
+                            )}>
+                              {currencySymbol}{currentPrice}/term
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-normal mt-0.5">
+                            {mod.desc}
+                          </p>
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-normal mt-0.5">
-                          {mod.desc}
-                        </p>
+                      </label>
+
+                      {/* Adjustable Price Input on each module */}
+                      <div
+                        className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2 bg-white/80 -mx-1 -mb-1 px-2.5 py-1.5 rounded-xl"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">
+                          Adjust Module Fee:
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-bold text-slate-600">{currencySymbol}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="10"
+                            value={currentPrice}
+                            onChange={(e) => updateModulePrice(mod.id, parseFloat(e.target.value) || 0)}
+                            className="w-20 px-2 py-1 text-xs font-black text-slate-900 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden text-right shadow-2xs"
+                          />
+                          <span className="text-[9px] text-slate-400 font-medium">/term</span>
+                        </div>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
@@ -1756,19 +1941,35 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
             id="proposal-document-content"
             className="bg-white border border-slate-200 rounded-3xl p-8 sm:p-12 shadow-sm max-w-4xl mx-auto space-y-8 text-slate-800"
           >
-            {/* Header / Letterhead */}
+            {/* Header / Letterhead with Official App Logo */}
             <div className="border-b-2 border-slate-900 pb-6 flex flex-col sm:flex-row justify-between items-start gap-4">
-              <div>
-                <span className="text-2xl font-black text-slate-900 tracking-tighter uppercase block">
-                  SCHOOLSPHERE ENTERPRISE
-                </span>
-                <span className="text-xs font-black text-indigo-600 tracking-widest uppercase block mt-0.5">
-                  INSTITUTIONAL PLATFORM DIRECTORE
-                </span>
-                <p className="text-[11px] text-slate-500 mt-2 font-medium">
-                  Support & Engineering Directorate • amoakoemmanuel@hotmail.com<br />
-                  Hotlines: 0551187045 / 0554234590 • Instance: schoolsphere-academy-live-prod
-                </p>
+              <div className="flex items-start gap-4">
+                <div
+                  style={{ backgroundColor: '#ffffff', borderWidth: '0px', borderStyle: 'none' }}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1 flex items-center justify-center shrink-0 border-none"
+                >
+                  <img
+                    src="/sch sphere logo1.png"
+                    alt="SchoolSphere Official Logo"
+                    style={{ borderColor: '#ffffff' }}
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div>
+                  <span className="text-2xl font-black text-slate-900 tracking-tighter uppercase block">
+                    SCHOOLSPHERE ENTERPRISE
+                  </span>
+                  <span className="text-xs font-black text-indigo-600 tracking-widest uppercase block mt-0.5">
+                    INSTITUTIONAL PLATFORM DIRECTORATE
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-2 font-medium">
+                    Support & Engineering Directorate • amoakoemmanuel@hotmail.com<br />
+                    Hotlines: 0551187045 / 0554234590 • Instance: schoolsphere-academy-live-prod
+                  </p>
+                </div>
               </div>
 
               <div className="text-left sm:text-right text-xs space-y-1">
@@ -1824,16 +2025,27 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
 
             {/* Section 2: Authorized Modules Scope */}
             <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider border-b border-slate-100 pb-1">
-                2. Authorized Scope of Work & Solution Modules
+              <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider border-b border-slate-100 pb-1 flex items-center justify-between">
+                <span>2. Authorized Scope of Work & Solution Modules</span>
+                <span className="text-[10px] font-bold text-slate-500 lowercase font-mono">
+                  {selectedModules.length} modules activated
+                </span>
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 {selectedModules.map(modId => {
                   const m = DEFAULT_MODULES.find(x => x.id === modId);
+                  const price = getModulePrice(modId);
                   return (
-                    <div key={modId} className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/50">
-                      <span className="font-bold text-slate-900 block">{m?.label || modId}</span>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{m?.desc}</p>
+                    <div key={modId} className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 flex flex-col justify-between gap-1.5 shadow-2xs">
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 block">{m?.label || modId}</span>
+                          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md shrink-0">
+                            {currencySymbol}{price}/term
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 leading-normal">{m?.desc}</p>
+                      </div>
                     </div>
                   );
                 })}
@@ -1983,7 +2195,20 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                     <p className="text-xs font-bold text-slate-900 mt-1">Creator Studio Directorate</p>
                   </div>
                   <div className="border-b border-slate-400 pt-6"></div>
-                  <div className="text-[10px] text-slate-600 space-y-1">
+                  <div className="text-[10px] text-slate-600 space-y-2">
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl w-fit">
+                      <img
+                        src="/sch sphere logo1.png"
+                        alt="Official Seal"
+                        className="w-5 h-5 object-contain"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700">
+                        Authenticated Enterprise Issuance
+                      </span>
+                    </div>
                     <p>Authorized Signature: _________________________</p>
                     <p>Name: Director Emmanuel Mensah</p>
                     <p>Date: {new Date().toLocaleDateString('en-GB')}</p>

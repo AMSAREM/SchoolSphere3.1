@@ -1,6 +1,8 @@
 import Dexie, { type Table } from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo } from 'react';
+import type { ProposalItem, ProposalFile } from '../types';
+export type { ProposalItem, ProposalFile };
 
 export interface School {
   id: string;
@@ -593,6 +595,7 @@ export class SchoolDB extends Dexie {
   boardingExeats!: Table<BoardingExeat>;
   boardingRollCalls!: Table<BoardingRollCall>;
   boardingMedicalLogs!: Table<BoardingMedicalLog>;
+  clientProposals!: Table<ProposalItem>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -815,6 +818,37 @@ export class SchoolDB extends Dexie {
       boardingExeats: 'id, schoolId, studentId, houseId, passCode, status, departureDate, expectedReturnDate',
       boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
       boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status'
+    });
+    this.version(19).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date',
+      salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
+      payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
+      salaryAdvances: 'id, schoolId, staffId, status, requestedAt',
+      boardingHouses: 'id, schoolId, name, gender, housemasterName',
+      boardingRooms: 'id, schoolId, houseId, roomNumber, floor',
+      boardingAllocations: 'id, schoolId, studentId, houseId, roomId, status, assignedAt',
+      boardingExeats: 'id, schoolId, studentId, houseId, passCode, status, departureDate, expectedReturnDate',
+      boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
+      boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status',
+      clientProposals: 'id, schoolName, contactPerson, status, createdAt, updatedAt'
     });
   }
 }

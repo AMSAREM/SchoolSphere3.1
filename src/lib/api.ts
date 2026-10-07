@@ -1,5 +1,5 @@
 import { supabase, getCurrentSchoolId } from './supabase';
-import { db, normalizeStudentRecord, normalizeFeeTransactionRecord, FEE_TYPES } from '../db/schema';
+import { db, normalizeStudentRecord, normalizeFeeTransactionRecord, FEE_TYPES, type ProposalItem, type ProposalFile } from '../db/schema';
 import { 
   reconcileClassesInDexie, 
   reconcileTeachersInDexie, 
@@ -5039,5 +5039,160 @@ export const boardingApi = {
     return data;
   }
 };
+
+// ==========================================
+// 23. CLIENT PITCH PROPOSALS & FILES API
+// ==========================================
+export const proposalsApi = {
+  getAll: async (): Promise<ProposalItem[]> => {
+    try {
+      const res = await fetch('/api/proposals', {
+        headers: getApiHeaders()
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && Array.isArray(data.proposals)) {
+        // Cache to Dexie database
+        try {
+          await db.clientProposals.clear();
+          await db.clientProposals.bulkPut(data.proposals);
+        } catch {}
+        return data.proposals;
+      }
+    } catch (e) {
+      console.warn('Backend proposals fetch warning, checking Dexie local DB:', e);
+    }
+
+    // Offline / fallback to Dexie
+    try {
+      const local = await db.clientProposals.toArray();
+      if (local && local.length > 0) return local;
+    } catch {}
+
+    // Fallback to localStorage
+    try {
+      const stored = localStorage.getItem('esepa_creator_proposals_v1');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+
+    return [];
+  },
+
+  save: async (proposal: ProposalItem): Promise<ProposalItem> => {
+    // 1. Save to local Dexie database immediately
+    try {
+      await db.clientProposals.put(proposal);
+    } catch {}
+
+    // 2. Persist to Backend Server / Supabase
+    try {
+      const res = await fetch('/api/proposals', {
+        method: 'POST',
+        headers: {
+          ...getApiHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(proposal)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.proposal) {
+        try {
+          await db.clientProposals.put(data.proposal);
+        } catch {}
+        return data.proposal;
+      }
+    } catch (e) {
+      console.warn('Backend proposals save warning:', e);
+    }
+
+    return proposal;
+  },
+
+  delete: async (id: string): Promise<boolean> => {
+    try {
+      await db.clientProposals.delete(id);
+    } catch {}
+
+    try {
+      const res = await fetch(`/api/proposals/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: getApiHeaders()
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok && data.success;
+    } catch {
+      return true;
+    }
+  },
+
+  uploadFile: async (proposalId: string, filePayload: {
+    fileName: string;
+    fileData: string;
+    fileType: string;
+    fileSize: number;
+    category?: string;
+    description?: string;
+  }): Promise<{ file: ProposalFile; proposal: ProposalItem }> => {
+    const res = await fetch(`/api/proposals/${encodeURIComponent(proposalId)}/files`, {
+      method: 'POST',
+      headers: {
+        ...getApiHeaders(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(filePayload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to upload file to database');
+    }
+
+    if (data.proposal) {
+      try {
+        await db.clientProposals.put(data.proposal);
+      } catch {}
+    }
+
+    return { file: data.file, proposal: data.proposal };
+  },
+
+  deleteFile: async (proposalId: string, fileId: string): Promise<boolean> => {
+    const res = await fetch(`/api/proposals/${encodeURIComponent(proposalId)}/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: getApiHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.proposal) {
+      try {
+        await db.clientProposals.put(data.proposal);
+      } catch {}
+    }
+    return res.ok && data.success;
+  },
+
+  saveDocumentAsFile: async (proposalId: string, payload: {
+    htmlContent: string;
+    title: string;
+    fileName?: string;
+  }): Promise<{ file: ProposalFile; proposal: ProposalItem }> => {
+    const res = await fetch(`/api/proposals/${encodeURIComponent(proposalId)}/save-document-file`, {
+      method: 'POST',
+      headers: {
+        ...getApiHeaders(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to save proposal document file to database');
+    }
+    if (data.proposal) {
+      try {
+        await db.clientProposals.put(data.proposal);
+      } catch {}
+    }
+    return { file: data.file, proposal: data.proposal };
+  }
+};
+
 
 

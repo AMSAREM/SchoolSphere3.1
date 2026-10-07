@@ -972,14 +972,6 @@ export default function SalesSuite({
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 block mb-0.5">CONVERSATION NOTES</label>
-                <textarea
-                  placeholder="Inquired about grading terminal..." rows={2}
-                  value={leadNotes} onChange={(e) => setLeadNotes(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-hidden resize-none"
-                />
-              </div>
               <button type="submit" className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition">
                 Register Lead
               </button>

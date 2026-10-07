@@ -65,11 +65,17 @@ const AVAILABLE_MODULES = [
   { id: 'attendance', label: 'Attendance Terminal', description: 'Daily attendance & tracking logs' },
   { id: 'results', label: 'Results Terminal', description: 'Continuous assessment entry & marks registry' },
   { id: 'exam_analysis', label: 'Exam Analysis', description: 'Subject grading & metrics visualizers' },
-  { id: 'reports', label: 'Reports Terminal', description: 'Automated student term report sheets' },
+  { id: 'reports', label: 'Reports Terminal', description: 'Automated student term report cards' },
   { id: 'fees', label: 'Fees & Payments', description: 'Tuition invoicing & transaction receipts' },
+  { id: 'boarding', label: 'Boarding & Dormitories', description: 'Hostels, dorm capacities & exeat gate passes' },
+  { id: 'duty_roster', label: 'Staff Duty Roster', description: 'Teacher weekly supervision rotas & oversight' },
+  { id: 'lesson_notes', label: 'Lesson Notes & Vetting', description: 'Electronic lesson plans & HOD endorsements' },
+  { id: 'payroll', label: 'Payroll & Compensation', description: 'Staff salaries, allowances & payslips' },
   { id: 'siren', label: 'Siren Console', description: 'Public bells and emergency alarms' },
   { id: 'evoting', label: 'E-Voting Portal', description: 'Student Representative Council elections' },
-  { id: 'inventory', label: 'Inventory Registry', description: 'Assets & store stock audit registry' }
+  { id: 'inventory', label: 'Inventory Registry', description: 'Assets & store stock audit registry' },
+  { id: 'users', label: 'User Roles & Access Control', description: 'Granular permissions & user directory' },
+  { id: 'settings', label: 'School Settings & Branding', description: 'Institutional crest, grading & configurations' }
 ];
 
 const SECTIONS = [
