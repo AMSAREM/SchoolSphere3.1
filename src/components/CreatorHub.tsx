@@ -31,7 +31,8 @@ import {
   Sparkles,
   ChevronRight,
   LogOut,
-  Zap
+  Zap,
+  Presentation
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -53,6 +54,7 @@ import CoreSuite from './creator/CoreSuite';
 import SalesSuite from './creator/SalesSuite';
 import ServicesSuite from './creator/ServicesSuite';
 import SecuritySuite from './creator/SecuritySuite';
+import PitchProposalStudio from './creator/PitchProposalStudio';
 import FrontendTestRunner from './FrontendTestRunner';
 import { getCreatorPanelIdentity } from '../lib/pageMetadata';
 
@@ -80,6 +82,7 @@ const SECTIONS = [
   { id: 'system_configuration', label: 'System Configuration', icon: SlidersHorizontal, category: 'Core Suite' },
 
   // Sales Suite
+  { id: 'pitch_proposal_studio', label: 'Pitch & Proposal Studio', icon: Presentation, category: 'Sales Suite' },
   { id: 'subscription_billing', label: 'Subscription & Billing', icon: CreditCard, category: 'Sales Suite' },
   { id: 'crm', label: 'CRM Leads', icon: Briefcase, category: 'Sales Suite' },
   { id: 'finance', label: 'Finance', icon: DollarSign, category: 'Sales Suite' },
@@ -1298,7 +1301,14 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
                 />
               )}
 
-              {activeSectionObj?.category === 'Sales Suite' && (
+              {activePanel === 'pitch_proposal_studio' && (
+                <PitchProposalStudio
+                  onNavigateCreatorPanel={setActivePanel}
+                  availableModules={AVAILABLE_MODULES}
+                />
+              )}
+
+              {activePanel !== 'pitch_proposal_studio' && activeSectionObj?.category === 'Sales Suite' && (
                 <SalesSuite
                   activePanel={activePanel}
                   licensesList={validLicensesList}
@@ -1340,6 +1350,7 @@ Email: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590`;
                   sendEmailOnGenerate={sendEmailOnGenerate}
                   setSendEmailOnGenerate={setSendEmailOnGenerate}
                   handleSendLicenseEmail={handleSendLicenseEmail}
+                  onNavigatePanel={setActivePanel}
                 />
               )}
 

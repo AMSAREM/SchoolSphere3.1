@@ -353,6 +353,11 @@ export const CREATOR_PANEL_METADATA: Record<string, { title: string; category: s
     category: 'Core Suite',
     subtitle: 'Master academic year defaults, global lockout announcements, and clean client handover utilities.'
   },
+  pitch_proposal_studio: {
+    title: 'Client Pitch & Proposal Studio',
+    category: 'Sales Suite',
+    subtitle: 'Interactive live client presentation mode, tailored commercial proposal architect, feature highlight decks, and institutional quotation exports.'
+  },
   subscription_billing: {
     title: 'Subscription Plans & Tenant Billing',
     category: 'Sales Suite',

@@ -16,7 +16,8 @@ import {
   Key,
   Building,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Presentation
 } from 'lucide-react';
 
 export interface QuickActionItem {
@@ -136,6 +137,15 @@ export function getQuickActionsForRole(
 
   if (isCreatorConsole || normalizedRole === 'creator') {
     return [
+      {
+        id: 'creator-pitch-studio',
+        title: 'Pitch & Proposal Studio',
+        subtitle: 'Decks & client quotes',
+        icon: Presentation,
+        targetView: 'creator',
+        creatorPanel: 'pitch_proposal_studio',
+        theme: TEAL_THEME
+      },
       {
         id: 'creator-generate-license',
         title: 'Generate License Key',

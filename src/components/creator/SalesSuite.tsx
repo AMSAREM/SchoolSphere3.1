@@ -29,7 +29,8 @@ import {
   FileText,
   Share2,
   Info,
-  Phone
+  Phone,
+  Presentation
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { LicenseSyncBanner } from '../LicenseSyncBanner';
@@ -92,6 +93,7 @@ interface SalesSuiteProps {
   sendEmailOnGenerate?: boolean;
   setSendEmailOnGenerate?: (val: boolean) => void;
   handleSendLicenseEmail?: (licenseKey: string, recipientEmail: string, schoolName?: string, contactPerson?: string) => Promise<boolean>;
+  onNavigatePanel?: (panelId: string) => void;
 }
 
 export default function SalesSuite({
@@ -136,7 +138,8 @@ export default function SalesSuite({
   setGenContactPerson = () => {},
   sendEmailOnGenerate = true,
   setSendEmailOnGenerate = () => {},
-  handleSendLicenseEmail
+  handleSendLicenseEmail,
+  onNavigatePanel
 }: SalesSuiteProps) {
 
   // Live Supabase state for CRM leads
@@ -894,14 +897,26 @@ export default function SalesSuite({
   if (activePanel === 'crm') {
     return (
       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-6">
-        <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-            <Briefcase className="w-5 h-5" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Sales Pipeline (CRM)</h2>
+              <p className="text-xs text-slate-500">Track prospective schools through our direct marketing funnel.</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">Sales Pipeline (CRM)</h2>
-            <p className="text-xs text-slate-500">Track prospective schools through our direct marketing funnel.</p>
-          </div>
+
+          {onNavigatePanel && (
+            <button
+              onClick={() => onNavigatePanel('pitch_proposal_studio')}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <Presentation className="w-4 h-4" />
+              <span>Launch Pitch & Proposal Studio</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -984,6 +999,18 @@ export default function SalesSuite({
                     {lead.notes && <p className="text-[10px] text-indigo-600 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/30 font-semibold">{lead.notes}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+                    {onNavigatePanel && (
+                      <button
+                        onClick={() => {
+                          onNavigatePanel('pitch_proposal_studio');
+                        }}
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition"
+                        title="Open this lead in Pitch & Proposal Studio"
+                      >
+                        <Presentation className="w-3 h-3 text-indigo-600" />
+                        <span>Pitch in Studio</span>
+                      </button>
+                    )}
                     <select
                       value={lead.status}
                       onChange={(e) => handleUpdateLeadStatus(lead.id, e.target.value)}
