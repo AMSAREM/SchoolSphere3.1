@@ -102,7 +102,7 @@ export default function BoardingManagement() {
   // Calculations & Statistics
   const activeHouseList = useMemo(() => {
     if (selectedHouseFilter === 'all') return houses;
-    return houses.filter(h => h.id === selectedHouseFilter);
+    return houses.filter(h => String(h.id) === selectedHouseFilter);
   }, [houses, selectedHouseFilter]);
 
   const totalCapacity = useMemo(() => {
@@ -740,7 +740,7 @@ export default function BoardingManagement() {
 
                         <button
                           onClick={() => {
-                            setSelectedHouseFilter(house.id);
+                            setSelectedHouseFilter(String(house.id));
                             setActiveTab('houses_and_rooms');
                           }}
                           className="mt-3 w-full py-1.5 text-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors flex items-center justify-center gap-1"
@@ -912,7 +912,7 @@ export default function BoardingManagement() {
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDeleteHouse(house.id, house.name)}
+                            onClick={() => handleDeleteHouse(String(house.id), house.name)}
                             className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                             title="Delete House"
                           >
@@ -984,7 +984,7 @@ export default function BoardingManagement() {
                                 </button>
                                 {canManage && (
                                   <button
-                                    onClick={() => handleDeleteRoom(room.id, room.roomNumber)}
+                                    onClick={() => handleDeleteRoom(String(room.id), room.roomNumber)}
                                     className="p-1 text-slate-400 hover:text-rose-600 rounded"
                                     title="Delete Room"
                                   >
@@ -1025,7 +1025,7 @@ export default function BoardingManagement() {
                                         {alloc.className} · {alloc.gender}
                                       </div>
                                       <button
-                                        onClick={() => handleVacateBed(alloc.id, alloc.studentName)}
+                                        onClick={() => handleVacateBed(String(alloc.id), alloc.studentName)}
                                         className="mt-2 text-[10px] text-rose-600 dark:text-rose-400 hover:underline inline-flex items-center gap-0.5"
                                       >
                                         <XCircle className="w-3 h-3" />
@@ -2013,7 +2013,7 @@ function RollCallSection({
   schoolId,
   onSaved
 }: RollCallSectionProps) {
-  const [selectedHouseId, setSelectedHouseId] = useState<string>(houses[0]?.id || '');
+  const [selectedHouseId, setSelectedHouseId] = useState<string>(String(houses[0]?.id || ''));
   const [sessionType, setSessionType] = useState<string>('evening');
   const [rollDate, setRollDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2023,7 +2023,7 @@ function RollCallSection({
 
   // Get active house boarders
   const houseBoarders = useMemo(() => {
-    return allocations.filter(a => a.houseId === selectedHouseId);
+    return allocations.filter(a => String(a.houseId) === String(selectedHouseId));
   }, [allocations, selectedHouseId]);
 
   // Pre-fill statuses whenever house or date changes
@@ -2095,7 +2095,7 @@ function RollCallSection({
     if (houseBoarders.length === 0) return;
     setIsSubmitting(true);
 
-    const houseObj = houses.find(h => h.id === selectedHouseId);
+    const houseObj = houses.find(h => String(h.id) === String(selectedHouseId));
     const records = houseBoarders.map(b => ({
       studentId: b.studentId,
       studentName: b.studentName,
@@ -2139,7 +2139,7 @@ function RollCallSection({
               className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold"
             >
               {houses.map(h => (
-                <option key={h.id} value={h.id}>{h.name}</option>
+                <option key={h.id} value={String(h.id)}>{h.name}</option>
               ))}
             </select>
           </div>
