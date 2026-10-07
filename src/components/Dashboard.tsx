@@ -28,7 +28,10 @@ import {
   Info,
   Sparkles,
   X,
-  BellRing
+  BellRing,
+  FileText,
+  Bed,
+  ClipboardCheck
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -1152,6 +1155,58 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                     <ChevronRight className="w-4 h-4 text-[#faae57] transition-colors shrink-0" />
                   </button>
                 )}
+
+                <button 
+                  onClick={() => onViewChange('lesson_notes')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#1c4a59] flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-[#faae57]" />
+                    </div>
+                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Lesson Notes</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
+                </button>
+
+                <button 
+                  onClick={() => onViewChange('payroll')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#faae57]/25 flex items-center justify-center shrink-0">
+                      <Wallet className="w-4 h-4 text-[#1c4a59]" />
+                    </div>
+                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Staff Payroll</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
+                </button>
+
+                <button 
+                  onClick={() => onViewChange('boarding')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#1c4a59] flex items-center justify-center shrink-0">
+                      <Bed className="w-4 h-4 text-[#faae57]" />
+                    </div>
+                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Boarding Management</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
+                </button>
+
+                <button 
+                  onClick={() => onViewChange('duty_roster')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#faae57]/25 flex items-center justify-center shrink-0">
+                      <ClipboardCheck className="w-4 h-4 text-[#1c4a59]" />
+                    </div>
+                    <span className="text-xs sm:text-sm font-bold text-[#1f2a2e]">Duty Roster</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#6a7f84] group-hover:text-[#1c4a59] transition-colors shrink-0" />
+                </button>
               </div>
             </div>
 
