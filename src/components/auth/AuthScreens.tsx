@@ -646,6 +646,45 @@ export function AuthScreens({
                 )}
               </button>
 
+              {/* Quick Demo Access Credentials Helper */}
+              <div className="pt-3 border-t border-[#bac4c6]/60">
+                <p className="text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider mb-2">
+                  Quick Demo Access
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentifier('admin');
+                      setPassword('Password123!');
+                    }}
+                    className="px-2.5 py-2 bg-[#f6f8f7] hover:bg-[#e1c594]/40 border border-[#bac4c6] rounded-lg text-xs font-bold text-[#1c4a59] text-center transition-all cursor-pointer active:scale-95"
+                  >
+                    Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentifier('teacher');
+                      setPassword('Password123!');
+                    }}
+                    className="px-2.5 py-2 bg-[#f6f8f7] hover:bg-[#e1c594]/40 border border-[#bac4c6] rounded-lg text-xs font-bold text-[#1c4a59] text-center transition-all cursor-pointer active:scale-95"
+                  >
+                    Teacher
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentifier('creator');
+                      setPassword('july94bab');
+                    }}
+                    className="px-2.5 py-2 bg-[#f6f8f7] hover:bg-[#e1c594]/40 border border-[#bac4c6] rounded-lg text-xs font-bold text-[#1c4a59] text-center transition-all cursor-pointer active:scale-95"
+                  >
+                    Creator
+                  </button>
+                </div>
+              </div>
+
             </form>
           )}
 

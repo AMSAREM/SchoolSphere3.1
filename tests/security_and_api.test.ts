@@ -233,12 +233,19 @@ const { testSupabaseDB, mockSupabaseClient } = vi.hoisted(() => {
   return { testSupabaseDB: db, mockSupabaseClient: client };
 });
 
-vi.mock('../lib/supabase/server.js', () => ({
+const supabaseServerMock = {
   getSupabaseAdmin: () => mockSupabaseClient,
+  getSupabaseUrlStrict: () => 'https://niavmonyfwqlryppgksy.supabase.co',
+  createAuthenticatedSupabaseClient: () => mockSupabaseClient,
+  getCreatorAuthenticatedClient: async () => mockSupabaseClient,
   getOrCreateSchoolBySlugOrName: async (schoolName: string) => {
     return testSupabaseDB.schools.find(s => s.name === schoolName || s.slug === schoolName) || null;
   }
-}));
+};
+
+vi.mock('../lib/supabase/server.ts', () => supabaseServerMock);
+vi.mock('../lib/supabase/server.js', () => supabaseServerMock);
+vi.mock('../lib/supabase/server', () => supabaseServerMock);
 
 import { 
   generateAuthToken, 

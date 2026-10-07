@@ -121,14 +121,20 @@ export default function LandingPage({
               <span>{isLicensed ? 'License Info' : 'Activate School'}</span>
             </button>
 
-            <button
-              onClick={onEnterSchoolPortal}
+            <a
+              href="/sign-in"
+              onClick={(e) => {
+                if (!e.ctrlKey && !e.metaKey) {
+                  e.preventDefault();
+                  onEnterSchoolPortal();
+                }
+              }}
               className="inline-flex items-center justify-center gap-1 font-bold text-[#1f2a2e] bg-[#faae57] hover:bg-[#e4ae67] active:scale-[0.97] rounded-full shadow-xs transition-all cursor-pointer shrink-0"
               style={{ width: '101px', height: '30px' }}
             >
               <span className="text-[13px] leading-none" style={{ fontSize: '13px' }}>Enter Portal</span>
               <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            </a>
 
             {/* Mobile Navigation Toggle (Phones and small screens < 768px) */}
             <button
@@ -271,13 +277,19 @@ export default function LandingPage({
 
             {/* Primary Action Button Cluster */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button
-                onClick={onEnterSchoolPortal}
+              <a
+                href="/sign-in"
+                onClick={(e) => {
+                  if (!e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    onEnterSchoolPortal();
+                  }
+                }}
                 className="w-full sm:w-auto px-6 py-3.5 text-sm font-bold text-[#1f2a2e] bg-[#faae57] hover:bg-[#e4ae67] rounded-full shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
               >
                 <span>Launch School Portal</span>
                 <ArrowRight className="w-4 h-4" />
-              </button>
+              </a>
 
               <button
                 onClick={onOpenActivation}
@@ -601,9 +613,51 @@ export default function LandingPage({
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-[#faae57] mb-3">Legal & Compliance</h4>
               <ul className="space-y-2 text-xs text-white/80">
-                <li><button onClick={() => setShowPrivacyModal(true)} className="hover:text-white transition-colors cursor-pointer">Privacy Policy</button></li>
-                <li><button onClick={() => setShowTermsModal(true)} className="hover:text-white transition-colors cursor-pointer">Terms of Service</button></li>
-                <li><button onClick={() => setShowSiteMapModal(true)} className="hover:text-white transition-colors cursor-pointer">Site Map</button></li>
+                <li>
+                  <a
+                    href="/privacy"
+                    onClick={(e) => {
+                      if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault();
+                        setShowPrivacyModal(true);
+                        window.history.pushState({ view: 'privacy' }, '', '/privacy');
+                      }
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer inline-block"
+                  >
+                    Privacy Policy
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/terms"
+                    onClick={(e) => {
+                      if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault();
+                        setShowTermsModal(true);
+                        window.history.pushState({ view: 'terms' }, '', '/terms');
+                      }
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer inline-block"
+                  >
+                    Terms of Service
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/sitemap"
+                    onClick={(e) => {
+                      if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault();
+                        setShowSiteMapModal(true);
+                        window.history.pushState({ view: 'sitemap' }, '', '/sitemap');
+                      }
+                    }}
+                    className="hover:text-white transition-colors cursor-pointer inline-block"
+                  >
+                    Site Map
+                  </a>
+                </li>
                 <li><button onClick={openCookiePreferences} className="hover:text-white transition-colors cursor-pointer">Cookie Settings</button></li>
               </ul>
             </div>

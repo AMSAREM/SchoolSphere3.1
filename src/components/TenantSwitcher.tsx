@@ -13,7 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useNotifications } from '../contexts/NotificationContext';
-import { syncTenantAcademicData } from '../lib/api';
+import { syncTenantAcademicData, getApiHeaders } from '../lib/api';
 
 export interface Tenant {
   id: string;
@@ -59,7 +59,7 @@ export default function TenantSwitcher({
     if (!isCreator) return;
     setIsLoading(true);
     try {
-      const res = await fetch('/api/tenants');
+      const res = await fetch('/api/tenants', { headers: getApiHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.tenants)) {

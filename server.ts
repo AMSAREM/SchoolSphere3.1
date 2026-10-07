@@ -2102,6 +2102,104 @@ async function doStartServer() {
     };
   }
 
+  async function seedDefaultDemoCampusIfNeeded() {
+    try {
+      const currentSchools = getFromFallback('schools');
+      if (!currentSchools || currentSchools.length === 0) {
+        const defaultSchoolId = '00000000-0000-0000-0000-000000000001';
+        const defaultLicenseKey = 'ESEPA-SCHO-ENT-2026INIT';
+        const defaultSchool = {
+          id: defaultSchoolId,
+          name: 'SchoolSphere Academy',
+          schoolName: 'SchoolSphere Academy',
+          slug: 'school-sphere-academy',
+          theme: 'indigo',
+          status: 'active',
+          email: 'admin@schoolsphere.app',
+          phone: '0241234567',
+          address: 'Main Campus, Accra, Ghana',
+          academic_year: '2026/2027',
+          current_term: 'Term 1',
+          licenseKey: defaultLicenseKey,
+          license_key: defaultLicenseKey,
+          updated_at: Date.now()
+        };
+        saveToFallback('schools', defaultSchool);
+
+        saveToFallback('licenses', {
+          key: defaultLicenseKey,
+          licenseKey: defaultLicenseKey,
+          license_key: defaultLicenseKey,
+          school_id: defaultSchoolId,
+          schoolId: defaultSchoolId,
+          schoolName: 'SchoolSphere Academy',
+          clientEmail: 'admin@schoolsphere.app',
+          contactPerson: 'Head Administrator',
+          status: 'active',
+          tier: 'Enterprise',
+          activeModules: [
+            'students', 'academic', 'timetable', 'attendance',
+            'results', 'reports', 'fees', 'siren', 'duty_roster',
+            'boarding', 'payroll', 'inventory', 'exam_analysis'
+          ],
+          created_at: Date.now(),
+          updated_at: Date.now()
+        });
+
+        const salt = await bcrypt.genSalt(10);
+        const passHash = await bcrypt.hash('Password123!', salt);
+
+        await provisionTenantAdminAccount({
+          schoolId: defaultSchoolId,
+          schoolName: 'SchoolSphere Academy',
+          slug: 'school-sphere-academy',
+          clientEmail: 'admin@schoolsphere.app',
+          contactPerson: 'School Administrator',
+          adminUsername: 'admin',
+          adminPassword: 'Password123!',
+          licenseKey: defaultLicenseKey
+        });
+
+        const teacherUser = {
+          id: '00000000-0000-0000-0000-000000000002',
+          username: 'teacher',
+          baseUsername: 'teacher',
+          scopedUsername: 'teacher@school-sphere-academy',
+          fullName: 'Kwame Mensah',
+          full_name: 'Kwame Mensah',
+          email: 'teacher@schoolsphere.app',
+          passwordHash: passHash,
+          password_hash: passHash,
+          role: 'teacher',
+          status: 'active',
+          schoolId: defaultSchoolId,
+          school_id: defaultSchoolId,
+          schoolName: 'SchoolSphere Academy',
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        const regUsers = getRegisteredUsers();
+        if (!regUsers.some((u: any) => u.username === 'teacher' && u.school_id === defaultSchoolId)) {
+          regUsers.push(teacherUser);
+          saveRegisteredUsers(regUsers);
+        }
+
+        const now = Date.now();
+        customUserPasswords.set('admin', { passwordHash: passHash, role: 'admin', schoolId: defaultSchoolId, fullName: 'School Administrator', email: 'admin@schoolsphere.app', updatedAt: now });
+        customUserPasswords.set('admin@school-sphere-academy', { passwordHash: passHash, role: 'admin', schoolId: defaultSchoolId, fullName: 'School Administrator', email: 'admin@schoolsphere.app', updatedAt: now });
+        customUserPasswords.set(`admin::${defaultSchoolId}`, { passwordHash: passHash, role: 'admin', schoolId: defaultSchoolId, fullName: 'School Administrator', email: 'admin@schoolsphere.app', updatedAt: now });
+        customUserPasswords.set('teacher', { passwordHash: passHash, role: 'teacher', schoolId: defaultSchoolId, fullName: 'Kwame Mensah', email: 'teacher@schoolsphere.app', updatedAt: now });
+        customUserPasswords.set('teacher@school-sphere-academy', { passwordHash: passHash, role: 'teacher', schoolId: defaultSchoolId, fullName: 'Kwame Mensah', email: 'teacher@schoolsphere.app', updatedAt: now });
+        customUserPasswords.set(`teacher::${defaultSchoolId}`, { passwordHash: passHash, role: 'teacher', schoolId: defaultSchoolId, fullName: 'Kwame Mensah', email: 'teacher@schoolsphere.app', updatedAt: now });
+      }
+    } catch (seedErr: any) {
+      console.warn('Notice seeding default demo campus:', seedErr?.message);
+    }
+  }
+
+  void seedDefaultDemoCampusIfNeeded();
+
   // Auth-gated license status endpoint (Supabase public.school_licenses & public.schools as single source of truth)
   app.get("/api/license/status", optionalAuthenticateToken, async (req: any, res) => {
     try {
@@ -3706,8 +3804,27 @@ async function doStartServer() {
           const uScoped = String(u.scopedUsername || '').trim().toLowerCase().replace(/^@+/, '');
           const uEmail = String(u.email || '').trim().toLowerCase();
           const uEmailPre = uEmail.includes('@') ? uEmail.split('@')[0] : '';
+          const candScopedSlug = uScoped.includes('@') ? uScoped.split('@')[1] : '';
           const uSchoolId = String(u.school_id || u.schoolId || u.schools?.id || '').trim();
-          const uSchoolSlug = String(u.schools?.slug || '').trim().toLowerCase();
+          const uSchoolSlug = String(u.schools?.slug || u.schoolSlug || candScopedSlug || '').trim().toLowerCase();
+
+          // If a school hint/scope was explicitly requested (e.g. @slug or schoolSlug/schoolId in body),
+          // ensure the candidate belongs to this target school (unless platform creator / super_admin)
+          if (hintSchoolId || hintSchoolSlug) {
+            if (u.role !== 'creator' && u.role !== 'super_admin') {
+              if (hintSchoolId && uSchoolId && hintSchoolId.toLowerCase() !== uSchoolId.toLowerCase()) {
+                return false;
+              }
+              if (uSchoolSlug && hintSchoolSlug && uSchoolSlug !== hintSchoolSlug) {
+                return false;
+              }
+              const matchesId = !!(hintSchoolId && uSchoolId && hintSchoolId.toLowerCase() === uSchoolId.toLowerCase());
+              const matchesSlug = !!(hintSchoolSlug && uSchoolSlug && hintSchoolSlug === uSchoolSlug);
+              if (!matchesId && !matchesSlug) {
+                return false;
+              }
+            }
+          }
 
           if (
             uName === rawUsernameInput ||
@@ -4994,8 +5111,27 @@ async function doStartServer() {
             phone: phone || '',
             address: address || '',
             status: 'active',
+            licenseKey: result.licenseKey,
+            license_key: result.licenseKey,
             updated_at: Date.now()
           });
+          if (result.licenseKey) {
+            saveToFallback('licenses', {
+              key: String(result.licenseKey).trim().toUpperCase(),
+              licenseKey: String(result.licenseKey).trim().toUpperCase(),
+              license_key: String(result.licenseKey).trim().toUpperCase(),
+              school_id: result.organization.id,
+              schoolId: result.organization.id,
+              schoolName: result.organization.name,
+              clientEmail: email?.trim().toLowerCase(),
+              contactPerson: adminFullName,
+              status: 'active',
+              tier: 'Enterprise',
+              activeModules: ["students", "academic", "timetable", "attendance", "results", "reports", "fees", "siren"],
+              created_at: Date.now(),
+              updated_at: Date.now()
+            });
+          }
           await provisionTenantAdminAccount({
             schoolId: result.organization.id,
             schoolName: result.organization.name,
@@ -5003,7 +5139,8 @@ async function doStartServer() {
             clientEmail: email,
             contactPerson: adminFullName,
             adminUsername: result.user?.username,
-            adminPassword: password
+            adminPassword: password,
+            licenseKey: result.licenseKey
           });
         }
       } catch (syncErr) {}

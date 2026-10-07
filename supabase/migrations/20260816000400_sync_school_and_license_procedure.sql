@@ -42,6 +42,9 @@ DECLARE
   v_school_status TEXT;
   v_res JSONB;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   v_clean_name := TRIM(p_school_name);
   v_clean_key := TRIM(UPPER(p_license_key));
   v_tier := COALESCE(p_tier, 'Standard');
@@ -209,7 +212,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.sync_school_license TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) TO authenticated, service_role;
 
 -- 2b. Atomic School & License Status Update Procedure (Suspend / Reactivate)
 CREATE OR REPLACE FUNCTION public.set_school_tenant_status(
@@ -229,6 +233,9 @@ DECLARE
   v_status TEXT := LOWER(TRIM(COALESCE(p_status, 'suspended')));
   v_school_status TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'pending_activation') THEN
     v_status := 'suspended';
   END IF;
@@ -282,9 +289,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.set_school_tenant_status TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
--- 3. Helper to safely retrieve schools directory (reflecting suspended license status)
+-- 3. Helper to safely retrieve schools directory (Platform Admins & Service Role Only)
 CREATE OR REPLACE FUNCTION public.get_schools_directory()
 RETURNS TABLE (
   id UUID,
@@ -297,10 +305,16 @@ RETURNS TABLE (
   status TEXT,
   license_id BIGINT
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
+
+  RETURN QUERY
   SELECT 
     s.id,
     s.name::TEXT,
@@ -318,9 +332,11 @@ AS $$
   FROM public.schools s
   LEFT JOIN public.school_licenses sl ON sl.id = s.license_id
   ORDER BY s.name ASC;
+END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_schools_directory TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.get_schools_directory() FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_schools_directory() TO authenticated, service_role;
 
 -- 4. Reconcile public.schools.status with public.school_licenses.active_status for existing rows
 UPDATE public.schools s

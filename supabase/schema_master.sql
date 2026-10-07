@@ -158,7 +158,6 @@ CREATE TABLE IF NOT EXISTS public.users (
   auth_user_id UUID NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   school_id UUID NULL REFERENCES public.schools(id) ON DELETE CASCADE,
   username VARCHAR(100) NOT NULL,
-  password_hash VARCHAR(255) NULL,
   full_name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NULL,
   phone VARCHAR(50) NULL,
@@ -920,6 +919,9 @@ DECLARE
   v_status TEXT;
   v_school_status TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   v_clean_name := TRIM(p_school_name);
   v_clean_key := TRIM(UPPER(p_license_key));
   v_tier := COALESCE(p_tier, 'Standard');
@@ -1006,7 +1008,8 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.sync_school_license TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_school_license(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT, JSONB, TEXT) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.set_school_tenant_status(
   p_school_id UUID DEFAULT NULL,
@@ -1025,6 +1028,9 @@ DECLARE
   v_status TEXT := LOWER(TRIM(COALESCE(p_status, 'suspended')));
   v_school_status TEXT;
 BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Access denied: platform administrators only.';
+  END IF;
   IF v_status NOT IN ('active', 'suspended', 'expired', 'revoked', 'deactivated', 'pending_activation') THEN
     v_status := 'suspended';
   END IF;
@@ -1077,7 +1083,198 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.set_school_tenant_status TO anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_school_tenant_status(UUID, TEXT, TEXT, TEXT) TO authenticated, service_role;
+
+-- ==============================================================================
+-- 19. SUPABASE AUTH <-> PUBLIC.USERS AUTO-LINKING & RLS ALIASES
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_my_school_id()
+RETURNS UUID AS $$
+BEGIN
+  RETURN public.get_auth_school_id();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION public.is_creator()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN public.is_super_admin();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_school_id UUID;
+  v_role TEXT;
+  v_username TEXT;
+  v_full_name TEXT;
+  v_matched_id BIGINT;
+BEGIN
+  BEGIN
+    v_school_id := NULLIF(NEW.raw_user_meta_data ->> 'school_id', '')::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    v_school_id := NULL;
+  END;
+
+  v_role := COALESCE(NULLIF(LOWER(NEW.raw_user_meta_data ->> 'role'), ''), 'admin');
+  IF v_role IN ('creator', 'super_admin') THEN
+    v_role := 'admin';
+  END IF;
+  v_username := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'username', ''), SPLIT_PART(NEW.email, '@', 1));
+  v_full_name := COALESCE(NULLIF(NEW.raw_user_meta_data ->> 'full_name', ''), v_username);
+
+  -- 1. If a row is already linked to this auth_user_id, keep its email synchronized with auth.users.email
+  UPDATE public.users
+  SET email = LOWER(NEW.email),
+      full_name = COALESCE(NULLIF(public.users.full_name, ''), v_full_name),
+      updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE auth_user_id = NEW.id
+  RETURNING id INTO v_matched_id;
+
+  -- 2. Otherwise, ONLY link an existing unlinked public.users row if its email strictly matches NEW.email
+  IF v_matched_id IS NULL AND NEW.email IS NOT NULL THEN
+    UPDATE public.users
+    SET auth_user_id = NEW.id,
+        email = LOWER(NEW.email),
+        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    WHERE auth_user_id IS NULL
+      AND LOWER(email) = LOWER(NEW.email)
+    RETURNING id INTO v_matched_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ==============================================================================
+-- 20. CAMPUS-WIDE SIREN & BROADCAST CONSOLE TABLES + STORAGE BUCKET
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.school_settings (
+  school_id UUID PRIMARY KEY REFERENCES public.schools(id) ON DELETE CASCADE,
+  grade_boundaries JSONB NOT NULL DEFAULT '[]'::jsonb,
+  terms JSONB NOT NULL DEFAULT '[]'::jsonb,
+  streams JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+ALTER TABLE public.school_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for school_settings" ON public.school_settings;
+CREATE POLICY "Tenant isolation for school_settings" ON public.school_settings
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+CREATE TABLE IF NOT EXISTS public.broadcasts (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  type VARCHAR(20) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  message TEXT NULL,
+  triggered_by BIGINT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_broadcasts_school_created
+  ON public.broadcasts (school_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_broadcasts_school_status
+  ON public.broadcasts (school_id, status);
+
+ALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for broadcasts" ON public.broadcasts;
+CREATE POLICY "Tenant isolation for broadcasts" ON public.broadcasts
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+CREATE TABLE IF NOT EXISTS public.siren_schedules (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  bell_id VARCHAR(100) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  time VARCHAR(20) NOT NULL,
+  days JSONB NOT NULL DEFAULT '["Monday","Tuesday","Wednesday","Thursday","Friday"]'::jsonb,
+  alarm_type VARCHAR(150) NOT NULL DEFAULT 'bell',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_schedule UNIQUE (school_id, bell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_siren_schedules_school_time
+  ON public.siren_schedules (school_id, time);
+
+ALTER TABLE public.siren_schedules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_schedules" ON public.siren_schedules;
+CREATE POLICY "Tenant isolation for siren_schedules" ON public.siren_schedules
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+CREATE TABLE IF NOT EXISTS public.siren_recordings (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  recording_id VARCHAR(100) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  audio_url TEXT NULL,
+  storage_path TEXT NULL,
+  mime_type VARCHAR(100) NOT NULL DEFAULT 'audio/webm',
+  size BIGINT NOT NULL DEFAULT 0,
+  base64_data TEXT NULL,
+  created_by VARCHAR(255) NOT NULL DEFAULT 'Administrator',
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_recording UNIQUE (school_id, recording_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_siren_recordings_school_created
+  ON public.siren_recordings (school_id, created_at DESC);
+
+ALTER TABLE public.siren_recordings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_recordings" ON public.siren_recordings;
+CREATE POLICY "Tenant isolation for siren_recordings" ON public.siren_recordings
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+CREATE TABLE IF NOT EXISTS public.siren_logs (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  log_id VARCHAR(100) NOT NULL,
+  type VARCHAR(100) NOT NULL DEFAULT 'bell',
+  label VARCHAR(255) NOT NULL,
+  custom_msg TEXT NULL,
+  is_drill BOOLEAN NOT NULL DEFAULT FALSE,
+  triggered_by VARCHAR(255) NOT NULL DEFAULT 'Administrator',
+  role VARCHAR(50) NOT NULL DEFAULT 'admin',
+  timestamp BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  CONSTRAINT uq_school_siren_log UNIQUE (school_id, log_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_siren_logs_school_timestamp
+  ON public.siren_logs (school_id, timestamp DESC);
+
+ALTER TABLE public.siren_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Tenant isolation for siren_logs" ON public.siren_logs;
+CREATE POLICY "Tenant isolation for siren_logs" ON public.siren_logs
+  FOR ALL USING (school_id = public.get_auth_school_id() OR public.is_super_admin())
+  WITH CHECK (school_id = public.get_auth_school_id() OR public.is_super_admin());
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('siren-audio', 'siren-audio', true, 15728640)
+ON CONFLICT (id) DO UPDATE SET
+  public = true,
+  file_size_limit = 15728640;
+
+NOTIFY pgrst, 'reload schema';
+
 
 -- ==============================================================================
 -- 19. SUPABASE AUTH <-> PUBLIC.USERS AUTO-LINKING & RLS ALIASES

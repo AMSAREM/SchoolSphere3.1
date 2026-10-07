@@ -29,6 +29,7 @@ import {
   Code
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getApiHeaders } from '../../lib/api';
 
 interface LinkageDiagnosticToolProps {
   onClose?: () => void;
@@ -121,7 +122,7 @@ export function LinkageDiagnosticTool({ onClose }: LinkageDiagnosticToolProps) {
       try {
         const res = await fetch('/api/diagnostics/schema-linkage', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify({ payload: parsedPayload }),
           signal: controller.signal
         });
@@ -159,7 +160,7 @@ export function LinkageDiagnosticTool({ onClose }: LinkageDiagnosticToolProps) {
     if (masterSql) return;
     setLoadingSql(true);
     try {
-      const res = await fetch('/api/diagnostics/master-schema-sql');
+      const res = await fetch('/api/diagnostics/master-schema-sql', { headers: getApiHeaders() });
       const data = await res.json();
       if (data.success && data.sql) {
         setMasterSql(data.sql);

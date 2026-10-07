@@ -11,11 +11,48 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [
+      {
+        name: 'disable-vite-hmr-client-ws',
+        enforce: 'post',
+        transform(code, id) {
+          if (id.includes('vite/dist/client/client.mjs')) {
+            return {
+              code: code
+                .replace(
+                  'transport.connect(createHMRHandler(handleMessage));',
+                  '/* HMR disabled: transport.connect skipped */'
+                )
+                .replace(
+                  /console\.error\(\s*`\[vite\] failed to connect to websocket[\s\S]*?\);/g,
+                  '/* suppressed vite ws error */'
+                )
+                .replace(
+                  'console.error(`[vite] failed to connect to websocket (${e}). `);',
+                  '/* suppressed vite ws error */'
+                ),
+              map: null,
+            };
+          }
+        },
+      },
+      {
+        name: 'html-seo-transform',
+        transformIndexHtml(html) {
+          const token = env.VITE_GOOGLE_SITE_VERIFICATION || env.GOOGLE_SITE_VERIFICATION || '';
+          if (token) {
+            return html.replace(/%VITE_GOOGLE_SITE_VERIFICATION%/g, token);
+          }
+          return html
+            .replace(/%VITE_GOOGLE_SITE_VERIFICATION%/g, '')
+            .replace(/<meta\s+name=["']google-site-verification["']\s+content=["']\s*["']\s*\/?>\n?/gi, '');
+        }
+      },
       react(), 
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'sch sphere logo1.png'],
+        injectRegister: null,
+        includeAssets: ['apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'sch-sphere-logo1.png', 'sch sphere logo1.png'],
         manifest: {
           id: '/',
           name: 'School Sphere',
@@ -55,7 +92,11 @@ export default defineConfig(({mode}) => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          navigateFallbackDenylist: [/^\/api\//, /^\/assets\//, /\.[a-zA-Z0-9]+$/],
         },
         devOptions: {
           enabled: false,
@@ -71,7 +112,8 @@ export default defineConfig(({mode}) => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 2000,
+      target: 'esnext',
+      chunkSizeWarningLimit: 5000,
       sourcemap: false,
     },
     server: {

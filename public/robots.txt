@@ -1,14 +1,32 @@
-# SchoolSphere 3.1 Robots Configuration
-# https://schoolsphere.app
-User-agent: *
+# SchoolSphere Robots Configuration
+# https://www.schoolsphere.xyz
+
+# Google Search Engine Crawler
+User-agent: Googlebot
 Allow: /
-Allow: /login
+Allow: /assets/
+Allow: /sign-in
 Allow: /portal
+Allow: /sitemap
 Allow: /sitemap.xml
 Allow: /privacy
 Allow: /terms
+Disallow: /api/
+Disallow: /creator
+Disallow: /admin/
+Disallow: /*?token=*
+Disallow: /*?invite=*
 
-# Disallow internal administrative and private endpoints
+# All Other Web Crawlers
+User-agent: *
+Allow: /
+Allow: /assets/
+Allow: /sign-in
+Allow: /portal
+Allow: /sitemap
+Allow: /sitemap.xml
+Allow: /privacy
+Allow: /terms
 Disallow: /api/
 Disallow: /creator
 Disallow: /admin/
@@ -16,4 +34,4 @@ Disallow: /*?token=*
 Disallow: /*?invite=*
 
 # XML Sitemap
-Sitemap: https://schoolsphere.app/sitemap.xml
+Sitemap: https://www.schoolsphere.xyz/sitemap.xml

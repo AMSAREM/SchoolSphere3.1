@@ -78,8 +78,6 @@ import { AuthScreens } from './components/auth/AuthScreens';
 import { SecurityProfileModal } from './components/auth/SecurityProfileModal';
 import { PermissionGuard } from './components/auth/PermissionGuard';
 import GetStarted from './components/GetStarted';
-import SmsModule from './components/SmsModule';
-import LandingPage from './components/LandingPage';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/legal/CookieConsentBanner';
@@ -89,10 +87,8 @@ import { fetchTenantLicenseStatus, purgeLegacyLicenseCaches } from './lib/licens
 import { ClientTrialBanner } from './components/ClientTrialBanner';
 import { ClientSupportWidget } from './components/ClientSupportWidget';
 import { getPageIdentity } from './lib/pageMetadata';
-import { PageHeaderBanner } from './components/PageHeaderBanner';
-import { PortalRoleActionBar } from './components/PortalRoleActionBar';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'boarding' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'sms' | 'creator' | 'school_management';
+type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'boarding' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
 
 const ALL_DEFAULT_MODULES = [
   'students',
@@ -110,7 +106,6 @@ const ALL_DEFAULT_MODULES = [
   'siren',
   'evoting',
   'inventory',
-  'sms',
   'settings',
   'users'
 ];
@@ -124,7 +119,9 @@ function AppContent() {
 
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
-  const [unauthView, setUnauthView] = useState<'landing' | 'auth' | 'get_started'>('landing');
+  const [showGetStarted, setShowGetStarted] = useState<boolean>(() => {
+    return !localStorage.getItem('esepa_user');
+  });
 
   // Creator Control and License Verification States
   const [isLicensed, setIsLicensed] = useState<boolean>(true);
@@ -192,7 +189,6 @@ function AppContent() {
   const handleLogout = () => {
     logout();
     setLicenseKey('');
-    setUnauthView('landing');
   };
 
   useEffect(() => {
@@ -219,10 +215,10 @@ function AppContent() {
   useEffect(() => {
     if (user && (user.role === 'creator' || user.role === 'super_admin')) {
       setActiveView('creator');
-      setUnauthView('landing');
+      setShowGetStarted(false);
     } else if (user && user.role === 'admin') {
       setActiveView('dashboard');
-      setUnauthView('landing');
+      setShowGetStarted(false);
     }
   }, [user]);
 
@@ -275,18 +271,14 @@ function AppContent() {
   );
 
   useEffect(() => {
-    if (!user) {
-      if (unauthView === 'landing') {
-        document.title = 'Welcome & Intelligent School Suite — SchoolSphere';
-      } else if (unauthView === 'get_started') {
-        document.title = 'Institutional Activation & Setup — SchoolSphere';
-      } else {
-        document.title = 'Sign In & Institutional Onboarding — SchoolSphere';
-      }
+    if (showGetStarted && !user) {
+      document.title = 'Welcome & Portal Access — SchoolSphere Management System';
+    } else if (!user) {
+      document.title = 'Sign In & Institutional Onboarding — SchoolSphere Management System';
     } else {
       document.title = `${activePageMeta.title} — ${schoolName} | SchoolSphere`;
     }
-  }, [activePageMeta.title, schoolName, unauthView, user]);
+  }, [activePageMeta.title, schoolName, showGetStarted, user]);
 
   // Uniform design tokens for SchoolSphere palette (#f6f8f7 canvas background, #1c4a59 institutional surface, #faae57 CTA)
   useEffect(() => {
@@ -830,7 +822,6 @@ function AppContent() {
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
-        { id: 'sms', label: 'Bulk SMS & Alerts', icon: MessageSquare },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
@@ -852,7 +843,6 @@ function AppContent() {
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
-        { id: 'sms', label: 'Bulk SMS & Alerts', icon: MessageSquare },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
@@ -874,7 +864,6 @@ function AppContent() {
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
-        { id: 'sms', label: 'Bulk SMS & Alerts', icon: MessageSquare },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
@@ -895,7 +884,6 @@ function AppContent() {
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
         { id: 'reports', label: 'Reports', icon: FileText },
-        { id: 'sms', label: 'Department SMS Alerts', icon: MessageSquare },
         { id: 'payroll', label: 'My Payslips', icon: Wallet },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'siren', label: 'Siren Console', icon: Siren },
@@ -923,20 +911,8 @@ function AppContent() {
         { id: 'students', label: 'Students', icon: Users },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
-        { id: 'sms', label: 'Fee Debtor SMS', icon: MessageSquare },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'reports', label: 'Reports', icon: FileText },
-        { id: 'inventory', label: 'Inventory Registry', icon: Package },
-      ];
-    } else if ((user?.role as string) === 'bursar') {
-      baseItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'students', label: 'Students', icon: Users },
-        { id: 'fees', label: 'Fees & Invoicing', icon: CreditCard },
-        { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
-        { id: 'sms', label: 'Fee Debtor SMS', icon: MessageSquare },
-        { id: 'boarding', label: 'Boarding System', icon: Bed },
-        { id: 'reports', label: 'Financial Reports', icon: FileText },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
       ];
     } else if (user?.role === 'student') {
@@ -995,46 +971,23 @@ function AppContent() {
     );
   }
 
+  if (showGetStarted && !user) {
+    return (
+      <GetStarted
+        onEnterSchoolPortal={() => setShowGetStarted(false)}
+        onActivationSuccess={async () => {
+          await checkLicenseStatus();
+          setShowGetStarted(false);
+        }}
+        licenseKey={licenseKey}
+        isLicensed={isLicensed}
+        lockAnnouncement={lockAnnouncement}
+      />
+    );
+  }
+
   if (!user) {
-    if (unauthView === 'landing') {
-      return (
-        <LandingPage
-          onEnterSchoolPortal={() => setUnauthView('auth')}
-          onOpenActivation={() => setUnauthView('get_started')}
-          onOpenCreatorLogin={() => setUnauthView('auth')}
-          onOpenAbout={() => {
-            const el = document.getElementById('features') || document.getElementById('faq');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenContact={() => {
-            const el = document.getElementById('faq') || document.querySelector('footer');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenVideoTour={() => {
-            const el = document.getElementById('features');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          isLicensed={isLicensed}
-        />
-      );
-    }
-
-    if (unauthView === 'get_started') {
-      return (
-        <GetStarted
-          onEnterSchoolPortal={() => setUnauthView('auth')}
-          onActivationSuccess={async () => {
-            await checkLicenseStatus();
-            setUnauthView('auth');
-          }}
-          licenseKey={licenseKey}
-          isLicensed={isLicensed}
-          lockAnnouncement={lockAnnouncement}
-        />
-      );
-    }
-
-    return <AuthScreens onBackToGetStarted={() => setUnauthView('landing')} />;
+    return <AuthScreens onBackToGetStarted={() => setShowGetStarted(true)} />;
   }
 
   const isCreator = (user?.role as string) === 'creator' || (user?.role as string) === 'super_admin';
@@ -1043,15 +996,18 @@ function AppContent() {
     if (activeView !== 'creator') {
       setActiveView('creator');
     }
+    if (showGetStarted) {
+      setShowGetStarted(false);
+    }
   }
 
   if (!isLicensed && !isCreator) {
     return (
       <GetStarted
-        onEnterSchoolPortal={() => setUnauthView('auth')}
+        onEnterSchoolPortal={() => setShowGetStarted(false)}
         onActivationSuccess={async () => {
           await checkLicenseStatus();
-          setUnauthView('auth');
+          setShowGetStarted(false);
         }}
         licenseKey={licenseKey}
         isLicensed={isLicensed}
@@ -1498,9 +1454,7 @@ function AppContent() {
           onTouchCancel={handleTouchEndPull}
           className={cn(
             "flex-1 relative w-full min-w-0 max-w-full overflow-x-hidden print:p-0 print:overflow-visible print:h-auto print:block",
-            activeView === 'creator'
-              ? "p-0 overflow-hidden"
-              : "overflow-y-auto px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-6 lg:px-8 lg:py-8 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-8"
+            activeView === 'creator' ? "p-0 overflow-hidden" : "overflow-y-auto p-2.5 sm:p-6 lg:p-8 pb-mobile-safe-content lg:pb-8"
           )}
         >
           {/* Pull-to-Refresh Visual Indicator */}
@@ -1542,26 +1496,9 @@ function AppContent() {
               transition={{ duration: 0.2 }}
               className={cn(
                 "w-full min-w-0 max-w-full overflow-x-hidden print:h-auto print:block",
-                activeView === 'creator' ? "h-full w-full" : "min-h-full w-full max-w-full lg:max-w-7xl mx-auto pb-2 sm:pb-4 lg:pb-0"
+                activeView === 'creator' ? "h-full w-full" : "min-h-full max-w-7xl mx-auto w-full pb-4 lg:pb-0"
               )}
             >
-              {activeView !== 'creator' && (
-                <>
-                  <PageHeaderBanner
-                    viewId={activeView}
-                    userRole={user?.role}
-                    schoolName={schoolName}
-                    academicYear={currentAcademicYear}
-                    currentTerm={currentTermName}
-                    onNavigateHome={() => setActiveView('dashboard')}
-                  />
-                  <PortalRoleActionBar
-                    activeView={activeView}
-                    onNavigate={setActiveView}
-                    userRole={user?.role}
-                  />
-                </>
-              )}
               <ErrorBoundary key={activeView}>
                 {activeView === 'dashboard' && <Dashboard onViewChange={setActiveView} />}
                 {activeView === 'students' && <StudentManagement />}
@@ -1591,7 +1528,6 @@ function AppContent() {
                 {activeView === 'settings' && <Settings />}
                 {activeView === 'evoting' && <EVoting />}
                 {activeView === 'inventory' && <InventoryManagement />}
-                {activeView === 'sms' && <SmsModule />}
                 {activeView === 'school_management' && (
                   ((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
                     <SchoolManagement 
@@ -1628,7 +1564,7 @@ function AppContent() {
                     onLicenseChange={checkLicenseStatus} 
                     onExit={() => {
                       handleLogout();
-                      setUnauthView('landing');
+                      setShowGetStarted(true);
                       setActiveView('dashboard');
                     }} 
                   />

@@ -99,7 +99,9 @@ export default function FrontendTestRunner({
   const [isAuditingSchema, setIsAuditingSchema] = useState(false);
 
   const getAuthHeaders = useCallback((): Record<string, string> => {
-    const token = localStorage.getItem('esepa_auth_token');
+    const token =
+      localStorage.getItem('esepa_supabase_access_token') ||
+      localStorage.getItem('esepa_auth_token');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };
@@ -901,8 +903,8 @@ export default function FrontendTestRunner({
         },
         {
           id: 'test_crud_tenant_user_autolink',
-          name: 'Tenant User Provisioning, Bcrypt Immutability & Profile Auto-Linking',
-          description: 'Provisions a scoped teacher user + linked teacher profile in Supabase, verifies bcrypt hash, and rolls back.',
+          name: 'Tenant User Provisioning & Profile Auto-Linking',
+          description: 'Provisions a scoped teacher user + linked teacher profile in Supabase and rolls back.',
           targetView: 'users',
           run: async () => {
             const outcome = await callBackendDiag('crud_user_autolink_probe');

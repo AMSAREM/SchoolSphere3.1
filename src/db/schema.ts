@@ -59,6 +59,7 @@ export interface Student {
   house?: string;
   department?: string;
   photo?: string;
+  residentialStatus?: 'Boarder' | 'Day Student' | string;
   createdAt: number;
   feeBreakdown?: Record<string, number>; // fee type to amount (e.g. tuition: 1000)
   feePaidBreakdown?: Record<string, number>; // fee type to paid amount (e.g. tuition: 400)
@@ -505,7 +506,7 @@ export interface BoardingExeat {
   parentPhone: string;
   departureDate: string;
   expectedReturnDate: string;
-  status: 'pending' | 'approved' | 'rejected' | 'checked_out' | 'checked_in' | 'overdue';
+  status: 'pending' | 'pending_parent' | 'approved' | 'rejected' | 'checked_out' | 'checked_in' | 'overdue';
   approvedBy?: string;
   approvedAt?: number;
   checkedOutAt?: number;

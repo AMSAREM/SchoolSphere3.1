@@ -859,6 +859,7 @@ export default function GetStarted({
                             { id: 'exam_analysis', label: 'Exam Analysis' },
                             { id: 'reports', label: 'Report Sheets' },
                             { id: 'fees', label: 'Fees & Payments' },
+                            { id: 'boarding', label: 'Boarding & Dormitory' },
                             { id: 'siren', label: 'Siren Console' },
                             { id: 'evoting', label: 'E-Voting' },
                             { id: 'inventory', label: 'Inventory Management' },
