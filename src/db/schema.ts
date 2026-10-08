@@ -601,6 +601,26 @@ export interface AssessmentQuestion {
   subStrand?: string;
 }
 
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface QuestionBankItem {
+  id: string;
+  schoolId?: string;
+  subject: string;
+  topic: string; // e.g. "Linear Equations", "Photosynthesis", "Parts of Speech"
+  className?: string; // e.g. "JHS 1", "JHS 2", "Basic 6", "All"
+  strand?: string;
+  subStrand?: string;
+  difficulty?: QuestionDifficulty;
+  question: AssessmentQuestion;
+  tags?: string[];
+  usageCount?: number;
+  createdBy?: string;
+  source?: 'manual' | 'ai_generated' | 'lesson_note' | 'imported';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Assessment {
   id: string;
   schoolId?: string;
@@ -690,6 +710,7 @@ export class SchoolDB extends Dexie {
   clientProposals!: Table<ProposalItem>;
   assessments!: Table<Assessment>;
   assessmentSubmissions!: Table<AssessmentSubmission>;
+  questionBank!: Table<QuestionBankItem>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -976,6 +997,40 @@ export class SchoolDB extends Dexie {
       clientProposals: 'id, schoolName, contactPerson, status, createdAt, updatedAt',
       assessments: 'id, schoolId, category, class, subject, term, dueDate, status, createdAt',
       assessmentSubmissions: 'id, assessmentId, studentId, class, status, submittedAt, [assessmentId+studentId]'
+    });
+    this.version(21).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date',
+      salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
+      payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
+      salaryAdvances: 'id, schoolId, staffId, status, requestedAt',
+      boardingHouses: 'id, schoolId, name, gender, housemasterName',
+      boardingRooms: 'id, schoolId, houseId, roomNumber, floor',
+      boardingAllocations: 'id, schoolId, studentId, houseId, roomId, status, assignedAt',
+      boardingExeats: 'id, schoolId, studentId, houseId, passCode, status, departureDate, expectedReturnDate',
+      boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
+      boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status',
+      clientProposals: 'id, schoolName, contactPerson, status, createdAt, updatedAt',
+      assessments: 'id, schoolId, category, class, subject, term, dueDate, status, createdAt',
+      assessmentSubmissions: 'id, assessmentId, studentId, class, status, submittedAt, [assessmentId+studentId]',
+      questionBank: 'id, schoolId, subject, topic, difficulty, createdAt'
     });
   }
 }
@@ -1619,6 +1674,383 @@ export async function seedDefaultAssessmentsIfEmpty(schoolId?: string, studentLi
     }
   } catch (err) {
     console.warn('Notice seeding default assessments:', err);
+  }
+}
+
+export async function seedDefaultQuestionBankIfEmpty(schoolId?: string): Promise<void> {
+  try {
+    const count = await db.questionBank.count();
+    if (count > 0) return;
+
+    const sId = schoolId || 'default-school';
+    const now = Date.now();
+
+    const initialBank: QuestionBankItem[] = [
+      // Mathematics
+      {
+        id: 'qb-math-01',
+        schoolId: sId,
+        subject: 'Mathematics',
+        topic: 'Algebra & Linear Equations',
+        className: 'JHS 2',
+        strand: 'Algebra',
+        subStrand: 'Linear Equations in One Variable',
+        difficulty: 'medium',
+        tags: ['algebra', 'equations', 'JHS', 'BECE'],
+        usageCount: 3,
+        source: 'manual',
+        createdBy: 'Mr. Kwame Mensah',
+        createdAt: now - 5 * 86400000,
+        updatedAt: now - 5 * 86400000,
+        question: {
+          id: 'q-bank-m1',
+          questionNumber: 1,
+          type: 'multiple_choice',
+          prompt: 'Solve for x in the equation: 3x - 7 = 14',
+          options: ['x = 5', 'x = 7', 'x = 8', 'x = 21'],
+          correctOptionIndex: 1,
+          correctAnswer: 'x = 7',
+          explanation: 'Add 7 to both sides: 3x = 21. Divide by 3: x = 7.',
+          points: 2,
+          strand: 'Algebra',
+          subStrand: 'Linear Equations'
+        }
+      },
+      {
+        id: 'qb-math-02',
+        schoolId: sId,
+        subject: 'Mathematics',
+        topic: 'Geometry & Mensuration',
+        className: 'JHS 1',
+        strand: 'Geometry & Measurement',
+        subStrand: 'Perimeter and Area of Plane Figures',
+        difficulty: 'easy',
+        tags: ['geometry', 'perimeter', 'rectangle'],
+        usageCount: 1,
+        source: 'manual',
+        createdBy: 'Mr. Kwame Mensah',
+        createdAt: now - 4 * 86400000,
+        updatedAt: now - 4 * 86400000,
+        question: {
+          id: 'q-bank-m2',
+          questionNumber: 2,
+          type: 'short_answer',
+          prompt: 'Calculate the perimeter of a rectangular classroom with length 14m and width 9m.',
+          correctAnswer: '46m',
+          explanation: 'Perimeter = 2 × (Length + Width) = 2 × (14 + 9) = 2 × 23 = 46 meters.',
+          points: 3,
+          rubricCriteria: ['Correct formula stated: 2(L+W)', 'Correct substitution of 14 and 9', 'Final answer with unit (46m)'],
+          strand: 'Geometry',
+          subStrand: 'Mensuration'
+        }
+      },
+      {
+        id: 'qb-math-03',
+        schoolId: sId,
+        subject: 'Mathematics',
+        topic: 'Percentages, Profit & Loss',
+        className: 'JHS 3',
+        strand: 'Number & Numeration',
+        subStrand: 'Business Mathematics',
+        difficulty: 'hard',
+        tags: ['business math', 'profit and loss', 'BECE'],
+        usageCount: 2,
+        source: 'manual',
+        createdBy: 'Mr. Kwame Mensah',
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 3 * 86400000,
+        question: {
+          id: 'q-bank-m3',
+          questionNumber: 3,
+          type: 'essay',
+          prompt: 'A trader purchased a bag of sugar for GH₵ 600.00 and sold it at a profit margin of 25%.\n(a) Calculate the profit made in Ghana Cedis.\n(b) Determine the marked selling price.\n(c) If the trader subsequently allowed a 4% cash discount to a prompt buyer, calculate the final price paid.',
+          correctAnswer: '(a) Profit = 25% of 600 = GH₵ 150.00\n(b) Selling Price = Cost + Profit = 600 + 150 = GH₵ 750.00\n(c) Discount = 4% of 750 = GH₵ 30.00. Final Price = 750 - 30 = GH₵ 720.00',
+          explanation: 'Step-by-step arithmetic profit calculation followed by percentage discount deduction.',
+          points: 10,
+          rubricCriteria: [
+            'Part (a): 25/100 * 600 shown = GH₵ 150 (3 pts)',
+            'Part (b): 600 + 150 = GH₵ 750 (3 pts)',
+            'Part (c): 4/100 * 750 = GH₵ 30 discount and final GH₵ 720 (4 pts)'
+          ],
+          strand: 'Number',
+          subStrand: 'Percentages'
+        }
+      },
+
+      // Integrated Science
+      {
+        id: 'qb-sci-01',
+        schoolId: sId,
+        subject: 'Integrated Science',
+        topic: 'Plant Biology & Photosynthesis',
+        className: 'JHS 1',
+        strand: 'Diversity of Matter and Life',
+        subStrand: 'Plant Nutrition',
+        difficulty: 'easy',
+        tags: ['plants', 'photosynthesis', 'chlorophyll'],
+        usageCount: 4,
+        source: 'manual',
+        createdBy: 'Madam Grace Mensah',
+        createdAt: now - 6 * 86400000,
+        updatedAt: now - 6 * 86400000,
+        question: {
+          id: 'q-bank-s1',
+          questionNumber: 1,
+          type: 'multiple_choice',
+          prompt: 'Which cellular organelle contains chlorophyll and serves as the primary site of photosynthesis in green plants?',
+          options: ['Mitochondrion', 'Chloroplast', 'Ribosome', 'Endoplasmic Reticulum'],
+          correctOptionIndex: 1,
+          correctAnswer: 'Chloroplast',
+          explanation: 'Chloroplasts contain chlorophyll thylakoids where the light and dark reactions occur.',
+          points: 2,
+          strand: 'Diversity of Life',
+          subStrand: 'Cell Structure'
+        }
+      },
+      {
+        id: 'qb-sci-02',
+        schoolId: sId,
+        subject: 'Integrated Science',
+        topic: 'Energy & Transformations',
+        className: 'JHS 2',
+        strand: 'Forces and Energy',
+        subStrand: 'Conservation of Energy',
+        difficulty: 'medium',
+        tags: ['physics', 'energy', 'conservation'],
+        usageCount: 2,
+        source: 'manual',
+        createdBy: 'Madam Grace Mensah',
+        createdAt: now - 5 * 86400000,
+        updatedAt: now - 5 * 86400000,
+        question: {
+          id: 'q-bank-s2',
+          questionNumber: 2,
+          type: 'short_answer',
+          prompt: 'State the Law of Conservation of Energy in one or two clear sentences.',
+          correctAnswer: 'Energy cannot be created or destroyed, but can only be converted from one form to another.',
+          explanation: 'Fundamental thermodynamic principle applying to all closed systems.',
+          points: 3,
+          rubricCriteria: ['States cannot be created or destroyed', 'Mentions transformation from one form to another'],
+          strand: 'Energy',
+          subStrand: 'Thermodynamics'
+        }
+      },
+      {
+        id: 'qb-sci-03',
+        schoolId: sId,
+        subject: 'Integrated Science',
+        topic: 'Environmental Degradation & Galamsey',
+        className: 'JHS 3',
+        strand: 'Human and the Environment',
+        subStrand: 'Pollution and Conservation',
+        difficulty: 'hard',
+        tags: ['environment', 'pollution', 'mining', 'essay'],
+        usageCount: 1,
+        source: 'manual',
+        createdBy: 'Madam Grace Mensah',
+        createdAt: now - 2 * 86400000,
+        updatedAt: now - 2 * 86400000,
+        question: {
+          id: 'q-bank-s3',
+          questionNumber: 3,
+          type: 'essay',
+          prompt: 'Discuss three major environmental consequences of illegal small-scale gold mining (galamsey) on river bodies in Ghana. Propose two enforceable government measures to reclaim polluted lands.',
+          correctAnswer: 'Consequences: Heavy metal contamination (mercury, cyanide), loss of aquatic biodiversity, siltation causing floods. Measures: Mandatory land reclamation bonds, enforcement of buffer zones.',
+          explanation: 'Comprehensive environmental science analysis grounded in local context.',
+          points: 10,
+          rubricCriteria: [
+            'Consequence 1: Mercury / chemical poisoning of drinking water sources (2 pts)',
+            'Consequence 2: Destruction of aquatic ecosystems and fisheries (2 pts)',
+            'Consequence 3: Siltation and drying up of river channels (2 pts)',
+            'Measure 1: Land reclamation tree planting initiatives (2 pts)',
+            'Measure 2: Technological surveillance / law enforcement (2 pts)'
+          ],
+          strand: 'Environment',
+          subStrand: 'Conservation'
+        }
+      },
+
+      // English Language
+      {
+        id: 'qb-eng-01',
+        schoolId: sId,
+        subject: 'English Language',
+        topic: 'Grammar & Parts of Speech',
+        className: 'JHS 1',
+        strand: 'Grammar and Syntax',
+        subStrand: 'Word Classes',
+        difficulty: 'easy',
+        tags: ['grammar', 'adverb', 'parts of speech'],
+        usageCount: 3,
+        source: 'manual',
+        createdBy: 'Mr. Alex Osei',
+        createdAt: now - 4 * 86400000,
+        updatedAt: now - 4 * 86400000,
+        question: {
+          id: 'q-bank-e1',
+          questionNumber: 1,
+          type: 'multiple_choice',
+          prompt: 'Identify the part of speech of the underlined word: "The school team played *brilliantly* during the finals."',
+          options: ['Noun', 'Adjective', 'Adverb of Manner', 'Preposition'],
+          correctOptionIndex: 2,
+          correctAnswer: 'Adverb of Manner',
+          explanation: '"Brilliantly" modifies the verb "played" describing how the action was performed.',
+          points: 2,
+          strand: 'Grammar',
+          subStrand: 'Adverbs'
+        }
+      },
+      {
+        id: 'qb-eng-02',
+        schoolId: sId,
+        subject: 'English Language',
+        topic: 'Active & Passive Voice',
+        className: 'JHS 2',
+        strand: 'Sentence Structure',
+        subStrand: 'Voice Transformations',
+        difficulty: 'medium',
+        tags: ['passive voice', 'syntax'],
+        usageCount: 2,
+        source: 'manual',
+        createdBy: 'Mr. Alex Osei',
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 3 * 86400000,
+        question: {
+          id: 'q-bank-e2',
+          questionNumber: 2,
+          type: 'short_answer',
+          prompt: 'Rewrite the following sentence in the passive voice:\n"The headmistress presented the trophy to the winning house captain."',
+          correctAnswer: 'The trophy was presented to the winning house captain by the headmistress.',
+          explanation: 'The direct object "the trophy" becomes the subject in the passive construction.',
+          points: 3,
+          rubricCriteria: ['Correct subject inversion', 'Correct auxiliary was presented', 'Correct by-agent phrase'],
+          strand: 'Grammar',
+          subStrand: 'Passive Voice'
+        }
+      },
+
+      // Social Studies
+      {
+        id: 'qb-soc-01',
+        schoolId: sId,
+        subject: 'Social Studies',
+        topic: 'Ghana Independence & National Identity',
+        className: 'JHS 1',
+        strand: 'History and Governance',
+        subStrand: 'Colonial Era and Independence',
+        difficulty: 'easy',
+        tags: ['history', 'independence', 'national identity'],
+        usageCount: 4,
+        source: 'manual',
+        createdBy: 'Mrs. Faustina Addo',
+        createdAt: now - 7 * 86400000,
+        updatedAt: now - 7 * 86400000,
+        question: {
+          id: 'q-bank-so1',
+          questionNumber: 1,
+          type: 'multiple_choice',
+          prompt: 'On which historic date did Ghana officially achieve independence from British colonial rule?',
+          options: ['1st July, 1960', '6th March, 1957', '28th February, 1948', '7th January, 1993'],
+          correctOptionIndex: 1,
+          correctAnswer: '6th March, 1957',
+          explanation: 'Dr. Kwame Nkrumah declared Ghana an independent sovereign nation on March 6, 1957.',
+          points: 2,
+          strand: 'National Identity',
+          subStrand: 'Independence'
+        }
+      },
+      {
+        id: 'qb-soc-02',
+        schoolId: sId,
+        subject: 'Social Studies',
+        topic: 'Rural-Urban Migration',
+        className: 'JHS 2',
+        strand: 'Socio-Economic Development',
+        subStrand: 'Demography and Settlements',
+        difficulty: 'medium',
+        tags: ['migration', 'demography', 'development'],
+        usageCount: 1,
+        source: 'manual',
+        createdBy: 'Mrs. Faustina Addo',
+        createdAt: now - 2 * 86400000,
+        updatedAt: now - 2 * 86400000,
+        question: {
+          id: 'q-bank-so2',
+          questionNumber: 2,
+          type: 'short_answer',
+          prompt: 'State two significant pull factors that attract young people from rural villages to urban centers like Accra and Kumasi.',
+          correctAnswer: 'Better employment opportunities, and superior social amenities such as tertiary institutions, electricity, and healthcare.',
+          explanation: 'Pull factors are favorable conditions in destination cities.',
+          points: 4,
+          rubricCriteria: ['Factor 1: Employment / economic opportunities (2 pts)', 'Factor 2: Infrastructure / higher education / healthcare (2 pts)'],
+          strand: 'Development',
+          subStrand: 'Migration'
+        }
+      },
+
+      // Information & Communication Technology (ICT)
+      {
+        id: 'qb-ict-01',
+        schoolId: sId,
+        subject: 'ICT',
+        topic: 'Computer Hardware Architecture',
+        className: 'JHS 1',
+        strand: 'Hardware and Systems',
+        subStrand: 'Internal Components',
+        difficulty: 'easy',
+        tags: ['hardware', 'CPU', 'computer basics'],
+        usageCount: 2,
+        source: 'manual',
+        createdBy: 'Mr. Daniel Coffie',
+        createdAt: now - 5 * 86400000,
+        updatedAt: now - 5 * 86400000,
+        question: {
+          id: 'q-bank-i1',
+          questionNumber: 1,
+          type: 'multiple_choice',
+          prompt: 'Which internal hardware component is considered the "brain" of the computer responsible for fetching, decoding, and executing software instructions?',
+          options: ['Hard Disk Drive (HDD)', 'Central Processing Unit (CPU)', 'Random Access Memory (RAM)', 'Motherboard Heat Sink'],
+          correctOptionIndex: 1,
+          correctAnswer: 'Central Processing Unit (CPU)',
+          explanation: 'The CPU performs all arithmetic logic unit (ALU) computations and control operations.',
+          points: 2,
+          strand: 'Computer Systems',
+          subStrand: 'Processing Unit'
+        }
+      },
+      {
+        id: 'qb-ict-02',
+        schoolId: sId,
+        subject: 'ICT',
+        topic: 'Cybersecurity & Online Safety',
+        className: 'JHS 2',
+        strand: 'Information Security',
+        subStrand: 'Digital Citizenship',
+        difficulty: 'medium',
+        tags: ['cybersecurity', 'passwords', 'safety'],
+        usageCount: 3,
+        source: 'manual',
+        createdBy: 'Mr. Daniel Coffie',
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 3 * 86400000,
+        question: {
+          id: 'q-bank-i2',
+          questionNumber: 2,
+          type: 'short_answer',
+          prompt: 'List three essential characteristics of a strong, secure password for student email or school portal accounts.',
+          correctAnswer: 'At least 8-12 characters long, combination of uppercase and lowercase letters, and includes numbers and special symbols (@, #, $).',
+          explanation: 'Strong passwords resist brute-force dictionary attacks.',
+          points: 3,
+          rubricCriteria: ['Minimum length mentioned (8+ chars)', 'Mix of upper/lower case letters', 'Contains special symbols or numbers'],
+          strand: 'Security',
+          subStrand: 'Authentication'
+        }
+      }
+    ];
+
+    await db.questionBank.bulkAdd(initialBank);
+  } catch (err) {
+    console.warn('Notice seeding default question bank:', err);
   }
 }
 

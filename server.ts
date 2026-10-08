@@ -28804,6 +28804,105 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
+  // QUESTION BANK API
+  // =================
+  const inMemoryQuestionBankStore: Map<string, any> = new Map();
+
+  // GET /api/question-bank - List stored questions with optional filtering
+  app.get("/api/question-bank", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const subject = req.query.subject ? String(req.query.subject).trim() : undefined;
+      const topic = req.query.topic ? String(req.query.topic).trim() : undefined;
+      const difficulty = req.query.difficulty ? String(req.query.difficulty).trim() : undefined;
+      const className = req.query.class ? String(req.query.class).trim() : undefined;
+      const type = req.query.type ? String(req.query.type).trim() : undefined;
+
+      let list = Array.from(inMemoryQuestionBankStore.values());
+
+      if (subject && subject !== 'All') {
+        list = list.filter(item => item.subject?.toLowerCase() === subject.toLowerCase());
+      }
+      if (topic && topic !== 'All') {
+        list = list.filter(item => item.topic?.toLowerCase().includes(topic.toLowerCase()));
+      }
+      if (difficulty && difficulty !== 'All') {
+        list = list.filter(item => item.difficulty?.toLowerCase() === difficulty.toLowerCase());
+      }
+      if (className && className !== 'All') {
+        list = list.filter(item => !item.className || item.className === 'All' || item.className === className);
+      }
+      if (type && type !== 'All') {
+        list = list.filter(item => item.question?.type === type);
+      }
+
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return res.json({ success: true, count: list.length, data: list });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/question-bank - Add or update a question in the bank
+  app.post("/api/question-bank", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const payload = req.body || {};
+      const id = payload.id || `qb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const now = Date.now();
+
+      const item = {
+        ...payload,
+        id,
+        createdAt: payload.createdAt || now,
+        updatedAt: now
+      };
+
+      inMemoryQuestionBankStore.set(id, item);
+      return res.status(201).json({ success: true, data: item });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/question-bank/batch - Add multiple questions at once
+  app.post("/api/question-bank/batch", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { items } = req.body || {};
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ success: false, error: "Expected an array of items" });
+      }
+
+      const now = Date.now();
+      const savedItems: any[] = [];
+
+      for (const raw of items) {
+        const id = raw.id || `qb-${now}-${Math.random().toString(36).substring(2, 7)}`;
+        const item = {
+          ...raw,
+          id,
+          createdAt: raw.createdAt || now,
+          updatedAt: now
+        };
+        inMemoryQuestionBankStore.set(id, item);
+        savedItems.push(item);
+      }
+
+      return res.status(201).json({ success: true, count: savedItems.length, data: savedItems });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/question-bank/:id - Delete a question from the bank
+  app.delete("/api/question-bank/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const existed = inMemoryQuestionBankStore.delete(id);
+      return res.json({ success: true, deleted: existed });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Explicit API 404 fallback - ensures any unmatched /api/* route returns clean JSON instead of HTML
   app.all("/api/*", (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.path}` });

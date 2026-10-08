@@ -73,7 +73,6 @@ import DutyRosterManagement from './components/DutyRosterManagement';
 import PayrollManagement from './components/PayrollManagement';
 import BoardingManagement from './components/BoardingManagement';
 import AssessmentsManager from './components/assessments/AssessmentsManager';
-import PortalRoleActionBar, { type PortalView } from './components/PortalRoleActionBar';
 import SmsModule from './components/SmsModule';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -1306,21 +1305,23 @@ function AppContent() {
         )}
 
         {/* Header */}
+        {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/70 flex items-center justify-between gap-1.5 sm:gap-4 px-2.5 sm:px-6 lg:px-8 z-30 shrink-0 shadow-2xs min-w-0 max-w-full">
+          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/40 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 min-w-0 w-full select-none">
+            {/* Left: Navigation Toggle & Contextual Breadcrumb */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center shrink-0 text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#e1c594]/30 hover:text-[#1c4a59] rounded-xl border border-[#bac4c6]/70 transition-all cursor-pointer active:scale-95"
+                className="lg:hidden w-9 h-9 sm:w-10 sm:h-10 -ml-1 sm:ml-0 flex items-center justify-center shrink-0 text-[#1c4a59] hover:bg-[#f6f8f7] rounded-xl transition-colors cursor-pointer active:scale-95"
                 title="Open Navigation"
                 aria-label="Open Navigation Menu"
               >
-                <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-[#1c4a59]" />
+                <Menu className="w-5 h-5 text-[#1c4a59]" />
               </button>
 
               {/* Multi-Tenant Switcher - Restricted strictly to Creator */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
-                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   <TenantSwitcher 
                     currentSchoolName={schoolName}
                     userRole={user.role}
@@ -1343,56 +1344,55 @@ function AppContent() {
                     }}
                     onOpenTenantManagement={() => setActiveView('school_management')}
                   />
-                  <div className="hidden md:flex items-center gap-1.5 shrink-0 min-w-0">
-                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                    <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
+                  <div className="hidden sm:flex items-center gap-1.5 shrink-0 min-w-0">
+                    <span className="text-[#bac4c6] text-xs select-none" aria-hidden="true">/</span>
+                    <span className="text-[11px] font-semibold text-[#6a7f84] uppercase tracking-wider whitespace-nowrap">
                       {activePageMeta.category}
                     </span>
-                    <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
+                    <span className="text-[#bac4c6] text-xs select-none" aria-hidden="true">/</span>
                     <span
                       data-testid="header-page-name"
-                      className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap truncate max-w-[260px]"
+                      className="text-xs sm:text-sm font-bold text-[#1c4a59] whitespace-nowrap truncate max-w-[200px] lg:max-w-[320px]"
                     >
                       {activePageMeta.title}
                     </span>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                  {schoolLogo && (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl overflow-hidden border border-[#bac4c6]/70 bg-white p-0.5 sm:p-1 shrink-0 flex items-center justify-center shadow-2xs">
-                      <img src={schoolLogo} alt="Logo" className="w-full h-full object-contain" />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex flex-col justify-center">
-                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                      <h2 className="text-xs sm:text-sm lg:text-base font-bold text-[#1c4a59] uppercase truncate tracking-tight max-w-[125px] xs:max-w-[180px] sm:max-w-[260px] md:max-w-none">
-                        {schoolName}
-                      </h2>
-                      <div className="hidden md:flex items-center gap-1.5 shrink-0">
-                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                        <span className="text-[11px] font-semibold text-[#6a7f84] whitespace-nowrap">
-                          {activePageMeta.category}
-                        </span>
-                        <span className="text-[#bac4c6] select-none" aria-hidden="true">/</span>
-                        <span
-                          data-testid="header-page-name"
-                          className="text-xs font-extrabold text-[#1c4a59] whitespace-nowrap"
-                        >
-                          {activePageMeta.title}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="md:hidden text-[10px] font-bold text-[#6a7f84] truncate leading-tight mt-0.5 max-w-[150px] xs:max-w-[220px] sm:max-w-none">
-                      {activePageMeta.category} <span className="text-[#bac4c6]" aria-hidden="true">›</span> <span className="text-[#1c4a59] font-extrabold">{activePageMeta.title}</span>
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  {/* Tablet & Desktop Breadcrumb (sm+) */}
+                  <div className="hidden sm:flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-semibold text-[#6a7f84] uppercase tracking-wider whitespace-nowrap">
+                      {activePageMeta.category}
+                    </span>
+                    <span className="text-[#bac4c6] text-xs select-none" aria-hidden="true">/</span>
+                    <h1
+                      data-testid="header-page-name"
+                      className="text-xs sm:text-sm font-bold text-[#1c4a59] whitespace-nowrap truncate max-w-[240px] md:max-w-[360px] lg:max-w-[480px]"
+                    >
+                      {activePageMeta.title}
+                    </h1>
+                  </div>
+
+                  {/* Mobile Title & Context (< sm) */}
+                  <div className="sm:hidden min-w-0 flex-1">
+                    <h1
+                      data-testid="header-page-name"
+                      className="text-xs font-bold text-[#1c4a59] truncate leading-tight"
+                    >
+                      {activePageMeta.title}
+                    </h1>
+                    <p className="text-[10px] font-medium text-[#6a7f84] uppercase tracking-wider truncate leading-tight mt-0.5">
+                      {activePageMeta.category}
                     </p>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* Right: Cloud SyncChip, Profile & Controls */}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              {/* Supabase Database Connection Indicator - Visible ONLY for Creator accessibility */}
+              {/* Creator-only subtle DB indicator dot */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
                 <button
                   type="button" 
@@ -1402,68 +1402,26 @@ function AppContent() {
                     supabaseConnected === null 
                       ? "Supabase DB: Checking connection..." 
                       : supabaseConnected 
-                        ? `Supabase DB: Connected (${supabaseDetails || 'Online'}) • Click to re-check` 
-                        : "Supabase DB: Disconnected • Click to retry connection"
+                        ? `Supabase DB: Connected (${supabaseDetails || 'Online'})` 
+                        : "Supabase DB: Disconnected • Click to retry"
                   }
-                  className={cn(
-                    "flex items-center gap-1.5 h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all select-none active:scale-95 shrink-0",
-                    supabaseConnected === true 
-                      ? "bg-[#06D6A0]/10 border-[#06D6A0]/35 text-[#047857] hover:bg-[#06D6A0]/20" 
-                      : supabaseConnected === false 
-                        ? "bg-[#EF476F]/10 border-[#EF476F]/35 text-[#b91c1c] hover:bg-[#EF476F]/20"
-                        : "bg-[#FFC43D]/15 border-[#FFC43D]/40 text-[#92400e]"
-                  )}
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-[#f6f8f7] flex items-center justify-center transition-colors cursor-pointer relative shrink-0 text-[#1c4a59] active:scale-95"
                 >
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span 
-                      className={cn(
-                        "relative inline-flex rounded-full h-2 w-2",
-                        supabaseConnected === true 
-                          ? "bg-[#06D6A0] animate-pulse" 
-                          : supabaseConnected === false 
-                            ? "bg-[#EF476F]" 
-                            : "bg-[#FFC43D]"
-                      )} 
-                    />
-                  </span>
-                  <Database className={cn(
-                    "w-3.5 h-3.5 shrink-0",
-                    supabaseConnected === true ? "text-[#06D6A0]" : supabaseConnected === false ? "text-[#EF476F]" : "text-[#FFC43D]"
-                  )} />
-                  <span className="hidden xl:inline text-[11px] font-bold tracking-tight whitespace-nowrap">
-                    {supabaseChecking 
-                      ? "Checking..." 
-                      : supabaseConnected === true 
-                        ? "Connected" 
+                  <Database className="w-4 h-4 text-[#1c4a59]" />
+                  <span
+                    className={cn(
+                      "w-2 h-2 rounded-full absolute top-1.5 right-1.5 ring-2 ring-white",
+                      supabaseConnected === true 
+                        ? "bg-[#06D6A0]" 
                         : supabaseConnected === false 
-                          ? "Offline" 
-                          : "Connecting"}
-                  </span>
+                          ? "bg-[#EF476F]" 
+                          : "bg-[#FFC43D]"
+                    )}
+                  />
                 </button>
               )}
 
-              {/* Direct Header Quick Access to Assessments & SBA (hidden on mobile to preserve header spacing) */}
-              <button
-                type="button"
-                id="header-assessments-btn"
-                onClick={() => setActiveView('assessments')}
-                className={cn(
-                  "hidden sm:flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs active:scale-95",
-                  activeView === 'assessments'
-                    ? "bg-[#1c4a59] text-white border-[#1c4a59] shadow-sm"
-                    : "bg-[#faae57]/15 hover:bg-[#faae57]/25 text-[#1c4a59] border-[#faae57]/50"
-                )}
-                title="Homework, Classwork, Tests & Examinations"
-              >
-                <GraduationCap className="w-4 h-4 text-[#faae57] shrink-0" />
-                <span className="hidden md:inline font-bold">Assessments</span>
-                <span className="px-1 py-0.5 rounded text-[8px] font-black bg-[#faae57] text-[#1c4a59] leading-none">
-                  NEW
-                </span>
-              </button>
-
-              <PWAInstallButton variant="header" className="hidden md:inline-flex" />
-
+              {/* SyncChip - Cloud Synchronization status & trigger */}
               <button 
                 id="manual-sync"
                 onClick={async () => {
@@ -1472,45 +1430,53 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="flex items-center justify-center gap-1.5 h-8 w-8 sm:h-9 sm:w-9 lg:w-auto lg:px-3 rounded-xl border border-[#bac4c6]/80 bg-white hover:bg-[#f6f8f7] text-[#1c4a59] active:scale-95 transition-all text-xs font-bold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0 shadow-2xs"
-                title="Synchronize with Cloud Database (Fetch Latest Updates)"
+                className="h-8 sm:h-9 px-2 sm:px-3 rounded-full bg-[#f6f8f7] hover:bg-[#e1c594]/25 text-[#1c4a59] flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0 active:scale-95"
+                title="Synchronize with Cloud Database"
               >
-                <RefreshCcw className={cn("w-3.5 h-3.5 text-[#6a7f84] transition-transform shrink-0", isSyncing && "animate-spin text-[#1c4a59]")} />
-                <span className="hidden lg:inline text-xs tracking-tight font-bold whitespace-nowrap">
-                  {isSyncing ? 'Syncing...' : 'Sync'}
+                <span
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full shrink-0 transition-colors",
+                    isSyncing ? "bg-[#faae57] animate-pulse" : "bg-[#06d6a0]"
+                  )}
+                />
+                <RefreshCcw className={cn("w-3.5 h-3.5 text-[#6a7f84] shrink-0 transition-transform", isSyncing && "animate-spin text-[#1c4a59]")} />
+                <span className="hidden md:inline font-semibold text-xs whitespace-nowrap">
+                  {isSyncing ? 'Syncing...' : 'Synced'}
                 </span>
               </button>
 
-              <div className="h-4 sm:h-5 w-px bg-[#bac4c6]/60 mx-0.5 shrink-0" />
-              
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsSecurityModalOpen(true)}
-                  className="flex items-center gap-1.5 sm:gap-2 h-8 sm:h-9 px-1 sm:px-2 rounded-xl hover:bg-[#f6f8f7] transition-all text-left group cursor-pointer active:scale-95 shrink-0"
-                  title="View Profile, Permissions & Change Password"
-                >
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#1c4a59] text-[#faae57] border border-[#faae57]/40 flex items-center justify-center font-bold text-xs shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
-                    {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
-                  </div>
-                  <div className="text-left hidden md:block min-w-0">
-                    <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[110px] lg:max-w-[140px]">
-                      {user.fullName || user.username}
-                    </p>
-                    <p className="text-[10px] text-[#807654] font-semibold uppercase tracking-wider mt-0.5 truncate">
-                      {user.role?.replace('_', ' ')}
-                    </p>
-                  </div>
-                </button>
-                <button 
-                  type="button"
-                  onClick={handleLogout}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 flex items-center justify-center shrink-0 transition-all group cursor-pointer active:scale-95 shadow-2xs"
-                  title="Log Out"
-                >
-                  <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6a7f84] group-hover:text-[#ef476f] transition-colors" />
-                </button>
-              </div>
+              <div className="h-4 sm:h-5 w-px bg-[#bac4c6]/40 mx-0.5 sm:mx-1 shrink-0" />
+
+              {/* Profile Avatar & Info */}
+              <button
+                type="button"
+                onClick={() => setIsSecurityModalOpen(true)}
+                className="flex items-center gap-2 h-8 sm:h-9 px-1 sm:px-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left cursor-pointer active:scale-95 shrink-0 group"
+                title="View Profile & Security"
+              >
+                <div className="w-8 h-8 rounded-full bg-[#1c4a59] text-[#faae57] flex items-center justify-center font-bold text-xs shrink-0 select-none">
+                  {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
+                </div>
+                <div className="hidden lg:block text-left min-w-0 pr-1">
+                  <p className="text-xs font-bold text-[#1f2a2e] leading-tight group-hover:text-[#1c4a59] transition-colors truncate max-w-[130px]">
+                    {user.fullName || user.username}
+                  </p>
+                  <p className="text-[10px] text-[#6a7f84] font-medium uppercase tracking-wider truncate leading-tight mt-0.5">
+                    {user.role?.replace('_', ' ')}
+                  </p>
+                </div>
+              </button>
+
+              {/* Logout Button */}
+              <button 
+                type="button"
+                onClick={handleLogout}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-rose-50 text-[#6a7f84] hover:text-[#ef476f] flex items-center justify-center shrink-0 transition-colors cursor-pointer active:scale-95"
+                title="Log Out"
+                aria-label="Log Out"
+              >
+                <LogOut className="w-4 h-4 transition-colors" />
+              </button>
             </div>
           </header>
         )}
@@ -1557,16 +1523,7 @@ function AppContent() {
             </div>
           )}
 
-          {/* Quick Access Role Navigation Ribbon */}
-          {activeView !== 'creator' && (
-            <div className="max-w-7xl mx-auto w-full mb-3 print:hidden">
-              <PortalRoleActionBar
-                activeView={activeView as PortalView}
-                onNavigate={(view) => setActiveView(view as View)}
-                userRole={user?.role}
-              />
-            </div>
-          )}
+
 
           <AnimatePresence mode="wait">
             <motion.div

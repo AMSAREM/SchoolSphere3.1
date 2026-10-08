@@ -12,11 +12,15 @@ import {
   FileQuestion,
   AlignLeft,
   Edit2,
-  Check
+  Check,
+  BookOpen,
+  BookmarkPlus
 } from 'lucide-react';
-import type { AssessmentQuestion, QuestionType } from '../../db/schema';
+import { db, type AssessmentQuestion, type QuestionType, type QuestionBankItem } from '../../db/schema';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { cn } from '../../lib/utils';
 import { LessonNoteQuestionGeneratorModal } from './LessonNoteQuestionGeneratorModal';
+import { QuestionBankImportModal } from './QuestionBankImportModal';
 
 interface QuestionBuilderProps {
   questions: AssessmentQuestion[];
@@ -40,7 +44,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
   currentTerm = 'Term 1',
   onImportMetadata
 }) => {
+  const { showToast } = useNotifications();
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isBankImportOpen, setIsBankImportOpen] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
 
   // Quick stats

@@ -17,7 +17,7 @@ import {
   Package,
   Briefcase,
   Settings as SettingsIcon,
-  Sparkles,
+  Compass,
   MessageSquare,
   GraduationCap
 } from 'lucide-react';
@@ -190,18 +190,18 @@ export const PortalRoleActionBar: React.FC<PortalRoleActionBarProps> = ({
       role="navigation"
       aria-label="Portal Role Actions"
       className={cn(
-        'w-full min-w-0 max-w-full mb-3 sm:mb-4 bg-white/90 backdrop-blur-xs border border-[#bac4c6]/70 rounded-2xl p-1.5 sm:p-2 shadow-2xs print:hidden',
+        'w-full min-w-0 max-w-full mb-3 sm:mb-4 bg-white border border-[#bac4c6]/50 rounded-2xl p-1.5 sm:p-2 shadow-2xs print:hidden',
         className
       )}
     >
-      <div className="flex items-center justify-between gap-2 px-1 mb-1">
+      <div className="flex items-center justify-between gap-2 px-1 mb-1.5">
         <div className="flex items-center gap-1.5 min-w-0">
-          <Sparkles className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
-          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#1c4a59] truncate">
-            {normalizedRole.replace('_', ' ')} Portal Quick Items
+          <Compass className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#1c4a59] truncate">
+            {normalizedRole.replace('_', ' ')} Quick Access
           </span>
         </div>
-        <span className="text-[9px] font-semibold text-[#6a7f84] hidden xs:inline shrink-0">
+        <span className="text-[10px] font-medium text-[#6a7f84] hidden xs:inline shrink-0">
           {items.length} Modules
         </span>
       </div>
