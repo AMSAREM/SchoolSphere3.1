@@ -292,6 +292,27 @@ export const VIEW_METADATA: Record<string, PageIdentityMeta> = {
       }
     }
   },
+  assessments: {
+    id: 'assessments',
+    title: 'Homework, Classwork, Tests & Examinations',
+    shortTitle: 'Assessments',
+    category: 'Academic Operations',
+    subtitle: 'Author coursework with multi-criteria rubrics, track digital student submissions, and aggregate scores into terminal SBA marks.',
+    roleOverrides: {
+      student: {
+        title: 'My Coursework & Examination Hub',
+        shortTitle: 'My Assessments',
+        category: 'Student Portal',
+        subtitle: 'View assigned homework, classwork, tests, and exams, turn in digital work, and check rubric grades and feedback.'
+      },
+      teacher: {
+        title: 'Class Assessments & SBA Continuous Evaluation',
+        shortTitle: 'Assessments & SBA',
+        category: 'Teaching & Evaluation',
+        subtitle: 'Curriculum-aligned homework, exercises, tests, rubric grading deck, and one-click sync to terminal continuous assessment.'
+      }
+    }
+  },
   users: {
     id: 'users',
     title: 'User Accounts & Role Permissions',

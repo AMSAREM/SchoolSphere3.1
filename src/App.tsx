@@ -43,7 +43,8 @@ import {
   ClipboardCheck,
   UserCheck,
   Wallet,
-  Bed
+  Bed,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -71,6 +72,9 @@ import LessonNotes from './components/LessonNotes';
 import DutyRosterManagement from './components/DutyRosterManagement';
 import PayrollManagement from './components/PayrollManagement';
 import BoardingManagement from './components/BoardingManagement';
+import AssessmentsManager from './components/assessments/AssessmentsManager';
+import PortalRoleActionBar, { type PortalView } from './components/PortalRoleActionBar';
+import SmsModule from './components/SmsModule';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -88,7 +92,29 @@ import { ClientTrialBanner } from './components/ClientTrialBanner';
 import { ClientSupportWidget } from './components/ClientSupportWidget';
 import { getPageIdentity } from './lib/pageMetadata';
 
-type View = 'dashboard' | 'students' | 'attendance' | 'results' | 'lesson_notes' | 'duty_roster' | 'payroll' | 'boarding' | 'fees' | 'academic' | 'settings' | 'reports' | 'users' | 'siren' | 'timetable' | 'exam_analysis' | 'evoting' | 'inventory' | 'creator' | 'school_management';
+type View =
+  | 'dashboard'
+  | 'students'
+  | 'attendance'
+  | 'results'
+  | 'assessments'
+  | 'sms'
+  | 'lesson_notes'
+  | 'duty_roster'
+  | 'payroll'
+  | 'boarding'
+  | 'fees'
+  | 'academic'
+  | 'settings'
+  | 'reports'
+  | 'users'
+  | 'siren'
+  | 'timetable'
+  | 'exam_analysis'
+  | 'evoting'
+  | 'inventory'
+  | 'creator'
+  | 'school_management';
 
 const ALL_DEFAULT_MODULES = [
   'students',
@@ -100,6 +126,8 @@ const ALL_DEFAULT_MODULES = [
   'lesson_notes',
   'attendance',
   'results',
+  'assessments',
+  'sms',
   'exam_analysis',
   'reports',
   'fees',
@@ -815,12 +843,14 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
+        { id: 'assessments', label: 'Assessments & SBA', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
+        { id: 'sms', label: 'Bulk SMS & Alerts', icon: MessageSquare },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
@@ -836,12 +866,14 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
+        { id: 'assessments', label: 'Assessments & SBA', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
+        { id: 'sms', label: 'Bulk SMS & Alerts', icon: MessageSquare },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
@@ -857,12 +889,14 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
+        { id: 'assessments', label: 'Assessments & SBA', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes', icon: ClipboardCheck },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
+        { id: 'sms', label: 'Parent SMS Alerts', icon: MessageSquare },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
@@ -877,6 +911,7 @@ function AppContent() {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'academic', label: 'Academic', icon: Briefcase },
+        { id: 'assessments', label: 'Assessments & SBA', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
         { id: 'lesson_notes', label: 'Lesson Notes & Vetting', icon: ClipboardCheck },
@@ -892,6 +927,7 @@ function AppContent() {
     } else if (user?.role === 'teacher') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'assessments', label: 'Assessments & SBA', icon: GraduationCap },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'duty_roster', label: 'Duty Roster', icon: UserCheck },
@@ -905,12 +941,13 @@ function AppContent() {
         { id: 'siren', label: 'Siren Console', icon: Siren },
         { id: 'settings', label: 'Settings', icon: SettingsIcon },
       ];
-    } else if (user?.role === 'accountant') {
+    } else if (user?.role === 'accountant' || (user?.role as string) === 'bursar') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'students', label: 'Students', icon: Users },
         { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
         { id: 'payroll', label: 'Staff Payroll', icon: Wallet },
+        { id: 'sms', label: 'Debtor SMS Alerts', icon: MessageSquare },
         { id: 'boarding', label: 'Boarding System', icon: Bed },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'inventory', label: 'Inventory Registry', icon: Package },
@@ -918,6 +955,7 @@ function AppContent() {
     } else if (user?.role === 'student') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'assessments', label: 'My Assessments', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
         { id: 'exam_analysis', label: 'Exam Analysis', icon: Award },
@@ -927,6 +965,7 @@ function AppContent() {
     } else if (user?.role === 'parent') {
       baseItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'assessments', label: 'Ward Assessments', icon: GraduationCap },
         { id: 'timetable', label: 'School Timetable', icon: Calendar },
         { id: 'attendance', label: 'Attendance', icon: CheckCircle },
         { id: 'results', label: 'Results Terminal', icon: BookOpen },
@@ -944,7 +983,7 @@ function AppContent() {
     }
 
     const filteredItems = baseItems.filter(item => {
-      const isCore = ['dashboard', 'duty_roster', 'payroll', 'boarding', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
+      const isCore = ['dashboard', 'assessments', 'sms', 'duty_roster', 'payroll', 'boarding', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'].includes(item.id);
       return isCore || activeModules.includes(item.id);
     });
 
@@ -1139,17 +1178,27 @@ function AppContent() {
                     <motion.span 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="font-bold text-sm tracking-wide whitespace-nowrap flex-1 text-left"
+                      className="font-bold text-sm tracking-wide whitespace-nowrap flex-1 text-left flex items-center justify-between"
                     >
-                      {item.label}
+                      <span>{item.label}</span>
+                      {item.id === 'assessments' && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-[#faae57] text-[#1c4a59] leading-none ml-2 tracking-wider">
+                          NEW
+                        </span>
+                      )}
                     </motion.span>
                   )}
                   {isActive && (sidebarOpen || mobileMenuOpen) && (
                     <span className="w-2 h-2 rounded-full bg-[#faae57] shrink-0" />
                   )}
                   {!sidebarOpen && windowWidth >= 1024 && !mobileMenuOpen && (
-                    <div className="absolute left-16 bg-[#1c4a59] text-white px-3 py-2 rounded-xl text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold shadow-md border border-[#faae57]/30">
-                      {item.label}
+                    <div className="absolute left-16 bg-[#1c4a59] text-white px-3 py-2 rounded-xl text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none font-bold shadow-md border border-[#faae57]/30 flex items-center gap-1.5">
+                      <span>{item.label}</span>
+                      {item.id === 'assessments' && (
+                        <span className="bg-[#faae57] text-[#1c4a59] text-[9px] px-1 py-0.5 rounded font-black">
+                          NEW
+                        </span>
+                      )}
                     </div>
                   )}
                 </button>
@@ -1392,6 +1441,26 @@ function AppContent() {
                 </button>
               )}
 
+              {/* Direct Header Quick Access to Assessments & SBA */}
+              <button
+                type="button"
+                id="header-assessments-btn"
+                onClick={() => setActiveView('assessments')}
+                className={cn(
+                  "flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs",
+                  activeView === 'assessments'
+                    ? "bg-[#1c4a59] text-white border-[#1c4a59] shadow-sm"
+                    : "bg-[#faae57]/15 hover:bg-[#faae57]/25 text-[#1c4a59] border-[#faae57]/50"
+                )}
+                title="Homework, Classwork, Tests & Examinations"
+              >
+                <GraduationCap className="w-4 h-4 text-[#faae57] shrink-0" />
+                <span className="hidden md:inline font-bold">Assessments</span>
+                <span className="px-1 py-0.5 rounded text-[8px] font-black bg-[#faae57] text-[#1c4a59] leading-none">
+                  NEW
+                </span>
+              </button>
+
               <PWAInstallButton variant="header" />
 
               <button 
@@ -1487,6 +1556,17 @@ function AppContent() {
             </div>
           )}
 
+          {/* Quick Access Role Navigation Ribbon */}
+          {activeView !== 'creator' && (
+            <div className="max-w-7xl mx-auto w-full mb-3 print:hidden">
+              <PortalRoleActionBar
+                activeView={activeView as PortalView}
+                onNavigate={(view) => setActiveView(view as View)}
+                userRole={user?.role}
+              />
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             <motion.div
               key={activeView}
@@ -1502,7 +1582,7 @@ function AppContent() {
               <ErrorBoundary key={activeView}>
                 {activeView === 'dashboard' && <Dashboard onViewChange={setActiveView} />}
                 {activeView === 'students' && <StudentManagement />}
-                {activeView === 'academic' && <AcademicManagement />}
+                {activeView === 'academic' && <AcademicManagement onNavigate={(target) => setActiveView(target as View)} />}
                 {activeView === 'timetable' && <TimetableManagement />}
                 {activeView === 'duty_roster' && <DutyRosterManagement />}
                 {activeView === 'lesson_notes' && (
@@ -1513,7 +1593,9 @@ function AppContent() {
                   />
                 )}
                 {activeView === 'attendance' && <AttendanceTerminal />}
-                {activeView === 'results' && <ResultsTerminal />}
+                {activeView === 'results' && <ResultsTerminal onNavigate={(target) => setActiveView(target as View)} />}
+                {activeView === 'assessments' && <AssessmentsManager />}
+                {activeView === 'sms' && <SmsModule />}
                 {activeView === 'exam_analysis' && <ExamAnalysis />}
                 {activeView === 'reports' && <ReportTerminal />}
                 {activeView === 'fees' && <FeeManagement />}

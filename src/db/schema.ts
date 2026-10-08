@@ -566,6 +566,64 @@ export interface BoardingMedicalLog {
   createdAt: number;
 }
 
+export type AssessmentCategory = 'homework' | 'classwork' | 'class_test' | 'examination';
+
+export interface AssessmentRubricCriterion {
+  id: string;
+  criterion: string;
+  description: string;
+  maxPoints: number;
+}
+
+export interface AssessmentAttachment {
+  name: string;
+  url: string;
+  size: number;
+  type?: string;
+}
+
+export interface Assessment {
+  id: string;
+  schoolId?: string;
+  title: string;
+  category: AssessmentCategory;
+  subject: string;
+  class: string;
+  academicYear: string;
+  term: string;
+  description: string;
+  dueDate: string;
+  maxScore: number;
+  weightPercentage: number;
+  attachments?: AssessmentAttachment[];
+  rubric: AssessmentRubricCriterion[];
+  teacherId?: string;
+  teacherName?: string;
+  status?: 'draft' | 'published' | 'closed';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AssessmentSubmission {
+  id: string;
+  schoolId?: string;
+  assessmentId: string;
+  studentId: string;
+  studentName: string;
+  class: string;
+  status: 'draft' | 'submitted' | 'graded' | 'returned';
+  submittedAt: number;
+  content: string;
+  attachments?: AssessmentAttachment[];
+  rubricScores?: Record<string, number>;
+  totalScore?: number;
+  grade?: string;
+  feedback?: string;
+  gradedBy?: string;
+  gradedAt?: number;
+  syncedToSba?: boolean;
+}
+
 export class SchoolDB extends Dexie {
   students!: Table<Student>;
   attendance!: Table<Attendance>;
@@ -596,6 +654,8 @@ export class SchoolDB extends Dexie {
   boardingRollCalls!: Table<BoardingRollCall>;
   boardingMedicalLogs!: Table<BoardingMedicalLog>;
   clientProposals!: Table<ProposalItem>;
+  assessments!: Table<Assessment>;
+  assessmentSubmissions!: Table<AssessmentSubmission>;
 
   constructor() {
     super('EsepaSchoolDB');
@@ -849,6 +909,39 @@ export class SchoolDB extends Dexie {
       boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
       boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status',
       clientProposals: 'id, schoolName, contactPerson, status, createdAt, updatedAt'
+    });
+    this.version(20).stores({
+      students: '++id, studentId, firstName, lastName, class, createdAt',
+      attendance: '++id, [studentId+date], date',
+      results: '++id, [studentId+subject+term], studentId, subject, class',
+      subjects: '++id, name, code',
+      classes: '++id, name',
+      teachers: '++id, staffId, firstName, lastName',
+      termReports: '++id, [studentId+term], studentId, term',
+      settings: '++id, key',
+      users: '++id, username, role',
+      examAnalysis: '++id, studentId, examType, year, aggregate',
+      smsLogs: '++id, recipientPhone, type, status, createdAt',
+      polls: '++id, title, status, category, createdAt',
+      candidates: '++id, pollId, name, position',
+      votes: '++id, [pollId+studentId+position], pollId, studentId, candidateId, position',
+      promotionHistory: '++id, studentId, studentIdentifier, sourceClass, destClass, academicYear, timestamp',
+      inventory: '++id, itemName, category, location',
+      expenses: '++id, category, date, inventoryItemId',
+      lessonNotes: '++id, noteId, [class+subject+term+weekNumber], teacherName, status, term, weekNumber, updatedAt',
+      feeTransactions: '++id, receiptNumber, studentId, schoolId, feeType, paymentMethod, date',
+      salaryProfiles: 'id, schoolId, staffId, staffName, designation, updatedAt',
+      payslips: 'id, schoolId, payrollMonth, [payrollMonth+staffId], staffId, status, receiptRef, updatedAt',
+      salaryAdvances: 'id, schoolId, staffId, status, requestedAt',
+      boardingHouses: 'id, schoolId, name, gender, housemasterName',
+      boardingRooms: 'id, schoolId, houseId, roomNumber, floor',
+      boardingAllocations: 'id, schoolId, studentId, houseId, roomId, status, assignedAt',
+      boardingExeats: 'id, schoolId, studentId, houseId, passCode, status, departureDate, expectedReturnDate',
+      boardingRollCalls: 'id, schoolId, houseId, rollDate, sessionType',
+      boardingMedicalLogs: 'id, schoolId, studentId, houseId, visitDate, status',
+      clientProposals: 'id, schoolName, contactPerson, status, createdAt, updatedAt',
+      assessments: 'id, schoolId, category, class, subject, term, dueDate, status, createdAt',
+      assessmentSubmissions: 'id, assessmentId, studentId, class, status, submittedAt, [assessmentId+studentId]'
     });
   }
 }
@@ -1253,6 +1346,186 @@ export async function purgeDemoRecordsFromDb(activeSchoolId?: string): Promise<v
     }
   } catch (e) {
     console.warn('Notice purging demo records:', e);
+  }
+}
+
+export async function seedDefaultAssessmentsIfEmpty(schoolId?: string, studentList?: Student[]): Promise<void> {
+  try {
+    const count = await db.assessments.count();
+    if (count > 0) return;
+
+    const currentYear = '2025/2026';
+    const currentTerm = 'Term 1';
+    const sId = schoolId || 'default-school';
+
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    const initialAssessments: Assessment[] = [
+      {
+        id: 'asm-hw-01',
+        schoolId: sId,
+        title: 'Photosynthesis & Plant Respiration Worksheet',
+        category: 'homework',
+        subject: 'Integrated Science',
+        class: 'JHS 1',
+        academicYear: currentYear,
+        term: currentTerm,
+        description: 'Complete questions 1 to 5 detailing the light-dependent and Calvin cycle stages of photosynthesis. Diagram the internal structure of a leaf showing xylem, phloem, and stomata.',
+        dueDate: new Date(now + 3 * oneDay).toISOString().split('T')[0],
+        maxScore: 20,
+        weightPercentage: 10,
+        status: 'published',
+        attachments: [
+          { name: 'science_photosynthesis_diagram_guide.pdf', url: '#', size: 245000, type: 'application/pdf' }
+        ],
+        rubric: [
+          { id: 'crit-1', criterion: 'Scientific Understanding', description: 'Accurate explanation of chloroplast functions and pigment mechanisms', maxPoints: 8 },
+          { id: 'crit-2', criterion: 'Diagram Accuracy & Labeling', description: 'Neat, correctly labeled cross-section of leaf stomata & vascular bundles', maxPoints: 7 },
+          { id: 'crit-3', criterion: 'Clarity & Scientific Vocabulary', description: 'Appropriate usage of chemical terms and well-structured prose', maxPoints: 5 }
+        ],
+        teacherId: 'staff-01',
+        teacherName: 'Mr. Kwame Mensah',
+        createdAt: now - 2 * oneDay,
+        updatedAt: now - 2 * oneDay
+      },
+      {
+        id: 'asm-cw-01',
+        schoolId: sId,
+        title: 'Linear Equations & Cartesian Plotting Drill',
+        category: 'classwork',
+        subject: 'Mathematics',
+        class: 'JHS 1',
+        academicYear: currentYear,
+        term: currentTerm,
+        description: 'Solve the 4 simultaneous equations on the board. Plot the coordinates to locate the intersection points and verify with algebraic substitution.',
+        dueDate: new Date(now + 1 * oneDay).toISOString().split('T')[0],
+        maxScore: 20,
+        weightPercentage: 10,
+        status: 'published',
+        attachments: [],
+        rubric: [
+          { id: 'crit-1', criterion: 'Algebraic Steps & Method', description: 'Clear step-by-step substitution and elimination mechanics', maxPoints: 10 },
+          { id: 'crit-2', criterion: 'Coordinate Accuracy', description: 'Correct plotting of x-y axes and coordinate points', maxPoints: 6 },
+          { id: 'crit-3', criterion: 'Solution Verification', description: 'Checked answers against original equation constraints', maxPoints: 4 }
+        ],
+        teacherId: 'staff-02',
+        teacherName: 'Mrs. Patience Osei',
+        createdAt: now - 1 * oneDay,
+        updatedAt: now - 1 * oneDay
+      },
+      {
+        id: 'asm-test-01',
+        schoolId: sId,
+        title: 'Grammar, Syntax & Formal Letter Writing Test',
+        category: 'class_test',
+        subject: 'English Language',
+        class: 'JHS 1',
+        academicYear: currentYear,
+        term: currentTerm,
+        description: 'Mid-term continuous assessment test covering subject-verb agreement, idioms, and composition: Write a formal letter of appeal to the Municipal Chief Executive regarding the community access road.',
+        dueDate: new Date(now + 5 * oneDay).toISOString().split('T')[0],
+        maxScore: 30,
+        weightPercentage: 20,
+        status: 'published',
+        attachments: [
+          { name: 'formal_letter_rubric_handout.pdf', url: '#', size: 180000, type: 'application/pdf' }
+        ],
+        rubric: [
+          { id: 'crit-1', criterion: 'Format & Formal Conventions', description: 'Addresses, date, salutation, title, subscription according to WAEC format', maxPoints: 8 },
+          { id: 'crit-2', criterion: 'Content & Persuasive Arguments', description: 'Cogent reasons with civic awareness and logical structure', maxPoints: 12 },
+          { id: 'crit-3', criterion: 'Grammar, Punctuation & Register', description: 'Sophisticated vocabulary, concord agreement, and flawless mechanics', maxPoints: 10 }
+        ],
+        teacherId: 'staff-03',
+        teacherName: 'Mr. Emmanuel Addo',
+        createdAt: now - 3 * oneDay,
+        updatedAt: now - 3 * oneDay
+      },
+      {
+        id: 'asm-exam-01',
+        schoolId: sId,
+        title: 'First Term Summative Examination: Integrated Science',
+        category: 'examination',
+        subject: 'Integrated Science',
+        class: 'JHS 1',
+        academicYear: currentYear,
+        term: currentTerm,
+        description: 'Section A: 40 Objective Questions (40 marks). Section B: 4 Theory and Practical Application Questions (60 marks). Scaled to 70 marks terminal exam score.',
+        dueDate: new Date(now + 14 * oneDay).toISOString().split('T')[0],
+        maxScore: 100,
+        weightPercentage: 70,
+        status: 'published',
+        attachments: [
+          { name: 'exam_timetable_and_code_of_conduct.pdf', url: '#', size: 310000, type: 'application/pdf' }
+        ],
+        rubric: [
+          { id: 'crit-1', criterion: 'Section A - Objective Multiple Choice', description: '40 marks machine/key scored syllabus questions', maxPoints: 40 },
+          { id: 'crit-2', criterion: 'Section B - Experimental Design & Analysis', description: 'Laboratory observations, controls, and variable identification', maxPoints: 30 },
+          { id: 'crit-3', criterion: 'Section B - Theoretical Derivations & Synthesis', description: 'In-depth problem solving and scientific explanations', maxPoints: 30 }
+        ],
+        teacherId: 'staff-01',
+        teacherName: 'Mr. Kwame Mensah',
+        createdAt: now - 4 * oneDay,
+        updatedAt: now - 4 * oneDay
+      }
+    ];
+
+    await db.assessments.bulkAdd(initialAssessments);
+
+    // If there are existing students in system, seed a couple of submissions so teachers see live submissions ready to grade!
+    const students = studentList && studentList.length > 0 ? studentList : await db.students.limit(5).toArray();
+    if (students.length > 0) {
+      const s1 = students[0];
+      const initialSubmissions: AssessmentSubmission[] = [
+        {
+          id: 'sub-01',
+          schoolId: sId,
+          assessmentId: 'asm-hw-01',
+          studentId: s1.studentId,
+          studentName: `${s1.firstName} ${s1.lastName}`.trim(),
+          class: s1.class || 'JHS 1',
+          status: 'submitted',
+          submittedAt: now - 12 * 60 * 60 * 1000,
+          content: 'Here is my submission for the plant respiration and photosynthesis assignment. The diagram is attached, and the chemical reactions for photolysis of water are outlined in my notes.',
+          attachments: [
+            { name: `${s1.firstName}_leaf_diagram_answers.pdf`, url: '#', size: 142000, type: 'application/pdf' }
+          ]
+        }
+      ];
+
+      if (students.length > 1) {
+        const s2 = students[1];
+        initialSubmissions.push({
+          id: 'sub-02',
+          schoolId: sId,
+          assessmentId: 'asm-hw-01',
+          studentId: s2.studentId,
+          studentName: `${s2.firstName} ${s2.lastName}`.trim(),
+          class: s2.class || 'JHS 1',
+          status: 'graded',
+          submittedAt: now - 24 * 60 * 60 * 1000,
+          content: 'Detailed answers attached with labeled stomata diagram and chlorophyll absorption spectrum.',
+          attachments: [
+            { name: `${s2.firstName}_science_hw1.pdf`, url: '#', size: 198000, type: 'application/pdf' }
+          ],
+          rubricScores: {
+            'crit-1': 7,
+            'crit-2': 7,
+            'crit-3': 4
+          },
+          totalScore: 18,
+          grade: '1',
+          feedback: 'Outstanding diagram presentation and clear explanation of stomata guard cells!',
+          gradedBy: 'Mr. Kwame Mensah',
+          gradedAt: now - 6 * 60 * 60 * 1000,
+          syncedToSba: true
+        });
+      }
+
+      await db.assessmentSubmissions.bulkAdd(initialSubmissions);
+    }
+  } catch (err) {
+    console.warn('Notice seeding default assessments:', err);
   }
 }
 

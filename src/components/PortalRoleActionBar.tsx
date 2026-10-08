@@ -18,7 +18,8 @@ import {
   Briefcase,
   Settings as SettingsIcon,
   Sparkles,
-  MessageSquare
+  MessageSquare,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -27,6 +28,7 @@ export type PortalView =
   | 'students'
   | 'attendance'
   | 'results'
+  | 'assessments'
   | 'lesson_notes'
   | 'duty_roster'
   | 'payroll'
@@ -66,6 +68,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
     { id: 'dashboard', label: 'Overview', mobileLabel: 'Dashboard', icon: LayoutDashboard },
     { id: 'students', label: 'Students', icon: Users },
     { id: 'academic', label: 'Academic Staff', mobileLabel: 'Academics', icon: BookOpen },
+    { id: 'assessments', label: 'Assessments & SBA', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'attendance', label: 'Attendance', icon: CheckCircle },
     { id: 'results', label: 'Gradebook', icon: Award },
     { id: 'exam_analysis', label: 'WAEC Analysis', mobileLabel: 'Exams', icon: Award },
@@ -87,6 +90,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
     { id: 'dashboard', label: 'Overview', mobileLabel: 'Dashboard', icon: LayoutDashboard },
     { id: 'students', label: 'Students', icon: Users },
     { id: 'academic', label: 'Academic', icon: BookOpen },
+    { id: 'assessments', label: 'Assessments & SBA', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'fees', label: 'Fees Ledger', icon: CreditCard },
     { id: 'payroll', label: 'Payroll', icon: Wallet },
     { id: 'boarding', label: 'Boarding', icon: Bed },
@@ -106,6 +110,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'students', label: 'Students', icon: Users },
     { id: 'academic', label: 'Staff & Classes', mobileLabel: 'Staff', icon: BookOpen },
+    { id: 'assessments', label: 'Assessments & SBA', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'lesson_notes', label: 'Vetting Lesson Notes', mobileLabel: 'Lesson Notes', icon: ClipboardCheck },
     { id: 'duty_roster', label: 'Teachers Duty Log', mobileLabel: 'Duty Roster', icon: UserCheck },
     { id: 'attendance', label: 'Daily Roll Call', mobileLabel: 'Attendance', icon: CheckCircle },
@@ -119,6 +124,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
   ],
   teacher: [
     { id: 'dashboard', label: 'Teacher Hub', mobileLabel: 'Overview', icon: LayoutDashboard },
+    { id: 'assessments', label: 'Homework & Tests', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'attendance', label: 'Mark Attendance', mobileLabel: 'Roll Call', icon: CheckCircle },
     { id: 'results', label: 'Record Marks', mobileLabel: 'Grading', icon: Award },
     { id: 'lesson_notes', label: 'My Lesson Plans', mobileLabel: 'Lesson Notes', icon: ClipboardCheck },
@@ -149,6 +155,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
   ],
   student: [
     { id: 'dashboard', label: 'Student Portal', mobileLabel: 'Overview', icon: LayoutDashboard },
+    { id: 'assessments', label: 'My Assessments', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'reports', label: 'My Terminal Reports', mobileLabel: 'Report Card', icon: FileText },
     { id: 'results', label: 'My Continuous Assessment', mobileLabel: 'Assessment', icon: Award },
     { id: 'timetable', label: 'Class Timetable', mobileLabel: 'Timetable', icon: Calendar },
@@ -159,6 +166,7 @@ const ROLE_PORTAL_ITEMS: Record<string, PortalActionItem[]> = {
   ],
   parent: [
     { id: 'dashboard', label: 'Parent Portal', mobileLabel: 'Overview', icon: LayoutDashboard },
+    { id: 'assessments', label: 'Ward Assessments', mobileLabel: 'Assessments', icon: GraduationCap, tag: 'NEW' },
     { id: 'reports', label: 'Ward Terminal Reports', mobileLabel: 'Report Cards', icon: FileText },
     { id: 'fees', label: 'Fees & MoMo Pay', mobileLabel: 'Pay Fees', icon: CreditCard },
     { id: 'attendance', label: 'Attendance Records', mobileLabel: 'Attendance', icon: CheckCircle },

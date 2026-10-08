@@ -28665,6 +28665,128 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
+  // =========================================================================
+  // UNIFIED ASSESSMENTS & EXAMINATIONS API (Homework, Classwork, Tests, Exams)
+  // =========================================================================
+  const inMemoryAssessmentsStore: Map<string, any> = new Map();
+  const inMemorySubmissionsStore: Map<string, any> = new Map();
+
+  // GET /api/assessments - List assessments by category, class, subject, term
+  app.get("/api/assessments", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = (await resolveResultsSchoolId(req)) || 'default-school';
+      const category = req.query.category ? String(req.query.category).trim() : undefined;
+      const className = req.query.class ? String(req.query.class).trim() : undefined;
+      const subject = req.query.subject ? String(req.query.subject).trim() : undefined;
+      const term = req.query.term ? String(req.query.term).trim() : undefined;
+
+      const list = Array.from(inMemoryAssessmentsStore.values()).filter(a => {
+        if (a.schoolId && a.schoolId !== schoolId) return false;
+        if (category && a.category !== category) return false;
+        if (className && a.class !== className && a.class !== 'All') return false;
+        if (subject && a.subject !== subject) return false;
+        if (term && a.term !== term) return false;
+        return true;
+      });
+
+      return res.json({
+        success: true,
+        assessments: list,
+        schoolId,
+        count: list.length,
+        timestamp: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/assessments - Create or update assessment
+  app.post("/api/assessments", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const schoolId = (await resolveResultsSchoolId(req)) || 'default-school';
+      const payload = req.body || {};
+      const id = payload.id || `asm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const assessment = {
+        ...payload,
+        id,
+        schoolId,
+        updatedAt: Date.now(),
+        createdAt: payload.createdAt || Date.now()
+      };
+      inMemoryAssessmentsStore.set(id, assessment);
+
+      return res.status(201).json({
+        success: true,
+        assessment,
+        message: "Assessment saved successfully."
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // DELETE /api/assessments/:id - Delete an assessment
+  app.delete("/api/assessments/:id", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      inMemoryAssessmentsStore.delete(id);
+      for (const [subId, sub] of inMemorySubmissionsStore.entries()) {
+        if (sub.assessmentId === id) {
+          inMemorySubmissionsStore.delete(subId);
+        }
+      }
+      return res.json({ success: true, message: "Assessment deleted successfully." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // GET /api/assessments/:id/submissions - List submissions for an assessment
+  app.get("/api/assessments/:id/submissions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const studentId = req.query.studentId ? String(req.query.studentId).trim() : undefined;
+      const list = Array.from(inMemorySubmissionsStore.values()).filter(sub => {
+        if (sub.assessmentId !== id) return false;
+        if (studentId && sub.studentId !== studentId) return false;
+        return true;
+      });
+
+      return res.json({
+        success: true,
+        submissions: list,
+        count: list.length
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // POST /api/assessments/:id/submissions - Submit or grade an assessment
+  app.post("/api/assessments/:id/submissions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const payload = req.body || {};
+      const subId = payload.id || `sub-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const submission = {
+        ...payload,
+        id: subId,
+        assessmentId: id,
+        updatedAt: Date.now()
+      };
+      inMemorySubmissionsStore.set(subId, submission);
+
+      return res.status(201).json({
+        success: true,
+        submission,
+        message: "Submission updated successfully."
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
   // Explicit API 404 fallback - ensures any unmatched /api/* route returns clean JSON instead of HTML
   app.all("/api/*", (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.path}` });

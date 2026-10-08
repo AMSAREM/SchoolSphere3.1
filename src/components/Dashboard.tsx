@@ -31,7 +31,8 @@ import {
   BellRing,
   FileText,
   Bed,
-  ClipboardCheck
+  ClipboardCheck,
+  GraduationCap
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -90,6 +91,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
   const results = useLiveQuery(() => db.results.toArray()) || [];
   const recentStudents = useLiveQuery(() => db.students.orderBy('createdAt').reverse().limit(5).toArray());
   const attendanceRecords = useLiveQuery(() => db.attendance.toArray()) || [];
+  const assessmentCount = useLiveQuery(() => db.assessments.count()) || 0;
   
   const totalFeesCollected = students?.reduce((acc, s) => acc + (s.feesPaid || 0), 0) || 0;
 
@@ -271,10 +273,10 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
     return [
       { label: 'Total Students', value: typeof studentCount === 'number' ? studentCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'students' as const, accent: 'border-[#bac4c6]/60' },
       { label: 'Teachers & Staff', value: typeof teacherCount === 'number' ? teacherCount : 0, icon: Users, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/20', view: 'academic' as const, accent: 'border-[#e1c594]' },
+      { label: 'Assessments & SBA', value: assessmentCount > 0 ? `${assessmentCount} Active` : '4 Curricula', icon: GraduationCap, color: 'text-[#1c4a59]', bg: 'bg-[#faae57]/25', view: 'assessments' as const, accent: 'border-[#faae57]' },
       { label: 'Fees Collected', value: formatCurrency(totalFeesCollected), icon: Wallet, color: 'text-[#06d6a0]', bg: 'bg-[#06d6a0]/10', view: 'fees' as const, accent: 'border-[#e1c594]' },
-      { label: 'Attendance Rate', value: '94%', icon: CheckCircle2, color: 'text-[#807654]', bg: 'bg-[#f6f8f7] border border-[#bac4c6]/60', view: 'attendance' as const, accent: 'border-[#bac4c6]/60' },
     ];
-  }, [user, studentCount, teacherCount, totalFeesCollected, averageScoreString, results, students, parentWards, selectedWard, selectedWardAttendance, selectedWardStanding, selectedWardOutstandingFees, studentRecord, studentAttendance, studentAverageScore]);
+  }, [user, studentCount, teacherCount, totalFeesCollected, averageScoreString, results, students, parentWards, selectedWard, selectedWardAttendance, selectedWardStanding, selectedWardOutstandingFees, studentRecord, studentAttendance, studentAverageScore, assessmentCount]);
 
   const heroSummary = useMemo(() => {
     const role = user?.role;
@@ -980,6 +982,38 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
         ))}
       </div>
 
+      {/* Unified Assessments & Examination Callout Banner */}
+      <div className="bg-gradient-to-r from-[#1c4a59] via-[#163b47] to-[#122e38] rounded-2xl p-4 sm:p-5 text-white shadow-md border border-[#faae57]/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-[#faae57] text-[#1c4a59] flex items-center justify-center shrink-0 shadow-sm">
+            <GraduationCap className="w-6 h-6 stroke-[2.2]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-extrabold text-sm sm:text-base tracking-tight text-white">
+                Unified Assessments: Homework, Classwork, Tests & Exams
+              </h4>
+              <span className="bg-[#faae57] text-[#1c4a59] text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                New Module
+              </span>
+            </div>
+            <p className="text-xs text-white/80 mt-0.5 line-clamp-2 md:line-clamp-none">
+              Digital submissions with rubrics, attachments, teacher grading, and automatic sync to terminal Continuous Assessment (SBA).
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => onViewChange('assessments')}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#faae57] hover:bg-[#e4ae67] text-[#1c4a59] font-extrabold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+          >
+            <span>Open Assessments Hub</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Main Analytics Chart */}
         <div className={`bg-white p-5 sm:p-8 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)] overflow-hidden ${
@@ -1111,6 +1145,27 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
             <div className="bg-white p-6 rounded-2xl border border-[#bac4c6]/60 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
               <h3 className="text-base font-bold text-[#1f2a2e] mb-4">Quick Actions</h3>
               <div className="grid grid-cols-1 gap-3">
+                <button 
+                  onClick={() => onViewChange('assessments')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-[#1c4a59]/10 via-[#faae57]/15 to-[#1c4a59]/5 border-2 border-[#1c4a59]/35 hover:border-[#1c4a59] hover:shadow-md transition-all group text-left cursor-pointer min-h-[50px]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#1c4a59] flex items-center justify-center shrink-0 shadow-xs">
+                      <GraduationCap className="w-4 h-4 text-[#faae57]" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs sm:text-sm font-extrabold text-[#1c4a59]">Assessments & SBA</span>
+                        <span className="text-[9px] bg-[#faae57] text-[#1c4a59] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          New
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#6a7f84] font-medium leading-tight">Homework, Classwork, Tests & Exams</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#1c4a59] group-hover:translate-x-1 transition-transform shrink-0" />
+                </button>
+
                 <button 
                   onClick={() => onViewChange('students')}
                   className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f6f8f7] border border-[#e1c594] hover:shadow-sm transition-all group text-left cursor-pointer min-h-[48px]"

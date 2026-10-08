@@ -10,7 +10,11 @@ import { teachersApi, classesApi, subjectsApi } from '../lib/api';
 import { useNotifications } from '../contexts/NotificationContext';
 import DutyRosterManagement from './DutyRosterManagement';
 
-export default function AcademicManagement() {
+interface AcademicManagementProps {
+  onNavigate?: (view: any) => void;
+}
+
+export default function AcademicManagement({ onNavigate }: AcademicManagementProps = {}) {
   const [activeTab, setActiveTab] = useState<'teachers' | 'classes' | 'subjects' | 'duty_roster'>('teachers');
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const schoolName = settings.find(s => s.key === 'schoolProfile')?.value?.schoolName || 'SCHOOLSPHERE PORTAL';
@@ -37,9 +41,9 @@ export default function AcademicManagement() {
         </div>
       )}
 
-      {/* Responsive 4-Tab Bar + Compact Print Action */}
-      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-        <div className="flex-1 grid grid-cols-4 sm:flex sm:flex-initial">
+      {/* Responsive Tab Bar + Compact Print Action */}
+      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)] overflow-x-auto">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('teachers')}
@@ -92,6 +96,21 @@ export default function AcademicManagement() {
             <UserCheck className={cn("w-3.5 h-3.5 hidden sm:inline shrink-0", activeTab === 'duty_roster' ? "text-[#faae57]" : "text-[#6a7f84]")} />
             <span>Duty Roster</span>
           </button>
+
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('assessments')}
+              className="px-2.5 sm:px-4 py-2 sm:py-2.5 font-bold text-xs sm:text-sm transition-all text-[#1c4a59] hover:bg-[#faae57]/20 whitespace-nowrap text-center flex items-center justify-center gap-1.5 cursor-pointer bg-[#faae57]/15 rounded-xl border border-[#faae57]/40 shadow-2xs ml-1"
+              title="Open Unified Assessments: Homework, Classwork, Tests & Examinations"
+            >
+              <GraduationCap className="w-4 h-4 text-[#faae57] shrink-0" />
+              <span>Assessments & SBA</span>
+              <span className="px-1 py-0.5 rounded text-[8px] font-black bg-[#faae57] text-[#1c4a59] leading-none">
+                NEW
+              </span>
+            </button>
+          )}
         </div>
         
         {activeTab !== 'duty_roster' && (

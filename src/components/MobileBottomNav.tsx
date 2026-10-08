@@ -11,7 +11,8 @@ import {
   Bell,
   X,
   Clock,
-  Wallet
+  Wallet,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -261,6 +262,29 @@ export function MobileBottomNav({
               </div>
 
               <div className="grid grid-cols-2 gap-2.5 pt-1">
+                {/* Assessments & SBA */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickMenu(false);
+                    onNavigate('assessments');
+                  }}
+                  className="col-span-2 flex items-center justify-between p-3 rounded-2xl bg-[#faae57]/20 hover:bg-[#faae57]/30 border border-[#faae57]/50 text-[#1f2a2e] transition-all text-left min-h-[46px] cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#1c4a59] text-[#faae57] flex items-center justify-center shrink-0 font-bold shadow-xs">
+                      <GraduationCap className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h5 className="text-xs font-bold leading-tight text-[#1c4a59]">Assessments & SBA Hub</h5>
+                        <span className="text-[8px] bg-[#faae57] text-[#1c4a59] font-black px-1.5 py-0.2 rounded-full uppercase">NEW</span>
+                      </div>
+                      <span className="text-[10px] text-[#6a7f84]">Homework, Classwork, Tests & Exams</span>
+                    </div>
+                  </div>
+                </button>
+
                 {/* Take Attendance */}
                 <button
                   type="button"

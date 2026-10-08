@@ -22,7 +22,8 @@ import {
   BookOpen,
   ClipboardCheck,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -41,7 +42,11 @@ const DEFAULT_CA_COLUMNS: ClassAssessmentItem[] = [
   { id: 'test1', title: 'Test 1', category: 'Test', maxScore: 20 }
 ];
 
-export default function ResultsTerminal() {
+interface ResultsTerminalProps {
+  onNavigate?: (view: any) => void;
+}
+
+export default function ResultsTerminal({ onNavigate }: ResultsTerminalProps = {}) {
   const { showToast } = useNotifications();
   const { user } = useAuth();
   const isStudent = user?.role === 'student';
@@ -1738,6 +1743,20 @@ export default function ResultsTerminal() {
               accept=".csv, text/csv"
               onChange={importFromCsv}
             />
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('assessments')}
+                className="col-span-1 w-full sm:w-auto bg-[#faae57]/20 hover:bg-[#faae57]/30 text-[#faae57] border border-[#faae57]/50 px-3.5 sm:px-4 py-2.5 rounded-xl sm:rounded-full font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all min-h-[42px] sm:min-h-[44px] text-xs cursor-pointer min-w-0 shadow-2xs"
+                title="Open Unified Assessments Suite (Homework, Classwork, Tests & SBA Sync)"
+              >
+                <GraduationCap className="w-4 h-4 text-[#faae57] shrink-0" />
+                <span className="truncate">Assessments & SBA Hub</span>
+                <span className="px-1 py-0.5 rounded text-[8px] font-black bg-[#faae57] text-[#1c4a59] leading-none">
+                  NEW
+                </span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsAddExerciseOpen(prev => !prev)}

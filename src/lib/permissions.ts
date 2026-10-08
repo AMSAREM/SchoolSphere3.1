@@ -153,8 +153,8 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
-      'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
+      'dashboard', 'students', 'academic', 'assessments', 'timetable', 'lesson_notes', 'attendance', 'results',
+      'exam_analysis', 'reports', 'fees', 'payroll', 'boarding', 'duty_roster', 'sms', 'siren', 'evoting', 'inventory',
       'users', 'settings', 'creator', 'school_management'
     ]
   },
@@ -186,8 +186,8 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'platform:manage_schools', 'platform:manage_licenses', 'platform:creator_console', 'platform:audit_logs'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
-      'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
+      'dashboard', 'students', 'academic', 'assessments', 'timetable', 'lesson_notes', 'attendance', 'results',
+      'exam_analysis', 'reports', 'fees', 'payroll', 'boarding', 'duty_roster', 'sms', 'siren', 'evoting', 'inventory',
       'users', 'settings', 'creator', 'school_management'
     ]
   },
@@ -218,8 +218,8 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'settings:view', 'settings:edit_school_profile', 'settings:academic_year', 'settings:fees_config', 'settings:personal_preferences', 'settings:database_sync'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
-      'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
+      'dashboard', 'students', 'academic', 'assessments', 'timetable', 'lesson_notes', 'attendance', 'results',
+      'exam_analysis', 'reports', 'fees', 'payroll', 'boarding', 'duty_roster', 'sms', 'siren', 'evoting', 'inventory',
       'users', 'settings'
     ]
   },
@@ -249,8 +249,8 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
       'settings:view', 'settings:academic_year', 'settings:personal_preferences'
     ],
     allowedModules: [
-      'dashboard', 'students', 'academic', 'timetable', 'lesson_notes', 'attendance', 'results',
-      'exam_analysis', 'reports', 'fees', 'siren', 'evoting', 'inventory',
+      'dashboard', 'students', 'academic', 'assessments', 'timetable', 'lesson_notes', 'attendance', 'results',
+      'exam_analysis', 'reports', 'fees', 'payroll', 'boarding', 'duty_roster', 'sms', 'siren', 'evoting', 'inventory',
       'settings'
     ]
   },
@@ -448,7 +448,19 @@ export function canAccessModule(
   if (!isRoleAllowed) return false;
 
   // 2. Core modules are always accessible if role allows
-  const CORE_MODULES = ['dashboard', 'lesson_notes', 'settings', 'users', 'creator', 'school_management'];
+  const CORE_MODULES = [
+    'dashboard',
+    'assessments',
+    'sms',
+    'duty_roster',
+    'payroll',
+    'boarding',
+    'lesson_notes',
+    'settings',
+    'users',
+    'creator',
+    'school_management'
+  ];
   if (CORE_MODULES.includes(moduleId)) return true;
 
   // 3. For academic / feature modules, check if active on the school's license
