@@ -16,9 +16,11 @@ import type {
   Assessment,
   AssessmentCategory,
   AssessmentRubricCriterion,
-  AssessmentAttachment
+  AssessmentAttachment,
+  AssessmentQuestion
 } from '../../db/schema';
 import { cn } from '../../lib/utils';
+import { QuestionBuilder } from './QuestionBuilder';
 
 interface AssessmentEditorModalProps {
   isOpen: boolean;
@@ -122,8 +124,44 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
 
+  // Questions & Assessment Engine state
+  const [questions, setQuestions] = useState<AssessmentQuestion[]>(
+    initialData?.questions || []
+  );
+  const [durationMinutes, setDurationMinutes] = useState<number>(
+    initialData?.durationMinutes || 45
+  );
+  const [allowInstantSelfCheck, setAllowInstantSelfCheck] = useState<boolean>(
+    initialData?.allowInstantSelfCheck ?? true
+  );
+
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<'details' | 'questions' | 'rubric'>('questions');
+
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Auto-sync maxScore if questions are authored
+  const questionTotalPoints = questions.reduce((acc, q) => acc + (Number(q.points) || 0), 0);
+
+  const handleQuestionsChange = (newQuestions: AssessmentQuestion[]) => {
+    setQuestions(newQuestions);
+    const sum = newQuestions.reduce((acc, q) => acc + (Number(q.points) || 0), 0);
+    if (sum > 0) {
+      setMaxScore(sum);
+    }
+  };
+
+  const handleImportMetadata = (meta: {
+    title?: string;
+    description?: string;
+    durationMinutes?: number;
+    lessonNoteId?: string;
+  }) => {
+    if (meta.title && !title) setTitle(meta.title);
+    if (meta.description && !description) setDescription(meta.description);
+    if (meta.durationMinutes) setDurationMinutes(meta.durationMinutes);
+  };
 
   // Rubric sum
   const rubricTotal = rubric.reduce((sum, item) => sum + (Number(item.maxPoints) || 0), 0);
@@ -133,7 +171,9 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
     if (preset) {
       setRubric(preset.criteria);
       const total = preset.criteria.reduce((sum, c) => sum + c.maxPoints, 0);
-      setMaxScore(total);
+      if (questions.length === 0) {
+        setMaxScore(total);
+      }
     }
   };
 
@@ -187,21 +227,19 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
 
     if (!title.trim()) {
       setErrorMsg('Please enter an assessment title.');
+      setActiveTab('details');
       return;
     }
 
     if (!targetClass) {
       setErrorMsg('Please select a target class.');
+      setActiveTab('details');
       return;
     }
 
     if (!subject) {
       setErrorMsg('Please select a subject.');
-      return;
-    }
-
-    if (rubric.length === 0) {
-      setErrorMsg('Please configure at least one rubric criterion.');
+      setActiveTab('details');
       return;
     }
 
@@ -218,10 +256,13 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
         term,
         description: description.trim(),
         dueDate,
-        maxScore: Number(maxScore) || rubricTotal || 20,
+        maxScore: Number(maxScore) || (questions.length > 0 ? questionTotalPoints : rubricTotal) || 20,
         weightPercentage: Number(weightPercentage) || (category === 'examination' ? 70 : 10),
         attachments,
         rubric,
+        questions,
+        durationMinutes: Number(durationMinutes) || 45,
+        allowInstantSelfCheck,
         teacherId: initialData?.teacherId || defaultTeacherId,
         teacherName: initialData?.teacherName || defaultTeacherName,
         status: initialData?.status || 'published',
@@ -264,6 +305,51 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
           </button>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 px-6 pt-3 pb-1 border-b border-slate-100 bg-white shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('questions')}
+            className={cn(
+              'pb-2.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5',
+              activeTab === 'questions'
+                ? 'border-[#1c4a59] text-[#1c4a59]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#faae57]" />
+            <span>Questions & Test Bank ({questions.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('details')}
+            className={cn(
+              'pb-2.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5',
+              activeTab === 'details'
+                ? 'border-[#1c4a59] text-[#1c4a59]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            )}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>General Setup & Class</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('rubric')}
+            className={cn(
+              'pb-2.5 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5',
+              activeTab === 'rubric'
+                ? 'border-[#1c4a59] text-[#1c4a59]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            )}
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>Grading Rubric ({rubric.length})</span>
+          </button>
+        </div>
+
         {/* Content Form */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 flex-1">
           {errorMsg && (
@@ -273,12 +359,56 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
             </div>
           )}
 
-          {/* 1. Category Selector */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Assessment Type
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {activeTab === 'questions' && (
+            <div className="space-y-4">
+              {/* Question Engine Settings Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-4 rounded-2xl border border-slate-200">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Exam / Test Duration (Minutes):
+                  </label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="300"
+                    value={durationMinutes}
+                    onChange={e => setDurationMinutes(Number(e.target.value) || 45)}
+                    className="w-full text-xs font-mono border border-[#bac4c6] rounded-xl px-3 py-2 bg-white"
+                  />
+                </div>
+                <div className="flex items-center">
+                  <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 cursor-pointer pt-4 sm:pt-0">
+                    <input
+                      type="checkbox"
+                      checked={allowInstantSelfCheck}
+                      onChange={e => setAllowInstantSelfCheck(e.target.checked)}
+                      className="rounded text-[#1c4a59] focus:ring-[#1c4a59] w-4 h-4"
+                    />
+                    <span>Allow Instant Quiz Auto-Grading & Review</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Question Builder */}
+              <QuestionBuilder
+                questions={questions}
+                onChange={handleQuestionsChange}
+                currentSubject={subject}
+                currentClass={targetClass}
+                currentTerm={term}
+                onImportMetadata={handleImportMetadata}
+              />
+            </div>
+          )}
+
+          {activeTab === 'details' && (
+            <>
+              {/* 1. Category Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Assessment Type
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {[
                 { id: 'homework', label: 'Homework', icon: '📝', desc: 'Take-home assignment' },
                 { id: 'classwork', label: 'Classwork', icon: '📚', desc: 'In-class exercises' },
@@ -499,8 +629,11 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
               </button>
             </div>
           </div>
+          </>
+          )}
 
-          {/* 4. Rubric Evaluator Builder */}
+          {activeTab === 'rubric' && (
+          /* 4. Rubric Evaluator Builder */
           <div className="pt-2 border-t border-slate-100">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
               <div>
@@ -606,6 +739,7 @@ export const AssessmentEditorModal: React.FC<AssessmentEditorModalProps> = ({
               Add Rubric Criterion
             </button>
           </div>
+          )}
 
           {/* Footer Submit */}
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">

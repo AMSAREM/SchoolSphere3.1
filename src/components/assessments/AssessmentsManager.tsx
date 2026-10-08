@@ -31,6 +31,8 @@ import { AssessmentEditorModal } from './AssessmentEditorModal';
 import { StudentSubmissionModal } from './StudentSubmissionModal';
 import { TeacherGradingDrawer } from './TeacherGradingDrawer';
 import { TerminalSbaSyncModal } from './TerminalSbaSyncModal';
+import { OnlineInteractiveQuizModal } from './OnlineInteractiveQuizModal';
+import { PrintableExamModal } from './PrintableExamModal';
 import { cn } from '../../lib/utils';
 
 export default function AssessmentsManager() {
@@ -116,6 +118,9 @@ export default function AssessmentsManager() {
   const [submittingAssessment, setSubmittingAssessment] = useState<Assessment | null>(null);
   const [selectedSubmissionForModal, setSelectedSubmissionForModal] = useState<AssessmentSubmission | undefined>();
   const [isSbaSyncModalOpen, setIsSbaSyncModalOpen] = useState(false);
+  const [activeQuizAssessment, setActiveQuizAssessment] = useState<Assessment | null>(null);
+  const [isPreviewQuiz, setIsPreviewQuiz] = useState<boolean>(false);
+  const [activePrintAssessment, setActivePrintAssessment] = useState<Assessment | null>(null);
 
   // Filtered Assessments
   const filteredAssessments = useMemo(() => {
@@ -253,6 +258,22 @@ export default function AssessmentsManager() {
     } catch (err: any) {
       showToast('Failed to save grade: ' + err.message, 'error');
     }
+  };
+
+  const handleTakeQuiz = (assessment: Assessment, existingSub?: AssessmentSubmission) => {
+    setActiveQuizAssessment(assessment);
+    setSelectedSubmissionForModal(existingSub);
+    setIsPreviewQuiz(false);
+  };
+
+  const handlePreviewQuiz = (assessment: Assessment) => {
+    setActiveQuizAssessment(assessment);
+    setSelectedSubmissionForModal(undefined);
+    setIsPreviewQuiz(true);
+  };
+
+  const handlePrintExam = (assessment: Assessment) => {
+    setActivePrintAssessment(assessment);
   };
 
   return (
@@ -448,6 +469,9 @@ export default function AssessmentsManager() {
                   setSubmittingAssessment(asm);
                   setSelectedSubmissionForModal(sub);
                 }}
+                onTakeQuiz={handleTakeQuiz}
+                onPrintExam={handlePrintExam}
+                onPreviewQuiz={handlePreviewQuiz}
               />
             );
           })}
@@ -547,6 +571,43 @@ export default function AssessmentsManager() {
           subjects={subjectOptions}
           term={currentTerm}
           academicYear={currentAcademicYear}
+        />
+      )}
+
+      {/* MODAL 5: Online Interactive Quiz Modal */}
+      {activeQuizAssessment && (
+        <OnlineInteractiveQuizModal
+          isOpen={Boolean(activeQuizAssessment)}
+          onClose={() => {
+            setActiveQuizAssessment(null);
+            setIsPreviewQuiz(false);
+            setSelectedSubmissionForModal(undefined);
+          }}
+          assessment={activeQuizAssessment}
+          existingSubmission={selectedSubmissionForModal}
+          studentId={currentStudentRecord?.studentId || user?.username || 'STU-01'}
+          studentName={
+            currentStudentRecord
+              ? `${currentStudentRecord.firstName} ${currentStudentRecord.lastName}`.trim()
+              : user?.fullName || 'Student'
+          }
+          studentClass={currentStudentRecord?.class || activeQuizAssessment.class || 'JHS 1'}
+          onSubmitQuiz={handleSaveStudentSubmission}
+          isPreviewMode={isPreviewQuiz}
+        />
+      )}
+
+      {/* MODAL 6: Printable Examination Paper & Marking Scheme */}
+      {activePrintAssessment && (
+        <PrintableExamModal
+          isOpen={Boolean(activePrintAssessment)}
+          onClose={() => setActivePrintAssessment(null)}
+          assessment={activePrintAssessment}
+          schoolName={
+            settings.find(s => s.key === 'schoolInfo')?.value?.schoolName ||
+            user?.schoolId ||
+            'SchoolSphere Model Academy'
+          }
         />
       )}
     </div>

@@ -42,14 +42,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           variant === 'landing' &&
             "px-3.5 py-2 text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 rounded-lg shadow-2xs hover:scale-[1.02] active:scale-[0.98]",
           variant === 'header' &&
-            "p-1.5 sm:px-3 sm:py-1.5 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-2xs",
+            "h-8 sm:h-9 px-2 sm:px-3 text-xs font-bold text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#e1c594]/30 border border-[#bac4c6]/80 rounded-xl shadow-2xs active:scale-95",
           variant === 'banner' &&
             "px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md",
           className
         )}
       >
-        <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-        <span className={cn(variant === 'header' && "hidden sm:inline")}>{isIOS ? 'Install App (iOS)' : 'Install App'}</span>
+        <Download className={cn("w-3.5 h-3.5 shrink-0", variant === 'header' ? "text-[#faae57]" : "text-indigo-600 dark:text-indigo-400")} />
+        <span className={cn(variant === 'header' && "hidden md:inline")}>{isIOS ? 'Install App (iOS)' : 'Install App'}</span>
       </button>
 
       {/* iOS Safari Installation Guide Modal */}

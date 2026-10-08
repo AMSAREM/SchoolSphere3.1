@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, LessonNote } from '../db/schema';
+import { db, LessonNote, Assessment, AssessmentQuestion } from '../db/schema';
 import { lessonNotesApi } from '../lib/api';
+import { LessonNoteQuestionGeneratorModal } from './assessments/LessonNoteQuestionGeneratorModal';
 import {
   FileText,
   Upload,
@@ -81,7 +82,7 @@ function dataUriToBlobUrl(dataUri?: string): string | null {
   }
 }
 
-export default function LessonNotes({ showToast, currentUser }: LessonNotesProps) {
+export default function LessonNotes({ showToast, currentUser, onNavigate }: LessonNotesProps) {
   const userRole = String(currentUser?.role || 'teacher').toLowerCase();
   const isReviewer = ['hod', 'headteacher', 'admin', 'super_admin', 'creator'].includes(userRole);
   const currentTeacherName = currentUser?.fullName || currentUser?.username || 'Subject Teacher';
@@ -170,6 +171,64 @@ export default function LessonNotes({ showToast, currentUser }: LessonNotesProps
   const [reviewerNameInput, setReviewerNameInput] = useState<string>(currentTeacherName);
   const [reviewerFeedbackInput, setReviewerFeedbackInput] = useState<string>('');
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+  const [isGeneratingQuizFromNote, setIsGeneratingQuizFromNote] = useState<LessonNote | null>(null);
+
+  const handleImportQuestionsFromNote = async (
+    questions: AssessmentQuestion[],
+    metadata?: {
+      title?: string;
+      description?: string;
+      durationMinutes?: number;
+      lessonNoteId?: string;
+    }
+  ) => {
+    if (!isGeneratingQuizFromNote) return;
+    const newAssessment: Assessment = {
+      id: `asm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: isGeneratingQuizFromNote.schoolId || currentUser?.schoolId,
+      title: metadata?.title || `${isGeneratingQuizFromNote.subject}: ${isGeneratingQuizFromNote.subStrand || isGeneratingQuizFromNote.strand || 'Quiz'}`,
+      category: 'class_test',
+      subject: isGeneratingQuizFromNote.subject,
+      class: isGeneratingQuizFromNote.class,
+      academicYear: isGeneratingQuizFromNote.academicYear || '2025/2026',
+      term: isGeneratingQuizFromNote.term || 'Term 1',
+      description: metadata?.description || `Quiz generated from lesson note: ${isGeneratingQuizFromNote.strand}.`,
+      dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      maxScore: questions.reduce((s, q) => s + (q.points || 0), 0) || 20,
+      weightPercentage: 15,
+      questions,
+      durationMinutes: metadata?.durationMinutes || 45,
+      allowInstantSelfCheck: true,
+      rubric: [
+        { id: 'crit-1', criterion: 'Question Accuracy & Understanding', description: 'Accurate comprehension of core syllabus concepts', maxPoints: 20 }
+      ],
+      sourceLessonNoteId: isGeneratingQuizFromNote.noteId,
+      teacherId: isGeneratingQuizFromNote.teacherId || currentUser?.username || 'staff-01',
+      teacherName: isGeneratingQuizFromNote.teacherName || currentUser?.fullName || 'Teacher',
+      status: 'published',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    try {
+      await db.assessments.put(newAssessment);
+      try {
+        await fetch('/api/assessments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newAssessment)
+        });
+      } catch (e) {}
+
+      showToast(`Created new Assessment with ${questions.length} questions!`, 'success');
+      setIsGeneratingQuizFromNote(null);
+      if (onNavigate) {
+        onNavigate('assessments');
+      }
+    } catch (err: any) {
+      showToast('Failed to save assessment: ' + err.message, 'error');
+    }
+  };
 
   // Resolved PDF URLs (prefer Supabase Storage public URL, fallback to Blob URL from base64)
   const composerPdfBlobUrl = useMemo(
@@ -1862,6 +1921,14 @@ export default function LessonNotes({ showToast, currentUser }: LessonNotesProps
                   </>
                 )}
                 <button
+                  onClick={() => setIsGeneratingQuizFromNote(inspectingNote)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#FAAE57] text-slate-950 hover:bg-[#e4ae67] transition-colors cursor-pointer shadow-xs"
+                  title="Generate Multiple Choice, Short Answer & Essay questions from this lesson note"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generate Quiz
+                </button>
+                <button
                   onClick={() => handlePrintLessonNote(inspectingNote)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 cursor-pointer"
                 >
@@ -2197,6 +2264,18 @@ export default function LessonNotes({ showToast, currentUser }: LessonNotesProps
             </div>
           </div>
         </div>
+      )}
+
+      {/* AI Question Generator Modal launched from Lesson Note */}
+      {isGeneratingQuizFromNote && (
+        <LessonNoteQuestionGeneratorModal
+          isOpen={Boolean(isGeneratingQuizFromNote)}
+          onClose={() => setIsGeneratingQuizFromNote(null)}
+          onImportQuestions={handleImportQuestionsFromNote}
+          currentSubject={isGeneratingQuizFromNote.subject}
+          currentClass={isGeneratingQuizFromNote.class}
+          currentTerm={isGeneratingQuizFromNote.term}
+        />
       )}
     </div>
   );

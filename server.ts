@@ -38,6 +38,7 @@ import {
   injectRouteMetadata,
   renderNotFoundHtml
 } from "./lib/serverSeo.ts";
+import { generateQuestionsFromLessonNotes } from "./lib/geminiQuestionService.ts";
 
 dotenv.config();
 
@@ -28787,6 +28788,22 @@ NOTIFY pgrst, 'reload schema';`;
     }
   });
 
+  // POST /api/ai/generate-questions - AI Question Generation from Lesson Notes
+  app.post("/api/ai/generate-questions", optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const payload = req.body || {};
+      const result = await generateQuestionsFromLessonNotes(payload);
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[GenerateQuestions Error]:", err);
+      return res.status(500).json({
+        success: false,
+        error: sanitizeErrorMessage(err),
+        questions: []
+      });
+    }
+  });
+
   // Explicit API 404 fallback - ensures any unmatched /api/* route returns clean JSON instead of HTML
   app.all("/api/*", (req: Request, res: Response) => {
     res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.path}` });
@@ -28803,6 +28820,22 @@ NOTIFY pgrst, 'reload schema';`;
     });
   });
 
+  const distPath = path.join(process.cwd(), 'dist');
+  const distAssetsPath = path.join(distPath, 'assets');
+
+  // Serve pre-built static assets from dist/assets if requested directly
+  if (fs.existsSync(distAssetsPath)) {
+    app.use('/assets', express.static(distAssetsPath, {
+      maxAge: '1y',
+      immutable: true,
+    }));
+  }
+
+  // Guard against Vite trying to pre-transform missing or outdated static /assets/ URLs
+  app.use('/assets', (req, res) => {
+    res.status(404).type('text/plain').send(`Asset not found: ${req.path}`);
+  });
+
   let viteDevServer: any = null;
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const { createServer: createViteServer } = await import("vite");
@@ -28816,7 +28849,6 @@ NOTIFY pgrst, 'reload schema';`;
     app.use(viteDevServer.middlewares);
   }
 
-  const distPath = path.join(process.cwd(), 'dist');
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
       index: false,
@@ -28855,13 +28887,27 @@ NOTIFY pgrst, 'reload schema';`;
       let template = '';
       const distIndex = path.join(distPath, 'index.html');
       const rootIndex = path.join(process.cwd(), 'index.html');
-      if (fs.existsSync(distIndex)) {
-        template = fs.readFileSync(distIndex, 'utf8');
-      } else if (fs.existsSync(rootIndex)) {
-        template = fs.readFileSync(rootIndex, 'utf8');
+
+      // In dev mode with Vite active, ALWAYS use source index.html for Vite module resolution
+      if (viteDevServer) {
+        if (fs.existsSync(rootIndex)) {
+          template = fs.readFileSync(rootIndex, 'utf8');
+        } else if (fs.existsSync(distIndex)) {
+          template = fs.readFileSync(distIndex, 'utf8');
+        }
       } else {
+        // In production without Vite, prefer pre-rendered dist/index.html
+        if (fs.existsSync(distIndex)) {
+          template = fs.readFileSync(distIndex, 'utf8');
+        } else if (fs.existsSync(rootIndex)) {
+          template = fs.readFileSync(rootIndex, 'utf8');
+        }
+      }
+
+      if (!template) {
         template = '<!doctype html><html><head><title>SchoolSphere</title></head><body><div id="root"></div></body></html>';
       }
+
       const verificationToken = process.env.GOOGLE_SITE_VERIFICATION || process.env.VITE_GOOGLE_SITE_VERIFICATION || '';
       template = template.replace(/%VITE_GOOGLE_SITE_VERIFICATION%/g, verificationToken);
       if (viteDevServer) {

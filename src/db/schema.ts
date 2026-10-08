@@ -343,12 +343,14 @@ export interface LessonNote {
   strand: string;
   subStrand?: string;
   contentStandard?: string;
+  learningIndicators?: string;
   objectives?: string;
   tlms?: string;
   coreCompetencies?: string;
   starterActivity?: string;
   mainActivity?: string;
   plenaryActivity?: string;
+  assessmentPlan?: string;
   evaluation?: string;
   teacherRemarks?: string;
   pdfFileName?: string;
@@ -582,6 +584,23 @@ export interface AssessmentAttachment {
   type?: string;
 }
 
+export type QuestionType = 'multiple_choice' | 'short_answer' | 'essay';
+
+export interface AssessmentQuestion {
+  id: string;
+  questionNumber: number;
+  type: QuestionType;
+  prompt: string;
+  options?: string[]; // Multiple choice options (e.g. 4 options)
+  correctOptionIndex?: number; // 0-based index for correct option
+  correctAnswer?: string; // Model answer / key points
+  explanation?: string; // Educational explanation / marking rationale
+  points: number; // Point value for this question
+  rubricCriteria?: string[]; // Marking criteria keywords
+  strand?: string;
+  subStrand?: string;
+}
+
 export interface Assessment {
   id: string;
   schoolId?: string;
@@ -600,8 +619,22 @@ export interface Assessment {
   teacherId?: string;
   teacherName?: string;
   status?: 'draft' | 'published' | 'closed';
+  questions?: AssessmentQuestion[];
+  instructions?: string;
+  durationMinutes?: number;
+  allowInstantSelfCheck?: boolean;
+  shuffleQuestions?: boolean;
+  sourceLessonNoteId?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface AssessmentSubmissionAnswer {
+  questionId: string;
+  studentAnswer: string | number; // option index or written text
+  pointsAwarded?: number;
+  feedback?: string;
+  isCorrect?: boolean;
 }
 
 export interface AssessmentSubmission {
@@ -615,6 +648,7 @@ export interface AssessmentSubmission {
   submittedAt: number;
   content: string;
   attachments?: AssessmentAttachment[];
+  answers?: Record<string, AssessmentSubmissionAnswer>;
   rubricScores?: Record<string, number>;
   totalScore?: number;
   grade?: string;
@@ -1384,6 +1418,65 @@ export async function seedDefaultAssessmentsIfEmpty(schoolId?: string, studentLi
           { id: 'crit-2', criterion: 'Diagram Accuracy & Labeling', description: 'Neat, correctly labeled cross-section of leaf stomata & vascular bundles', maxPoints: 7 },
           { id: 'crit-3', criterion: 'Clarity & Scientific Vocabulary', description: 'Appropriate usage of chemical terms and well-structured prose', maxPoints: 5 }
         ],
+        questions: [
+          {
+            id: 'q-hw1-1',
+            questionNumber: 1,
+            type: 'multiple_choice',
+            prompt: 'In which organelle of a green plant cell does photosynthesis primarily take place?',
+            options: ['Mitochondria', 'Chloroplast', 'Ribosome', 'Golgi Apparatus'],
+            correctOptionIndex: 1,
+            correctAnswer: 'Chloroplast',
+            explanation: 'Chloroplasts contain chlorophyll pigments that absorb sunlight for photosynthesis.',
+            points: 2,
+            strand: 'Diversity of Matter & Life',
+            subStrand: 'Living Cells'
+          },
+          {
+            id: 'q-hw1-2',
+            questionNumber: 2,
+            type: 'multiple_choice',
+            prompt: 'What gas is released as a by-product during the light-dependent stage of photosynthesis?',
+            options: ['Carbon dioxide', 'Nitrogen', 'Oxygen', 'Hydrogen'],
+            correctOptionIndex: 2,
+            correctAnswer: 'Oxygen',
+            explanation: 'Photolysis of water during the light reaction splits water into hydrogen and oxygen gas.',
+            points: 2,
+            strand: 'Diversity of Matter & Life',
+            subStrand: 'Plant Respiration'
+          },
+          {
+            id: 'q-hw1-3',
+            questionNumber: 3,
+            type: 'short_answer',
+            prompt: 'State two conditions necessary for photosynthesis to occur in green plants.',
+            correctAnswer: '1. Presence of sunlight (solar energy)\n2. Chlorophyll in leaves\n3. Carbon dioxide from the atmosphere\n4. Water from soil',
+            explanation: 'Any two of sunlight, chlorophyll, carbon dioxide, or water.',
+            points: 4,
+            rubricCriteria: ['First valid condition stated (2 pts)', 'Second valid condition stated (2 pts)'],
+            strand: 'Diversity of Matter & Life',
+            subStrand: 'Plant Nutrition'
+          },
+          {
+            id: 'q-hw1-4',
+            questionNumber: 4,
+            type: 'essay',
+            prompt: '(a) Write down the balanced chemical equation or word equation for photosynthesis.\n(b) Describe a simple laboratory experiment to test for the presence of starch in a green leaf.',
+            correctAnswer: 'Model Outline:\n(a) Carbon dioxide + Water -> (Sunlight / Chlorophyll) -> Glucose + Oxygen (6CO2 + 6H2O -> C6H12O6 + 6O2) [4 pts]\n(b) Experiment Steps: 1. Boil leaf in water to kill cells [2 pts]. 2. Boil in alcohol/ethanol in water bath to decolorize [3 pts]. 3. Wash leaf in warm water to soften [1 pt]. 4. Add drops of iodine solution [1 pt]. Observation: Blue-black coloration indicates presence of starch [1 pt].',
+            explanation: 'Standard WAEC / GES laboratory protocol for starch test.',
+            points: 12,
+            rubricCriteria: [
+              'Correct equation with reaction conditions (4 pts)',
+              'Safety steps (water bath for ethanol) (2 pts)',
+              'Step-by-step leaf preparation (4 pts)',
+              'Accurate observation and conclusion (2 pts)'
+            ],
+            strand: 'Diversity of Matter & Life',
+            subStrand: 'Experimental Science'
+          }
+        ],
+        durationMinutes: 45,
+        allowInstantSelfCheck: true,
         teacherId: 'staff-01',
         teacherName: 'Mr. Kwame Mensah',
         createdAt: now - 2 * oneDay,

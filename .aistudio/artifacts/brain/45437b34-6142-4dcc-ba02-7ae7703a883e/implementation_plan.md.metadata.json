@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for enabling teachers to set questions manually and generate questions (MCQ, Short Answer, Essay) from uploaded/saved lesson notes using Gemini AI, with interactive online test-taking and printable exam papers with marking schemes.",
+  "updatedAt":  "2026-10-08T21:24:18.007657929Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
