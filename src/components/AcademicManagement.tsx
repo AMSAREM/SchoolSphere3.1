@@ -1,13 +1,37 @@
 import { useState } from 'react';
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type Teacher, type Subject, type ClassInfo } from '../db/schema';
-import { Plus, Trash2, Book, GraduationCap, Users, Edit2, Search, Printer, X, Download, Upload, CheckSquare, Square, UserCheck } from 'lucide-react';
+import { db, type Teacher, type Subject, type ClassInfo, type SubjectRegistrationStatus } from '../db/schema';
+import {
+  Plus,
+  Trash2,
+  Book,
+  GraduationCap,
+  Users,
+  Edit2,
+  Search,
+  Printer,
+  X,
+  Download,
+  Upload,
+  CheckSquare,
+  Square,
+  UserCheck,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  AlertCircle,
+  Filter,
+  Check,
+  ChevronDown,
+  BookOpen
+} from 'lucide-react';
 import Papa from 'papaparse';
 import { motion } from 'motion/react';
 import { cn, triggerPrint } from '../lib/utils';
 import { teachersApi, classesApi, subjectsApi } from '../lib/api';
 import { useNotifications } from '../contexts/NotificationContext';
+import { useAuth } from '../contexts/AuthContext';
 import DutyRosterManagement from './DutyRosterManagement';
 
 interface AcademicManagementProps {
@@ -42,8 +66,8 @@ export default function AcademicManagement({ onNavigate }: AcademicManagementPro
       )}
 
       {/* Responsive Tab Bar + Compact Print Action */}
-      <div className="flex items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)] overflow-x-auto">
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 sm:gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-1.5 sm:px-3 print:hidden shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-2 min-w-0">
           <button
             type="button"
             onClick={() => setActiveTab('teachers')}
@@ -897,23 +921,156 @@ function ClassList() {
   );
 }
 
+function SubjectStatusIndicator({
+  status,
+  className
+}: {
+  status: SubjectRegistrationStatus;
+  className?: string;
+}) {
+  if (status === 'Enrolled') {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors shadow-2xs",
+          "bg-[#06d6a0]/15 text-[#065f46] border-[#06d6a0]/50",
+          className
+        )}
+        title="Status: Enrolled (Confirmed & active in curriculum)"
+      >
+        <CheckCircle2 className="w-3.5 h-3.5 text-[#065f46] shrink-0" />
+        <span>Enrolled</span>
+      </span>
+    );
+  }
+
+  if (status === 'Pending Approval') {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors shadow-2xs",
+          "bg-[#faae57]/20 text-[#854d0e] border-[#faae57]/60",
+          className
+        )}
+        title="Status: Pending Approval (Awaiting administrative / HOD sign-off)"
+      >
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#faae57] opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#d97706]" />
+        </span>
+        <Clock className="w-3.5 h-3.5 text-[#854d0e] shrink-0" />
+        <span>Pending Approval</span>
+      </span>
+    );
+  }
+
+  // Default: 'Available'
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors shadow-2xs",
+        "bg-[#1c4a59]/10 text-[#1c4a59] border-[#1c4a59]/30",
+        className
+      )}
+      title="Status: Available (Open for student & staff enrollment)"
+    >
+      <Sparkles className="w-3.5 h-3.5 text-[#1c4a59] shrink-0" />
+      <span>Available</span>
+    </span>
+  );
+}
+
 function SubjectList() {
+  const { user } = useAuth();
+  const { showToast } = useNotifications();
   const [searchTerm, setSearchTerm] = useState('');
-  const subjects = useLiveQuery(() => {
-    const search = (searchTerm || '').toLowerCase().trim();
-    return db.subjects.filter(s => {
-      if (!s) return false;
-      if (!search) return true;
-      const name = (s.name || '').toLowerCase();
-      const code = (s.code || '').toLowerCase();
-      return name.includes(search) || code.includes(search);
-    }).toArray();
-  }, [searchTerm]);
-  const classes = useLiveQuery(() => db.classes.toArray());
+  const [statusFilter, setStatusFilter] = useState<'All' | SubjectRegistrationStatus>('All');
+
+  // Load user-specific enrollment/pending state
+  const registeredSetting = useLiveQuery(
+    () => db.settings.where('key').equals(`registered_subjects_${user?.username || user?.id || 'current_user'}`).first(),
+    [user]
+  );
+  const pendingSetting = useLiveQuery(
+    () => db.settings.where('key').equals(`pending_subjects_${user?.username || user?.id || 'current_user'}`).first(),
+    [user]
+  );
+  const teachers = useLiveQuery(() => db.teachers.toArray()) || [];
+  const currentTeacher = teachers.find(
+    t => t.email === user?.email || t.staffId === user?.username || `${t.firstName} ${t.lastName}` === user?.fullName
+  );
+
+  const userEnrolledList = React.useMemo(() => {
+    return (registeredSetting?.value as string[]) || [];
+  }, [registeredSetting]);
+
+  const userPendingList = React.useMemo(() => {
+    return (pendingSetting?.value as string[]) || [];
+  }, [pendingSetting]);
+
+  const getSubjectStatus = React.useCallback((sub: Subject): SubjectRegistrationStatus => {
+    if (sub.status === 'Enrolled' || sub.status === 'Pending Approval' || sub.status === 'Available') {
+      return sub.status;
+    }
+    if (sub.registrationStatus === 'Enrolled' || sub.registrationStatus === 'Pending Approval' || sub.registrationStatus === 'Available') {
+      return sub.registrationStatus;
+    }
+    const nameLower = (sub.name || '').toLowerCase().trim();
+    if (userEnrolledList.some(n => n.toLowerCase().trim() === nameLower)) {
+      return 'Enrolled';
+    }
+    if (userPendingList.some(n => n.toLowerCase().trim() === nameLower)) {
+      return 'Pending Approval';
+    }
+    if (currentTeacher?.subjects?.some(n => n.toLowerCase().trim() === nameLower)) {
+      return 'Enrolled';
+    }
+    return 'Available';
+  }, [userEnrolledList, userPendingList, currentTeacher]);
+
+  const allSubjects = useLiveQuery(() => db.subjects.toArray()) || [];
+  const classes = useLiveQuery(() => db.classes.toArray()) || [];
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [isAllClasses, setIsAllClasses] = useState(true);
+  const [formStatus, setFormStatus] = useState<SubjectRegistrationStatus>('Available');
+
+  // Compute status summary KPI counts
+  const statusCounts = React.useMemo(() => {
+    let enrolled = 0;
+    let pending = 0;
+    let available = 0;
+    allSubjects.forEach(s => {
+      const st = getSubjectStatus(s);
+      if (st === 'Enrolled') enrolled++;
+      else if (st === 'Pending Approval') pending++;
+      else available++;
+    });
+    return {
+      total: allSubjects.length,
+      enrolled,
+      pending,
+      available
+    };
+  }, [allSubjects, getSubjectStatus]);
+
+  // Filter subjects by search and active status filter
+  const filteredSubjects = React.useMemo(() => {
+    const q = (searchTerm || '').toLowerCase().trim();
+    return allSubjects.filter(s => {
+      if (!s) return false;
+      const status = getSubjectStatus(s);
+      if (statusFilter !== 'All' && status !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const name = (s.name || '').toLowerCase();
+      const code = (s.code || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || status.toLowerCase().includes(q);
+    });
+  }, [allSubjects, searchTerm, statusFilter, getSubjectStatus]);
 
   const toggleClass = (className: string) => {
     setSelectedClasses(prev => 
@@ -926,7 +1083,51 @@ function SubjectList() {
     setEditingSubject(sub);
     setSelectedClasses((sub.applicableClasses || []).filter(c => c !== 'All'));
     setIsAllClasses(sub.applicableClasses?.includes('All') ?? true);
+    setFormStatus(getSubjectStatus(sub));
     setIsModalOpen(true);
+  };
+
+  const handleUpdateStatus = async (sub: Subject, newStatus: SubjectRegistrationStatus) => {
+    try {
+      if (sub.id) {
+        await subjectsApi.update(sub.id, {
+          status: newStatus,
+          registrationStatus: newStatus
+        });
+      }
+
+      const username = user?.username || user?.id || 'current_user';
+      const enrolledKey = `registered_subjects_${username}`;
+      const pendingKey = `pending_subjects_${username}`;
+
+      const nameClean = sub.name.trim();
+      let nextEnrolled = userEnrolledList.filter(n => n.toLowerCase().trim() !== nameClean.toLowerCase());
+      let nextPending = userPendingList.filter(n => n.toLowerCase().trim() !== nameClean.toLowerCase());
+
+      if (newStatus === 'Enrolled') {
+        nextEnrolled.push(nameClean);
+      } else if (newStatus === 'Pending Approval') {
+        nextPending.push(nameClean);
+      }
+
+      const existingEnrolled = await db.settings.where('key').equals(enrolledKey).first();
+      if (existingEnrolled?.id) {
+        await db.settings.update(existingEnrolled.id, { value: nextEnrolled });
+      } else {
+        await db.settings.add({ key: enrolledKey, value: nextEnrolled });
+      }
+
+      const existingPending = await db.settings.where('key').equals(pendingKey).first();
+      if (existingPending?.id) {
+        await db.settings.update(existingPending.id, { value: nextPending });
+      } else {
+        await db.settings.add({ key: pendingKey, value: nextPending });
+      }
+
+      showToast?.(`"${sub.name}" status updated to ${newStatus}`, 'success');
+    } catch (err) {
+      showToast?.('Failed to update subject registration status', 'error');
+    }
   };
 
   const handleSubjectSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -935,128 +1136,433 @@ function SubjectList() {
     const subData = {
       name: formData.get('name') as string,
       code: formData.get('code') as string,
-      applicableClasses: isAllClasses ? ['All'] : selectedClasses
+      applicableClasses: isAllClasses ? ['All'] : selectedClasses,
+      status: formStatus,
+      registrationStatus: formStatus
     };
 
     if (editingSubject && editingSubject.id) {
       await subjectsApi.update(editingSubject.id, subData);
+      showToast?.(`Subject "${subData.name}" updated successfully`, 'success');
     } else {
       await subjectsApi.create(subData);
+      showToast?.(`Subject "${subData.name}" created with status "${formStatus}"`, 'success');
+    }
+
+    // Sync user enrollment list if marked Enrolled
+    if (formStatus === 'Enrolled') {
+      const username = user?.username || user?.id || 'current_user';
+      const enrolledKey = `registered_subjects_${username}`;
+      const nameClean = subData.name.trim();
+      if (!userEnrolledList.includes(nameClean)) {
+        const nextList = [...userEnrolledList, nameClean];
+        const existing = await db.settings.where('key').equals(enrolledKey).first();
+        if (existing?.id) {
+          await db.settings.update(existing.id, { value: nextList });
+        } else {
+          await db.settings.add({ key: enrolledKey, value: nextList });
+        }
+      }
     }
 
     setIsModalOpen(false);
     setEditingSubject(null);
     setSelectedClasses([]);
     setIsAllClasses(true);
+    setFormStatus('Available');
   };
 
   return (
     <div className="space-y-3 sm:space-y-4 min-w-0">
-      {/* Compact Single-Row Search & Add Toolbar */}
-      <div className="flex items-center justify-between gap-2 sm:gap-3 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
-        <div className="relative flex-1 min-w-0 sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
-          <input 
-            type="text"
-            placeholder="Search subjects by name or code..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              title="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <button 
+      {/* Visual Status Indicator KPI Header Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 print:hidden">
+        <button
           type="button"
-          onClick={() => {
-            setEditingSubject(null);
-            setIsModalOpen(true);
-            setSelectedClasses([]);
-            setIsAllClasses(true);
-          }}
-          className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
+          onClick={() => setStatusFilter('All')}
+          className={cn(
+            "p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group shadow-xs",
+            statusFilter === 'All'
+              ? "bg-[#1c4a59] text-white border-[#1c4a59] ring-2 ring-[#1c4a59]/30"
+              : "bg-white text-[#1f2a2e] border-[#bac4c6]/70 hover:border-[#1c4a59]/50"
+          )}
         >
-          <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
-          <span>Add Subject</span>
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusFilter === 'All' ? "text-white/80" : "text-[#6a7f84]")}>
+              Total Curriculum
+            </span>
+            <Book className={cn("w-3.5 h-3.5", statusFilter === 'All' ? "text-[#faae57]" : "text-[#1c4a59]")} />
+          </div>
+          <div className="text-lg sm:text-xl font-black tabular-nums">{statusCounts.total}</div>
+          <span className={cn("text-[10px] font-medium block truncate", statusFilter === 'All' ? "text-white/70" : "text-[#6a7f84]")}>
+            All curriculum subjects
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter('Enrolled')}
+          className={cn(
+            "p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group shadow-xs",
+            statusFilter === 'Enrolled'
+              ? "bg-[#06d6a0] text-[#065f46] border-[#06d6a0] ring-2 ring-[#06d6a0]/30"
+              : "bg-white text-[#1f2a2e] border-[#bac4c6]/70 hover:border-[#06d6a0]/50"
+          )}
+        >
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusFilter === 'Enrolled' ? "text-[#065f46]" : "text-[#065f46]")}>
+              Enrolled
+            </span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#06d6a0]" />
+          </div>
+          <div className="text-lg sm:text-xl font-black text-[#065f46] tabular-nums">{statusCounts.enrolled}</div>
+          <span className="text-[10px] font-medium text-[#065f46]/80 block truncate">
+            Active registrations confirmed
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter('Pending Approval')}
+          className={cn(
+            "p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group shadow-xs",
+            statusFilter === 'Pending Approval'
+              ? "bg-[#faae57] text-[#1f2a2e] border-[#faae57] ring-2 ring-[#faae57]/40"
+              : "bg-white text-[#1f2a2e] border-[#bac4c6]/70 hover:border-[#faae57]/60"
+          )}
+        >
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusFilter === 'Pending Approval' ? "text-[#1f2a2e]" : "text-[#854d0e]")}>
+              Pending Approval
+            </span>
+            <Clock className="w-3.5 h-3.5 text-[#d97706]" />
+          </div>
+          <div className="text-lg sm:text-xl font-black text-[#854d0e] tabular-nums">{statusCounts.pending}</div>
+          <span className="text-[10px] font-medium text-[#854d0e]/80 block truncate">
+            Awaiting HOD / Admin review
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter('Available')}
+          className={cn(
+            "p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden group shadow-xs",
+            statusFilter === 'Available'
+              ? "bg-[#1c4a59] text-[#faae57] border-[#1c4a59] ring-2 ring-[#1c4a59]/30"
+              : "bg-white text-[#1f2a2e] border-[#bac4c6]/70 hover:border-[#1c4a59]/40"
+          )}
+        >
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className={cn("text-[10px] font-bold uppercase tracking-wider", statusFilter === 'Available' ? "text-white/80" : "text-[#1c4a59]")}>
+              Available
+            </span>
+            <Sparkles className="w-3.5 h-3.5 text-[#faae57]" />
+          </div>
+          <div className="text-lg sm:text-xl font-black text-[#1c4a59] tabular-nums">{statusCounts.available}</div>
+          <span className={cn("text-[10px] font-medium block truncate", statusFilter === 'Available' ? "text-white/70" : "text-[#6a7f84]")}>
+            Open for direct enrollment
+          </span>
         </button>
       </div>
 
-      {/* High-Density Subjects List-Card Grid */}
-      {subjects && subjects.length === 0 ? (
+      {/* Search & Actions Toolbar with Status Quick Filters */}
+      <div className="space-y-2.5 bg-white p-2.5 sm:p-3.5 rounded-2xl border border-[#bac4c6]/70 shadow-[0_4px_16px_rgba(0,0,0,0.04)] print:hidden">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="relative flex-1 min-w-0 sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84] pointer-events-none" />
+            <input 
+              type="text"
+              placeholder="Search by subject, code, or status (Enrolled, Pending, Available)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-9 sm:h-10 pl-9 pr-8 bg-[#f6f8f7] text-[#1f2a2e] placeholder:text-[#6a7f84] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none transition-all"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                title="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#6a7f84] hover:text-[#1f2a2e] rounded-lg hover:bg-[#bac4c6]/30 transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button 
+            type="button"
+            onClick={() => {
+              setEditingSubject(null);
+              setSelectedClasses([]);
+              setIsAllClasses(true);
+              setFormStatus('Available');
+              setIsModalOpen(true);
+            }}
+            className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+            <span>Add Subject</span>
+          </button>
+        </div>
+
+        {/* Visual Status Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#bac4c6]/40 text-xs">
+          <span className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+            <Filter className="w-3 h-3 text-[#1c4a59]" /> Status:
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('All')}
+            className={cn(
+              "px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all border shrink-0 cursor-pointer text-xs flex items-center gap-1.5",
+              statusFilter === 'All'
+                ? "bg-[#1c4a59] text-white border-[#1c4a59] shadow-2xs"
+                : "bg-[#f6f8f7] text-[#6a7f84] border-[#bac4c6]/70 hover:text-[#1f2a2e]"
+            )}
+          >
+            <span>All Subjects</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 font-mono">{statusCounts.total}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Enrolled')}
+            className={cn(
+              "px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all border shrink-0 cursor-pointer text-xs flex items-center gap-1.5",
+              statusFilter === 'Enrolled'
+                ? "bg-[#06d6a0] text-[#065f46] border-[#06d6a0] shadow-2xs"
+                : "bg-white text-[#065f46] border-[#06d6a0]/50 hover:bg-[#06d6a0]/15"
+            )}
+          >
+            <CheckCircle2 className="w-3 h-3 shrink-0" />
+            <span>Enrolled</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#06d6a0]/25 font-bold font-mono">{statusCounts.enrolled}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Pending Approval')}
+            className={cn(
+              "px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all border shrink-0 cursor-pointer text-xs flex items-center gap-1.5",
+              statusFilter === 'Pending Approval'
+                ? "bg-[#faae57] text-[#1f2a2e] border-[#faae57] shadow-2xs"
+                : "bg-white text-[#854d0e] border-[#faae57]/50 hover:bg-[#faae57]/15"
+            )}
+          >
+            <Clock className="w-3 h-3 shrink-0" />
+            <span>Pending Approval</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#faae57]/30 font-bold font-mono">{statusCounts.pending}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Available')}
+            className={cn(
+              "px-2.5 sm:px-3 py-1 rounded-lg font-bold transition-all border shrink-0 cursor-pointer text-xs flex items-center gap-1.5",
+              statusFilter === 'Available'
+                ? "bg-[#1c4a59] text-[#faae57] border-[#1c4a59] shadow-2xs"
+                : "bg-white text-[#1c4a59] border-[#1c4a59]/30 hover:bg-[#1c4a59]/10"
+            )}
+          >
+            <Sparkles className="w-3 h-3 shrink-0" />
+            <span>Available</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#1c4a59]/15 font-bold font-mono">{statusCounts.available}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* High-Density Subject Cards Grid with Visual Status Indicators */}
+      {filteredSubjects.length === 0 ? (
         <div className="bg-white border border-[#bac4c6]/80 rounded-2xl p-6 sm:p-10 text-center text-[#6a7f84]">
           <div className="w-11 h-11 rounded-2xl bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mx-auto mb-2.5">
             <Book className="w-5 h-5" />
           </div>
           <p className="font-bold text-[#1f2a2e] text-sm sm:text-base">No subjects found</p>
-          <p className="text-xs text-[#6a7f84] mt-0.5">Try adjusting your search or add a new curriculum subject.</p>
+          <p className="text-xs text-[#6a7f84] mt-0.5">
+            {statusFilter !== 'All' 
+              ? `No subjects currently have the "${statusFilter}" status.` 
+              : 'Try adjusting your search or add a new subject to the curriculum.'}
+          </p>
+          {statusFilter !== 'All' && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('All')}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[#1c4a59] hover:underline cursor-pointer"
+            >
+              Show all subjects ({statusCounts.total})
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
-          {subjects?.map(sub => (
-            <div key={sub.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-[#bac4c6]/80 hover:border-[#1c4a59]/60 shadow-[0_2px_10px_rgba(0,0,0,0.04)] flex flex-col justify-between text-[#1f2a2e] transition-colors min-w-0">
-              <div className="flex items-start justify-between gap-2.5 mb-2.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 bg-[#1c4a59]/10 border border-[#1c4a59]/20 rounded-xl flex items-center justify-center text-[#1c4a59] shrink-0">
-                    <Book className="w-4 h-4 sm:w-5 sm:h-5" />
+          {filteredSubjects.map(sub => {
+            const currentStatus = getSubjectStatus(sub);
+            return (
+              <div 
+                key={sub.id || sub.name} 
+                className={cn(
+                  "bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all flex flex-col justify-between text-[#1f2a2e] min-w-0 shadow-[0_2px_10px_rgba(0,0,0,0.04)]",
+                  currentStatus === 'Enrolled' && "border-emerald-200/90 hover:border-emerald-400/90",
+                  currentStatus === 'Pending Approval' && "border-amber-200/90 hover:border-amber-400/90",
+                  currentStatus === 'Available' && "border-[#bac4c6]/80 hover:border-[#1c4a59]/60"
+                )}
+              >
+                <div>
+                  {/* Top Header: Icon, Name/Code, Status Indicator & Actions */}
+                  <div className="flex items-start justify-between gap-2.5 mb-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={cn(
+                        "w-9 h-9 border rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                        currentStatus === 'Enrolled' && "bg-[#06d6a0]/15 border-[#06d6a0]/30 text-[#065f46]",
+                        currentStatus === 'Pending Approval' && "bg-[#faae57]/20 border-[#faae57]/40 text-[#854d0e]",
+                        currentStatus === 'Available' && "bg-[#1c4a59]/10 border-[#1c4a59]/20 text-[#1c4a59]"
+                      )}>
+                        <Book className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm truncate" title={sub.name}>
+                          {sub.name}
+                        </h4>
+                        <p className="text-[10px] sm:text-[11px] font-bold text-[#807654] font-mono tabular-nums">
+                          {sub.code}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0 print:hidden">
+                      <button 
+                        type="button"
+                        onClick={() => openEditModal(sub)}
+                        title="Edit Subject & Status"
+                        className="w-8 h-8 flex items-center justify-center text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#1c4a59]/10 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => subjectsApi.delete(sub.id!)}
+                        title="Delete Subject"
+                        className="w-8 h-8 flex items-center justify-center text-[#6a7f84] hover:text-[#ef476f] bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm truncate">{sub.name}</h4>
-                    <p className="text-[10px] sm:text-[11px] font-bold text-[#807654] font-mono tabular-nums">{sub.code}</p>
+
+                  {/* VISUAL STATUS INDICATOR ROW */}
+                  <div className="mb-2.5 flex items-center justify-between gap-2 p-1.5 bg-[#f6f8f7] rounded-xl border border-[#bac4c6]/50">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider shrink-0 hidden sm:inline">
+                        Status:
+                      </span>
+                      {/* Primary Visual Status Indicator Badge */}
+                      <SubjectStatusIndicator status={currentStatus} />
+                    </div>
+
+                    {/* Quick Status Selector Dropdown */}
+                    <div className="shrink-0 print:hidden">
+                      <select
+                        value={currentStatus}
+                        onChange={(e) => handleUpdateStatus(sub, e.target.value as SubjectRegistrationStatus)}
+                        className={cn(
+                          "text-[10px] font-bold rounded-lg px-2 py-0.5 border outline-none cursor-pointer transition-colors",
+                          currentStatus === 'Enrolled' && "bg-white text-[#065f46] border-[#06d6a0]/60",
+                          currentStatus === 'Pending Approval' && "bg-white text-[#854d0e] border-[#faae57]/70",
+                          currentStatus === 'Available' && "bg-white text-[#1c4a59] border-[#1c4a59]/40"
+                        )}
+                        title="Change subject registration status"
+                      >
+                        <option value="Enrolled">Mark: Enrolled</option>
+                        <option value="Pending Approval">Mark: Pending Approval</option>
+                        <option value="Available">Mark: Available</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0 print:hidden">
-                  <button 
-                    type="button"
-                    onClick={() => openEditModal(sub)}
-                    title="Edit Subject"
-                    className="w-8 h-8 flex items-center justify-center text-[#1c4a59] bg-[#f6f8f7] hover:bg-[#1c4a59]/10 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => subjectsApi.delete(sub.id!)}
-                    title="Delete Subject"
-                    className="w-8 h-8 flex items-center justify-center text-[#6a7f84] hover:text-[#ef476f] bg-[#f6f8f7] hover:bg-[#ef476f]/10 hover:border-[#ef476f]/30 border border-[#bac4c6]/80 rounded-lg transition-all cursor-pointer active:scale-[0.96]"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                
+                {/* Bottom Row: Applicable Classes & Quick Action Button */}
+                <div className="pt-2 border-t border-[#bac4c6]/40 space-y-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider mr-0.5">Classes:</span>
+                    {sub.applicableClasses?.includes('All') ? (
+                      <span className="px-2 py-0.5 bg-[#06d6a0]/15 text-[#065f46] border border-[#06d6a0]/40 text-[10px] font-bold rounded-md">
+                        All Classes
+                      </span>
+                    ) : (
+                      sub.applicableClasses?.map(c => (
+                        <span key={c} className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#1c4a59] border border-[#bac4c6]/80 text-[10px] font-bold rounded-md">
+                          {c}
+                        </span>
+                      ))
+                    )}
+                    {(!sub.applicableClasses || sub.applicableClasses.length === 0) && (
+                      <span className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#6a7f84] border border-[#bac4c6]/60 text-[10px] font-bold rounded-md">
+                        Not Assigned
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 1-Click Status Action Buttons */}
+                  <div className="flex items-center gap-1.5 print:hidden">
+                    {currentStatus === 'Available' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(sub, 'Enrolled')}
+                        className="flex-1 py-1 px-2 bg-[#06d6a0]/15 hover:bg-[#06d6a0]/25 text-[#065f46] border border-[#06d6a0]/40 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        title="Enroll directly into this curriculum subject"
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Enroll Subject</span>
+                      </button>
+                    )}
+                    {currentStatus === 'Available' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(sub, 'Pending Approval')}
+                        className="py-1 px-2 bg-[#faae57]/20 hover:bg-[#faae57]/30 text-[#854d0e] border border-[#faae57]/50 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        title="Request enrollment approval from HOD / Academic Director"
+                      >
+                        <Clock className="w-3 h-3" />
+                        <span>Request Approval</span>
+                      </button>
+                    )}
+                    {currentStatus === 'Pending Approval' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(sub, 'Enrolled')}
+                        className="flex-1 py-1 px-2 bg-[#06d6a0] hover:bg-[#05b88a] text-white rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
+                        title="Approve pending enrollment for this subject"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Approve Enrollment</span>
+                      </button>
+                    )}
+                    {currentStatus === 'Pending Approval' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(sub, 'Available')}
+                        className="py-1 px-2 bg-[#f6f8f7] hover:bg-slate-200 text-[#6a7f84] border border-[#bac4c6]/70 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+                        title="Cancel request and set back to Available"
+                      >
+                        <span>Cancel</span>
+                      </button>
+                    )}
+                    {currentStatus === 'Enrolled' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(sub, 'Available')}
+                        className="w-full py-1 px-2 bg-[#f6f8f7] hover:bg-[#1c4a59]/10 text-[#1c4a59] border border-[#bac4c6]/70 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        title="Set status back to Available"
+                      >
+                        <Sparkles className="w-3 h-3 text-[#faae57]" />
+                        <span>Change to Available</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-              
-              <div className="pt-2 border-t border-[#bac4c6]/40 flex flex-wrap items-center gap-1">
-                <span className="text-[10px] font-bold text-[#6a7f84] uppercase tracking-wider mr-0.5">Classes:</span>
-                {sub.applicableClasses?.includes('All') ? (
-                  <span className="px-2 py-0.5 bg-[#06d6a0]/15 text-[#065f46] border border-[#06d6a0]/40 text-[10px] font-bold rounded-md">
-                    All Classes
-                  </span>
-                ) : (
-                  sub.applicableClasses?.map(c => (
-                    <span key={c} className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#1c4a59] border border-[#bac4c6]/80 text-[10px] font-bold rounded-md">
-                      {c}
-                    </span>
-                  ))
-                )}
-                {(!sub.applicableClasses || sub.applicableClasses.length === 0) && (
-                  <span className="px-1.5 py-0.5 bg-[#f6f8f7] text-[#6a7f84] border border-[#bac4c6]/60 text-[10px] font-bold rounded-md">
-                    Not Assigned
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Responsive Add/Edit Subject Modal */}
+      {/* Responsive Add/Edit Subject Modal with Status Selection */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
           <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
@@ -1083,6 +1589,56 @@ function SubjectList() {
               <div className="space-y-1">
                 <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Subject Code</label>
                 <input name="code" defaultValue={editingSubject?.code} placeholder="Subject Code (e.g., ENG-101)" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none font-mono" />
+              </div>
+
+              {/* Status Picker in Modal */}
+              <div className="space-y-1.5 pt-0.5">
+                <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">
+                  Registration Status
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormStatus('Available')}
+                    className={cn(
+                      "p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1",
+                      formStatus === 'Available'
+                        ? "bg-[#1c4a59]/10 border-[#1c4a59] text-[#1c4a59] ring-2 ring-[#1c4a59]/20 font-bold"
+                        : "bg-[#f6f8f7] border-[#bac4c6]/70 text-[#6a7f84] hover:bg-white"
+                    )}
+                  >
+                    <Sparkles className="w-4 h-4 text-[#1c4a59]" />
+                    <span className="text-[11px] leading-tight">Available</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormStatus('Pending Approval')}
+                    className={cn(
+                      "p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1",
+                      formStatus === 'Pending Approval'
+                        ? "bg-[#faae57]/25 border-[#faae57] text-[#854d0e] ring-2 ring-[#faae57]/30 font-bold"
+                        : "bg-[#f6f8f7] border-[#bac4c6]/70 text-[#6a7f84] hover:bg-white"
+                    )}
+                  >
+                    <Clock className="w-4 h-4 text-[#d97706]" />
+                    <span className="text-[11px] leading-tight">Pending Approval</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormStatus('Enrolled')}
+                    className={cn(
+                      "p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1",
+                      formStatus === 'Enrolled'
+                        ? "bg-[#06d6a0]/20 border-[#06d6a0] text-[#065f46] ring-2 ring-[#06d6a0]/30 font-bold"
+                        : "bg-[#f6f8f7] border-[#bac4c6]/70 text-[#6a7f84] hover:bg-white"
+                    )}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-[#06d6a0]" />
+                    <span className="text-[11px] leading-tight">Enrolled</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1.5 pt-0.5">

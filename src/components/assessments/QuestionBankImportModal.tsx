@@ -47,7 +47,7 @@ export const QuestionBankImportModal: React.FC<QuestionBankImportModalProps> = (
   // Subjects available
   const subjectList = useMemo(() => {
     const list = Array.from(new Set(bankItems.map(b => b.subject))).filter(Boolean).sort();
-    return list.length > 0 ? list : ['Mathematics', 'Integrated Science', 'English Language', 'Social Studies', 'ICT'];
+    return list;
   }, [bankItems]);
 
   // Topics available

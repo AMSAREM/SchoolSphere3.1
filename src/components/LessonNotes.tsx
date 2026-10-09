@@ -265,21 +265,7 @@ export default function LessonNotes({ showToast, currentUser, onNavigate }: Less
   }, [classes]);
 
   const subjectOptions = useMemo(() => {
-    const names = Array.from(new Set(subjects.map(s => s.name).filter(Boolean)));
-    return names.length > 0
-      ? names
-      : [
-          'Mathematics',
-          'English Language',
-          'Integrated Science',
-          'Social Studies',
-          'Computing / ICT',
-          'Creative Arts & Design',
-          'Career Technology',
-          'Religious & Moral Education',
-          'Ghanaian Language',
-          'French'
-        ];
+    return Array.from(new Set(subjects.map(s => s.name).filter(Boolean)));
   }, [subjects]);
 
   // Hydrate and synchronize Lesson Notes with Supabase

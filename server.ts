@@ -194,7 +194,22 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  // 3. General mutation rate limit (POST, PUT, DELETE, PATCH)
+  // 3. Dedicated strict rate limit for AI inference & question generation (protect Gemini quotas & prevent abuse)
+  if (pathUrl.includes("/ai/")) {
+    const aiKey = `ai_${clientIp}_${schoolId}`;
+    const check = serverRateLimiter.check(aiKey, 10, 60000); // max 10 AI generation requests per minute
+    if (!check.allowed) {
+      res.setHeader("Retry-After", String(check.retryAfter));
+      res.setHeader("X-RateLimit-Remaining", "0");
+      return res.status(429).json({
+        error: `AI generation rate limit reached. You can run up to 10 question generations per minute. Please wait ${check.retryAfter} seconds before requesting again.`,
+        rateLimited: true,
+        retryAfter: check.retryAfter
+      });
+    }
+  }
+
+  // 4. General mutation rate limit (POST, PUT, DELETE, PATCH)
   if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
     const writeKey = `write_${clientIp}_${schoolId}`;
     const check = serverRateLimiter.check(writeKey, 45, 10000); // max 45 write operations per 10 seconds

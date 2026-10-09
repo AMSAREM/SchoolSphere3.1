@@ -1409,84 +1409,160 @@ export default function SmsModule() {
                 <p className="text-xs text-slate-500">Choose custom templates, compile custom variables, and execute broadcast to seed entries.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black text-[10px] uppercase tracking-wider">
-                      <th className="py-4 px-6">Recipient</th>
-                      <th className="py-4 px-4">Contact Phone</th>
-                      <th className="py-4 px-4">SMS Type</th>
-                      <th className="py-4 px-6">Dispatched Body</th>
-                      <th className="py-4 px-4 text-center">Status</th>
-                      <th className="py-4 px-4">Dispach Time</th>
-                      <th className="py-4 px-4 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-sm font-medium text-slate-700">
-                    {filteredHistory.map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/40 transition-colors">
-                        <td className="py-4 px-6">
-                          <div>
-                            <p className="font-extrabold text-slate-900">{log.recipientName}</p>
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black text-slate-500 bg-slate-100 uppercase tracking-wide mt-1">
+              <>
+                {/* Mobile Cards (< 768px) */}
+                <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                  {filteredHistory.map(log => (
+                    <div
+                      key={log.id}
+                      className="bg-slate-50/60 rounded-xl p-3.5 border border-slate-200 space-y-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-xs">{log.recipientName}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="font-mono text-[11px] font-bold text-slate-600">
+                              {log.recipientPhone}
+                            </span>
+                            <span className="text-slate-300">·</span>
+                            <span className="text-[10px] text-slate-400 font-medium">
                               {log.recipientType}
                             </span>
                           </div>
-                        </td>
-                        <td className="py-4 px-4 font-mono font-bold text-slate-600">
-                          {log.recipientPhone}
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                            log.type === 'Siren Emergency' ? 'bg-red-50 text-red-700 text-[10px] duration-100 border border-red-100' :
+                        </div>
+
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold leading-none shrink-0 ${
+                          log.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'Delivered' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                          {log.status}
+                        </span>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-2.5 border border-slate-200/80 space-y-1 text-xs">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className={`inline-flex px-1.5 py-0.5 rounded font-black uppercase text-[9px] ${
+                            log.type === 'Siren Emergency' ? 'bg-red-50 text-red-700 border border-red-100' :
                             log.type === 'Fee Reminder' ? 'bg-indigo-50 text-indigo-700' :
                             log.type === 'Attendance Alert' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-slate-100 text-slate-700'
                           }`}>
                             {log.type}
                           </span>
-                        </td>
-                        <td className="py-4 px-4 text-xs font-semibold leading-relaxed text-slate-500 max-w-sm">
-                          {log.message}
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold leading-none ${
-                            log.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'Delivered' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                            {log.status}
+                          <span className="text-slate-400 font-mono">
+                            {new Date(log.createdAt).toLocaleString()}
                           </span>
-                        </td>
-                        <td className="py-4 px-4 text-xs text-slate-400 font-semibold">
-                          {new Date(log.createdAt).toLocaleString()}
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <button
-                            onClick={async () => {
-                              if (smsCredits < 1) {
-                                showToast('Insufficient SMS credits to re-transmit.', 'error');
-                                return;
-                              }
-                              await db.smsLogs.add({
-                                ...log,
-                                id: undefined,
-                                status: Math.random() > 0.05 ? 'Delivered' : 'Failed',
-                                createdAt: Date.now()
-                              });
-                              await saveCredits(smsCredits - 1);
-                              showToast('SMS re-queued with delivery provider! Dispatched.', 'success');
-                            }}
-                            className="p-1.5 px-2 bg-slate-50 hover:bg-indigo-55 text-zinc-500 hover:text-indigo-600 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
-                            title="Resend this message"
-                          >
-                            <Send className="w-3 h-3" />
-                            <span>Resend</span>
-                          </button>
-                        </td>
+                        </div>
+                        <p className="text-slate-600 text-xs leading-relaxed pt-1 border-t border-slate-100">
+                          {log.message}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-end pt-1">
+                        <button
+                          onClick={async () => {
+                            if (smsCredits < 1) {
+                              showToast('Insufficient SMS credits to re-transmit.', 'error');
+                              return;
+                            }
+                            await db.smsLogs.add({
+                              ...log,
+                              id: undefined,
+                              status: Math.random() > 0.05 ? 'Delivered' : 'Failed',
+                              createdAt: Date.now()
+                            });
+                            await saveCredits(smsCredits - 1);
+                            showToast('SMS re-queued with delivery provider! Dispatched.', 'success');
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 border border-slate-200 cursor-pointer"
+                        >
+                          <Send className="w-3 h-3 text-[#1c4a59]" />
+                          <span>Resend</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table (>= 768px) */}
+                <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black text-[10px] uppercase tracking-wider">
+                        <th className="py-4 px-6">Recipient</th>
+                        <th className="py-4 px-4">Contact Phone</th>
+                        <th className="py-4 px-4">SMS Type</th>
+                        <th className="py-4 px-6">Dispatched Body</th>
+                        <th className="py-4 px-4 text-center">Status</th>
+                        <th className="py-4 px-4">Dispach Time</th>
+                        <th className="py-4 px-4 text-center">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 text-sm font-medium text-slate-700">
+                      {filteredHistory.map(log => (
+                        <tr key={log.id} className="hover:bg-slate-50/40 transition-colors">
+                          <td className="py-4 px-6">
+                            <div>
+                              <p className="font-extrabold text-slate-900">{log.recipientName}</p>
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black text-slate-500 bg-slate-100 uppercase tracking-wide mt-1">
+                                {log.recipientType}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 font-mono font-bold text-slate-600">
+                            {log.recipientPhone}
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              log.type === 'Siren Emergency' ? 'bg-red-50 text-red-700 text-[10px] duration-100 border border-red-100' :
+                              log.type === 'Fee Reminder' ? 'bg-indigo-50 text-indigo-700' :
+                              log.type === 'Attendance Alert' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {log.type}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-xs font-semibold leading-relaxed text-slate-500 max-w-sm">
+                            {log.message}
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold leading-none ${
+                              log.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'Delivered' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-xs text-slate-400 font-semibold">
+                            {new Date(log.createdAt).toLocaleString()}
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <button
+                              onClick={async () => {
+                                if (smsCredits < 1) {
+                                  showToast('Insufficient SMS credits to re-transmit.', 'error');
+                                  return;
+                                }
+                                await db.smsLogs.add({
+                                  ...log,
+                                  id: undefined,
+                                  status: Math.random() > 0.05 ? 'Delivered' : 'Failed',
+                                  createdAt: Date.now()
+                                });
+                                await saveCredits(smsCredits - 1);
+                                showToast('SMS re-queued with delivery provider! Dispatched.', 'success');
+                              }}
+                              className="p-1.5 px-2 bg-slate-50 hover:bg-indigo-55 text-zinc-500 hover:text-indigo-600 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
+                              title="Resend this message"
+                            >
+                              <Send className="w-3 h-3" />
+                              <span>Resend</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

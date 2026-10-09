@@ -1055,7 +1055,7 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-dvh min-h-dvh bg-[#f6f8f7] overflow-hidden font-sans print:h-auto print:overflow-visible relative safe-top">
+    <div className="flex h-dvh min-h-dvh max-w-[100vw] w-full bg-[#f6f8f7] overflow-x-hidden overflow-y-hidden font-sans print:h-auto print:overflow-visible relative safe-top">
       <DoodleBackground opacity={0.04} />
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
@@ -1365,13 +1365,6 @@ function AppContent() {
                     <span className="text-xs font-semibold text-[#6a7f84] uppercase tracking-wider whitespace-nowrap">
                       {activePageMeta.category}
                     </span>
-                    <span className="text-[#bac4c6] text-xs select-none" aria-hidden="true">/</span>
-                    <h1
-                      data-testid="header-page-name"
-                      className="text-xs sm:text-sm font-bold text-[#1c4a59] whitespace-nowrap truncate max-w-[240px] md:max-w-[360px] lg:max-w-[480px]"
-                    >
-                      {activePageMeta.title}
-                    </h1>
                   </div>
 
                   {/* Mobile Title & Context (< sm) */}

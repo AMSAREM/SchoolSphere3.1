@@ -87,7 +87,7 @@ export const QuestionBankView: React.FC<QuestionBankViewProps> = ({
     const fromDB = subjectsFromDB.map(s => s.name);
     const fromBank = bankItems.map(b => b.subject);
     const set = Array.from(new Set([...fromDB, ...fromBank])).filter(Boolean).sort();
-    return set.length > 0 ? set : ['Mathematics', 'Integrated Science', 'English Language', 'Social Studies', 'ICT'];
+    return set;
   }, [subjectsFromDB, bankItems]);
 
   // Topics available based on selected subject

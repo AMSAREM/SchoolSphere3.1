@@ -1001,110 +1001,194 @@ export default function ExamAnalysis() {
                 <p className="text-xs text-slate-500">Try adjusting your filters, searching for another student, or loading demo data in the top bar.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black text-[10px] uppercase tracking-wider">
-                      <th className="py-4 px-6">Candidate</th>
-                      <th className="py-4 px-4">Exam Details</th>
-                      <th className="py-4 px-4 text-center">Subjects Graded</th>
-                      <th className="py-4 px-4 text-center">Aggregate Score</th>
-                      <th className="py-4 px-4">Eligibility Status</th>
-                      <th className="py-4 px-6 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-sm font-medium text-slate-700">
-                    {filteredRecords.map(rec => (
-                      <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div>
-                            <p className="font-extrabold text-slate-900">{rec.studentName}</p>
-                            <p className="text-xs text-slate-400 font-mono mt-0.5">{rec.studentId}</p>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="space-y-0.5">
-                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                              rec.examType === 'WASSCE' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
-                            }`}>
-                              {rec.examType}
-                            </span>
-                            <p className="text-xs text-slate-500">Year: <strong className="text-slate-800">{rec.year}</strong></p>
-                            <p className="text-xs font-mono text-slate-400">Index: {rec.indexNumber}</p>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className="inline-flex items-center justify-center w-6 h-6 bg-slate-100 rounded-full font-black text-xs text-slate-600">
-                            {rec.subjects.length}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <div className="inline-flex flex-col items-center justify-center">
-                            <span className={`font-black text-lg px-2.5 py-0.5 rounded-full ${
-                              rec.aggregate <= 15 ? 'bg-emerald-50 text-emerald-600' :
-                              rec.aggregate <= 30 ? 'bg-blue-50 text-blue-600' :
-                              rec.aggregate <= 36 ? 'bg-indigo-50 text-indigo-600' :
-                              rec.aggregate <= 45 ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'
-                            }`}>
-                              {rec.aggregate}
-                            </span>
-                            <span className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Aggregate</span>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="space-y-1">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold leading-none ${
-                              rec.status === 'Excellent' ? 'bg-emerald-50 text-emerald-700' :
-                              rec.status === 'Qualified' ? 'bg-blue-50 text-blue-700' :
-                              rec.status === 'Conditional' ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                              {rec.status === 'Excellent' ? 'Excellent Qualifiers' :
-                               rec.status === 'Qualified' ? 'Admissions Qualified' :
-                               rec.status === 'Conditional' ? 'Conditional Pass' : 'Failed Admission'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                setPreviewRecord(rec);
-                                setIsPreviewModalOpen(true);
-                              }}
-                              className="p-1 px-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5 outline-none"
-                              title="View and print card certificate"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                              <span>Print Card</span>
-                            </button>
-                            
-                            {!isStudent && (
-                              <>
-                                <button
-                                  onClick={() => handleEdit(rec)}
-                                  className="p-1 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all outline-none"
-                                  title="Edit record"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
+              <>
+                {/* Mobile Cards (< 768px) */}
+                <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                  {filteredRecords.map(rec => (
+                    <div
+                      key={rec.id}
+                      className="bg-slate-50/60 rounded-xl p-3.5 border border-slate-200 space-y-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-xs uppercase tracking-tight">{rec.studentName}</p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">{rec.studentId} · Index: {rec.indexNumber}</p>
+                        </div>
+                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                          rec.examType === 'WASSCE' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                        }`}>
+                          {rec.examType} ({rec.year})
+                        </span>
+                      </div>
 
-                                <button
-                                  onClick={() => handleDelete(rec.id!)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-all outline-none"
-                                  title="Delete record"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
+                      <div className="bg-white rounded-lg p-2.5 border border-slate-200/80 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-semibold block">Subjects Graded</span>
+                          <span className="font-bold text-slate-800">{rec.subjects.length} Subjects</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[10px] text-slate-400 font-semibold block">Aggregate</span>
+                          <span className={`font-black text-sm px-2 py-0.5 rounded-full inline-block ${
+                            rec.aggregate <= 15 ? 'bg-emerald-50 text-emerald-600' :
+                            rec.aggregate <= 30 ? 'bg-blue-50 text-blue-600' :
+                            rec.aggregate <= 36 ? 'bg-indigo-50 text-indigo-600' :
+                            rec.aggregate <= 45 ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'
+                          }`}>
+                            {rec.aggregate}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 font-semibold block">Status</span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            rec.status === 'Excellent' ? 'bg-emerald-50 text-emerald-700' :
+                            rec.status === 'Qualified' ? 'bg-blue-50 text-blue-700' :
+                            rec.status === 'Conditional' ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700'
+                          }`}>
+                            {rec.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-200/60">
+                        <button
+                          onClick={() => {
+                            setPreviewRecord(rec);
+                            setIsPreviewModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print Card</span>
+                        </button>
+                        {!isStudent && (
+                          <>
+                            <button
+                              onClick={() => handleEdit(rec)}
+                              className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer border border-slate-200"
+                              title="Edit"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(rec.id!)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer border border-slate-200"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Table (>= 768px) */}
+                <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-black text-[10px] uppercase tracking-wider">
+                        <th className="py-4 px-6">Candidate</th>
+                        <th className="py-4 px-4">Exam Details</th>
+                        <th className="py-4 px-4 text-center">Subjects Graded</th>
+                        <th className="py-4 px-4 text-center">Aggregate Score</th>
+                        <th className="py-4 px-4">Eligibility Status</th>
+                        <th className="py-4 px-6 text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 text-sm font-medium text-slate-700">
+                      {filteredRecords.map(rec => (
+                        <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 px-6">
+                            <div>
+                              <p className="font-extrabold text-slate-900">{rec.studentName}</p>
+                              <p className="text-xs text-slate-400 font-mono mt-0.5">{rec.studentId}</p>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="space-y-0.5">
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                rec.examType === 'WASSCE' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                              }`}>
+                                {rec.examType}
+                              </span>
+                              <p className="text-xs text-slate-500">Year: <strong className="text-slate-800">{rec.year}</strong></p>
+                              <p className="text-xs font-mono text-slate-400">Index: {rec.indexNumber}</p>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="inline-flex items-center justify-center w-6 h-6 bg-slate-100 rounded-full font-black text-xs text-slate-600">
+                              {rec.subjects.length}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <div className="inline-flex flex-col items-center justify-center">
+                              <span className={`font-black text-lg px-2.5 py-0.5 rounded-full ${
+                                rec.aggregate <= 15 ? 'bg-emerald-50 text-emerald-600' :
+                                rec.aggregate <= 30 ? 'bg-blue-50 text-blue-600' :
+                                rec.aggregate <= 36 ? 'bg-indigo-50 text-indigo-600' :
+                                rec.aggregate <= 45 ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'
+                              }`}>
+                                {rec.aggregate}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Aggregate</span>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="space-y-1">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold leading-none ${
+                                rec.status === 'Excellent' ? 'bg-emerald-50 text-emerald-700' :
+                                rec.status === 'Qualified' ? 'bg-blue-50 text-blue-700' :
+                                rec.status === 'Conditional' ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700'
+                              }`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                {rec.status === 'Excellent' ? 'Excellent Qualifiers' :
+                                 rec.status === 'Qualified' ? 'Admissions Qualified' :
+                                 rec.status === 'Conditional' ? 'Conditional Pass' : 'Failed Admission'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => {
+                                  setPreviewRecord(rec);
+                                  setIsPreviewModalOpen(true);
+                                }}
+                                className="p-1 px-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5 outline-none"
+                                title="View and print card certificate"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>Print Card</span>
+                              </button>
+                              
+                              {!isStudent && (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(rec)}
+                                    className="p-1 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all outline-none"
+                                    title="Edit record"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDelete(rec.id!)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-all outline-none"
+                                    title="Delete record"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

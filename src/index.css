@@ -114,10 +114,47 @@
   --color-accent: #EF476F;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  max-width: 100vw;
+  width: 100%;
+  overflow-x: hidden;
+  position: relative;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: #f6f8f7;
   color: #1f2a2e;
   font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  max-width: 100vw;
+  width: 100%;
+  overflow-x: hidden;
+  min-height: 100dvh;
+}
+
+/* Zero-Horizontal-Scroll Utilities */
+.prevent-horizontal-scroll {
+  max-width: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.table-responsive-container {
+  max-width: 100%;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 /* Custom Scrollbar for modern feel */

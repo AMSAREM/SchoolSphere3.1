@@ -2817,8 +2817,8 @@ export default function TimetableManagement() {
               </div>
             ) : (
               <>
-                {/* Mobile Stacked Weekday Cards (< 768px) */}
-                <div className="md:hidden space-y-3 print:hidden">
+                {/* Mobile & Tablet Stacked Weekday Cards (< 1024px) */}
+                <div className="lg:hidden space-y-3 print:hidden">
                   {WEEKDAYS.map((day) => {
                     const daySlots = filteredSlots.filter(s => s.day === day);
                     return (
@@ -2900,8 +2900,8 @@ export default function TimetableManagement() {
                   })}
                 </div>
 
-                {/* Tablet & Desktop Table View (>= 768px and Print) */}
-                <div className="hidden md:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
+                {/* Desktop Table View (>= 1024px and Print) */}
+                <div className="hidden lg:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
                   <table className="w-full border-collapse text-left text-xs text-[#1f2a2e] min-w-[700px] table-fixed">
                     <thead>
                       <tr className="bg-[#f6f8f7] border-b border-[#bac4c6]/60 text-[10px] uppercase font-bold text-[#6a7f84] tracking-wider">
@@ -3096,8 +3096,8 @@ export default function TimetableManagement() {
                   </div>
                 ) : (
                   <>
-                    {/* Mobile Class Schedule Cards by Weekday (< 768px) */}
-                    <div className="md:hidden space-y-3 print:hidden">
+                    {/* Mobile & Tablet Class Schedule Cards by Weekday (< 1024px) */}
+                    <div className="lg:hidden space-y-3 print:hidden">
                       <div className="bg-[#1c4a59] text-white px-3.5 py-2.5 rounded-xl flex items-center justify-between">
                         <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                           <Building className="w-3.5 h-3.5 text-[#faae57]" />
@@ -3221,8 +3221,8 @@ export default function TimetableManagement() {
                       })}
                     </div>
 
-                    {/* Tablet & Desktop 5-Day Matrix Table (>= 768px and Print) */}
-                    <div className="hidden md:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
+                    {/* Desktop 5-Day Matrix Table (>= 1024px and Print) */}
+                    <div className="hidden lg:block print:block bg-white border border-[#bac4c6]/80 rounded-2xl shadow-xs overflow-hidden overflow-x-auto min-w-full">
                       <div className="p-4 bg-[#f6f8f7] border-b border-[#bac4c6]/60 flex items-center justify-between">
                         <h4 className="text-xs font-bold text-[#1c4a59] uppercase tracking-wider flex items-center gap-1.5">
                           <Building className="w-4 h-4 text-[#faae57]" />
@@ -3470,8 +3470,8 @@ export default function TimetableManagement() {
               </div>
             ) : (
               <>
-                {/* Mobile Slot Cards (< 768px) */}
-                <div className="md:hidden divide-y divide-[#bac4c6]/50">
+                {/* Mobile & Tablet Slot Cards (< 1024px) */}
+                <div className="lg:hidden divide-y divide-[#bac4c6]/50">
                   {slots.map(slot => {
                     const bInfo = getBellForSlotTime(slot.startTime, slot.endTime, slot.day);
                     const isSelected = selectedSlotIds.includes(slot.id);
@@ -3533,8 +3533,8 @@ export default function TimetableManagement() {
                   })}
                 </div>
 
-                {/* Desktop Table (>= 768px) */}
-                <div className="hidden md:block divide-y divide-[#bac4c6]/40 overflow-x-auto">
+                {/* Desktop Table (>= 1024px) */}
+                <div className="hidden lg:block divide-y divide-[#bac4c6]/40 overflow-x-auto">
                   <table className="w-full text-left text-xs font-semibold text-[#1f2a2e] min-w-[700px]">
                     <thead>
                       <tr className="bg-[#f6f8f7]/60 text-[10px] uppercase tracking-wider font-bold text-[#6a7f84] border-b border-[#bac4c6]/50">

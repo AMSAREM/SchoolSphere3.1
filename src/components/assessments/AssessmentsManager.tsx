@@ -24,6 +24,7 @@ import {
   type AssessmentSubmission,
   type AssessmentCategory,
   type Student,
+  type Teacher,
   type AssessmentQuestion,
   type QuestionBankItem
 } from '../../db/schema';
@@ -32,6 +33,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { AssessmentCard, CATEGORY_CONFIG } from './AssessmentCard';
 import { AssessmentEditorModal } from './AssessmentEditorModal';
 import { StudentSubmissionModal } from './StudentSubmissionModal';
+import { SubjectRegistrationModal } from './SubjectRegistrationModal';
 import { TeacherGradingDrawer } from './TeacherGradingDrawer';
 import { TerminalSbaSyncModal } from './TerminalSbaSyncModal';
 import { OnlineInteractiveQuizModal } from './OnlineInteractiveQuizModal';
@@ -52,10 +54,17 @@ export default function AssessmentsManager() {
   const allAssessments = useLiveQuery(() => db.assessments.toArray()) || [];
   const allSubmissions = useLiveQuery(() => db.assessmentSubmissions.toArray()) || [];
   const studentsInSystem = useLiveQuery(() => db.students.toArray()) || [];
+  const teachersInSystem = useLiveQuery(() => db.teachers.toArray()) || [];
   const classesFromDB = useLiveQuery(() => db.classes.toArray()) || [];
   const subjectsFromDB = useLiveQuery(() => db.subjects.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
   const allBankQuestions = useLiveQuery(() => db.questionBank.toArray()) || [];
+
+  // Registered subjects setting query for current user profile
+  const registeredSubjectsSetting = useLiveQuery(
+    () => db.settings.where('key').equals(`registered_subjects_${user?.username || user?.id || 'current_user'}`).first(),
+    [user?.username, user?.id]
+  );
 
   // Seed default demo assessments and question bank on first mount if empty
   useEffect(() => {
@@ -85,6 +94,41 @@ export default function AssessmentsManager() {
     return null;
   }, [isStudent, user?.fullName, user?.username, studentsInSystem]);
 
+  // Current Teacher Record if user is teacher
+  const currentTeacherRecord = useMemo(() => {
+    if (isTeacher) {
+      return (
+        teachersInSystem.find(t =>
+          (t.email && user?.email && t.email.toLowerCase() === user.email.toLowerCase()) ||
+          (t.firstName && user?.fullName && user.fullName.toLowerCase().includes(t.firstName.toLowerCase()))
+        ) || null
+      );
+    }
+    return null;
+  }, [isTeacher, teachersInSystem, user?.email, user?.fullName]);
+
+  // Current user's registered subjects
+  const currentRegisteredSubjects: string[] = useMemo(() => {
+    if (
+      currentStudentRecord &&
+      Array.isArray((currentStudentRecord as any).registeredSubjects) &&
+      (currentStudentRecord as any).registeredSubjects.length > 0
+    ) {
+      return (currentStudentRecord as any).registeredSubjects;
+    }
+    if (
+      currentTeacherRecord &&
+      Array.isArray(currentTeacherRecord.subjects) &&
+      currentTeacherRecord.subjects.length > 0
+    ) {
+      return currentTeacherRecord.subjects;
+    }
+    if (registeredSubjectsSetting?.value && Array.isArray(registeredSubjectsSetting.value)) {
+      return registeredSubjectsSetting.value;
+    }
+    return [];
+  }, [currentStudentRecord, currentTeacherRecord, registeredSubjectsSetting]);
+
   // Available classes and subjects
   const classOptions = useMemo(() => {
     const fromDB = classesFromDB.map(c => c.name);
@@ -95,11 +139,11 @@ export default function AssessmentsManager() {
   }, [classesFromDB, studentsInSystem, allAssessments]);
 
   const subjectOptions = useMemo(() => {
-    const fromDB = subjectsFromDB.map(s => s.name);
-    const fromAssessments = allAssessments.map(a => a.subject);
-    const set = Array.from(new Set([...fromDB, ...fromAssessments])).filter(Boolean).sort();
-    return set.length > 0 ? set : ['Mathematics', 'Integrated Science', 'English Language', 'Social Studies', 'ICT'];
-  }, [subjectsFromDB, allAssessments]);
+    const fromDB = subjectsFromDB.map(s => s.name).filter(Boolean);
+    const fromRegistered = currentRegisteredSubjects.filter(Boolean);
+    const set = Array.from(new Set([...fromDB, ...fromRegistered])).sort();
+    return set;
+  }, [subjectsFromDB, currentRegisteredSubjects]);
 
   const currentTerm = useMemo(() => {
     const conf = settings.find(s => s.key === 'academicConfig')?.value;
@@ -130,6 +174,7 @@ export default function AssessmentsManager() {
   const [activePrintAssessment, setActivePrintAssessment] = useState<Assessment | null>(null);
   const [mainSectionTab, setMainSectionTab] = useState<'assessments' | 'question_bank'>('assessments');
   const [isAiGeneratorModalOpen, setIsAiGeneratorModalOpen] = useState(false);
+  const [isSubjectRegistrationOpen, setIsSubjectRegistrationOpen] = useState(false);
 
   // Filtered Assessments
   const filteredAssessments = useMemo(() => {
@@ -563,16 +608,61 @@ export default function AssessmentsManager() {
             <span className="text-xs text-slate-400 font-medium">Subject:</span>
             <select
               value={selectedSubject}
-              onChange={e => setSelectedSubject(e.target.value)}
-              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              onChange={e => {
+                const val = e.target.value;
+                if (val === '__REGISTER__') {
+                  setIsSubjectRegistrationOpen(true);
+                  return;
+                }
+                setSelectedSubject(val);
+              }}
+              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-slate-800"
             >
               <option value="All">All Subjects</option>
-              {subjectOptions.map(s => (
-                <option key={s} value={s}>
-                  {s}
+              {currentRegisteredSubjects.length > 0 && (
+                <optgroup label="⭐ My Registered Subjects">
+                  {currentRegisteredSubjects.map(s => (
+                    <option key={`reg-${s}`} value={s}>
+                      {s} (Enrolled)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {subjectOptions.filter(s => !currentRegisteredSubjects.includes(s)).length > 0 && (
+                <optgroup label="Available Subjects">
+                  {subjectOptions
+                    .filter(s => !currentRegisteredSubjects.includes(s))
+                    .map(s => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+              {subjectOptions.length === 0 && (
+                <option disabled value="" className="text-slate-400 italic">
+                  (No subjects registered yet)
                 </option>
-              ))}
+              )}
+              <option value="__REGISTER__" className="text-emerald-700 font-bold bg-emerald-50">
+                ➕ Register for Available Subjects...
+              </option>
             </select>
+
+            <button
+              type="button"
+              onClick={() => setIsSubjectRegistrationOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg transition-colors cursor-pointer whitespace-nowrap shadow-xs"
+              title="Click to register directly for available subjects"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Register</span>
+              {currentRegisteredSubjects.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-200 text-emerald-800 font-mono">
+                  {currentRegisteredSubjects.length}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* Student Status Quick Filter */}
@@ -786,6 +876,24 @@ export default function AssessmentsManager() {
           currentTerm={currentTerm}
         />
       )}
+
+      {/* MODAL 8: Subject Registration & Enrollment */}
+      <SubjectRegistrationModal
+        isOpen={isSubjectRegistrationOpen}
+        onClose={() => setIsSubjectRegistrationOpen(false)}
+        currentUser={user}
+        currentStudent={currentStudentRecord}
+        currentTeacher={currentTeacherRecord}
+        availableSubjectsFromDB={subjectsFromDB}
+        currentRegisteredSubjects={currentRegisteredSubjects}
+        onRegistrationUpdated={(newRegistered, newlyAddedSubject) => {
+          if (newlyAddedSubject) {
+            setSelectedSubject(newlyAddedSubject);
+          } else if (newRegistered.length > 0 && selectedSubject !== 'All' && !newRegistered.includes(selectedSubject)) {
+            setSelectedSubject(newRegistered[0]);
+          }
+        }}
+      />
     </div>
   );
 }

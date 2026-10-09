@@ -541,8 +541,8 @@ export default function FeeManagement() {
           </div>
 
           {/* Desktop & Print Table */}
-          <div className="hidden md:block print:block overflow-x-auto">
-            <table className="w-full text-left min-w-[700px]">
+          <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+            <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider">
                   <th className="px-5 py-4">Transaction Date</th>
@@ -1497,8 +1497,8 @@ export default function FeeManagement() {
                 </div>
 
                 {/* Desktop & Print Table (>= 768px) */}
-                <div className="hidden md:block print:block overflow-x-auto">
-                  <table className="w-full text-left min-w-[500px]">
+                <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                  <table className="w-full text-left">
                     <thead>
                       <tr className="bg-slate-50/30 border-b border-slate-100">
                         <th className="px-5 py-3 text-[10px] font-extrabold text-slate-400 uppercase">Fee Component</th>
@@ -2524,8 +2524,8 @@ export default function FeeManagement() {
               </div>
 
               {/* Desktop & Print Table (>= 768px) */}
-              <div className="hidden md:block print:block overflow-x-auto">
-                <table className="w-full text-left min-w-[640px]">
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Student</th>
@@ -2676,8 +2676,8 @@ export default function FeeManagement() {
                   </div>
 
                   {/* Desktop Table (>= 768px) */}
-                  <div className="hidden md:block overflow-x-auto max-h-[320px] overflow-y-auto">
-                    <table className="w-full text-left min-w-[640px]">
+                  <div className="hidden md:block overflow-x-auto max-h-[320px] overflow-y-auto table-responsive-container">
+                    <table className="w-full text-left">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
                           <th className="px-5 py-3">Receipt No.</th>

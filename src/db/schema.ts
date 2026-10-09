@@ -167,11 +167,15 @@ export interface Result {
   rawCaMax?: number;
 }
 
+export type SubjectRegistrationStatus = 'Enrolled' | 'Pending Approval' | 'Available';
+
 export interface Subject {
   id?: number;
   name: string;
   code: string;
   applicableClasses: string[]; // Empty can mean "All" or we can store "All"
+  status?: SubjectRegistrationStatus;
+  registrationStatus?: SubjectRegistrationStatus;
 }
 
 export interface ClassInfo {

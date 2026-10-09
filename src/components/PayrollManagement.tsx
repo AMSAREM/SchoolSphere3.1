@@ -988,80 +988,138 @@ export default function PayrollManagement() {
               No payslips have been issued for your account yet.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
-                    <th className="py-3 px-4">Period</th>
-                    <th className="py-3 px-4">Employee</th>
-                    <th className="py-3 px-4 text-right">Basic + Allowances</th>
-                    <th className="py-3 px-4 text-right">SSNIT (5.5%)</th>
-                    <th className="py-3 px-4 text-right">PAYE Tax</th>
-                    <th className="py-3 px-4 text-right">Net Take-Home</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selfServiceSlips.map(slip => (
-                    <tr key={slip.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-bold text-[#1c4a59] whitespace-nowrap">
-                        {slip.periodLabel}
-                        <span className="block text-[11px] font-mono text-[#6a7f84] font-normal">
-                          {slip.receiptRef}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#1f2a2e]">{slip.staffName}</div>
-                        <div className="text-[11px] text-[#6a7f84]">
-                          {slip.staffId} · {slip.bankOrNetwork}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums">
-                        {formatCurrency(slip.grossPay)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-rose-700">
-                        -{formatCurrency(slip.ssnitEmployee)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-rose-700">
-                        -{formatCurrency(slip.payeTax)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
-                        {formatCurrency(slip.netPay)}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={cn(
-                            'font-bold text-[11px]',
-                            slip.status === 'paid'
-                              ? 'text-emerald-700'
-                              : slip.status === 'approved'
-                              ? 'text-amber-700'
-                              : 'text-slate-600'
-                          )}
-                        >
-                          {slip.status === 'paid'
-                            ? 'Paid / Disbursed'
+            <>
+              {/* Mobile Cards (< 768px) */}
+              <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                {selfServiceSlips.map(slip => (
+                  <div
+                    key={slip.id}
+                    className="bg-slate-50/60 rounded-xl p-3.5 border border-slate-200 space-y-2.5 shadow-2xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-xs text-[#1c4a59]">{slip.periodLabel}</div>
+                        <div className="text-[10px] font-mono text-[#6a7f84]">{slip.receiptRef}</div>
+                      </div>
+                      <span
+                        className={cn(
+                          'font-bold text-[10px] px-2 py-0.5 rounded-md uppercase tracking-wider',
+                          slip.status === 'paid'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : slip.status === 'approved'
-                            ? 'Approved'
-                            : 'Draft'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setViewingPayslip(slip)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-[#faae57]" />
-                          <span>Payslip</span>
-                        </button>
-                      </td>
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-slate-100 text-slate-600'
+                        )}
+                      >
+                        {slip.status === 'paid' ? 'Paid' : slip.status === 'approved' ? 'Approved' : 'Draft'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-2.5 border border-slate-200/80 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-semibold block">Gross Earnings</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(slip.grossPay)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Net Take-Home</span>
+                        <span className="font-mono font-black text-[#1c4a59] text-sm">{formatCurrency(slip.netPay)}</span>
+                      </div>
+                      <div className="col-span-2 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                        <span>SSNIT: -{formatCurrency(slip.ssnitEmployee)} · Tax: -{formatCurrency(slip.payeTax)}</span>
+                        <span className="font-mono">{slip.bankOrNetwork}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setViewingPayslip(slip)}
+                        className="px-3 py-1.5 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-xs rounded-lg inline-flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#faae57]" />
+                        <span>View Official Payslip</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop & Tablet Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
+                      <th className="py-3 px-4">Period</th>
+                      <th className="py-3 px-4">Employee</th>
+                      <th className="py-3 px-4 text-right">Basic + Allowances</th>
+                      <th className="py-3 px-4 text-right">SSNIT (5.5%)</th>
+                      <th className="py-3 px-4 text-right">PAYE Tax</th>
+                      <th className="py-3 px-4 text-right">Net Take-Home</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selfServiceSlips.map(slip => (
+                      <tr key={slip.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-bold text-[#1c4a59] whitespace-nowrap">
+                          {slip.periodLabel}
+                          <span className="block text-[11px] font-mono text-[#6a7f84] font-normal">
+                            {slip.receiptRef}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-[#1f2a2e]">{slip.staffName}</div>
+                          <div className="text-[11px] text-[#6a7f84]">
+                            {slip.staffId} · {slip.bankOrNetwork}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums">
+                          {formatCurrency(slip.grossPay)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums text-rose-700">
+                          -{formatCurrency(slip.ssnitEmployee)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums text-rose-700">
+                          -{formatCurrency(slip.payeTax)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
+                          {formatCurrency(slip.netPay)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={cn(
+                              'font-bold text-[11px]',
+                              slip.status === 'paid'
+                                ? 'text-emerald-700'
+                                : slip.status === 'approved'
+                                ? 'text-amber-700'
+                                : 'text-slate-600'
+                            )}
+                          >
+                            {slip.status === 'paid'
+                              ? 'Paid / Disbursed'
+                              : slip.status === 'approved'
+                              ? 'Approved'
+                              : 'Draft'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setViewingPayslip(slip)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-[#faae57]" />
+                            <span>Payslip</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
@@ -1075,41 +1133,78 @@ export default function PayrollManagement() {
               You have no active salary advances or staff loans.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
-                    <th className="py-2.5 px-4">Type & Reason</th>
-                    <th className="py-2.5 px-4 text-right">Principal</th>
-                    <th className="py-2.5 px-4 text-right">Monthly Deduction</th>
-                    <th className="py-2.5 px-4 text-right">Remaining Balance</th>
-                    <th className="py-2.5 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selfServiceAdvances.map(adv => (
-                    <tr key={adv.id}>
-                      <td className="py-2.5 px-4">
-                        <span className="font-bold text-[#1f2a2e]">{adv.type}</span>
-                        <span className="block text-[11px] text-[#6a7f84]">{adv.reason}</span>
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                        {formatCurrency(adv.principalAmount)}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-mono tabular-nums">
-                        {formatCurrency(adv.monthlyInstallment)}/mo
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
-                        {formatCurrency(adv.remainingBalance)}
-                      </td>
-                      <td className="py-2.5 px-4 font-bold uppercase text-[11px]">
+            <>
+              {/* Mobile Cards (< 768px) */}
+              <div className="md:hidden divide-y divide-slate-100 p-3 space-y-2.5">
+                {selfServiceAdvances.map(adv => (
+                  <div
+                    key={adv.id}
+                    className="bg-slate-50/60 rounded-xl p-3 border border-slate-200 space-y-2 text-xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-[#1f2a2e] block">{adv.type}</span>
+                        <span className="text-[11px] text-[#6a7f84]">{adv.reason}</span>
+                      </div>
+                      <span className="font-bold uppercase text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
                         {adv.status}
-                      </td>
+                      </span>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200/80 grid grid-cols-3 gap-1.5 text-center text-[11px]">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Principal</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(adv.principalAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Monthly</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(adv.monthlyInstallment)}/mo</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Balance</span>
+                        <span className="font-mono font-black text-[#1c4a59]">{formatCurrency(adv.remainingBalance)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop & Tablet Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
+                      <th className="py-2.5 px-4">Type & Reason</th>
+                      <th className="py-2.5 px-4 text-right">Principal</th>
+                      <th className="py-2.5 px-4 text-right">Monthly Deduction</th>
+                      <th className="py-2.5 px-4 text-right">Remaining Balance</th>
+                      <th className="py-2.5 px-4">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selfServiceAdvances.map(adv => (
+                      <tr key={adv.id}>
+                        <td className="py-2.5 px-4">
+                          <span className="font-bold text-[#1f2a2e]">{adv.type}</span>
+                          <span className="block text-[11px] text-[#6a7f84]">{adv.reason}</span>
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                          {formatCurrency(adv.principalAmount)}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono tabular-nums">
+                          {formatCurrency(adv.monthlyInstallment)}/mo
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
+                          {formatCurrency(adv.remainingBalance)}
+                        </td>
+                        <td className="py-2.5 px-4 font-bold uppercase text-[11px]">
+                          {adv.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
@@ -1334,7 +1429,7 @@ export default function PayrollManagement() {
 
       {/* 4-Tab Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#bac4c6] bg-white rounded-t-2xl px-2 sm:px-4 print:hidden">
-        <div className="flex items-center overflow-x-auto no-scrollbar">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('payroll_run')}
@@ -1494,118 +1589,205 @@ export default function PayrollManagement() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
-                    <th className="py-3 px-3.5">Employee · ID</th>
-                    <th className="py-3 px-3 text-right">Basic Pay</th>
-                    <th className="py-3 px-3 text-right">Allowances</th>
-                    <th className="py-3 px-3 text-right">Gross Pay</th>
-                    <th className="py-3 px-3 text-right">SSNIT (5.5%)</th>
-                    <th className="py-3 px-3 text-right">PAYE Tax</th>
-                    <th className="py-3 px-3 text-right">Loan / Adv</th>
-                    <th className="py-3 px-3 text-right">Net Pay</th>
-                    <th className="py-3 px-3">Payment Channel</th>
-                    <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-3.5 text-right print:hidden">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {monthPayslips.map(slip => (
-                    <tr key={slip.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-3.5">
-                        <div className="font-bold text-[#1f2a2e]">{slip.staffName}</div>
-                        <div className="text-[11px] text-[#6a7f84] font-mono tabular-nums">
+            <>
+              {/* Mobile Cards (< 768px) */}
+              <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                {monthPayslips.map(slip => (
+                  <div
+                    key={slip.id}
+                    className="bg-slate-50/60 rounded-xl p-3.5 border border-slate-200 space-y-2.5 shadow-2xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-xs text-[#1f2a2e]">{slip.staffName}</div>
+                        <div className="text-[10px] text-[#6a7f84] font-mono">
                           {slip.staffId} · {slip.designation}
                         </div>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        {formatCurrency(slip.basicSalary)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        {formatCurrency(slip.totalAllowances + slip.bonusAmount)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold text-[#1f2a2e]">
-                        {formatCurrency(slip.grossPay)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
-                        -{formatCurrency(slip.ssnitEmployee)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
-                        -{formatCurrency(slip.payeTax)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
-                        {slip.loanDeduction + slip.otherDeduction > 0
-                          ? `-${formatCurrency(slip.loanDeduction + slip.otherDeduction)}`
-                          : '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-[#1c4a59]">
-                        {formatCurrency(slip.netPay)}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-medium text-[#1f2a2e]">{slip.bankOrNetwork}</div>
-                        <div className="text-[11px] font-mono tabular-nums text-[#6a7f84]">
-                          {slip.accountNumber}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={cn(
-                            'font-bold text-[11px] uppercase tracking-wider',
-                            slip.status === 'paid'
-                              ? 'text-emerald-700'
-                              : slip.status === 'approved'
-                              ? 'text-amber-700'
-                              : 'text-slate-600'
-                          )}
-                        >
-                          {slip.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3.5 text-right print:hidden">
-                        <div className="inline-flex items-center justify-end gap-1.5">
+                      </div>
+                      <span
+                        className={cn(
+                          'font-bold text-[10px] px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0',
+                          slip.status === 'paid'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : slip.status === 'approved'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-slate-100 text-slate-600'
+                        )}
+                      >
+                        {slip.status}
+                      </span>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-2.5 border border-slate-200/80 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-semibold">Gross Pay</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(slip.grossPay)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Net Pay</span>
+                        <span className="font-mono font-black text-sm text-[#1c4a59]">{formatCurrency(slip.netPay)}</span>
+                      </div>
+                      <div className="col-span-2 pt-1 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-500">
+                        <span>Basic: {formatCurrency(slip.basicSalary)} · Allow: +{formatCurrency(slip.totalAllowances + slip.bonusAmount)}</span>
+                        <span>SSNIT: -{formatCurrency(slip.ssnitEmployee)} · Tax: -{formatCurrency(slip.payeTax)}</span>
+                      </div>
+                      <div className="col-span-2 text-[10px] text-slate-500 font-mono">
+                        Account: {slip.bankOrNetwork} · {slip.accountNumber}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-200/60">
+                      <button
+                        type="button"
+                        onClick={() => setViewingPayslip(slip)}
+                        className="px-2.5 py-1 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-xs rounded-lg cursor-pointer"
+                      >
+                        Payslip
+                      </button>
+                      {slip.status !== 'paid' && (
+                        <>
                           <button
                             type="button"
-                            onClick={() => setViewingPayslip(slip)}
-                            className="px-2.5 py-1 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-[11px] rounded-lg cursor-pointer"
-                            title="View & Print Official Payslip"
+                            onClick={() => {
+                              setAdjustingSlip(slip);
+                              setAdjBonus(String(slip.bonusAmount || 0));
+                              setAdjLoanDeduction(String(slip.loanDeduction || 0));
+                              setAdjOtherDeduction(String(slip.otherDeduction || 0));
+                              setAdjNotes(slip.notes || '');
+                            }}
+                            className="p-1.5 text-[#1c4a59] hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer"
+                            title="Adjust"
                           >
-                            Payslip
+                            <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          {slip.status !== 'paid' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAdjustingSlip(slip);
-                                  setAdjBonus(String(slip.bonusAmount || 0));
-                                  setAdjLoanDeduction(String(slip.loanDeduction || 0));
-                                  setAdjOtherDeduction(String(slip.otherDeduction || 0));
-                                  setAdjNotes(slip.notes || '');
-                                }}
-                                className="p-1.5 text-[#1c4a59] hover:bg-slate-100 rounded-lg cursor-pointer"
-                                title="Adjust Bonus / Deductions"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleMarkSlipPaid([slip.id])}
-                                className="px-2 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] rounded-lg cursor-pointer"
-                                title="Mark Salary Paid"
-                              >
-                                Pay
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
+                          <button
+                            type="button"
+                            onClick={() => handleMarkSlipPaid([slip.id])}
+                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-lg cursor-pointer"
+                          >
+                            Pay
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop & Tablet Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
+                      <th className="py-3 px-3.5">Employee · ID</th>
+                      <th className="py-3 px-3 text-right">Basic Pay</th>
+                      <th className="py-3 px-3 text-right">Allowances</th>
+                      <th className="py-3 px-3 text-right">Gross Pay</th>
+                      <th className="py-3 px-3 text-right">SSNIT (5.5%)</th>
+                      <th className="py-3 px-3 text-right">PAYE Tax</th>
+                      <th className="py-3 px-3 text-right">Loan / Adv</th>
+                      <th className="py-3 px-3 text-right">Net Pay</th>
+                      <th className="py-3 px-3">Payment Channel</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-3.5 text-right print:hidden">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {monthPayslips.map(slip => (
+                      <tr key={slip.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-3.5">
+                          <div className="font-bold text-[#1f2a2e]">{slip.staffName}</div>
+                          <div className="text-[11px] text-[#6a7f84] font-mono tabular-nums">
+                            {slip.staffId} · {slip.designation}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                          {formatCurrency(slip.basicSalary)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                          {formatCurrency(slip.totalAllowances + slip.bonusAmount)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold text-[#1f2a2e]">
+                          {formatCurrency(slip.grossPay)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
+                          -{formatCurrency(slip.ssnitEmployee)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
+                          -{formatCurrency(slip.payeTax)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums text-rose-700">
+                          {slip.loanDeduction + slip.otherDeduction > 0
+                            ? `-${formatCurrency(slip.loanDeduction + slip.otherDeduction)}`
+                            : '—'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-[#1c4a59]">
+                          {formatCurrency(slip.netPay)}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-medium text-[#1f2a2e]">{slip.bankOrNetwork}</div>
+                          <div className="text-[11px] font-mono tabular-nums text-[#6a7f84]">
+                            {slip.accountNumber}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={cn(
+                              'font-bold text-[11px] uppercase tracking-wider',
+                              slip.status === 'paid'
+                                ? 'text-emerald-700'
+                                : slip.status === 'approved'
+                                ? 'text-amber-700'
+                                : 'text-slate-600'
+                            )}
+                          >
+                            {slip.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3.5 text-right print:hidden">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setViewingPayslip(slip)}
+                              className="px-2.5 py-1 bg-[#1c4a59] hover:bg-[#153844] text-white font-bold text-[11px] rounded-lg cursor-pointer"
+                              title="View & Print Official Payslip"
+                            >
+                              Payslip
+                            </button>
+                            {slip.status !== 'paid' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAdjustingSlip(slip);
+                                    setAdjBonus(String(slip.bonusAmount || 0));
+                                    setAdjLoanDeduction(String(slip.loanDeduction || 0));
+                                    setAdjOtherDeduction(String(slip.otherDeduction || 0));
+                                    setAdjNotes(slip.notes || '');
+                                  }}
+                                  className="p-1.5 text-[#1c4a59] hover:bg-slate-100 rounded-lg cursor-pointer"
+                                  title="Adjust Bonus / Deductions"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkSlipPaid([slip.id])}
+                                  className="px-2 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] rounded-lg cursor-pointer"
+                                  title="Mark Salary Paid"
+                                >
+                                  Pay
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

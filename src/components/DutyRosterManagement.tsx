@@ -833,117 +833,221 @@ export default function DutyRosterManagement({ embedded = false }: { embedded?: 
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">
-                      <th className="py-3 px-4">Week &amp; Day</th>
-                      <th className="py-3 px-4">Teacher on Duty</th>
-                      <th className="py-3 px-4">Duty Post / Station</th>
-                      <th className="py-3 px-4">Shift Hours</th>
-                      <th className="py-3 px-4">Supervision Notes</th>
-                      <th className="py-3 px-4">Status</th>
-                      {canManageRoster && (
-                        <th className="py-3 px-4 text-right print:hidden">Actions</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredAssignments.map((item) => (
-                      <tr key={item.id} className="hover:bg-[#f6f8f7]/60 transition-colors">
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <div className="font-mono tabular-nums font-bold text-[#1c4a59]">
+              <>
+                {/* Mobile Responsive Cards (< 768px) */}
+                <div className="md:hidden divide-y divide-[#bac4c6]/40 p-3 space-y-3">
+                  {filteredAssignments.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-[#f6f8f7] rounded-xl p-3.5 border border-[#bac4c6]/80 space-y-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono tabular-nums font-bold text-xs text-[#1c4a59]">
                             Week {item.weekNumber} · {item.day}
                           </div>
-                          <div className="font-mono tabular-nums text-[11px] text-[#6a7f84]">
+                          <div className="font-mono tabular-nums text-[10px] text-[#6a7f84]">
                             {item.weekStartDate} – {item.weekEndDate}
                           </div>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-[#1f2a2e] text-sm">
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCycleStatus(item)}
+                          className={cn(
+                            'inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold shrink-0 transition-colors cursor-pointer',
+                            item.status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              : item.status === 'active'
+                              ? 'bg-blue-50 text-blue-700 border-blue-300'
+                              : 'bg-amber-50 text-amber-800 border-amber-300'
+                          )}
+                          title="Cycle shift status"
+                        >
+                          {item.status === 'completed' ? (
+                            <CheckCircle2 className="w-3 h-3" />
+                          ) : (
+                            <Clock className="w-3 h-3" />
+                          )}
+                          <span>
+                            {item.status === 'completed'
+                              ? 'Completed'
+                              : item.status === 'active'
+                              ? 'Active'
+                              : 'Scheduled'}
+                          </span>
+                        </button>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-2.5 border border-[#bac4c6]/60 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-[#1f2a2e] text-xs truncate">
                             {item.teacherName}
+                          </span>
+                          {item.roleType === 'senior_on_duty' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 font-bold text-[9px] shrink-0">
+                              <Award className="w-2.5 h-2.5 text-amber-600" />
+                              Senior
+                            </span>
+                          )}
+                        </div>
+                        {item.teacherPhone && (
+                          <div className="text-[10px] font-mono text-[#6a7f84]">
+                            Tel: {item.teacherPhone}
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-[#6a7f84] mt-0.5">
-                            {item.roleType === 'senior_on_duty' ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 font-semibold text-[10px]">
-                                <Award className="w-3 h-3 text-amber-600" />
-                                Senior on Duty
-                              </span>
-                            ) : (
-                              <span>Duty Member</span>
-                            )}
-                            {item.teacherPhone && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="font-mono tabular-nums">{item.teacherPhone}</span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-[#1f2a2e]">
-                          {item.dutyPost}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono tabular-nums text-[#1c4a59] font-medium whitespace-nowrap">
-                          {item.shiftTime}
-                        </td>
-                        <td className="py-3.5 px-4 text-[#6a7f84] max-w-xs">
-                          <span className="line-clamp-2">{item.notes || 'Standard station supervision'}</span>
-                        </td>
-                        <td className="py-3.5 px-4 whitespace-nowrap">
+                        )}
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+                          <span className="font-semibold text-[#1c4a59] truncate">
+                            Post: {item.dutyPost}
+                          </span>
+                          <span className="font-mono text-[10px] text-[#6a7f84] shrink-0">
+                            {item.shiftTime}
+                          </span>
+                        </div>
+                      </div>
+
+                      {item.notes && (
+                        <p className="text-[11px] text-[#6a7f84] italic line-clamp-2 px-1">
+                          "{item.notes}"
+                        </p>
+                      )}
+
+                      {canManageRoster && (
+                        <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-[#bac4c6]/40">
                           <button
                             type="button"
-                            onClick={() => handleCycleStatus(item)}
-                            className={cn(
-                              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer',
-                              item.status === 'completed'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                : item.status === 'active'
-                                ? 'bg-blue-50 text-blue-700 border-blue-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-300'
-                            )}
-                            title="Click to cycle shift status (Scheduled -> Active -> Completed)"
+                            onClick={() => openEditAssignmentModal(item)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-[#1c4a59] bg-white border border-[#bac4c6]/80 hover:bg-[#e1c594]/30 transition-colors inline-flex items-center gap-1 cursor-pointer"
                           >
-                            {item.status === 'completed' ? (
-                              <CheckCircle2 className="w-3 h-3" />
-                            ) : (
-                              <Clock className="w-3 h-3" />
-                            )}
-                            <span>
-                              {item.status === 'completed'
-                                ? 'Completed'
-                                : item.status === 'active'
-                                ? 'Active Shift'
-                                : 'Scheduled'}
-                            </span>
+                            <Edit2 className="w-3 h-3" />
+                            <span>Edit</span>
                           </button>
-                        </td>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAssignment(item)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tablet & Desktop Table View (>= 768px and Print) */}
+                <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">
+                        <th className="py-3 px-4">Week &amp; Day</th>
+                        <th className="py-3 px-4">Teacher on Duty</th>
+                        <th className="py-3 px-4">Duty Post / Station</th>
+                        <th className="py-3 px-4">Shift Hours</th>
+                        <th className="py-3 px-4">Supervision Notes</th>
+                        <th className="py-3 px-4">Status</th>
                         {canManageRoster && (
-                          <td className="py-3.5 px-4 text-right whitespace-nowrap print:hidden">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openEditAssignmentModal(item)}
-                                className="p-1.5 rounded-lg text-[#6a7f84] hover:text-[#1c4a59] hover:bg-slate-100 transition-colors cursor-pointer"
-                                title="Edit Duty Assignment"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAssignment(item)}
-                                className="p-1.5 rounded-lg text-[#6a7f84] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                title="Delete Duty Assignment"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
+                          <th className="py-3 px-4 text-right print:hidden">Actions</th>
                         )}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {filteredAssignments.map((item) => (
+                        <tr key={item.id} className="hover:bg-[#f6f8f7]/60 transition-colors">
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="font-mono tabular-nums font-bold text-[#1c4a59]">
+                              Week {item.weekNumber} · {item.day}
+                            </div>
+                            <div className="font-mono tabular-nums text-[11px] text-[#6a7f84]">
+                              {item.weekStartDate} – {item.weekEndDate}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-[#1f2a2e] text-sm">
+                              {item.teacherName}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-[#6a7f84] mt-0.5">
+                              {item.roleType === 'senior_on_duty' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 font-semibold text-[10px]">
+                                  <Award className="w-3 h-3 text-amber-600" />
+                                  Senior on Duty
+                                </span>
+                              ) : (
+                                <span>Duty Member</span>
+                              )}
+                              {item.teacherPhone && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono tabular-nums">{item.teacherPhone}</span>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-semibold text-[#1f2a2e]">
+                            {item.dutyPost}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono tabular-nums text-[#1c4a59] font-medium whitespace-nowrap">
+                            {item.shiftTime}
+                          </td>
+                          <td className="py-3.5 px-4 text-[#6a7f84] max-w-xs">
+                            <span className="line-clamp-2">{item.notes || 'Standard station supervision'}</span>
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleCycleStatus(item)}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer',
+                                item.status === 'completed'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                  : item.status === 'active'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                                  : 'bg-amber-50 text-amber-800 border-amber-300'
+                              )}
+                              title="Click to cycle shift status (Scheduled -> Active -> Completed)"
+                            >
+                              {item.status === 'completed' ? (
+                                <CheckCircle2 className="w-3 h-3" />
+                              ) : (
+                                <Clock className="w-3 h-3" />
+                              )}
+                              <span>
+                                {item.status === 'completed'
+                                  ? 'Completed'
+                                  : item.status === 'active'
+                                  ? 'Active Shift'
+                                  : 'Scheduled'}
+                              </span>
+                            </button>
+                          </td>
+                          {canManageRoster && (
+                            <td className="py-3.5 px-4 text-right whitespace-nowrap print:hidden">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditAssignmentModal(item)}
+                                  className="p-1.5 rounded-lg text-[#6a7f84] hover:text-[#1c4a59] hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Edit Duty Assignment"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAssignment(item)}
+                                  className="p-1.5 rounded-lg text-[#6a7f84] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Delete Duty Assignment"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { db, type LessonNote, type AssessmentQuestion, type QuestionType } from '../../db/schema';
 import { cn } from '../../lib/utils';
+import { checkRateLimit } from '../../lib/rateLimit';
 
 interface LessonNoteQuestionGeneratorModalProps {
   isOpen: boolean;
@@ -198,6 +199,14 @@ export const LessonNoteQuestionGeneratorModal: React.FC<LessonNoteQuestionGenera
       };
     }
 
+    // Client-side rate limit protection for AI generation (max 6 requests per 60 seconds)
+    const clientLimit = checkRateLimit('ai_generate_questions', 6, 60000);
+    if (!clientLimit.allowed) {
+      setGenerationError(`AI Rate Limit: Please wait ${clientLimit.retryAfterSeconds} second(s) before generating more questions.`);
+      setIsGenerating(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/ai/generate-questions', {
         method: 'POST',
@@ -218,6 +227,10 @@ export const LessonNoteQuestionGeneratorModal: React.FC<LessonNoteQuestionGenera
       });
 
       const data = await response.json();
+      if (response.status === 429 || data.rateLimited) {
+        throw new Error(data.error || `AI generation rate limit reached. Please wait ${data.retryAfter || 30} seconds.`);
+      }
+
       if (!response.ok || !data.success || !Array.isArray(data.questions)) {
         throw new Error(data.error || 'Failed to generate questions.');
       }
