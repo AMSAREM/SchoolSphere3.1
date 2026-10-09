@@ -181,6 +181,41 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     }
   };
 
+  // Handle Question Bank Import
+  const handleImportFromBank = (imported: AssessmentQuestion[]) => {
+    let baseNum = questions.length;
+    const renumberedImported = imported.map((q, idx) => ({
+      ...q,
+      questionNumber: baseNum + idx + 1
+    }));
+    onChange([...questions, ...renumberedImported]);
+    showToast(`Added ${imported.length} question${imported.length === 1 ? '' : 's'} from Question Bank!`, 'success');
+  };
+
+  // Save single question to central Question Bank
+  const handleSaveToBank = async (q: AssessmentQuestion) => {
+    try {
+      const now = Date.now();
+      const existing = await db.questionBank.get(`qb-${q.id}`);
+      const item: QuestionBankItem = {
+        id: existing?.id || `qb-${q.id}`,
+        subject: currentSubject || 'General',
+        topic: q.strand || q.subStrand || currentSubject || 'General Topic',
+        className: currentClass || 'All',
+        difficulty: 'medium',
+        question: q,
+        source: 'manual',
+        usageCount: (existing?.usageCount || 0) + 1,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      };
+      await db.questionBank.put(item);
+      showToast('Question saved to Central Question Bank!', 'success');
+    } catch (err: any) {
+      showToast('Could not save to Question Bank: ' + err.message, 'error');
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Question Summary Bar & AI Action */}
@@ -205,14 +240,26 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsAiModalOpen(true)}
-          className="inline-flex items-center gap-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-4 py-2 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
-        >
-          <Sparkles className="w-4 h-4 text-[#1f2a2e]" />
-          <span>Generate from Lesson Notes</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsBankImportOpen(true)}
+            className="inline-flex items-center gap-2 bg-[#1c4a59] hover:bg-[#1c4a59]/90 text-white px-3.5 py-2 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
+            title="Import saved or curriculum questions from repository"
+          >
+            <BookOpen className="w-4 h-4 text-[#faae57]" />
+            <span>Question Bank</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsAiModalOpen(true)}
+            className="inline-flex items-center gap-2 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3.5 py-2 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
+          >
+            <Sparkles className="w-4 h-4 text-[#1f2a2e]" />
+            <span>Generate from Notes</span>
+          </button>
+        </div>
       </div>
 
       {/* Questions list */}
@@ -221,7 +268,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
           <FileQuestion className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <h4 className="text-sm font-bold text-[#1f2a2e]">No questions added yet</h4>
           <p className="text-xs text-[#6a7f84] max-w-md mx-auto mt-1 mb-4">
-            Teachers can author Multiple Choice, Short Answer, or Essay questions manually, or generate them automatically from saved lesson notes.
+            Teachers can author questions manually, import verified items from the central Question Bank, or generate them automatically from saved lesson notes.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
@@ -247,10 +294,17 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setIsAiModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#1c4a59] text-white px-3.5 py-1.5 rounded-full hover:bg-[#1c4a59]/90 cursor-pointer"
+              onClick={() => setIsBankImportOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#1c4a59] text-white px-3.5 py-1.5 rounded-full hover:bg-[#1c4a59]/90 cursor-pointer shadow-2xs"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#faae57]" /> AI From Notes
+              <BookOpen className="w-3.5 h-3.5 text-[#faae57]" /> Question Bank
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAiModalOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#faae57] text-[#1f2a2e] px-3.5 py-1.5 rounded-full hover:bg-[#e4ae67] cursor-pointer shadow-2xs"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> AI From Notes
             </button>
           </div>
         </div>
@@ -311,6 +365,14 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                       title="Move Down"
                     >
                       <ChevronDown className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveToBank(q)}
+                      className="p-1 text-[#1c4a59] hover:bg-[#1c4a59]/10 rounded cursor-pointer transition-colors"
+                      title="Save question to Central Question Bank"
+                    >
+                      <BookmarkPlus className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
@@ -559,6 +621,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => setIsBankImportOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#1c4a59] text-white px-3.5 py-1.5 rounded-full hover:bg-[#1c4a59]/90 cursor-pointer shadow-2xs"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-[#faae57]" /> Question Bank
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsAiModalOpen(true)}
                 className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#faae57] text-[#1f2a2e] px-3.5 py-1.5 rounded-full hover:bg-[#e4ae67] cursor-pointer shadow-2xs"
               >
@@ -578,6 +647,17 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
           currentSubject={currentSubject}
           currentClass={currentClass}
           currentTerm={currentTerm}
+        />
+      )}
+
+      {/* Question Bank Import Modal */}
+      {isBankImportOpen && (
+        <QuestionBankImportModal
+          isOpen={isBankImportOpen}
+          onClose={() => setIsBankImportOpen(false)}
+          onImportQuestions={handleImportFromBank}
+          defaultSubject={currentSubject}
+          defaultClass={currentClass}
         />
       )}
     </div>

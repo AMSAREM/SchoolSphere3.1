@@ -121,7 +121,7 @@ export const QuestionBankImportModal: React.FC<QuestionBankImportModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-6 overflow-y-auto">
+    <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-3 sm:p-6 overflow-y-auto">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60">

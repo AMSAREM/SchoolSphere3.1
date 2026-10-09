@@ -251,12 +251,32 @@ export const LessonNoteQuestionGeneratorModal: React.FC<LessonNoteQuestionGenera
   };
 
   // Final import to assessment
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!generatedResult) return;
     const chosen = generatedResult.questions.filter(q => selectedQuestionIds.has(q.id));
     if (chosen.length === 0) {
       setGenerationError('Please select at least one question to import.');
       return;
+    }
+
+    // Also persist generated questions to QuestionBank repository for reuse
+    try {
+      const now = Date.now();
+      const itemsToBank = chosen.map((q, idx) => ({
+        id: `qb-ai-${now}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        subject: selectedSubject || 'General',
+        topic: q.strand || q.subStrand || activeSelectedNote?.strand || activeSelectedNote?.subStrand || selectedSubject || 'General Topic',
+        className: selectedClass || 'All',
+        difficulty: (difficulty.toLowerCase() as any) || 'medium',
+        question: q,
+        source: 'ai_generated' as const,
+        usageCount: 1,
+        createdAt: now,
+        updatedAt: now
+      }));
+      await db.questionBank.bulkPut(itemsToBank);
+    } catch (err) {
+      console.warn('Notice saving generated questions to questionBank:', err);
     }
 
     onImportQuestions(chosen, {
@@ -269,7 +289,7 @@ export const LessonNoteQuestionGeneratorModal: React.FC<LessonNoteQuestionGenera
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 animate-in fade-in duration-150">
       <div className="bg-[#f6f8f7] w-full max-w-4xl max-h-[92vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-[#bac4c6]/40">
         {/* Header */}
         <div className="bg-[#1c4a59] text-white px-6 py-5 flex items-center justify-between shrink-0">

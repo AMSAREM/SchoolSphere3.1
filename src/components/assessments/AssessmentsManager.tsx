@@ -19,10 +19,13 @@ import {
 import {
   db,
   seedDefaultAssessmentsIfEmpty,
+  seedDefaultQuestionBankIfEmpty,
   type Assessment,
   type AssessmentSubmission,
   type AssessmentCategory,
-  type Student
+  type Student,
+  type AssessmentQuestion,
+  type QuestionBankItem
 } from '../../db/schema';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -33,6 +36,8 @@ import { TeacherGradingDrawer } from './TeacherGradingDrawer';
 import { TerminalSbaSyncModal } from './TerminalSbaSyncModal';
 import { OnlineInteractiveQuizModal } from './OnlineInteractiveQuizModal';
 import { PrintableExamModal } from './PrintableExamModal';
+import { QuestionBankView } from './QuestionBankView';
+import { LessonNoteQuestionGeneratorModal } from './LessonNoteQuestionGeneratorModal';
 import { cn } from '../../lib/utils';
 
 export default function AssessmentsManager() {
@@ -50,10 +55,12 @@ export default function AssessmentsManager() {
   const classesFromDB = useLiveQuery(() => db.classes.toArray()) || [];
   const subjectsFromDB = useLiveQuery(() => db.subjects.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.toArray()) || [];
+  const allBankQuestions = useLiveQuery(() => db.questionBank.toArray()) || [];
 
-  // Seed default demo assessments on first mount if empty
+  // Seed default demo assessments and question bank on first mount if empty
   useEffect(() => {
     seedDefaultAssessmentsIfEmpty(user?.schoolId, studentsInSystem);
+    seedDefaultQuestionBankIfEmpty(user?.schoolId);
   }, [user?.schoolId, studentsInSystem]);
 
   // Identify Student Record if user is student
@@ -121,6 +128,8 @@ export default function AssessmentsManager() {
   const [activeQuizAssessment, setActiveQuizAssessment] = useState<Assessment | null>(null);
   const [isPreviewQuiz, setIsPreviewQuiz] = useState<boolean>(false);
   const [activePrintAssessment, setActivePrintAssessment] = useState<Assessment | null>(null);
+  const [mainSectionTab, setMainSectionTab] = useState<'assessments' | 'question_bank'>('assessments');
+  const [isAiGeneratorModalOpen, setIsAiGeneratorModalOpen] = useState(false);
 
   // Filtered Assessments
   const filteredAssessments = useMemo(() => {
@@ -276,26 +285,139 @@ export default function AssessmentsManager() {
     setActivePrintAssessment(assessment);
   };
 
+  // Create an assessment directly from questions selected in the Question Bank
+  const handleCreateAssessmentFromQuestions = (questions: AssessmentQuestion[], subject?: string) => {
+    const sub = subject || (questions[0]?.strand) || 'Mathematics';
+    const totalPts = questions.reduce((acc, q) => acc + (Number(q.points) || 1), 0);
+    const newAssessment: Assessment = {
+      id: `assess-${Date.now()}`,
+      schoolId: user?.schoolId,
+      title: `${sub} Exercise (${questions.length} Questions)`,
+      category: 'class_test',
+      subject: sub,
+      class: classOptions[0] || 'JHS 1',
+      academicYear: currentAcademicYear,
+      term: currentTerm,
+      description: `Curriculum assessment assembled from Question Bank repository.`,
+      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      maxScore: totalPts || 20,
+      weightPercentage: 15,
+      questions: questions.map((q, idx) => ({ ...q, questionNumber: idx + 1 })),
+      rubric: [
+        { id: 'crit-1', criterion: 'Knowledge & Concept Mastery', description: 'Accurate comprehension of core syllabus concepts', maxPoints: Math.max(1, Math.round(totalPts * 0.5)) },
+        { id: 'crit-2', criterion: 'Method & Problem-Solving', description: 'Logical steps and reasoning', maxPoints: Math.max(1, Math.round(totalPts * 0.3)) },
+        { id: 'crit-3', criterion: 'Presentation & Completeness', description: 'Neatness and completeness', maxPoints: Math.max(1, Math.round(totalPts * 0.2)) }
+      ],
+      teacherName: user?.fullName || user?.username,
+      teacherId: user?.id != null ? String(user.id) : (user?.username || 'teacher'),
+      status: 'draft',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    setEditingAssessment(newAssessment);
+    setIsEditorOpen(true);
+    setMainSectionTab('assessments');
+    showToast(`Loaded ${questions.length} questions into new assessment editor!`, 'success');
+  };
+
+  // Save generated questions directly to the Question Bank
+  const handleImportAiQuestionsToBank = async (imported: AssessmentQuestion[], meta?: any) => {
+    try {
+      const now = Date.now();
+      const sId = user?.schoolId || 'default-school';
+      const bankEntries: QuestionBankItem[] = imported.map((q, idx) => ({
+        id: `qb-ai-${now}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        schoolId: sId,
+        subject: q.strand || meta?.title?.split(' ')[0] || 'General',
+        topic: q.strand || q.subStrand || meta?.title || 'Generated Topic',
+        className: 'JHS 1',
+        difficulty: 'medium',
+        question: q,
+        source: 'ai_generated',
+        usageCount: 0,
+        createdAt: now,
+        updatedAt: now
+      }));
+      await db.questionBank.bulkPut(bankEntries);
+      showToast(`Added ${imported.length} questions directly into Central Question Bank!`, 'success');
+    } catch (err: any) {
+      showToast('Error saving to question bank: ' + err.message, 'error');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-3 sm:px-6 py-6 pb-24">
       {/* Top Banner Header */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-              <Award className="w-3.5 h-3.5" />
-              Unified Academic Assessments
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#1c4a59] text-white">
+              {mainSectionTab === 'question_bank' && !isStudent ? (
+                <>
+                  <BookOpen className="w-3.5 h-3.5 text-[#faae57]" />
+                  Central Question Bank
+                </>
+              ) : (
+                <>
+                  <Award className="w-3.5 h-3.5" />
+                  Unified Academic Assessments
+                </>
+              )}
             </span>
             <span className="text-xs text-slate-500 font-medium">
               {currentTerm} · {currentAcademicYear}
             </span>
+
+            {/* Main Section Switcher for Educators */}
+            {!isStudent && (
+              <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200 ml-0 sm:ml-2">
+                <button
+                  type="button"
+                  onClick={() => setMainSectionTab('assessments')}
+                  className={cn(
+                    'px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5',
+                    mainSectionTab === 'assessments'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  )}
+                >
+                  <Award className="w-3.5 h-3.5 text-[#1c4a59]" />
+                  <span>Assessments</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMainSectionTab('question_bank')}
+                  className={cn(
+                    'px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5',
+                    mainSectionTab === 'question_bank'
+                      ? 'bg-[#1c4a59] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  )}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-[#faae57]" />
+                  <span>Question Bank</span>
+                  <span className={cn(
+                    'px-1.5 py-0.2 rounded-full text-[10px] font-mono',
+                    mainSectionTab === 'question_bank' ? 'bg-[#153843] text-white' : 'bg-slate-200 text-slate-700'
+                  )}>
+                    {allBankQuestions.length}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-            {isStudent ? 'My Coursework & Examination Hub' : 'Homework, Classwork, Tests & Examinations'}
+            {isStudent
+              ? 'My Coursework & Examination Hub'
+              : mainSectionTab === 'question_bank'
+              ? 'Central Curriculum Question Bank'
+              : 'Homework, Classwork, Tests & Examinations'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
             {isStudent
               ? 'View assigned tasks, review grading rubrics, upload digital submissions, and track continuous assessment scores.'
+              : mainSectionTab === 'question_bank'
+              ? 'Store, categorize by subject/topic, and reuse created or AI-generated questions across homework, quizzes, and examinations.'
               : 'Create curriculum-aligned exercises with multi-criteria scoring rubrics, review student work, and automatically aggregate scores into terminal continuous assessment (SBA).'}
           </p>
         </div>
@@ -304,33 +426,73 @@ export default function AssessmentsManager() {
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
           {!isStudent && (
             <>
-              <button
-                onClick={() => setIsSbaSyncModalOpen(true)}
-                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-xl transition-all shadow-xs cursor-pointer"
-                title="Aggregate continuous assessment scores into results marksheet"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>Sync to Terminal SBA</span>
-              </button>
+              {mainSectionTab === 'question_bank' ? (
+                <>
+                  <button
+                    onClick={() => setIsAiGeneratorModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-[#1f2a2e] bg-[#faae57] hover:bg-[#e4ae67] rounded-xl transition-all shadow-xs cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 text-[#1f2a2e]" />
+                    <span>Generate from Notes</span>
+                  </button>
 
-              <button
-                onClick={() => {
-                  setEditingAssessment(null);
-                  setIsEditorOpen(true);
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-xs cursor-pointer ml-auto md:ml-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Assessment</span>
-              </button>
+                  <button
+                    onClick={() => setMainSectionTab('assessments')}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-[#1c4a59] bg-slate-100 hover:bg-slate-200 border border-[#bac4c6]/40 rounded-xl transition-all cursor-pointer"
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>View Assessments</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setMainSectionTab('question_bank')}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-[#1c4a59] bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl transition-all shadow-xs cursor-pointer"
+                    title="Access central Question Bank repository"
+                  >
+                    <BookOpen className="w-4 h-4 text-[#1c4a59]" />
+                    <span>Question Bank ({allBankQuestions.length})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsSbaSyncModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-xl transition-all shadow-xs cursor-pointer"
+                    title="Aggregate continuous assessment scores into results marksheet"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <span>Sync to SBA</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEditingAssessment(null);
+                      setIsEditorOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-xs cursor-pointer ml-auto md:ml-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>New Assessment</span>
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Unified Category Tabs (Homework, Classwork, Class Tests, Examinations) */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-1.5 min-w-max">
+      {/* Main Content Area: Central Question Bank or Assessments List */}
+      {mainSectionTab === 'question_bank' && !isStudent ? (
+        <QuestionBankView
+          onOpenAiGenerator={() => setIsAiGeneratorModalOpen(true)}
+          onCreateAssessmentFromQuestions={handleCreateAssessmentFromQuestions}
+          userRole={user?.role}
+        />
+      ) : (
+        <>
+          {/* Unified Category Tabs (Homework, Classwork, Class Tests, Examinations) */}
+          <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 min-w-max">
           {[
             { id: 'all', label: 'All Assessments', icon: '📋', count: categoryCounts.all },
             { id: 'homework', label: 'Homework', icon: '📝', count: categoryCounts.homework },
@@ -501,6 +663,8 @@ export default function AssessmentsManager() {
           )}
         </div>
       )}
+        </>
+      )}
 
       {/* MODAL 1: Teacher Assessment Editor */}
       <AssessmentEditorModal
@@ -608,6 +772,18 @@ export default function AssessmentsManager() {
             user?.schoolId ||
             'SchoolSphere Model Academy'
           }
+        />
+      )}
+
+      {/* MODAL 7: AI Generator into Central Question Bank */}
+      {isAiGeneratorModalOpen && (
+        <LessonNoteQuestionGeneratorModal
+          isOpen={isAiGeneratorModalOpen}
+          onClose={() => setIsAiGeneratorModalOpen(false)}
+          onImportQuestions={handleImportAiQuestionsToBank}
+          currentSubject={selectedSubject !== 'All' ? selectedSubject : 'Integrated Science'}
+          currentClass={selectedClass !== 'All' ? selectedClass : 'JHS 1'}
+          currentTerm={currentTerm}
         />
       )}
     </div>
