@@ -763,6 +763,9 @@ export default function StudentManagement() {
         guardianPhone: formData.get('guardianPhone') as string,
         house: formData.get('house') as string,
         department: formData.get('department') as string,
+        residentialStatus: (formData.get('residentialStatus') as string) || editingStudent?.residentialStatus || 'Day Student',
+        classHistory: editingStudent?.classHistory || [],
+        previousClasses: editingStudent?.previousClasses || [],
         totalFees: computedTotalFees,
         feesPaid: modalFeesPaid,
         feeBreakdown: feeInputs,
@@ -1851,7 +1854,7 @@ export default function StudentManagement() {
 
       {/* Add Student Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -2105,7 +2108,7 @@ export default function StudentManagement() {
       {/* Student Biodata & Profile Modal for Teachers & Accountants */}
       <AnimatePresence>
         {selectedProfileStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 print:hidden">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -2457,7 +2460,7 @@ export default function StudentManagement() {
       {/* Quick Payment Entry Modal for Accountants */}
       <AnimatePresence>
         {selectedPaymentStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 print:hidden">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -2521,7 +2524,7 @@ export default function StudentManagement() {
       {/* Print Friendly Receipt Modal */}
       <AnimatePresence>
         {isReceiptModalOpen && lastPayment && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm print:p-0">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 print:p-0">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -2598,7 +2601,7 @@ export default function StudentManagement() {
       {/* Student Promotion Modal */}
       <AnimatePresence>
         {isPromotionModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 overflow-y-auto">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}

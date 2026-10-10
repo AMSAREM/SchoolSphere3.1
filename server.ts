@@ -887,8 +887,22 @@ export function normalizeServerStudentRecord(s: any): any {
 
   const house = String(s.house || s.House || s['House'] || '').trim();
   const department = String(s.department || s.Department || s['Department'] || '').trim();
-  const photo = s.photo || null;
-  const status = s.status || 'active';
+  const residentialStatusRaw = String(
+    s.residentialStatus || s.residential_status || s['Residential Status'] || s['residential_status'] || s.boardingStatus || 'Day Student'
+  ).trim();
+  const residentialStatus = (residentialStatusRaw.toLowerCase().includes('board') ? 'Boarder' : 'Day Student');
+
+  let classHistory = s.classHistory || s.class_history || [];
+  if (typeof classHistory === 'string') {
+    try { classHistory = JSON.parse(classHistory); } catch { classHistory = []; }
+  }
+  if (!Array.isArray(classHistory)) classHistory = [];
+
+  let previousClasses = s.previousClasses || s.previous_classes || [];
+  if (typeof previousClasses === 'string') {
+    try { previousClasses = JSON.parse(previousClasses); } catch { previousClasses = []; }
+  }
+  if (!Array.isArray(previousClasses)) previousClasses = [];
 
   const rawFb = s.feeBreakdown || s.fee_breakdown || s['feeBreakdown'] || {};
   const rawFpb = s.feePaidBreakdown || s.fee_paid_breakdown || s['feePaidBreakdown'] || {};
@@ -924,11 +938,17 @@ export function normalizeServerStudentRecord(s: any): any {
     house,
     department,
     photo,
+    residentialStatus,
+    residential_status: residentialStatus,
     status,
     feeBreakdown,
     fee_breakdown: feeBreakdown,
     feePaidBreakdown,
     fee_paid_breakdown: feePaidBreakdown,
+    classHistory,
+    class_history: classHistory,
+    previousClasses,
+    previous_classes: previousClasses,
     createdAt,
     created_at: createdAt,
     schoolId,
@@ -1056,16 +1076,35 @@ export function normalizeServerSubjectRecord(s: any): any {
     applicableClasses = ['All'];
   }
 
+  const isCore = Boolean(s.isCore ?? s.is_core ?? (s.category === 'Core' || s.category?.toLowerCase()?.includes('core')));
+  const category = String(s.category || (isCore ? 'Core' : 'General')).trim();
+  const level = String(s.level || 'All Classes').trim();
+  const description = String(s.description || '').trim();
+  const department = String(s.department || '').trim();
+  const creditHours = Number(s.creditHours ?? s.credit_hours ?? 3) || 3;
+  const status = String(s.status || s.registrationStatus || s.registration_status || 'Available').trim();
+
   const createdAt = Number(s.createdAt ?? s.created_at ?? Date.now()) || Date.now();
   const updatedAt = Number(s.updatedAt ?? s.updated_at ?? Date.now()) || Date.now();
 
   return {
     ...s,
     id: s.id,
+    remoteId: s.remoteId || s.id,
     name,
     code,
+    isCore,
+    is_core: isCore,
     applicableClasses,
     applicable_classes: applicableClasses,
+    category,
+    level,
+    description,
+    department,
+    creditHours,
+    credit_hours: creditHours,
+    status,
+    registrationStatus: status,
     schoolId,
     school_id: schoolId,
     createdAt,
@@ -1533,9 +1572,12 @@ async function pushData(data: any, targetSchoolId?: string | null) {
               house: r.house || null,
               department: r.department || null,
               photo: r.photo || null,
+              residential_status: r.residentialStatus || r.residential_status || 'Day Student',
               status: r.status || 'active',
               fee_breakdown: r.feeBreakdown || r.fee_breakdown || {},
               fee_paid_breakdown: r.feePaidBreakdown || r.fee_paid_breakdown || {},
+              class_history: r.classHistory || r.class_history || [],
+              previous_classes: r.previousClasses || r.previous_classes || [],
               created_at: Number(r.createdAt ?? r.created_at) || Date.now()
             };
           });
@@ -1567,8 +1609,14 @@ async function pushData(data: any, targetSchoolId?: string | null) {
             school_id: resolvedSchoolId,
             name: r.name,
             code: r.code || r.name.substring(0, 4).toUpperCase(),
-            is_core: Boolean(r.isCore ?? r.is_core),
-            applicable_classes: r.applicableClasses || r.applicable_classes || []
+            is_core: Boolean(r.isCore ?? r.is_core ?? (r.category === 'Core')),
+            applicable_classes: r.applicableClasses || r.applicable_classes || [],
+            category: r.category || (Boolean(r.isCore ?? r.is_core) ? 'Core' : 'General'),
+            level: r.level || 'All Classes',
+            description: r.description || null,
+            department: r.department || null,
+            credit_hours: Number(r.creditHours ?? r.credit_hours ?? 3) || 3,
+            status: r.status || r.registrationStatus || 'Available'
           }));
           try {
             await adminClient.from('subjects').upsert(formattedSubjects, { onConflict: 'school_id,code' });
@@ -1672,11 +1720,16 @@ async function pushData(data: any, targetSchoolId?: string | null) {
             .map((r: any) => ({
               school_id: resolvedSchoolId,
               student_id: String(r.studentIdentifier || r.studentId || r.student_id || '').trim(),
+              student_identifier: String(r.studentIdentifier || r.studentId || r.student_id || '').trim(),
               student_name: String(r.studentName || r.student_name || '').trim(),
               source_class: String(r.sourceClass || r.source_class || r.fromClass || r.from_class || '').trim(),
               dest_class: String(r.destClass || r.dest_class || r.toClass || r.to_class || '').trim(),
               academic_year: String(r.academicYear || r.academic_year || '2025/2026').trim(),
               term: String(r.term || 'Term 3').trim(),
+              previous_fees_paid: Number(r.previousFeesPaid ?? r.previous_fees_paid ?? 0) || 0,
+              previous_total_fees: Number(r.previousTotalFees ?? r.previous_total_fees ?? 0) || 0,
+              previous_fee_breakdown: r.previousFeeBreakdown || r.previous_fee_breakdown || {},
+              previous_fee_paid_breakdown: r.previousFeePaidBreakdown || r.previous_fee_paid_breakdown || {},
               timestamp: Number(r.timestamp || Date.now())
             }))
             .filter((r: any) => r.student_id && r.source_class && r.dest_class && r.school_id);
@@ -16276,6 +16329,13 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
         createdAt: Number(raw.createdAt ?? raw.created_at) || Date.now()
       };
 
+      const resStatusRaw = String(raw.residentialStatus || raw.residential_status || 'Day Student').trim();
+      const resStatus = resStatusRaw.toLowerCase().includes('board') ? 'Boarder' : 'Day Student';
+      cleanObj.residentialStatus = resStatus;
+      cleanObj.residential_status = resStatus;
+      cleanObj.classHistory = Array.isArray(raw.classHistory) ? raw.classHistory : (Array.isArray(raw.class_history) ? raw.class_history : []);
+      cleanObj.previousClasses = Array.isArray(raw.previousClasses) ? raw.previousClasses : (Array.isArray(raw.previous_classes) ? raw.previous_classes : []);
+
       if (raw.house) cleanObj.house = String(raw.house);
       if (raw.department) cleanObj.department = String(raw.department);
       if (raw.photo) cleanObj.photo = String(raw.photo);
@@ -16311,6 +16371,9 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
             guardian_phone: cleanObj.guardianPhone,
             fees_paid: cleanObj.feesPaid,
             total_fees: cleanObj.totalFees,
+            residential_status: resStatus,
+            class_history: cleanObj.classHistory,
+            previous_classes: cleanObj.previousClasses,
             created_at: cleanObj.createdAt
           };
           if (cleanObj.house) snakeObj.house = cleanObj.house;
@@ -16646,6 +16709,16 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
       if (raw.house !== undefined) snakePayload.house = String(raw.house || '').trim();
       if (raw.department !== undefined) snakePayload.department = String(raw.department || '').trim();
       if (raw.photo !== undefined) snakePayload.photo = raw.photo;
+      if (raw.residentialStatus !== undefined || raw.residential_status !== undefined) {
+        const rStatus = String(raw.residentialStatus || raw.residential_status).trim();
+        snakePayload.residential_status = rStatus.toLowerCase().includes('board') ? 'Boarder' : 'Day Student';
+      }
+      if (raw.classHistory !== undefined || raw.class_history !== undefined) {
+        snakePayload.class_history = raw.classHistory || raw.class_history;
+      }
+      if (raw.previousClasses !== undefined || raw.previous_classes !== undefined) {
+        snakePayload.previous_classes = raw.previousClasses || raw.previous_classes;
+      }
       if (raw.status !== undefined) snakePayload.status = raw.status;
       if (raw.feesPaid !== undefined || raw.fees_paid !== undefined) snakePayload.fees_paid = Number(raw.feesPaid ?? raw.fees_paid) || 0;
       if (raw.totalFees !== undefined || raw.total_fees !== undefined) snakePayload.total_fees = Number(raw.totalFees ?? raw.total_fees) || 0;
@@ -16659,6 +16732,18 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
       delete camelPayload.schoolId;
       if (schoolId) camelPayload.school_id = schoolId;
       if (dob) camelPayload.dateOfBirth = dob;
+      if (snakePayload.residential_status) {
+        camelPayload.residentialStatus = snakePayload.residential_status;
+        camelPayload.residential_status = snakePayload.residential_status;
+      }
+      if (snakePayload.class_history) {
+        camelPayload.classHistory = snakePayload.class_history;
+        camelPayload.class_history = snakePayload.class_history;
+      }
+      if (snakePayload.previous_classes) {
+        camelPayload.previousClasses = snakePayload.previous_classes;
+        camelPayload.previous_classes = snakePayload.previous_classes;
+      }
 
       let updatedData: any = null;
 
@@ -16880,12 +16965,16 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
         schoolId: row.school_id,
         school_id: row.school_id,
         studentId: row.student_id,
-        studentIdentifier: row.student_id,
+        studentIdentifier: row.student_identifier || row.student_id,
         studentName: row.student_name,
         sourceClass: row.source_class,
         destClass: row.dest_class,
         academicYear: row.academic_year,
         term: row.term,
+        previousFeesPaid: Number(row.previous_fees_paid || 0),
+        previousTotalFees: Number(row.previous_total_fees || 0),
+        previousFeeBreakdown: row.previous_fee_breakdown || {},
+        previousFeePaidBreakdown: row.previous_fee_paid_breakdown || {},
         timestamp: Number(row.timestamp || Date.now())
       }));
       return res.json({ success: true, data: mapped });
@@ -16918,11 +17007,16 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
       const formattedRows = rawPromotions.map((p: any) => ({
         school_id: resolvedSchoolId,
         student_id: String(p.studentIdentifier || p.studentId || p.student_id || '').trim(),
+        student_identifier: String(p.studentIdentifier || p.studentId || p.student_id || '').trim(),
         student_name: String(p.studentName || p.student_name || '').trim(),
         source_class: String(p.sourceClass || p.source_class || p.fromClass || '').trim(),
         dest_class: String(p.destClass || p.dest_class || p.toClass || '').trim(),
         academic_year: String(p.academicYear || p.academic_year || '2025/2026').trim(),
         term: String(p.term || 'Term 3').trim(),
+        previous_fees_paid: Number(p.previousFeesPaid ?? p.previous_fees_paid ?? 0) || 0,
+        previous_total_fees: Number(p.previousTotalFees ?? p.previous_total_fees ?? 0) || 0,
+        previous_fee_breakdown: p.previousFeeBreakdown || p.previous_fee_breakdown || {},
+        previous_fee_paid_breakdown: p.previousFeePaidBreakdown || p.previous_fee_paid_breakdown || {},
         timestamp: Number(p.timestamp || Date.now())
       })).filter((p: any) => p.student_id && p.source_class && p.dest_class);
 
@@ -16954,11 +17048,21 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
         if (promo.feePaidBreakdown) studentUpdates.fee_paid_breakdown = promo.feePaidBreakdown;
 
         try {
-          await adminClient
+          const { data: updatedRows } = await adminClient
             .from('students')
             .update(studentUpdates)
             .eq('school_id', resolvedSchoolId)
-            .eq('student_id', studentId);
+            .eq('student_id', studentId)
+            .select();
+
+          // If no rows updated by student_id string, fallback to numeric id match if available
+          if ((!updatedRows || updatedRows.length === 0) && (promo.studentId || promo.id) && !isNaN(Number(promo.studentId || promo.id))) {
+            await adminClient
+              .from('students')
+              .update(studentUpdates)
+              .eq('school_id', resolvedSchoolId)
+              .eq('id', Number(promo.studentId || promo.id));
+          }
         } catch (e) {
           console.warn(`Failed to update student ${studentId} in Supabase:`, e);
         }
@@ -17052,17 +17156,31 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
 
       if (studentIdentifier && targetSourceClass && targetSchoolId) {
         const revertUpdates: any = { class: targetSourceClass };
-        if (revertTarget.previousFeesPaid !== undefined) revertUpdates.fees_paid = Number(revertTarget.previousFeesPaid);
-        if (revertTarget.previousTotalFees !== undefined) revertUpdates.total_fees = Number(revertTarget.previousTotalFees);
-        if (revertTarget.previousFeeBreakdown) revertUpdates.fee_breakdown = revertTarget.previousFeeBreakdown;
-        if (revertTarget.previousFeePaidBreakdown) revertUpdates.fee_paid_breakdown = revertTarget.previousFeePaidBreakdown;
+        const prevPaid = revertTarget.previousFeesPaid !== undefined ? revertTarget.previousFeesPaid : recordToDelete?.previous_fees_paid;
+        const prevTotal = revertTarget.previousTotalFees !== undefined ? revertTarget.previousTotalFees : recordToDelete?.previous_total_fees;
+        const prevFb = revertTarget.previousFeeBreakdown || recordToDelete?.previous_fee_breakdown;
+        const prevFpb = revertTarget.previousFeePaidBreakdown || recordToDelete?.previous_fee_paid_breakdown;
+
+        if (prevPaid !== undefined) revertUpdates.fees_paid = Number(prevPaid);
+        if (prevTotal !== undefined) revertUpdates.total_fees = Number(prevTotal);
+        if (prevFb) revertUpdates.fee_breakdown = prevFb;
+        if (prevFpb) revertUpdates.fee_paid_breakdown = prevFpb;
 
         try {
-          await adminClient
+          const { data: revertedRows } = await adminClient
             .from('students')
             .update(revertUpdates)
             .eq('school_id', targetSchoolId)
-            .eq('student_id', studentIdentifier);
+            .eq('student_id', studentIdentifier)
+            .select();
+
+          if ((!revertedRows || revertedRows.length === 0) && (revertTarget.studentId || studentIdentifier) && !isNaN(Number(revertTarget.studentId || studentIdentifier))) {
+            await adminClient
+              .from('students')
+              .update(revertUpdates)
+              .eq('school_id', targetSchoolId)
+              .eq('id', Number(revertTarget.studentId || studentIdentifier));
+          }
         } catch (e) {
           console.warn("Notice reverting student in Supabase:", e);
         }
@@ -17612,6 +17730,13 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
           name: cleanObj.name,
           code: cleanObj.code,
           applicableClasses: cleanObj.applicableClasses,
+          category: cleanObj.category,
+          level: cleanObj.level,
+          description: cleanObj.description,
+          department: cleanObj.department,
+          creditHours: cleanObj.creditHours,
+          status: cleanObj.status,
+          isCore: cleanObj.isCore,
           school_id: cleanObj.school_id || null
         };
         const { data, error } = await adminClient.from('subjects').insert([camelPayload]).select().single();
@@ -17625,6 +17750,13 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
             name: cleanObj.name,
             code: cleanObj.code,
             applicable_classes: cleanObj.applicableClasses,
+            category: cleanObj.category,
+            level: cleanObj.level,
+            description: cleanObj.description,
+            department: cleanObj.department,
+            credit_hours: cleanObj.creditHours,
+            status: cleanObj.status,
+            is_core: cleanObj.isCore,
             school_id: cleanObj.school_id || null
           };
           const { data, error } = await adminClient.from('subjects').insert([snakePayload]).select().single();
@@ -17681,14 +17813,28 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
       const snakePayload: any = {
         name: cleanObj.name,
         code: cleanObj.code,
-        applicable_classes: cleanObj.applicableClasses
+        applicable_classes: cleanObj.applicableClasses,
+        category: cleanObj.category,
+        level: cleanObj.level,
+        description: cleanObj.description,
+        department: cleanObj.department,
+        credit_hours: cleanObj.creditHours,
+        status: cleanObj.status,
+        is_core: cleanObj.isCore
       };
       if (cleanObj.school_id) snakePayload.school_id = cleanObj.school_id;
 
       const camelPayload: any = {
         name: cleanObj.name,
         code: cleanObj.code,
-        applicableClasses: cleanObj.applicableClasses
+        applicableClasses: cleanObj.applicableClasses,
+        category: cleanObj.category,
+        level: cleanObj.level,
+        description: cleanObj.description,
+        department: cleanObj.department,
+        creditHours: cleanObj.creditHours,
+        status: cleanObj.status,
+        isCore: cleanObj.isCore
       };
       if (cleanObj.school_id) camelPayload.school_id = cleanObj.school_id;
 

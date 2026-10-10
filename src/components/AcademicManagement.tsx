@@ -24,7 +24,9 @@ import {
   Filter,
   Check,
   ChevronDown,
-  BookOpen
+  BookOpen,
+  Layers,
+  RefreshCw
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { motion } from 'motion/react';
@@ -664,7 +666,7 @@ function TeacherList() {
 
       {/* Responsive Add/Edit Teacher Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 print:hidden">
           <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
             <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
@@ -878,7 +880,7 @@ function ClassList() {
 
       {/* Responsive Add/Edit Class Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 print:hidden">
           <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-[#bac4c6]">
             <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
@@ -980,6 +982,62 @@ function SubjectStatusIndicator({
   );
 }
 
+export interface SuggestedCurriculumSubject {
+  name: string;
+  code: string;
+  category: 'Core' | 'Junior High & Primary' | 'Science' | 'Arts' | 'Business' | 'Vocational & Tech';
+  level: string;
+  description: string;
+}
+
+export const SUGGESTED_CURRICULUM_SUBJECTS: SuggestedCurriculumSubject[] = [
+  // Core (National / General WAEC & GES)
+  { name: 'English Language', code: 'ENG-101', category: 'Core', level: 'All Classes', description: 'Grammar, reading comprehension, literature, and composition writing.' },
+  { name: 'Core Mathematics', code: 'MTH-101', category: 'Core', level: 'All Classes', description: 'Algebra, geometry, statistics, trigonometry, and arithmetic.' },
+  { name: 'Integrated Science', code: 'SCI-101', category: 'Core', level: 'All Classes', description: 'Foundations of biology, chemistry, physics, and agricultural science.' },
+  { name: 'Social Studies', code: 'SOC-101', category: 'Core', level: 'All Classes', description: 'Civic education, socio-economic structures, history, and culture.' },
+
+  // Junior High & Primary (NaCCA / GES Standards)
+  { name: 'Information & Communication Technology', code: 'ICT-101', category: 'Junior High & Primary', level: 'Basic 1 - JHS 3', description: 'Digital computing, internet literacy, software tools, and digital safety.' },
+  { name: 'Religious & Moral Education', code: 'RME-101', category: 'Junior High & Primary', level: 'Basic 1 - JHS 3', description: 'Moral values, comparative religious traditions, ethics, and character building.' },
+  { name: 'Ghanaian Language & Culture', code: 'GHA-101', category: 'Junior High & Primary', level: 'Basic 1 - JHS 3', description: 'Indigenous language literacy, folklore, cultural traditions, and idioms.' },
+  { name: 'Creative Arts & Design', code: 'CAD-101', category: 'Junior High & Primary', level: 'Basic 1 - JHS 3', description: 'Visual arts, performance arts, design thinking, and craftsmanship.' },
+  { name: 'Career Technology', code: 'CTE-101', category: 'Junior High & Primary', level: 'JHS 1 - JHS 3', description: 'Pre-technical skills, catering, sewing, and technical drafting.' },
+  { name: 'Physical & Health Education', code: 'PHE-101', category: 'Junior High & Primary', level: 'Basic 1 - JHS 3', description: 'Athletics, fitness routines, personal hygiene, and health education.' },
+  { name: 'French Language', code: 'FRN-101', category: 'Junior High & Primary', level: 'Basic 4 - JHS 3', description: 'French vocabulary, oral conversation, listening, and grammar.' },
+
+  // Science Stream (Senior High / Advanced Level)
+  { name: 'Elective Mathematics', code: 'EMTH-201', category: 'Science', level: 'SHS 1 - 3', description: 'Calculus, coordinate geometry, mechanics, vectors, and matrices.' },
+  { name: 'Physics', code: 'PHY-201', category: 'Science', level: 'SHS 1 - 3', description: 'Classical mechanics, electricity, waves, optics, and thermodynamics.' },
+  { name: 'Chemistry', code: 'CHM-201', category: 'Science', level: 'SHS 1 - 3', description: 'Organic chemistry, stoichiometry, thermodynamics, and laboratory experiments.' },
+  { name: 'Biology', code: 'BIO-201', category: 'Science', level: 'SHS 1 - 3', description: 'Cell biology, genetics, physiology, ecology, and anatomy.' },
+  { name: 'General Agriculture', code: 'AGR-201', category: 'Science', level: 'SHS 1 - 3', description: 'Crop husbandry, animal production, soil chemistry, and agribusiness.' },
+
+  // General Arts & Humanities
+  { name: 'Economics', code: 'ECN-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Microeconomics, macroeconomics, public finance, and international trade.' },
+  { name: 'Geography', code: 'GEO-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Physical landforms, cartography, climate systems, and economic geography.' },
+  { name: 'Government', code: 'GOV-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Political theory, constitutional systems, democracy, and public policy.' },
+  { name: 'History', code: 'HIS-201', category: 'Arts', level: 'SHS 1 - 3', description: 'African civilizations, Ghanaian independence history, and world revolutions.' },
+  { name: 'Literature-in-English', code: 'LIT-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Dramatic plays, classic poetry, prose novels, and literary analysis.' },
+  { name: 'Christian Religious Studies', code: 'CRS-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Biblical scriptures, ethical theology, and historical Church context.' },
+  { name: 'Islamic Religious Studies', code: 'IRS-201', category: 'Arts', level: 'SHS 1 - 3', description: 'Quranic revelations, Hadith studies, and Islamic ethical law.' },
+
+  // Business Stream
+  { name: 'Financial Accounting', code: 'ACC-201', category: 'Business', level: 'SHS 1 - 3', description: 'Double-entry bookkeeping, final accounts, partnerships, and audit compliance.' },
+  { name: 'Business Management', code: 'BMG-201', category: 'Business', level: 'SHS 1 - 3', description: 'Commercial law, organizational structure, marketing, and corporate governance.' },
+  { name: 'Cost Accounting', code: 'CAC-201', category: 'Business', level: 'SHS 1 - 3', description: 'Costing methods, variance analysis, budgeting, and overhead absorption.' },
+  { name: 'Principles of Costing', code: 'CST-201', category: 'Business', level: 'SHS 1 - 3', description: 'Manufacturing costs, process costing, and operational financial control.' },
+
+  // Vocational & Technical Stream
+  { name: 'Technical Drawing', code: 'TDR-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Orthographic projections, isometric drawing, and mechanical drafting.' },
+  { name: 'Food & Nutrition', code: 'FDN-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Dietary nutrients, meal planning, culinary chemistry, and food preservation.' },
+  { name: 'Management-in-Living', code: 'MIL-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Family economics, home management, consumer rights, and interior aesthetics.' },
+  { name: 'Graphic Design', code: 'GDS-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Brand identity, typography, visual advertising, and layout illustration.' },
+  { name: 'Picture Making', code: 'PIC-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Oil & acrylic painting, screen printing, mosaic, and portraiture.' },
+  { name: 'Sculpture & Ceramics', code: 'SCU-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Pottery wheel techniques, terracotta molding, woodcarving, and kiln firing.' },
+  { name: 'Textiles & Clothing', code: 'TXT-201', category: 'Vocational & Tech', level: 'SHS 1 - 3', description: 'Fabric weaving, pattern drafting, sewing craft, and textile design.' }
+];
+
 function SubjectList() {
   const { user } = useAuth();
   const { showToast } = useNotifications();
@@ -1036,6 +1094,41 @@ function SubjectList() {
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [isAllClasses, setIsAllClasses] = useState(true);
   const [formStatus, setFormStatus] = useState<SubjectRegistrationStatus>('Available');
+  const [formSubjectName, setFormSubjectName] = useState('');
+  const [formSubjectCode, setFormSubjectCode] = useState('');
+
+  // Suggestive Curriculum Modal State
+  const [isCurriculumSuggestionsModalOpen, setIsCurriculumSuggestionsModalOpen] = useState(false);
+  const [curriculumCategory, setCurriculumCategory] = useState<string>('All');
+  const [curriculumSearch, setCurriculumSearch] = useState('');
+  const [selectedSuggestionCodes, setSelectedSuggestionCodes] = useState<string[]>([]);
+  const [isBatchAdding, setIsBatchAdding] = useState(false);
+
+  // In-Modal Suggestion Filter State
+  const [suggestionModalCategory, setSuggestionModalCategory] = useState<string>('All');
+  const [suggestionModalSearch, setSuggestionModalSearch] = useState('');
+
+  // Filtered suggestions for Add/Edit Modal
+  const modalFilteredSuggestions = React.useMemo(() => {
+    const q = suggestionModalSearch.toLowerCase().trim();
+    return SUGGESTED_CURRICULUM_SUBJECTS.filter(item => {
+      const matchCat = suggestionModalCategory === 'All' || item.category === suggestionModalCategory;
+      if (!matchCat) return false;
+      if (!q) return true;
+      return item.name.toLowerCase().includes(q) || item.code.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
+    });
+  }, [suggestionModalCategory, suggestionModalSearch]);
+
+  // Filtered suggestions for the Dedicated Suggestive Curriculum Modal
+  const curriculumFilteredSuggestions = React.useMemo(() => {
+    const q = curriculumSearch.toLowerCase().trim();
+    return SUGGESTED_CURRICULUM_SUBJECTS.filter(item => {
+      const matchCat = curriculumCategory === 'All' || item.category === curriculumCategory;
+      if (!matchCat) return false;
+      if (!q) return true;
+      return item.name.toLowerCase().includes(q) || item.code.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
+    });
+  }, [curriculumCategory, curriculumSearch]);
 
   // Compute status summary KPI counts
   const statusCounts = React.useMemo(() => {
@@ -1079,8 +1172,20 @@ function SubjectList() {
     setIsAllClasses(false);
   };
 
+  const openAddModal = () => {
+    setEditingSubject(null);
+    setFormSubjectName('');
+    setFormSubjectCode('');
+    setSelectedClasses([]);
+    setIsAllClasses(true);
+    setFormStatus('Available');
+    setIsModalOpen(true);
+  };
+
   const openEditModal = (sub: Subject) => {
     setEditingSubject(sub);
+    setFormSubjectName(sub.name || '');
+    setFormSubjectCode(sub.code || '');
     setSelectedClasses((sub.applicableClasses || []).filter(c => c !== 'All'));
     setIsAllClasses(sub.applicableClasses?.includes('All') ?? true);
     setFormStatus(getSubjectStatus(sub));
@@ -1132,10 +1237,17 @@ function SubjectList() {
 
   const handleSubjectSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const finalName = formSubjectName.trim();
+    const finalCode = formSubjectCode.trim().toUpperCase();
+
+    if (!finalName || !finalCode) {
+      showToast?.('Please provide both subject name and subject code', 'error');
+      return;
+    }
+
     const subData = {
-      name: formData.get('name') as string,
-      code: formData.get('code') as string,
+      name: finalName,
+      code: finalCode,
       applicableClasses: isAllClasses ? ['All'] : selectedClasses,
       status: formStatus,
       registrationStatus: formStatus
@@ -1167,9 +1279,74 @@ function SubjectList() {
 
     setIsModalOpen(false);
     setEditingSubject(null);
+    setFormSubjectName('');
+    setFormSubjectCode('');
     setSelectedClasses([]);
     setIsAllClasses(true);
     setFormStatus('Available');
+  };
+
+  // Batch add curriculum presets
+  const handleBatchAddSuggestions = async () => {
+    if (selectedSuggestionCodes.length === 0 || isBatchAdding) return;
+    setIsBatchAdding(true);
+    try {
+      const toAdd = SUGGESTED_CURRICULUM_SUBJECTS.filter(s => selectedSuggestionCodes.includes(s.code));
+      let addedCount = 0;
+      for (const item of toAdd) {
+        const exists = allSubjects.some(
+          sub => (sub.code || '').toLowerCase().trim() === item.code.toLowerCase().trim() ||
+                 (sub.name || '').toLowerCase().trim() === item.name.toLowerCase().trim()
+        );
+        if (!exists) {
+          await subjectsApi.create({
+            name: item.name,
+            code: item.code,
+            applicableClasses: ['All'],
+            category: item.category,
+            level: item.level,
+            description: item.description,
+            isCore: item.category === 'Core',
+            status: 'Available'
+          });
+          addedCount++;
+        }
+      }
+      showToast?.(`Added ${addedCount} curriculum subject${addedCount === 1 ? '' : 's'} to school!`, 'success');
+      setSelectedSuggestionCodes([]);
+      setIsCurriculumSuggestionsModalOpen(false);
+    } catch (e: any) {
+      showToast?.(e?.message || 'Failed to add curriculum subjects', 'error');
+    } finally {
+      setIsBatchAdding(false);
+    }
+  };
+
+  // 1-Click quick add a single curriculum preset
+  const handleQuickAddSingleSuggestion = async (item: SuggestedCurriculumSubject) => {
+    const exists = allSubjects.some(
+      sub => (sub.code || '').toLowerCase().trim() === item.code.toLowerCase().trim() ||
+             (sub.name || '').toLowerCase().trim() === item.name.toLowerCase().trim()
+    );
+    if (exists) {
+      showToast?.(`"${item.name}" (${item.code}) is already in your curriculum!`, 'info');
+      return;
+    }
+    try {
+      await subjectsApi.create({
+        name: item.name,
+        code: item.code,
+        applicableClasses: ['All'],
+        category: item.category,
+        level: item.level,
+        description: item.description,
+        isCore: item.category === 'Core',
+        status: 'Available'
+      });
+      showToast?.(`Added "${item.name}" (${item.code}) to school curriculum!`, 'success');
+    } catch (e: any) {
+      showToast?.(e?.message || 'Failed to add subject', 'error');
+    }
   };
 
   return (
@@ -1288,20 +1465,26 @@ function SubjectList() {
               </button>
             )}
           </div>
-          <button 
-            type="button"
-            onClick={() => {
-              setEditingSubject(null);
-              setSelectedClasses([]);
-              setIsAllClasses(true);
-              setFormStatus('Available');
-              setIsModalOpen(true);
-            }}
-            className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98]"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
-            <span>Add Subject</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button 
+              type="button"
+              onClick={openAddModal}
+              className="shrink-0 h-9 sm:h-10 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] px-3.5 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98] ring-1 ring-[#faae57]/60"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5] shrink-0" />
+              <span>Add Subject</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCurriculumSuggestionsModalOpen(true)}
+              className="shrink-0 h-9 sm:h-10 bg-[#1c4a59] hover:bg-[#1c4a59]/90 text-white px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs sm:text-sm transition-all shadow-xs whitespace-nowrap cursor-pointer active:scale-[0.98] border border-[#1c4a59]"
+              title="Explore standard curriculum subjects and presets"
+            >
+              <BookOpen className="w-4 h-4 text-[#faae57] shrink-0" />
+              <span className="hidden sm:inline">Suggestive Curriculum</span>
+              <span className="sm:hidden">Curriculum</span>
+            </button>
+          </div>
         </div>
 
         {/* Visual Status Filter Tabs */}
@@ -1419,9 +1602,21 @@ function SubjectList() {
                         <h4 className="font-bold text-[#1f2a2e] text-xs sm:text-sm truncate" title={sub.name}>
                           {sub.name}
                         </h4>
-                        <p className="text-[10px] sm:text-[11px] font-bold text-[#807654] font-mono tabular-nums">
-                          {sub.code}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span className="text-[10px] sm:text-[11px] font-bold text-[#807654] font-mono tabular-nums">
+                            {sub.code}
+                          </span>
+                          {(sub.category || sub.isCore) && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#e4ae67]/20 text-[#807654] border border-[#e4ae67]/40">
+                              {sub.category || 'Core'}
+                            </span>
+                          )}
+                          {sub.level && (
+                            <span className="text-[9px] font-medium text-[#6a7f84]">
+                              • {sub.level}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1562,10 +1757,10 @@ function SubjectList() {
         </div>
       )}
 
-      {/* Responsive Add/Edit Subject Modal with Status Selection */}
+      {/* Responsive Add/Edit Subject Modal with Suggestive Curriculum Presets */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#1f2a2e]/60 backdrop-blur-xs print:hidden">
-          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-md shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 print:hidden overflow-y-auto">
+          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
             <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <Book className="w-4 h-4 sm:w-5 sm:h-5 text-[#faae57] shrink-0" />
@@ -1582,13 +1777,114 @@ function SubjectList() {
               </button>
             </div>
             <form onSubmit={handleSubjectSubmit} className="p-3.5 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto">
+              
+              {/* Suggestive Curriculum Presets Accordion / Quick Picker */}
+              {!editingSubject && (
+                <div className="bg-[#f6f8f7] border border-[#bac4c6]/70 rounded-2xl p-3 sm:p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#faae57] shrink-0" />
+                      <span className="text-[11px] font-bold text-[#1c4a59] uppercase tracking-wider">
+                        Suggestive Curriculum Presets
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#6a7f84] font-medium">Click to auto-fill</span>
+                  </div>
+
+                  {/* Filter tabs inside modal */}
+                  <div className="flex flex-wrap gap-1">
+                    {(['All', 'Core', 'Science', 'Arts', 'Business', 'Junior High & Primary', 'Vocational & Tech'] as const).map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSuggestionModalCategory(cat)}
+                        className={cn(
+                          "px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer",
+                          suggestionModalCategory === cat
+                            ? "bg-[#1c4a59] text-white"
+                            : "bg-white text-[#6a7f84] border border-[#bac4c6]/60 hover:text-[#1f2a2e]"
+                        )}
+                      >
+                        {cat === 'Junior High & Primary' ? 'Basic/JHS' : cat === 'Vocational & Tech' ? 'Vocational' : cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Search inside modal suggestions */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#6a7f84]" />
+                    <input
+                      type="text"
+                      placeholder="Filter presets (e.g. Maths, Physics, ICT, Accounting)..."
+                      value={suggestionModalSearch}
+                      onChange={(e) => setSuggestionModalSearch(e.target.value)}
+                      className="w-full h-7 pl-7 pr-2 bg-white text-[#1f2a2e] text-[11px] border border-[#bac4c6] rounded-lg focus:outline-none focus:border-[#1c4a59]"
+                    />
+                  </div>
+
+                  {/* Quick-tap suggestion chips */}
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1">
+                    {modalFilteredSuggestions.map(item => {
+                      const isAlreadyAdded = allSubjects.some(
+                        s => (s.code || '').toLowerCase().trim() === item.code.toLowerCase().trim()
+                      );
+                      const isSelected = formSubjectCode.toUpperCase() === item.code.toUpperCase();
+                      return (
+                        <button
+                          key={item.code}
+                          type="button"
+                          onClick={() => {
+                            setFormSubjectName(item.name);
+                            setFormSubjectCode(item.code);
+                          }}
+                          className={cn(
+                            "px-2 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer text-left",
+                            isSelected
+                              ? "bg-[#faae57] text-[#1f2a2e] border-[#faae57] shadow-2xs ring-1 ring-[#faae57]"
+                              : isAlreadyAdded
+                              ? "bg-[#ecfdf5] text-[#065f46] border-[#a7f3d0] hover:bg-[#d1fae5]"
+                              : "bg-white text-[#1f2a2e] border-[#bac4c6] hover:border-[#1c4a59] hover:bg-[#f6f8f7]"
+                          )}
+                          title={`${item.name} (${item.code}) - ${item.level}: ${item.description}`}
+                        >
+                          <span>{item.name}</span>
+                          <span className={cn(
+                            "text-[10px] font-mono px-1 py-0.2 rounded",
+                            isSelected ? "bg-black/10 text-[#1f2a2e]" : "bg-[#f0f5f7] text-[#1c4a59]"
+                          )}>
+                            {item.code}
+                          </span>
+                          {isAlreadyAdded && (
+                            <span className="text-[9px] text-[#059669] font-bold">✓ In School</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Subject Name</label>
-                <input name="name" defaultValue={editingSubject?.name} placeholder="Subject Name" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" />
+                <input 
+                  name="name" 
+                  value={formSubjectName}
+                  onChange={(e) => setFormSubjectName(e.target.value)}
+                  placeholder="e.g. Core Mathematics" 
+                  required 
+                  className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none" 
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] sm:text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider">Subject Code</label>
-                <input name="code" defaultValue={editingSubject?.code} placeholder="Subject Code (e.g., ENG-101)" required className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none font-mono" />
+                <input 
+                  name="code" 
+                  value={formSubjectCode}
+                  onChange={(e) => setFormSubjectCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. MTH-101" 
+                  required 
+                  className="w-full h-9 sm:h-10 px-3 bg-[#f6f8f7] text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:ring-2 focus:ring-[#1c4a59] focus:bg-white outline-none font-mono" 
+                />
               </div>
 
               {/* Status Picker in Modal */}
@@ -1684,6 +1980,239 @@ function SubjectList() {
                 <button type="submit" className="w-full py-2.5 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-xl font-bold text-xs sm:text-sm shadow-xs cursor-pointer transition-all active:scale-[0.98]">{editingSubject ? 'Update' : 'Save'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Suggestive Curriculum Modal */}
+      {isCurriculumSuggestionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 print:hidden overflow-y-auto">
+          <div className="bg-white text-[#1f2a2e] rounded-2xl sm:rounded-3xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-[#bac4c6]">
+            {/* Modal Header */}
+            <div className="bg-[#1c4a59] px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 bg-white/10 rounded-xl shrink-0">
+                  <BookOpen className="w-5 h-5 text-[#faae57]" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-bold text-white truncate">
+                    Suggestive Curriculum Subjects
+                  </h3>
+                  <p className="text-xs text-white/80 font-medium truncate">
+                    Standard National Curriculum (NaCCA / WAEC / GES Standards)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCurriculumSuggestionsModalOpen(false);
+                  setSelectedSuggestionCodes([]);
+                }}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter & Toolbar Header */}
+            <div className="p-3.5 sm:p-5 border-b border-[#bac4c6]/50 bg-[#f6f8f7] space-y-3 shrink-0">
+              <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between">
+                {/* Search */}
+                <div className="relative flex-1 min-w-0 sm:max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6a7f84]" />
+                  <input
+                    type="text"
+                    placeholder="Search curriculum by subject, code, or description..."
+                    value={curriculumSearch}
+                    onChange={(e) => setCurriculumSearch(e.target.value)}
+                    className="w-full h-9 sm:h-10 pl-9 pr-3 bg-white text-[#1f2a2e] text-xs sm:text-sm border border-[#bac4c6] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c4a59]"
+                  />
+                  {curriculumSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setCurriculumSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6a7f84] hover:text-[#1f2a2e]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Selection Controls */}
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const missingCodes = curriculumFilteredSuggestions
+                        .filter(item => !allSubjects.some(s => (s.code || '').toLowerCase().trim() === item.code.toLowerCase().trim()))
+                        .map(i => i.code);
+                      setSelectedSuggestionCodes(missingCodes);
+                    }}
+                    className="px-2.5 py-1.5 bg-white border border-[#bac4c6] rounded-lg text-xs font-bold text-[#1c4a59] hover:bg-[#e1c594]/30 cursor-pointer"
+                  >
+                    Select All Missing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSuggestionCodes([])}
+                    className="px-2.5 py-1.5 bg-white border border-[#bac4c6] rounded-lg text-xs font-bold text-[#6a7f84] hover:text-[#9f1239] cursor-pointer"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+
+              {/* Stream Category Filters */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                <span className="text-[11px] font-bold text-[#6a7f84] uppercase tracking-wider mr-1 flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-[#1c4a59]" /> Stream:
+                </span>
+                {(['All', 'Core', 'Junior High & Primary', 'Science', 'Arts', 'Business', 'Vocational & Tech'] as const).map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCurriculumCategory(cat)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg font-bold transition-all text-xs border cursor-pointer",
+                      curriculumCategory === cat
+                        ? "bg-[#1c4a59] text-white border-[#1c4a59] shadow-2xs"
+                        : "bg-white text-[#6a7f84] border-[#bac4c6]/70 hover:text-[#1f2a2e]"
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Subject List Grid */}
+            <div className="p-3.5 sm:p-5 overflow-y-auto flex-1 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {curriculumFilteredSuggestions.map(item => {
+                  const isAlreadyAdded = allSubjects.some(
+                    s => (s.code || '').toLowerCase().trim() === item.code.toLowerCase().trim() ||
+                         (s.name || '').toLowerCase().trim() === item.name.toLowerCase().trim()
+                  );
+                  const isChecked = selectedSuggestionCodes.includes(item.code);
+
+                  return (
+                    <div
+                      key={item.code}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 text-left relative",
+                        isAlreadyAdded
+                          ? "bg-[#f6f8f7]/80 border-[#bac4c6]/60 opacity-80"
+                          : isChecked
+                          ? "bg-[#faae57]/10 border-[#faae57] ring-1 ring-[#faae57]"
+                          : "bg-white border-[#bac4c6] hover:border-[#1c4a59]/60 shadow-xs"
+                      )}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2 min-w-0">
+                            {!isAlreadyAdded && (
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedSuggestionCodes(prev => [...prev, item.code]);
+                                  } else {
+                                    setSelectedSuggestionCodes(prev => prev.filter(c => c !== item.code));
+                                  }
+                                }}
+                                className="w-4 h-4 mt-0.5 text-[#1c4a59] border-[#bac4c6] rounded focus:ring-[#1c4a59] accent-[#1c4a59] shrink-0 cursor-pointer"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <h4 className="text-sm font-bold text-[#1f2a2e] leading-snug">
+                                {item.name}
+                              </h4>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <span className="font-mono text-xs font-bold text-[#1c4a59] bg-[#f0f5f7] px-2 py-0.5 rounded border border-[#bcd3da]">
+                                  {item.code}
+                                </span>
+                                <span className="text-[10px] font-bold text-[#6a7f84] bg-white px-2 py-0.5 rounded border border-[#bac4c6]">
+                                  {item.category}
+                                </span>
+                                <span className="text-[10px] font-medium text-[#4e6166]">
+                                  {item.level}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {isAlreadyAdded ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0] shrink-0">
+                              <Check className="w-3 h-3 text-[#059669]" />
+                              <span>In School</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickAddSingleSuggestion(item)}
+                              className="px-2.5 py-1 bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-2xs active:scale-[0.98]"
+                            >
+                              + Quick Add
+                            </button>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-[#6a7f84] line-clamp-2 leading-relaxed">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {curriculumFilteredSuggestions.length === 0 && (
+                <div className="p-8 text-center text-[#6a7f84] space-y-2">
+                  <BookOpen className="w-10 h-10 mx-auto text-[#bac4c6]" />
+                  <p className="text-sm font-bold text-[#1f2a2e]">No curriculum subjects found</p>
+                  <p className="text-xs">Try clearing the search query or changing the stream category filter.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Sticky Footer */}
+            <div className="p-3.5 sm:p-5 border-t border-[#bac4c6]/60 bg-[#f6f8f7] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+              <div className="text-xs text-[#6a7f84]">
+                <strong className="text-[#1f2a2e]">{selectedSuggestionCodes.length}</strong> subject{selectedSuggestionCodes.length === 1 ? '' : 's'} selected for batch addition
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCurriculumSuggestionsModalOpen(false);
+                    setSelectedSuggestionCodes([]);
+                  }}
+                  className="flex-1 sm:flex-initial px-4 py-2.5 bg-white border border-[#bac4c6] hover:bg-[#ecf0ee] rounded-xl text-xs sm:text-sm font-bold text-[#1f2a2e] transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedSuggestionCodes.length === 0 || isBatchAdding}
+                  onClick={handleBatchAddSuggestions}
+                  className="flex-1 sm:flex-initial px-5 py-2.5 bg-[#059669] hover:bg-[#047857] disabled:bg-[#ecf0ee] disabled:text-[#6a7f84] text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+                >
+                  {isBatchAdding ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Adding to Curriculum...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Add Selected ({selectedSuggestionCodes.length})</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -203,11 +203,19 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   code VARCHAR(50) NOT NULL,
   is_core BOOLEAN NOT NULL DEFAULT false,
   applicable_classes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  category VARCHAR(100) NULL,
+  level VARCHAR(100) NULL,
+  description TEXT NULL,
+  department VARCHAR(100) NULL,
+  credit_hours INT NOT NULL DEFAULT 3 CHECK (credit_hours >= 0),
+  status VARCHAR(50) NOT NULL DEFAULT 'Available' CHECK (status IN ('Enrolled', 'Pending Approval', 'Available')),
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   CONSTRAINT uq_school_subject_code UNIQUE (school_id, code)
 );
 
 CREATE INDEX IF NOT EXISTS idx_subjects_school_id ON public.subjects (school_id);
+CREATE INDEX IF NOT EXISTS idx_subjects_category ON public.subjects (school_id, category);
+CREATE INDEX IF NOT EXISTS idx_subjects_status ON public.subjects (school_id, status);
 
 -- ==============================================================================
 -- 5. FACULTY & STAFF
@@ -253,10 +261,13 @@ CREATE TABLE IF NOT EXISTS public.students (
   house VARCHAR(100) NULL,
   department VARCHAR(100) NULL,
   photo TEXT NULL,
+  residential_status VARCHAR(50) NOT NULL DEFAULT 'Day Student',
   status VARCHAR(50) NOT NULL DEFAULT 'active' 
     CHECK (status IN ('active', 'graduated', 'suspended', 'transferred', 'withdrawn')),
   fee_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
   fee_paid_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+  class_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  previous_classes JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   CONSTRAINT uq_school_student_id UNIQUE (school_id, student_id)
@@ -265,6 +276,7 @@ CREATE TABLE IF NOT EXISTS public.students (
 CREATE INDEX IF NOT EXISTS idx_students_school_id ON public.students (school_id);
 CREATE INDEX IF NOT EXISTS idx_students_class ON public.students (school_id, class);
 CREATE INDEX IF NOT EXISTS idx_students_status ON public.students (school_id, status);
+CREATE INDEX IF NOT EXISTS idx_students_residential_status ON public.students (school_id, residential_status);
 
 -- ==============================================================================
 -- 7. ATTENDANCE TRACKING
@@ -453,15 +465,21 @@ CREATE TABLE IF NOT EXISTS public.promotion_history (
   id BIGSERIAL PRIMARY KEY,
   school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
   student_id VARCHAR(50) NOT NULL,
+  student_identifier VARCHAR(50) NULL,
   student_name VARCHAR(255) NOT NULL,
   source_class VARCHAR(100) NOT NULL,
   dest_class VARCHAR(100) NOT NULL,
   academic_year VARCHAR(50) NOT NULL,
   term VARCHAR(50) NOT NULL,
+  previous_fees_paid NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (previous_fees_paid >= 0),
+  previous_total_fees NUMERIC(12, 2) NOT NULL DEFAULT 0.00 CHECK (previous_total_fees >= 0),
+  previous_fee_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+  previous_fee_paid_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
   timestamp BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS idx_promotion_history_school ON public.promotion_history (school_id, academic_year);
+CREATE INDEX IF NOT EXISTS idx_promotion_history_student ON public.promotion_history (school_id, student_id);
 
 -- ==============================================================================
 -- 14. ASSETS, INVENTORY & EXPENSE TRACKING

@@ -913,11 +913,33 @@ export const subjectsApi = {
     return targetSchoolId ? local.filter((s: any) => s.schoolId === targetSchoolId || s.school_id === targetSchoolId) : local;
   },
 
-  create: async (subjectData: { name: string; code: string; applicableClasses?: string[] }, schoolId?: string) => {
+  create: async (subjectData: { 
+    name: string; 
+    code: string; 
+    applicableClasses?: string[]; 
+    category?: string; 
+    level?: string; 
+    description?: string; 
+    department?: string; 
+    creditHours?: number; 
+    status?: string; 
+    isCore?: boolean 
+  }, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    const isCore = Boolean(subjectData.isCore ?? (subjectData.category === 'Core'));
     const payload = {
       ...subjectData,
+      isCore,
+      is_core: isCore,
       applicableClasses: subjectData.applicableClasses || ['All'],
+      applicable_classes: subjectData.applicableClasses || ['All'],
+      category: subjectData.category || (isCore ? 'Core' : 'General'),
+      level: subjectData.level || 'All Classes',
+      description: subjectData.description || '',
+      department: subjectData.department || '',
+      creditHours: subjectData.creditHours || 3,
+      credit_hours: subjectData.creditHours || 3,
+      status: subjectData.status || 'Available',
       school_id: targetSchoolId,
       schoolId: targetSchoolId,
       createdAt: Date.now()
@@ -957,6 +979,13 @@ export const subjectsApi = {
           name: payload.name,
           code: payload.code,
           applicable_classes: payload.applicableClasses,
+          category: payload.category,
+          level: payload.level,
+          description: payload.description,
+          department: payload.department,
+          credit_hours: payload.creditHours,
+          status: payload.status,
+          is_core: payload.isCore,
           school_id: targetSchoolId
         }]).select().single();
         if (data) {
@@ -1045,6 +1074,14 @@ export const subjectsApi = {
         if (updates.name !== undefined) snakePayload.name = updates.name;
         if (updates.code !== undefined) snakePayload.code = updates.code;
         if (updates.applicableClasses !== undefined) snakePayload.applicable_classes = updates.applicableClasses;
+        if (updates.category !== undefined) snakePayload.category = updates.category;
+        if (updates.level !== undefined) snakePayload.level = updates.level;
+        if (updates.description !== undefined) snakePayload.description = updates.description;
+        if (updates.department !== undefined) snakePayload.department = updates.department;
+        if (updates.creditHours !== undefined || updates.credit_hours !== undefined) snakePayload.credit_hours = updates.creditHours ?? updates.credit_hours;
+        if (updates.status !== undefined) snakePayload.status = updates.status;
+        if (updates.isCore !== undefined || updates.is_core !== undefined) snakePayload.is_core = updates.isCore ?? updates.is_core;
+
         if (remoteTargetId && !isNaN(Number(remoteTargetId))) {
           await supabase.from('subjects').update(snakePayload).eq('id', Number(remoteTargetId));
         } else if (originalCode) {
@@ -1961,9 +1998,16 @@ export const promotionsApi = {
       });
       if (res.ok) {
         serverRes = await res.json();
+        if (serverRes?.success && Array.isArray(serverRes.data) && serverRes.data.length > 0) {
+          await reconcilePromotionHistoryInDexie(serverRes.data, false);
+        }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Failed to promote students in Supabase database (Status ${res.status})`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Notice batch promoting in Supabase:', e);
+      throw e;
     }
 
     broadcastLocalMutation('promotion_history', 'batch', { count: prepared.length });
@@ -1986,7 +2030,7 @@ export const promotionsApi = {
 
     // 2. Delete from Supabase via server endpoint with rollback details
     try {
-      await fetch(`/api/promotions/${encodeURIComponent(String(remoteTargetId))}?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+      const res = await fetch(`/api/promotions/${encodeURIComponent(String(remoteTargetId))}?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
         method: 'DELETE',
         headers: getApiHeaders(targetSchoolId || undefined),
         body: JSON.stringify({
@@ -1999,8 +2043,13 @@ export const promotionsApi = {
           previousFeePaidBreakdown: revertDetails?.previousFeePaidBreakdown ?? existingRecord?.previousFeePaidBreakdown
         })
       });
-    } catch (e) {
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Failed to revert promotion in Supabase database (Status ${res.status})`);
+      }
+    } catch (e: any) {
       console.warn('Notice reverting promotion in Supabase:', e);
+      throw e;
     }
 
     broadcastLocalMutation('promotion_history', 'delete', { id, remoteTargetId });

@@ -218,9 +218,20 @@ export async function reconcileSubjectsInDexie(remoteSubjects: any[], isFullSync
     }
 
     const rawApplicable = remote.applicableClasses ?? remote.applicable_classes;
+    const isCore = Boolean(remote.isCore ?? remote.is_core ?? (remote.category === 'Core'));
     const payload = {
       ...remote,
-      applicableClasses: typeof rawApplicable === 'string' ? JSON.parse(rawApplicable || '[]') : (rawApplicable || ['All'])
+      isCore,
+      is_core: isCore,
+      category: remote.category || (isCore ? 'Core' : 'General'),
+      level: remote.level || 'All Classes',
+      description: remote.description || '',
+      department: remote.department || '',
+      creditHours: Number(remote.creditHours ?? remote.credit_hours ?? 3) || 3,
+      credit_hours: Number(remote.creditHours ?? remote.credit_hours ?? 3) || 3,
+      status: remote.status || remote.registrationStatus || 'Available',
+      applicableClasses: typeof rawApplicable === 'string' ? JSON.parse(rawApplicable || '[]') : (rawApplicable || ['All']),
+      applicable_classes: typeof rawApplicable === 'string' ? JSON.parse(rawApplicable || '[]') : (rawApplicable || ['All'])
     };
 
     if (existing) {

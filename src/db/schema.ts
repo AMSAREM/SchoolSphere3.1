@@ -171,11 +171,27 @@ export type SubjectRegistrationStatus = 'Enrolled' | 'Pending Approval' | 'Avail
 
 export interface Subject {
   id?: number;
+  remoteId?: number | string;
+  schoolId?: string;
+  school_id?: string;
   name: string;
   code: string;
+  isCore?: boolean;
+  is_core?: boolean;
   applicableClasses: string[]; // Empty can mean "All" or we can store "All"
+  applicable_classes?: string[];
+  category?: string;
+  level?: string;
+  description?: string;
+  department?: string;
+  creditHours?: number;
+  credit_hours?: number;
   status?: SubjectRegistrationStatus;
   registrationStatus?: SubjectRegistrationStatus;
+  createdAt?: number;
+  created_at?: number;
+  updatedAt?: number;
+  updated_at?: number;
 }
 
 export interface ClassInfo {
@@ -1127,6 +1143,23 @@ export function normalizeStudentRecord(s: any): Student & { [key: string]: any }
   const photo = s.photo || null;
   const status = s.status || 'active';
 
+  const residentialStatusRaw = String(
+    s.residentialStatus || s.residential_status || s['Residential Status'] || s['residential_status'] || s.boardingStatus || 'Day Student'
+  ).trim();
+  const residentialStatus = (residentialStatusRaw.toLowerCase().includes('board') ? 'Boarder' : 'Day Student');
+
+  let classHistory = s.classHistory || s.class_history || [];
+  if (typeof classHistory === 'string') {
+    try { classHistory = JSON.parse(classHistory); } catch { classHistory = []; }
+  }
+  if (!Array.isArray(classHistory)) classHistory = [];
+
+  let previousClasses = s.previousClasses || s.previous_classes || [];
+  if (typeof previousClasses === 'string') {
+    try { previousClasses = JSON.parse(previousClasses); } catch { previousClasses = []; }
+  }
+  if (!Array.isArray(previousClasses)) previousClasses = [];
+
   const rawFb = s.feeBreakdown || s.fee_breakdown || s['feeBreakdown'] || {};
   const rawFpb = s.feePaidBreakdown || s.fee_paid_breakdown || s['feePaidBreakdown'] || {};
   const feeBreakdown = typeof rawFb === 'string' ? JSON.parse(rawFb || '{}') : rawFb;
@@ -1161,15 +1194,72 @@ export function normalizeStudentRecord(s: any): Student & { [key: string]: any }
     house,
     department,
     photo,
+    residentialStatus,
+    residential_status: residentialStatus,
     status,
     feeBreakdown,
     fee_breakdown: feeBreakdown,
     feePaidBreakdown,
     fee_paid_breakdown: feePaidBreakdown,
+    classHistory,
+    class_history: classHistory,
+    previousClasses,
+    previous_classes: previousClasses,
     createdAt,
     created_at: createdAt,
     schoolId,
     school_id: schoolId
+  };
+}
+
+export function normalizeSubjectRecord(raw: any): Subject {
+  if (!raw || typeof raw !== 'object') return raw;
+  const name = String(raw.name || raw.subjectName || raw.subject_name || raw['Subject'] || raw['Name'] || '').trim();
+  const code = String(raw.code || raw.subjectCode || raw.subject_code || (name ? name.slice(0, 4).toUpperCase() : 'SUBJ')).trim();
+  
+  let applicableClasses = raw.applicableClasses || raw.applicable_classes || raw['Applicable Classes'] || ['All'];
+  if (typeof applicableClasses === 'string') {
+    try { applicableClasses = JSON.parse(applicableClasses); } catch { applicableClasses = [applicableClasses]; }
+  }
+  if (!Array.isArray(applicableClasses) || applicableClasses.length === 0) {
+    applicableClasses = ['All'];
+  }
+
+  const isCore = Boolean(raw.isCore ?? raw.is_core ?? (raw.category === 'Core' || raw.category?.toLowerCase()?.includes('core')));
+  const category = String(raw.category || (isCore ? 'Core' : 'General')).trim();
+  const level = String(raw.level || 'All Classes').trim();
+  const description = String(raw.description || '').trim();
+  const department = String(raw.department || '').trim();
+  const creditHours = Number(raw.creditHours ?? raw.credit_hours ?? 3) || 3;
+  const status: SubjectRegistrationStatus = (raw.status || raw.registrationStatus || raw.registration_status || 'Available') as SubjectRegistrationStatus;
+  const createdAt = Number(raw.createdAt ?? raw.created_at ?? Date.now()) || Date.now();
+  const updatedAt = Number(raw.updatedAt ?? raw.updated_at ?? Date.now()) || Date.now();
+  const schoolId = raw.schoolId || raw.school_id || '';
+
+  return {
+    ...raw,
+    id: raw.id,
+    remoteId: raw.remoteId || raw.id,
+    schoolId,
+    school_id: schoolId,
+    name,
+    code,
+    isCore,
+    is_core: isCore,
+    applicableClasses,
+    applicable_classes: applicableClasses,
+    category,
+    level,
+    description,
+    department,
+    creditHours,
+    credit_hours: creditHours,
+    status,
+    registrationStatus: status,
+    createdAt,
+    created_at: createdAt,
+    updatedAt,
+    updated_at: updatedAt
   };
 }
 
