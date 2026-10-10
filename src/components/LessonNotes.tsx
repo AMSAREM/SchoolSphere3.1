@@ -1149,7 +1149,74 @@ export default function LessonNotes({ showToast, currentUser, onNavigate }: Less
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Compliance Subject Cards (< 768px) */}
+          <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+            {subjectOptions
+              .filter(subj => selectedSubject === 'All' || subj === selectedSubject)
+              .slice(0, 12)
+              .map(subj => {
+                const targetCls = selectedClass === 'All' ? classOptions[0] || 'JHS 1' : selectedClass;
+                return (
+                  <div key={`${targetCls}-${subj}`} className="bg-slate-50/70 rounded-xl p-3 border border-slate-200/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-800">{subj}</h4>
+                        <p className="text-[10px] text-slate-500">{targetCls}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1">
+                      {WEEKS.map(w => {
+                        const match = allNotes.find(
+                          n =>
+                            n.term === selectedTerm &&
+                            Number(n.weekNumber) === w &&
+                            n.subject === subj &&
+                            (selectedClass === 'All' || n.class === selectedClass)
+                        );
+                        if (!match) {
+                          return (
+                            <button
+                              key={w}
+                              onClick={() => {
+                                setSelectedWeek(w);
+                                setSelectedSubject(subj);
+                                handleOpenNewNote('hybrid');
+                              }}
+                              className="py-1 px-0.5 rounded border border-dashed border-slate-200 text-[10px] font-mono text-slate-400 hover:border-slate-400 bg-white cursor-pointer text-center"
+                              title={`Add Week ${w}`}
+                            >
+                              W{w}
+                            </button>
+                          );
+                        }
+                        const cellStyle =
+                          match.status === 'Approved'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : match.status === 'Pending Review'
+                            ? 'bg-sky-50 border-sky-300 text-sky-800'
+                            : match.status === 'Needs Revision' || match.status === 'Rejected'
+                            ? 'bg-amber-50 border-amber-300 text-amber-800'
+                            : 'bg-slate-100 border-slate-300 text-slate-700';
+
+                        return (
+                          <button
+                            key={w}
+                            onClick={() => handleOpenInspect(match)}
+                            className={`py-1 px-0.5 rounded border text-[10px] font-bold text-center cursor-pointer ${cellStyle}`}
+                            title={`W${w}: ${match.status}`}
+                          >
+                            W{w}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Desktop Matrix Table (>= 768px) */}
+          <div className="hidden md:block overflow-x-auto table-responsive-container">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">

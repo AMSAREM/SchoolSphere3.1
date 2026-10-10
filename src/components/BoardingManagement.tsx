@@ -783,55 +783,94 @@ export default function BoardingManagement() {
                   <p className="text-[11px] text-slate-400 mt-0.5">No active exeats outside campus grounds at this moment.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase tracking-wider text-[10px]">
-                      <tr>
-                        <th className="py-2.5 px-3">Pass Ref</th>
-                        <th className="py-2.5 px-3">Student Name</th>
-                        <th className="py-2.5 px-3">House / Class</th>
-                        <th className="py-2.5 px-3">Type & Reason</th>
-                        <th className="py-2.5 px-3">Destination</th>
-                        <th className="py-2.5 px-3">Expected Return</th>
-                        <th className="py-2.5 px-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {activeExeats.map(ex => (
-                        <tr key={ex.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-2.5 px-3 font-mono font-medium text-blue-600 dark:text-blue-400">
+                <>
+                  {/* Mobile Cards (< 768px) */}
+                  <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-3">
+                    {activeExeats.map(ex => (
+                      <div key={ex.id} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-200 dark:border-slate-800 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-white text-xs">{ex.studentName}</p>
+                            <p className="text-[10px] text-slate-500">{ex.houseName} · {ex.className}</p>
+                          </div>
+                          <span className="font-mono text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded">
                             {ex.passCode}
-                          </td>
-                          <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
-                            {ex.studentName}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500">
-                            <span>{ex.houseName}</span> · <span>{ex.className}</span>
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                            <span className="font-medium">{ex.exeatType}</span>
-                            {ex.reason && <span className="text-slate-400 block text-[11px] truncate max-w-xs">{ex.reason}</span>}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400">
-                            {ex.destination}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                            {ex.expectedReturnDate}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <button
-                              onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
-                              className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 transition-colors inline-flex items-center gap-1"
-                            >
-                              <LogIn className="w-3 h-3" />
-                              <span>Gate Check In</span>
-                            </button>
-                          </td>
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Type & Destination</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{ex.exeatType} → {ex.destination}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Expected Return</span>
+                            <span className="font-mono text-slate-600 dark:text-slate-400">{ex.expectedReturnDate}</span>
+                          </div>
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
+                            className="w-full sm:w-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <LogIn className="w-3.5 h-3.5" />
+                            <span>Gate Check In</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Table (>= 768px) */}
+                  <div className="hidden md:block overflow-x-auto table-responsive-container">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase tracking-wider text-[10px]">
+                        <tr>
+                          <th className="py-2.5 px-3">Pass Ref</th>
+                          <th className="py-2.5 px-3">Student Name</th>
+                          <th className="py-2.5 px-3">House / Class</th>
+                          <th className="py-2.5 px-3">Type & Reason</th>
+                          <th className="py-2.5 px-3">Destination</th>
+                          <th className="py-2.5 px-3">Expected Return</th>
+                          <th className="py-2.5 px-3 text-right">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {activeExeats.map(ex => (
+                          <tr key={ex.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-medium text-blue-600 dark:text-blue-400">
+                              {ex.passCode}
+                            </td>
+                            <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-white">
+                              {ex.studentName}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-500">
+                              <span>{ex.houseName}</span> · <span>{ex.className}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
+                              <span className="font-medium">{ex.exeatType}</span>
+                              {ex.reason && <span className="text-slate-400 block text-[11px] truncate max-w-xs">{ex.reason}</span>}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400">
+                              {ex.destination}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                              {ex.expectedReturnDate}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <button
+                                onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
+                                className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <LogIn className="w-3 h-3" />
+                                <span>Gate Check In</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -1086,140 +1125,254 @@ export default function BoardingManagement() {
 
             {/* Exeats Table */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[10px]">
+            {/* Exeats Mobile Cards (< 768px) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-3">
+              {exeats
+                .filter(e => {
+                  if (!searchQuery) return true;
+                  const q = searchQuery.toLowerCase();
+                  return (
+                    e.studentName.toLowerCase().includes(q) ||
+                    e.passCode.toLowerCase().includes(q) ||
+                    e.houseName.toLowerCase().includes(q) ||
+                    e.destination.toLowerCase().includes(q)
+                  );
+                }).length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p>No exeat passes match your search.</p>
+                </div>
+              ) : (
+                exeats
+                  .filter(e => {
+                    if (!searchQuery) return true;
+                    const q = searchQuery.toLowerCase();
+                    return (
+                      e.studentName.toLowerCase().includes(q) ||
+                      e.passCode.toLowerCase().includes(q) ||
+                      e.houseName.toLowerCase().includes(q) ||
+                      e.destination.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((ex) => {
+                    const statusColor =
+                      ex.status === 'approved' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40' :
+                      ex.status === 'checked_out' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
+                      ex.status === 'checked_in' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
+                      ex.status === 'rejected' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40' :
+                      'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800';
+
+                    return (
+                      <div key={ex.id} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-white text-xs">{ex.studentName}</p>
+                            <p className="text-[10px] text-slate-500">{ex.houseName} · {ex.className} · {ex.studentId}</p>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${statusColor}`}>
+                            {ex.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Pass Code</span>
+                            <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">{ex.passCode}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Destination</span>
+                            <span className="text-slate-700 dark:text-slate-300 truncate block">{ex.destination}</span>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          <span>Out: {ex.departureDate}</span> · <span>In: {ex.expectedReturnDate}</span>
+                        </div>
+                        <div className="pt-2 border-t border-slate-200/40 dark:border-slate-700/40 flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => setPrintingExeat(ex)}
+                            className="p-1.5 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors inline-flex items-center gap-1 text-[11px] cursor-pointer"
+                            title="Print Exeat Pass Slip"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print</span>
+                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {ex.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleUpdateExeatStatus(ex, 'approved')}
+                                  className="px-2 py-1 text-[11px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateExeatStatus(ex, 'rejected')}
+                                  className="px-2 py-1 text-[11px] font-medium rounded bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {ex.status === 'approved' && (
+                              <button
+                                onClick={() => handleUpdateExeatStatus(ex, 'checked_out')}
+                                className="px-2.5 py-1 text-[11px] font-medium rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <LogOut className="w-3 h-3" />
+                                <span>Check Out</span>
+                              </button>
+                            )}
+                            {ex.status === 'checked_out' && (
+                              <button
+                                onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
+                                className="px-2.5 py-1 text-[11px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <LogIn className="w-3 h-3" />
+                                <span>Check In</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Exeats Desktop Table (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto table-responsive-container">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">Pass Ref</th>
+                    <th className="py-3 px-4">Student</th>
+                    <th className="py-3 px-4">House & Class</th>
+                    <th className="py-3 px-4">Type & Reason</th>
+                    <th className="py-3 px-4">Destination</th>
+                    <th className="py-3 px-4">Dates & Duration</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {exeats.length === 0 ? (
                     <tr>
-                      <th className="py-3 px-4">Pass Ref</th>
-                      <th className="py-3 px-4">Student</th>
-                      <th className="py-3 px-4">House & Class</th>
-                      <th className="py-3 px-4">Type & Reason</th>
-                      <th className="py-3 px-4">Destination</th>
-                      <th className="py-3 px-4">Dates & Duration</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
+                        <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p>No exeat passes generated yet.</p>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {exeats.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
-                          <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                          <p>No exeat passes generated yet.</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      exeats
-                        .filter(e => {
-                          if (!searchQuery) return true;
-                          const q = searchQuery.toLowerCase();
-                          return (
-                            e.studentName.toLowerCase().includes(q) ||
-                            e.passCode.toLowerCase().includes(q) ||
-                            e.houseName.toLowerCase().includes(q) ||
-                            e.destination.toLowerCase().includes(q)
-                          );
-                        })
-                        .map((ex) => {
-                          const statusColor =
-                            ex.status === 'approved' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40' :
-                            ex.status === 'checked_out' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
-                            ex.status === 'checked_in' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
-                            ex.status === 'rejected' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40' :
-                            'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800';
+                  ) : (
+                    exeats
+                      .filter(e => {
+                        if (!searchQuery) return true;
+                        const q = searchQuery.toLowerCase();
+                        return (
+                          e.studentName.toLowerCase().includes(q) ||
+                          e.passCode.toLowerCase().includes(q) ||
+                          e.houseName.toLowerCase().includes(q) ||
+                          e.destination.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((ex) => {
+                        const statusColor =
+                          ex.status === 'approved' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40' :
+                          ex.status === 'checked_out' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
+                          ex.status === 'checked_in' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
+                          ex.status === 'rejected' ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40' :
+                          'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800';
 
-                          return (
-                            <tr key={ex.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
-                              <td className="py-3 px-4 font-mono font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                                {ex.passCode}
-                              </td>
-                              <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
-                                {ex.studentName}
-                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ex.studentId}</div>
-                              </td>
-                              <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                                <div>{ex.houseName}</div>
-                                <div className="text-[11px] text-slate-400">{ex.className}</div>
-                              </td>
-                              <td className="py-3 px-4">
-                                <div className="font-medium text-slate-900 dark:text-white">{ex.exeatType}</div>
-                                <div className="text-[11px] text-slate-500 truncate max-w-xs">{ex.reason || 'Personal / General Leave'}</div>
-                              </td>
-                              <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                                <div>{ex.destination}</div>
-                                {ex.parentPhone && (
-                                  <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                                    <Phone className="w-2.5 h-2.5" />
-                                    <span>{ex.parentPhone}</span>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 text-[11px] font-mono whitespace-nowrap">
-                                <div className="text-slate-700 dark:text-slate-300">Out: {ex.departureDate}</div>
-                                <div className="text-slate-500">In: {ex.expectedReturnDate}</div>
-                              </td>
-                              <td className="py-3 px-4 whitespace-nowrap">
-                                <span className={`px-2 py-0.5 rounded text-[11px] font-medium uppercase tracking-wider ${statusColor}`}>
-                                  {ex.status.replace('_', ' ')}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  {/* Print Pass Slip */}
-                                  <button
-                                    onClick={() => setPrintingExeat(ex)}
-                                    className="p-1.5 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                    title="Print Exeat Pass Slip"
-                                  >
-                                    <Printer className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  {/* Approval / Check-Out / Check-In workflow */}
-                                  {ex.status === 'pending' && (
-                                    <>
-                                      <button
-                                        onClick={() => handleUpdateExeatStatus(ex, 'approved')}
-                                        className="px-2 py-1 text-[11px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                                      >
-                                        Approve
-                                      </button>
-                                      <button
-                                        onClick={() => handleUpdateExeatStatus(ex, 'rejected')}
-                                        className="px-2 py-1 text-[11px] font-medium rounded bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors"
-                                      >
-                                        Reject
-                                      </button>
-                                    </>
-                                  )}
-
-                                  {ex.status === 'approved' && (
-                                    <button
-                                      onClick={() => handleUpdateExeatStatus(ex, 'checked_out')}
-                                      className="px-2.5 py-1 text-[11px] font-medium rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-1"
-                                    >
-                                      <LogOut className="w-3 h-3" />
-                                      <span>Gate Check Out</span>
-                                    </button>
-                                  )}
-
-                                  {ex.status === 'checked_out' && (
-                                    <button
-                                      onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
-                                      className="px-2.5 py-1 text-[11px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-                                    >
-                                      <LogIn className="w-3 h-3" />
-                                      <span>Return Check In</span>
-                                    </button>
-                                  )}
+                        return (
+                          <tr key={ex.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="py-3 px-4 font-mono font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                              {ex.passCode}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                              {ex.studentName}
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ex.studentId}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                              <div>{ex.houseName}</div>
+                              <div className="text-[11px] text-slate-400">{ex.className}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-slate-900 dark:text-white">{ex.exeatType}</div>
+                              <div className="text-[11px] text-slate-500 truncate max-w-xs">{ex.reason || 'Personal / General Leave'}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                              <div>{ex.destination}</div>
+                              {ex.parentPhone && (
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                                  <Phone className="w-2.5 h-2.5" />
+                                  <span>{ex.parentPhone}</span>
                                 </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-[11px] font-mono whitespace-nowrap">
+                              <div className="text-slate-700 dark:text-slate-300">Out: {ex.departureDate}</div>
+                              <div className="text-slate-500">In: {ex.expectedReturnDate}</div>
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-medium uppercase tracking-wider ${statusColor}`}>
+                                {ex.status.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Print Pass Slip */}
+                                <button
+                                  onClick={() => setPrintingExeat(ex)}
+                                  className="p-1.5 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                  title="Print Exeat Pass Slip"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Approval / Check-Out / Check-In workflow */}
+                                {ex.status === 'pending' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleUpdateExeatStatus(ex, 'approved')}
+                                      className="px-2 py-1 text-[11px] font-medium rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateExeatStatus(ex, 'rejected')}
+                                      className="px-2 py-1 text-[11px] font-medium rounded bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+
+                                {ex.status === 'approved' && (
+                                  <button
+                                    onClick={() => handleUpdateExeatStatus(ex, 'checked_out')}
+                                    className="px-2.5 py-1 text-[11px] font-medium rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <LogOut className="w-3 h-3" />
+                                    <span>Gate Check Out</span>
+                                  </button>
+                                )}
+
+                                {ex.status === 'checked_out' && (
+                                  <button
+                                    onClick={() => handleUpdateExeatStatus(ex, 'checked_in')}
+                                    className="px-2.5 py-1 text-[11px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <LogIn className="w-3 h-3" />
+                                    <span>Return Check In</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
             </div>
           </div>
         )}
@@ -1265,77 +1418,142 @@ export default function BoardingManagement() {
 
             {/* Medical Logs Table */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[10px]">
+            {/* Medical Logs Mobile Cards (< 768px) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800 p-3 space-y-3">
+              {medicalLogs.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  <HeartPulse className="w-8 h-8 mx-auto mb-2 opacity-40 text-rose-500" />
+                  <p>No infirmary visits recorded yet.</p>
+                </div>
+              ) : (
+                medicalLogs.map((log) => {
+                  const statusBadgeColor =
+                    log.status === 'admitted_to_sickbay' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
+                    log.status === 'referred_to_hospital' ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' :
+                    'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
+
+                  return (
+                    <div key={log.id} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-slate-900 dark:text-white text-xs">{log.studentName}</p>
+                          <p className="text-[10px] text-slate-500">{log.houseName || 'Boarder'} · {log.className} · {log.studentId}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${statusBadgeColor}`}>
+                          {log.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200/70 dark:border-slate-800 space-y-1.5 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-semibold">Complaint / Symptoms</span>
+                          <span className="text-slate-800 dark:text-slate-200 font-medium">{log.complaint}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Vitals</span>
+                            <span className="font-mono text-slate-600 dark:text-slate-400">{log.vitals || '—'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Attending Staff</span>
+                            <span className="text-slate-700 dark:text-slate-300">{log.attendingStaff}</span>
+                          </div>
+                        </div>
+                        {log.treatmentGiven && (
+                          <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-400 block">Treatment</span>
+                            <span className="text-slate-600 dark:text-slate-400">{log.treatmentGiven}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="font-mono text-slate-500 text-[10px]">{log.visitDate}</span>
+                        {log.status === 'admitted_to_sickbay' && (
+                          <button
+                            onClick={() => handleDischargeStudent(log)}
+                            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+                          >
+                            Discharge Patient
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Medical Logs Desktop Table (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto table-responsive-container">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">Visit Date</th>
+                    <th className="py-3 px-4">Student</th>
+                    <th className="py-3 px-4">House & Class</th>
+                    <th className="py-3 px-4">Complaint / Symptoms</th>
+                    <th className="py-3 px-4">Vitals</th>
+                    <th className="py-3 px-4">Treatment Administered</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {medicalLogs.length === 0 ? (
                     <tr>
-                      <th className="py-3 px-4">Visit Date</th>
-                      <th className="py-3 px-4">Student</th>
-                      <th className="py-3 px-4">House & Class</th>
-                      <th className="py-3 px-4">Complaint / Symptoms</th>
-                      <th className="py-3 px-4">Vitals</th>
-                      <th className="py-3 px-4">Treatment Administered</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
+                        <HeartPulse className="w-8 h-8 mx-auto mb-2 opacity-40 text-rose-500" />
+                        <p>No infirmary visits recorded yet.</p>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {medicalLogs.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
-                          <HeartPulse className="w-8 h-8 mx-auto mb-2 opacity-40 text-rose-500" />
-                          <p>No infirmary visits recorded yet.</p>
+                  ) : (
+                    medicalLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {log.visitDate}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                          {log.studentName}
+                          <div className="text-[10px] text-slate-400 font-mono">{log.studentId}</div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                          <div>{log.houseName || 'Boarder'}</div>
+                          <div className="text-[11px] text-slate-400">{log.className}</div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-900 dark:text-white font-medium max-w-xs">
+                          {log.complaint}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                          {log.vitals || '—'}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300 max-w-xs">
+                          <div>{log.treatmentGiven}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Staff: {log.attendingStaff}</div>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider ${
+                            log.status === 'admitted_to_sickbay' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
+                            log.status === 'referred_to_hospital' ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' :
+                            'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          }`}>
+                            {log.status.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          {log.status === 'admitted_to_sickbay' && (
+                            <button
+                              onClick={() => handleDischargeStudent(log)}
+                              className="px-2 py-1 text-[11px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
+                            >
+                              Discharge Patient
+                            </button>
+                          )}
                         </td>
                       </tr>
-                    ) : (
-                      medicalLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="py-3 px-4 font-mono text-[11px] text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                            {log.visitDate}
-                          </td>
-                          <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
-                            {log.studentName}
-                            <div className="text-[10px] text-slate-400 font-mono">{log.studentId}</div>
-                          </td>
-                          <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                            <div>{log.houseName || 'Boarder'}</div>
-                            <div className="text-[11px] text-slate-400">{log.className}</div>
-                          </td>
-                          <td className="py-3 px-4 text-slate-900 dark:text-white font-medium max-w-xs">
-                            {log.complaint}
-                          </td>
-                          <td className="py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                            {log.vitals || '—'}
-                          </td>
-                          <td className="py-3 px-4 text-slate-700 dark:text-slate-300 max-w-xs">
-                            <div>{log.treatmentGiven}</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">Staff: {log.attendingStaff}</div>
-                          </td>
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider ${
-                              log.status === 'admitted_to_sickbay' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
-                              log.status === 'referred_to_hospital' ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' :
-                              'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                            }`}>
-                              {log.status.replace(/_/g, ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
-                            {log.status === 'admitted_to_sickbay' && (
-                              <button
-                                onClick={() => handleDischargeStudent(log)}
-                                className="px-2 py-1 text-[11px] font-medium rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-                              >
-                                Discharge Patient
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
             </div>
           </div>
         )}

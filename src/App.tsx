@@ -1305,45 +1305,46 @@ function AppContent() {
         )}
 
         {/* Header */}
-        {/* Header */}
         {activeView !== 'creator' && (
-          <header className="h-14 sm:h-16 bg-white border-b border-[#bac4c6]/40 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 z-30 shrink-0 min-w-0 w-full select-none">
+          <header className="h-13 sm:h-16 bg-white/95 backdrop-blur-md border-b border-[#bac4c6]/40 flex items-center justify-between gap-1.5 xs:gap-2 sm:gap-4 px-2.5 xs:px-3 sm:px-6 lg:px-8 z-30 shrink-0 min-w-0 w-full max-w-full select-none">
             {/* Left: Navigation Toggle & Contextual Breadcrumb */}
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 min-w-0 flex-1">
               <button 
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden w-9 h-9 sm:w-10 sm:h-10 -ml-1 sm:ml-0 flex items-center justify-center shrink-0 text-[#1c4a59] hover:bg-[#f6f8f7] rounded-xl transition-colors cursor-pointer active:scale-95"
+                className="lg:hidden w-8 h-8 xs:w-9 xs:h-9 sm:w-10 sm:h-10 flex items-center justify-center shrink-0 text-[#1c4a59] hover:bg-[#f6f8f7] rounded-xl transition-colors cursor-pointer active:scale-95"
                 title="Open Navigation"
                 aria-label="Open Navigation Menu"
               >
-                <Menu className="w-5 h-5 text-[#1c4a59]" />
+                <Menu className="w-4 h-4 xs:w-5 xs:h-5 text-[#1c4a59]" />
               </button>
 
               {/* Multi-Tenant Switcher - Restricted strictly to Creator */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') ? (
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <TenantSwitcher 
-                    currentSchoolName={schoolName}
-                    userRole={user.role}
-                    username={user.username}
-                    onSwitchTenant={async (tenant) => {
-                      try {
-                        await db.settings.put({
-                          key: 'schoolProfile',
-                          value: {
-                            schoolName: tenant.name || tenant.schoolName,
-                            logo: tenant.logo_url || schoolLogo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png',
-                            email: `admin@${tenant.slug}.edu.gh`,
-                            academic_year: tenant.academic_year || '2026/2027',
-                            current_term: tenant.current_term || 'Term 1'
-                          }
-                        });
-                      } catch (e) {}
-                      checkLicenseStatus();
-                      handleSync();
-                    }}
-                    onOpenTenantManagement={() => setActiveView('school_management')}
-                  />
+                <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
+                  <div className="min-w-0 shrink">
+                    <TenantSwitcher 
+                      currentSchoolName={schoolName}
+                      userRole={user.role}
+                      username={user.username}
+                      onSwitchTenant={async (tenant) => {
+                        try {
+                          await db.settings.put({
+                            key: 'schoolProfile',
+                            value: {
+                              schoolName: tenant.name || tenant.schoolName,
+                              logo: tenant.logo_url || schoolLogo || 'https://cdn.pixabay.com/photo/2016/10/06/19/03/graduation-cap-1719744_1280.png',
+                              email: `admin@${tenant.slug}.edu.gh`,
+                              academic_year: tenant.academic_year || '2026/2027',
+                              current_term: tenant.current_term || 'Term 1'
+                            }
+                          });
+                        } catch (e) {}
+                        checkLicenseStatus();
+                        handleSync();
+                      }}
+                      onOpenTenantManagement={() => setActiveView('school_management')}
+                    />
+                  </div>
                   <div className="hidden sm:flex items-center gap-1.5 shrink-0 min-w-0">
                     <span className="text-[#bac4c6] text-xs select-none" aria-hidden="true">/</span>
                     <span className="text-[11px] font-semibold text-[#6a7f84] uppercase tracking-wider whitespace-nowrap">
@@ -1359,7 +1360,7 @@ function AppContent() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                   {/* Tablet & Desktop Breadcrumb (sm+) */}
                   <div className="hidden sm:flex items-center gap-2 min-w-0">
                     <span className="text-xs font-semibold text-[#6a7f84] uppercase tracking-wider whitespace-nowrap">
@@ -1371,11 +1372,11 @@ function AppContent() {
                   <div className="sm:hidden min-w-0 flex-1">
                     <h1
                       data-testid="header-page-name"
-                      className="text-xs font-bold text-[#1c4a59] truncate leading-tight"
+                      className="text-[13px] font-bold text-[#1c4a59] truncate leading-tight tracking-tight"
                     >
                       {activePageMeta.title}
                     </h1>
-                    <p className="text-[10px] font-medium text-[#6a7f84] uppercase tracking-wider truncate leading-tight mt-0.5">
+                    <p className="text-[9px] font-semibold text-[#807654] uppercase tracking-wider truncate leading-none mt-0.5">
                       {activePageMeta.category}
                     </p>
                   </div>
@@ -1384,7 +1385,7 @@ function AppContent() {
             </div>
 
             {/* Right: Cloud SyncChip, Profile & Controls */}
-            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1 xs:gap-1.5 sm:gap-2 shrink-0">
               {/* Creator-only subtle DB indicator dot */}
               {((user?.role as string) === 'creator' || (user?.role as string) === 'super_admin') && (
                 <button
@@ -1398,12 +1399,12 @@ function AppContent() {
                         ? `Supabase DB: Connected (${supabaseDetails || 'Online'})` 
                         : "Supabase DB: Disconnected • Click to retry"
                   }
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-[#f6f8f7] flex items-center justify-center transition-colors cursor-pointer relative shrink-0 text-[#1c4a59] active:scale-95"
+                  className="w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-[#f6f8f7] flex items-center justify-center transition-colors cursor-pointer relative shrink-0 text-[#1c4a59] active:scale-95"
                 >
-                  <Database className="w-4 h-4 text-[#1c4a59]" />
+                  <Database className="w-3.5 h-3.5 xs:w-4 xs:h-4 text-[#1c4a59]" />
                   <span
                     className={cn(
-                      "w-2 h-2 rounded-full absolute top-1.5 right-1.5 ring-2 ring-white",
+                      "w-1.5 h-1.5 xs:w-2 xs:h-2 rounded-full absolute top-1 right-1 xs:top-1.5 xs:right-1.5 ring-1.5 xs:ring-2 ring-white",
                       supabaseConnected === true 
                         ? "bg-[#06D6A0]" 
                         : supabaseConnected === false 
@@ -1423,12 +1424,13 @@ function AppContent() {
                   checkSupabaseConnection();
                 }}
                 disabled={isSyncing}
-                className="h-8 sm:h-9 px-2 sm:px-3 rounded-full bg-[#f6f8f7] hover:bg-[#e1c594]/25 text-[#1c4a59] flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0 active:scale-95"
+                className="h-7 w-7 xs:h-8 xs:w-8 sm:w-auto sm:h-9 px-0 sm:px-3 rounded-xl sm:rounded-full bg-[#f6f8f7] hover:bg-[#e1c594]/25 text-[#1c4a59] flex items-center justify-center gap-1.5 text-xs font-medium transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0 active:scale-95"
                 title="Synchronize with Cloud Database"
+                aria-label="Synchronize with Cloud Database"
               >
                 <span
                   className={cn(
-                    "w-1.5 h-1.5 rounded-full shrink-0 transition-colors",
+                    "w-1.5 h-1.5 rounded-full shrink-0 transition-colors hidden sm:inline-block",
                     isSyncing ? "bg-[#faae57] animate-pulse" : "bg-[#06d6a0]"
                   )}
                 />
@@ -1438,16 +1440,17 @@ function AppContent() {
                 </span>
               </button>
 
-              <div className="h-4 sm:h-5 w-px bg-[#bac4c6]/40 mx-0.5 sm:mx-1 shrink-0" />
+              <div className="hidden xs:block h-3.5 sm:h-5 w-px bg-[#bac4c6]/40 mx-0.5 sm:mx-1 shrink-0" />
 
               {/* Profile Avatar & Info */}
               <button
                 type="button"
                 onClick={() => setIsSecurityModalOpen(true)}
-                className="flex items-center gap-2 h-8 sm:h-9 px-1 sm:px-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left cursor-pointer active:scale-95 shrink-0 group"
+                className="flex items-center gap-1.5 sm:gap-2 h-7 xs:h-8 sm:h-9 p-0 sm:px-1.5 rounded-xl hover:bg-[#f6f8f7] transition-colors text-left cursor-pointer active:scale-95 shrink-0 group"
                 title="View Profile & Security"
+                aria-label="View Profile & Security"
               >
-                <div className="w-8 h-8 rounded-full bg-[#1c4a59] text-[#faae57] flex items-center justify-center font-bold text-xs shrink-0 select-none">
+                <div className="w-7 h-7 xs:w-8 xs:h-8 rounded-full bg-[#1c4a59] text-[#faae57] flex items-center justify-center font-bold text-[11px] xs:text-xs shrink-0 select-none shadow-2xs">
                   {user.fullName ? user.fullName[0]?.toUpperCase() : (user.username?.[0]?.toUpperCase() || 'U')}
                 </div>
                 <div className="hidden lg:block text-left min-w-0 pr-1">
@@ -1464,11 +1467,11 @@ function AppContent() {
               <button 
                 type="button"
                 onClick={handleLogout}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-rose-50 text-[#6a7f84] hover:text-[#ef476f] flex items-center justify-center shrink-0 transition-colors cursor-pointer active:scale-95"
+                className="w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9 rounded-xl hover:bg-rose-50 text-[#6a7f84] hover:text-[#ef476f] flex items-center justify-center shrink-0 transition-colors cursor-pointer active:scale-95"
                 title="Log Out"
                 aria-label="Log Out"
               >
-                <LogOut className="w-4 h-4 transition-colors" />
+                <LogOut className="w-3.5 h-3.5 xs:w-4 xs:h-4 transition-colors" />
               </button>
             </div>
           </header>

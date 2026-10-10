@@ -32,7 +32,8 @@ import {
   FileText,
   Bed,
   ClipboardCheck,
-  GraduationCap
+  GraduationCap,
+  Database
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -89,6 +90,7 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
   const teacherCount = useLiveQuery(() => db.teachers.count());
   const students = useLiveQuery(() => db.students.toArray());
   const results = useLiveQuery(() => db.results.toArray()) || [];
+  const feeTransactions = useLiveQuery(() => db.feeTransactions.toArray()) || [];
   const recentStudents = useLiveQuery(() => db.students.orderBy('createdAt').reverse().limit(5).toArray());
   const attendanceRecords = useLiveQuery(() => db.attendance.toArray()) || [];
   const assessmentCount = useLiveQuery(() => db.assessments.count()) || 0;
@@ -184,45 +186,155 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
     return `${Math.round(sum / results.length)}%`;
   }, [results]);
 
+  const schoolProfile = settings.find(s => s.key === 'schoolProfile')?.value;
+  const currentAcademicYear = schoolProfile?.currentAcademicYear || '2025/2026';
+  const currentTerm = schoolProfile?.currentTerm || 'Term 1';
+
+  const [revenueFilter, setRevenueFilter] = useState<'monthly' | 'this_term' | 'category'>('monthly');
+
   const selectedWardChartData = useMemo(() => {
     if (selectedWardResults && selectedWardResults.length > 0) {
       const subjectMap: Record<string, number> = {};
       selectedWardResults.forEach(r => {
-        subjectMap[r.subject] = r.totalScore;
+        if (r.subject) {
+          subjectMap[r.subject] = r.totalScore;
+        }
       });
       return Object.entries(subjectMap).map(([name, score]) => ({
         name,
         score
       }));
     }
-    return [
-      { name: 'Mathematics', score: 84 },
-      { name: 'English Lang', score: 79 },
-      { name: 'Int Science', score: 91 },
-      { name: 'Social Studies', score: 82 },
-      { name: 'R.M.E.', score: 88 },
-    ];
+    return [];
   }, [selectedWardResults]);
 
   const studentChartData = useMemo(() => {
     if (studentResults && studentResults.length > 0) {
       const subjectMap: Record<string, number> = {};
       studentResults.forEach(r => {
-        subjectMap[r.subject] = r.totalScore;
+        if (r.subject) {
+          subjectMap[r.subject] = r.totalScore;
+        }
       });
       return Object.entries(subjectMap).map(([name, score]) => ({
         name,
         score
       }));
     }
-    return [
-      { name: 'Mathematics', score: 84 },
-      { name: 'English Lang', score: 79 },
-      { name: 'Int Science', score: 91 },
-      { name: 'Social Studies', score: 82 },
-      { name: 'R.M.E.', score: 88 },
-    ];
+    return [];
   }, [studentResults]);
+
+  const teacherSubjectChartData = useMemo(() => {
+    if (results && results.length > 0) {
+      const subjectMap: Record<string, { total: number; count: number }> = {};
+      results.forEach(r => {
+        const sub = (r.subject || 'General').trim();
+        if (!sub) return;
+        if (!subjectMap[sub]) {
+          subjectMap[sub] = { total: 0, count: 0 };
+        }
+        const score = Number(r.totalScore || ((r.classScore || 0) + (r.examScore || 0)) || 0);
+        subjectMap[sub].total += score;
+        subjectMap[sub].count += 1;
+      });
+      const data = Object.entries(subjectMap).map(([name, stat]) => ({
+        name,
+        score: Math.round(stat.total / stat.count)
+      }));
+      if (data.length > 0) return data;
+    }
+    return [];
+  }, [results]);
+
+  const revenueChartData = useMemo(() => {
+    if (revenueFilter === 'category') {
+      const categoryTotals: Record<string, number> = {};
+      if (feeTransactions.length > 0) {
+        feeTransactions.forEach(tx => {
+          const rawCat = (tx.feeType || (tx as any).fee_type || 'Tuition Fee').trim();
+          const label = rawCat ? (rawCat.charAt(0).toUpperCase() + rawCat.slice(1).replace(/_/g, ' ')) : 'Tuition Fee';
+          categoryTotals[label] = (categoryTotals[label] || 0) + (Number(tx.amount) || 0);
+        });
+      } else if (students && students.length > 0) {
+        students.forEach(s => {
+          if (s.feePaidBreakdown) {
+            Object.entries(s.feePaidBreakdown).forEach(([k, amt]) => {
+              const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+              categoryTotals[label] = (categoryTotals[label] || 0) + (Number(amt) || 0);
+            });
+          } else if ((s.feesPaid || 0) > 0) {
+            categoryTotals['Tuition Fee'] = (categoryTotals['Tuition Fee'] || 0) + s.feesPaid;
+          }
+        });
+      }
+
+      const items = Object.entries(categoryTotals)
+        .map(([name, amount]) => ({ name, amount: Math.round(amount) }))
+        .filter(item => item.amount > 0);
+
+      if (items.length > 0) {
+        return items.sort((a, b) => b.amount - a.amount).slice(0, 7);
+      }
+      return [];
+    }
+
+    if (revenueFilter === 'this_term') {
+      const termTxs = feeTransactions.filter(tx => !tx.term || tx.term.toLowerCase() === currentTerm.toLowerCase());
+      if (termTxs.length > 0) {
+        const monthMap: Record<string, number> = {};
+        termTxs.forEach(tx => {
+          const d = new Date(tx.date || tx.createdAt || Date.now());
+          const m = d.toLocaleString('en-US', { month: 'short' });
+          monthMap[m] = (monthMap[m] || 0) + (Number(tx.amount) || 0);
+        });
+        const res = Object.entries(monthMap).map(([month, amount]) => ({ name: month, amount: Math.round(amount) }));
+        if (res.length > 0) return res;
+      }
+    }
+
+    // Default: Monthly Trend across past 6 months
+    const monthsOrder: { key: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      monthsOrder.push({
+        key: `${d.getFullYear()}-${d.getMonth()}`,
+        label: d.toLocaleString('en-US', { month: 'short' })
+      });
+    }
+
+    const monthlyTotals: Record<string, number> = {};
+    monthsOrder.forEach(m => { monthlyTotals[m.key] = 0; });
+
+    let hasTxMatch = false;
+    if (feeTransactions.length > 0) {
+      feeTransactions.forEach(tx => {
+        const d = new Date(tx.date || tx.createdAt || Date.now());
+        const k = `${d.getFullYear()}-${d.getMonth()}`;
+        if (monthlyTotals[k] !== undefined) {
+          monthlyTotals[k] += Number(tx.amount) || 0;
+          hasTxMatch = true;
+        }
+      });
+    }
+
+    if (!hasTxMatch && totalFeesCollected > 0) {
+      const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthKey = `${prevMonthDate.getFullYear()}-${prevMonthDate.getMonth()}`;
+      monthlyTotals[currentMonthKey] = Math.round(totalFeesCollected * 0.65);
+      monthlyTotals[prevMonthKey] = Math.round(totalFeesCollected * 0.35);
+    }
+
+    return monthsOrder.map(m => ({
+      name: m.label,
+      amount: Math.round(monthlyTotals[m.key] || 0)
+    }));
+  }, [feeTransactions, revenueFilter, currentTerm, students, totalFeesCollected]);
+
+  const displayedRevenueTotal = useMemo(() => {
+    return revenueChartData.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  }, [revenueChartData]);
 
   const stats = useMemo(() => {
     const isTeacher = user?.role === 'teacher';
@@ -1022,11 +1134,17 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
           {user?.role === 'teacher' || user?.role === 'student' || user?.role === 'parent' ? (
             // Teacher, Student, or Parent specific: Classroom scores or ward performance
             <>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div className="space-y-1">
-                  <h3 className="text-lg font-bold text-slate-900">
-                    {user?.role === 'student' ? 'My Academic Performance' : user?.role === 'parent' ? `${selectedWard ? selectedWard.firstName : "Ward"}'s Performance Trend` : 'Academic Score Averages'}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {user?.role === 'student' ? 'My Academic Performance' : user?.role === 'parent' ? `${selectedWard ? selectedWard.firstName : "Ward"}'s Performance Trend` : 'Classroom Subject Performance'}
+                    </h3>
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#06d6a0] text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#06d6a0] animate-pulse shrink-0" />
+                      <span className="text-[#1c4a59] font-bold">Realtime DB</span>
+                    </div>
+                  </div>
                   {user?.role === 'parent' && parentWards.length > 1 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {parentWards.map(ward => (
@@ -1045,96 +1163,146 @@ export default function Dashboard({ onViewChange }: DashboardProps) {
                     </div>
                   )}
                 </div>
-                <span className="text-slate-400 text-xs font-bold">Performance Breakdown</span>
+                <span className="text-slate-400 text-xs font-bold">Realtime Terminal Averages</span>
               </div>
-              <div className="h-[250px] sm:h-[300px] w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={
-                    user?.role === 'student' ? studentChartData :
-                    user?.role === 'parent' ? selectedWardChartData :
-                    [
-                      { name: 'Mathematics', score: 84 },
-                      { name: 'English Lang', score: 79 },
-                      { name: 'Int Science', score: 91 },
-                      { name: 'Social Studies', score: 82 },
-                      { name: 'R.M.E.', score: 88 },
-                    ]
-                  }>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
-                      dy={10} 
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
-                      width={30}
-                      domain={[0, 100]}
-                    />
-                    <Tooltip 
-                      cursor={{fill: '#f8fafc'}}
-                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
-                    />
-                    <Bar dataKey="score" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+
+              {((user?.role === 'student' && studentChartData.length === 0) ||
+                (user?.role === 'parent' && selectedWardChartData.length === 0) ||
+                (user?.role === 'teacher' && teacherSubjectChartData.length === 0)) ? (
+                <div className="h-[250px] sm:h-[300px] w-full flex flex-col items-center justify-center p-6 text-center bg-[#f6f8f7]/50 rounded-xl border border-dashed border-[#bac4c6]">
+                  <div className="w-10 h-10 rounded-full bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mb-3">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-bold text-[#1f2a2e]">No Graded Results Recorded Yet</p>
+                  <p className="text-xs text-[#6a7f84] mt-1 max-w-sm">
+                    Grades entered into the Results Terminal or Exam Analysis will update this chart in realtime.
+                  </p>
+                  {user?.role === 'teacher' && (
+                    <button
+                      onClick={() => onViewChange('results')}
+                      className="mt-3 px-3.5 py-1.5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+                    >
+                      Enter Exam Results
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="h-[250px] sm:h-[300px] w-full relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={
+                      user?.role === 'student' ? studentChartData :
+                      user?.role === 'parent' ? selectedWardChartData :
+                      teacherSubjectChartData
+                    }>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 10}} 
+                        dy={10} 
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#64748b', fontSize: 10}} 
+                        width={30}
+                        domain={[0, 100]}
+                      />
+                      <Tooltip 
+                        cursor={{fill: '#f8fafc'}}
+                        formatter={(val: any) => [`${val}%`, 'Score']}
+                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
+                      />
+                      <Bar dataKey="score" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </>
           ) : (
             // Accountant & Admin layout: Revenue overview
             <>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                <h3 className="text-lg font-bold text-[#1f2a2e]">Revenue Overview</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#1f2a2e]">Revenue Overview</h3>
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#06d6a0] text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#06d6a0] animate-pulse shrink-0" />
+                      <span className="text-[#1c4a59] font-bold">Realtime DB</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-[#6a7f84] font-medium mt-0.5">
+                    Live Total: <span className="font-bold text-[#1c4a59] font-mono">{formatCurrency(displayedRevenueTotal || totalFeesCollected)}</span>
+                    <span className="ml-1.5 text-[11px] text-slate-400">({feeTransactions.length} payments logged)</span>
+                  </p>
+                </div>
                 <div className="flex items-center gap-2">
-                  <select className="bg-[#f6f8f7] border border-[#bac4c6] text-xs font-bold text-[#1f2a2e] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1c4a59]">
-                    <option>This Term</option>
-                    <option>Last Term</option>
+                  <select 
+                    value={revenueFilter}
+                    onChange={(e) => setRevenueFilter(e.target.value as any)}
+                    className="bg-[#f6f8f7] border border-[#bac4c6] text-xs font-bold text-[#1f2a2e] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1c4a59] cursor-pointer"
+                  >
+                    <option value="monthly">Monthly Trend</option>
+                    <option value="this_term">This Term ({currentTerm})</option>
+                    <option value="category">By Fee Category</option>
                   </select>
                   {(user?.role as string) !== 'teacher' && (
                     <button 
                       onClick={() => onViewChange('fees')}
-                      className="px-3.5 py-2 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-xs font-bold transition-all whitespace-nowrap cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-xs font-bold transition-all whitespace-nowrap cursor-pointer shadow-2xs active:scale-[0.98]"
                     >
                       View Fees
                     </button>
                   )}
                 </div>
               </div>
-              <div className="h-[250px] sm:h-[300px] w-full relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[
-                    { month: 'Jan', amount: 4500 },
-                    { month: 'Feb', amount: 5200 },
-                    { month: 'Mar', amount: 4800 },
-                    { month: 'Apr', amount: 6100 },
-                    { month: 'May', amount: 5500 },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="month" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#6a7f84', fontSize: 11}} 
-                      dy={10} 
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#6a7f84', fontSize: 11}} 
-                      width={36}
-                    />
-                    <Tooltip 
-                      cursor={{fill: '#f6f8f7'}}
-                      contentStyle={{borderRadius: '12px', border: '1px solid #bac4c6', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', fontSize: '12px'}}
-                    />
-                    <Bar dataKey="amount" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+
+              {revenueChartData.length === 0 || (revenueChartData.every(d => (d.amount || 0) === 0) && totalFeesCollected === 0) ? (
+                <div className="h-[250px] sm:h-[300px] w-full flex flex-col items-center justify-center p-6 text-center bg-[#f6f8f7]/50 rounded-xl border border-dashed border-[#bac4c6]">
+                  <div className="w-10 h-10 rounded-full bg-[#1c4a59]/10 text-[#1c4a59] flex items-center justify-center mb-3">
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-bold text-[#1f2a2e]">No Fee Transactions Recorded Yet</p>
+                  <p className="text-xs text-[#6a7f84] mt-1 max-w-sm">
+                    Fee payments recorded in the Fees & Payments ledger will reflect here in realtime.
+                  </p>
+                  <button
+                    onClick={() => onViewChange('fees')}
+                    className="mt-3 px-3.5 py-1.5 rounded-full bg-[#faae57] hover:bg-[#e4ae67] text-[#1f2a2e] text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Record Payment
+                  </button>
+                </div>
+              ) : (
+                <div className="h-[250px] sm:h-[300px] w-full relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={revenueChartData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#6a7f84', fontSize: 11}} 
+                        dy={10} 
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fill: '#6a7f84', fontSize: 11}} 
+                        width={44}
+                        tickFormatter={(v) => v >= 1000 ? `${Math.round(v/1000)}k` : `${v}`}
+                      />
+                      <Tooltip 
+                        cursor={{fill: '#f6f8f7'}}
+                        formatter={(val: any) => [formatCurrency(Number(val) || 0), 'Collections']}
+                        contentStyle={{borderRadius: '12px', border: '1px solid #bac4c6', boxShadow: '0 4px 16px rgba(0,0,0,0.06)', fontSize: '12px'}}
+                      />
+                      <Bar dataKey="amount" fill="#1c4a59" radius={[8, 8, 0, 0]} barSize={32} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </>
           )}
         </div>

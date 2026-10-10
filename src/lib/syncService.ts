@@ -563,6 +563,65 @@ export async function reconcileSmsLogsInDexie(remoteLogs: any[]) {
 }
 
 /**
+ * Reconcile promotion history in Dexie IndexedDB in-place without creating duplicate rows
+ */
+export async function reconcilePromotionHistoryInDexie(remotePromotions: any[], isFullSync = false) {
+  if (!Array.isArray(remotePromotions)) return;
+  if (isFullSync && remotePromotions.length === 0) {
+    return;
+  }
+  const localPromos = await db.promotionHistory.toArray();
+  const sigMap = new Map<string, any>();
+  const idMap = new Map<number | string, any>();
+
+  for (const local of localPromos) {
+    if (local.id) idMap.set(local.id, local);
+    const sig = `${local.studentIdentifier || local.studentId || ''}_${local.destClass || ''}_${local.academicYear || ''}_${local.term || ''}`;
+    if (sig) sigMap.set(sig, local);
+  }
+
+  for (const remote of remotePromotions) {
+    if (!remote) continue;
+    const studentIdentifier = String(remote.studentIdentifier || remote.student_id || remote.studentId || '').trim();
+    const studentName = String(remote.studentName || remote.student_name || 'Student').trim();
+    const sourceClass = String(remote.sourceClass || remote.source_class || remote.fromClass || '').trim();
+    const destClass = String(remote.destClass || remote.dest_class || remote.toClass || '').trim();
+    const academicYear = String(remote.academicYear || remote.academic_year || '2025/2026').trim();
+    const term = String(remote.term || 'Term 3').trim();
+    const timestamp = Number(remote.timestamp || Date.now());
+
+    const sig = `${studentIdentifier}_${destClass}_${academicYear}_${term}`;
+    const existing = sigMap.get(sig) || (remote.id ? idMap.get(remote.id) : null);
+
+    const payload: any = {
+      ...(existing || {}),
+      studentId: existing?.studentId ?? remote.studentId ?? studentIdentifier,
+      studentIdentifier,
+      studentName,
+      sourceClass,
+      destClass,
+      academicYear,
+      term,
+      timestamp,
+      previousFeesPaid: Number(remote.previousFeesPaid ?? remote.previous_fees_paid ?? existing?.previousFeesPaid ?? 0),
+      previousTotalFees: Number(remote.previousTotalFees ?? remote.previous_total_fees ?? existing?.previousTotalFees ?? 0),
+      previousFeeBreakdown: remote.previousFeeBreakdown ?? remote.previous_fee_breakdown ?? existing?.previousFeeBreakdown,
+      previousFeePaidBreakdown: remote.previousFeePaidBreakdown ?? remote.previous_fee_paid_breakdown ?? existing?.previousFeePaidBreakdown,
+      school_id: remote.school_id || remote.schoolId || existing?.school_id,
+      schoolId: remote.school_id || remote.schoolId || existing?.schoolId,
+      remoteId: remote.id
+    };
+
+    if (existing && existing.id) {
+      await db.promotionHistory.update(existing.id, payload);
+    } else {
+      const newId = await db.promotionHistory.add(payload);
+      sigMap.set(sig, { ...payload, id: newId });
+    }
+  }
+}
+
+/**
  * Master Sync: Pull all datasets from Backend/Supabase and reconcile Dexie in-place
  */
 export async function syncAllDataFromBackend(schoolId?: string, forceFresh = true): Promise<boolean> {
@@ -598,6 +657,7 @@ export async function syncAllDataFromBackend(schoolId?: string, forceFresh = tru
         }
         if (Array.isArray(dataset.settings)) await reconcileSettingsInDexie(dataset.settings);
         if (Array.isArray(dataset.feeTransactions)) await reconcileFeeTransactionsInDexie(dataset.feeTransactions, true);
+        if (Array.isArray(dataset.promotionHistory)) await reconcilePromotionHistoryInDexie(dataset.promotionHistory, true);
         if (Array.isArray(dataset.smsLogs)) await reconcileSmsLogsInDexie(dataset.smsLogs);
         if (Array.isArray(dataset.lessonNotes) && dataset.lessonNotes.length > 0) {
           const localNotes = await db.lessonNotes.toArray();
@@ -925,6 +985,15 @@ export function initRealtimeAndAutoSync() {
               if (newRecord) await reconcileFeeTransactionsInDexie([newRecord]);
             } else if (table === 'sms_logs') {
               if (newRecord) await reconcileSmsLogsInDexie([newRecord]);
+            } else if (table === 'promotion_history') {
+              if (eventType === 'DELETE') {
+                if (oldRecord?.id) {
+                  await db.promotionHistory.where('remoteId').equals(oldRecord.id).delete();
+                  await db.promotionHistory.delete(oldRecord.id);
+                }
+              } else if (newRecord) {
+                await reconcilePromotionHistoryInDexie([newRecord]);
+              }
             } else {
               // Trigger a fresh sync for any other tables
               syncAllDataFromBackend(undefined, true).catch(() => {});

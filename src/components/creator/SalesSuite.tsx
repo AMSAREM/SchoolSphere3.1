@@ -1516,8 +1516,8 @@ export default function SalesSuite({
             </div>
           </div>
 
-          <div className="overflow-x-auto -mx-6 px-6">
-            <table className="w-full text-left text-xs border-collapse min-w-[760px]">
+          <div className="w-full max-w-full overflow-x-auto table-responsive-container">
+            <table className="w-full text-left text-xs border-collapse min-w-0 sm:min-w-[700px]">
               <thead>
                 <tr className="border-b border-slate-200/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-3">Client School</th>

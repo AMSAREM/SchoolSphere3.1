@@ -10,6 +10,7 @@ import {
   reconcileTermReportsInDexie,
   reconcileSettingsInDexie,
   reconcileFeeTransactionsInDexie,
+  reconcilePromotionHistoryInDexie,
   reconcileSmsLogsInDexie,
   queueOfflineWrite,
   syncAllDataFromBackend,
@@ -1823,6 +1824,22 @@ export const resultsApi = {
 export const promotionsApi = {
   getAll: async (schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
+    
+    // 1. Fetch from Server endpoint backed by Supabase admin client
+    try {
+      const res = await fetch(`/api/promotions?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        headers: getApiHeaders(targetSchoolId || undefined)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          await reconcilePromotionHistoryInDexie(json.data, true);
+          return json.data;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Direct Supabase query fallback
     try {
       if (targetSchoolId) {
         const { data, error } = await supabase
@@ -1831,7 +1848,24 @@ export const promotionsApi = {
           .eq("school_id", targetSchoolId)
           .order('timestamp', { ascending: false });
 
-        if (!error && data && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          const mapped = data.map((r: any) => ({
+            id: r.id,
+            remoteId: r.id,
+            schoolId: r.school_id,
+            school_id: r.school_id,
+            studentId: r.student_id,
+            studentIdentifier: r.student_id,
+            studentName: r.student_name,
+            sourceClass: r.source_class,
+            destClass: r.dest_class,
+            academicYear: r.academic_year,
+            term: r.term,
+            timestamp: Number(r.timestamp)
+          }));
+          await reconcilePromotionHistoryInDexie(mapped, false);
+          return mapped;
+        }
       }
     } catch (e) {}
 
@@ -1840,46 +1874,136 @@ export const promotionsApi = {
 
   recordPromotion: async (record: any, schoolId?: string) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
-    const payload = { ...record, school_id: targetSchoolId, schoolId: targetSchoolId };
+    const studentIdentifier = String(record.studentIdentifier || record.studentId || record.student_id || '').trim();
+    const payload = {
+      ...record,
+      studentIdentifier,
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId
+    };
     
-    // 1. Add to Dexie
+    // 1. Add to local Dexie immediately
     const localId = await db.promotionHistory.add(payload);
+    payload.id = localId;
 
-    // 2. Persist to Backend & Supabase
+    // 2. Call server endpoint to store in Supabase promotion_history table & update student
     try {
-      await fetch(`/api/db/sync?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+      const res = await fetch('/api/promotions', {
         method: 'POST',
         headers: getApiHeaders(targetSchoolId || undefined),
-        body: JSON.stringify({ promotionHistory: [payload] })
+        body: JSON.stringify({
+          school_id: targetSchoolId,
+          promotions: [{
+            studentIdentifier,
+            studentName: record.studentName || record.student_name,
+            sourceClass: record.sourceClass || record.source_class,
+            destClass: record.destClass || record.dest_class,
+            academicYear: record.academicYear || record.academic_year,
+            term: record.term || 'Term 3',
+            timestamp: record.timestamp || Date.now(),
+            feesPaid: record.feesPaid,
+            totalFees: record.totalFees,
+            feeBreakdown: record.feeBreakdown,
+            feePaidBreakdown: record.feePaidBreakdown
+          }]
+        })
       });
-    } catch (e) {}
 
-    try {
-      await supabase.from('promotion_history').insert([{
-        school_id: targetSchoolId,
-        student_id: record.studentId || record.student_id,
-        student_name: record.studentName || record.student_name,
-        from_class: record.fromClass || record.from_class,
-        to_class: record.toClass || record.to_class,
-        academic_year: record.academicYear || record.academic_year,
-        timestamp: record.timestamp || Date.now()
-      }]);
-    } catch (e) {}
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && json.data[0]) {
+          await db.promotionHistory.update(localId, { remoteId: json.data[0].id });
+        }
+      }
+    } catch (e) {
+      console.warn('Notice saving promotion to Supabase endpoint:', e);
+    }
 
+    broadcastLocalMutation('promotion_history', 'create', payload);
     return localId;
   },
 
-  revertPromotion: async (id: number, schoolId?: string) => {
+  batchPromote: async (options: {
+    promotions: any[];
+    rolloverYear?: boolean;
+    nextYear?: string;
+    schoolId?: string;
+  }) => {
+    const targetSchoolId = options.schoolId || (await getCurrentSchoolId());
+    const prepared = options.promotions.map(p => ({
+      ...p,
+      studentIdentifier: String(p.studentIdentifier || p.studentId || p.student_id || '').trim(),
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId,
+      timestamp: p.timestamp || Date.now()
+    }));
+
+    // 1. Add to Dexie in parallel
+    for (const item of prepared) {
+      try {
+        const localId = await db.promotionHistory.add(item);
+        item.id = localId;
+      } catch (e) {}
+    }
+
+    // 2. Call server batch endpoint for transactional Supabase insertion & student updates
+    let serverRes: any = null;
+    try {
+      const res = await fetch('/api/promotions', {
+        method: 'POST',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({
+          school_id: targetSchoolId,
+          promotions: prepared,
+          rolloverYear: options.rolloverYear,
+          nextYear: options.nextYear
+        })
+      });
+      if (res.ok) {
+        serverRes = await res.json();
+      }
+    } catch (e) {
+      console.warn('Notice batch promoting in Supabase:', e);
+    }
+
+    broadcastLocalMutation('promotion_history', 'batch', { count: prepared.length });
+    return serverRes || { success: true, count: prepared.length };
+  },
+
+  revertPromotion: async (id: number, schoolId?: string, revertDetails?: any) => {
     const targetSchoolId = schoolId || (await getCurrentSchoolId());
     
+    // Find record from Dexie to get remoteId if available
+    let existingRecord: any = null;
+    try {
+      existingRecord = await db.promotionHistory.get(id);
+    } catch (e) {}
+
+    const remoteTargetId = existingRecord?.remoteId || existingRecord?.id || id;
+
     // 1. Delete from Dexie
     await db.promotionHistory.delete(id);
 
-    // 2. Delete from Supabase
+    // 2. Delete from Supabase via server endpoint with rollback details
     try {
-      await supabase.from('promotion_history').delete().eq('id', id);
-    } catch (e) {}
+      await fetch(`/api/promotions/${encodeURIComponent(String(remoteTargetId))}?school_id=${encodeURIComponent(targetSchoolId || '')}`, {
+        method: 'DELETE',
+        headers: getApiHeaders(targetSchoolId || undefined),
+        body: JSON.stringify({
+          school_id: targetSchoolId,
+          studentIdentifier: revertDetails?.studentIdentifier || existingRecord?.studentIdentifier || existingRecord?.studentId,
+          sourceClass: revertDetails?.sourceClass || existingRecord?.sourceClass,
+          previousFeesPaid: revertDetails?.previousFeesPaid ?? existingRecord?.previousFeesPaid,
+          previousTotalFees: revertDetails?.previousTotalFees ?? existingRecord?.previousTotalFees,
+          previousFeeBreakdown: revertDetails?.previousFeeBreakdown ?? existingRecord?.previousFeeBreakdown,
+          previousFeePaidBreakdown: revertDetails?.previousFeePaidBreakdown ?? existingRecord?.previousFeePaidBreakdown
+        })
+      });
+    } catch (e) {
+      console.warn('Notice reverting promotion in Supabase:', e);
+    }
 
+    broadcastLocalMutation('promotion_history', 'delete', { id, remoteTargetId });
     return true;
   }
 };
@@ -2885,6 +3009,14 @@ export const settingsApi = {
       schoolId: targetSchoolId
     });
     return data;
+  },
+
+  updateSetting: async (key: string, value: any, schoolId?: string) => {
+    return await settingsApi.saveSection({
+      section: key,
+      value,
+      schoolId
+    });
   },
 
   syncState: async (

@@ -3676,8 +3676,8 @@ export default function TimetableManagement() {
                   </span>
                 </div>
 
-                {/* Mobile Suggestion Cards (< 768px) */}
-                <div className="md:hidden divide-y divide-[#bac4c6]/50">
+                {/* Mobile & Tablet Suggestion Cards (< 1024px) */}
+                <div className="lg:hidden divide-y divide-[#bac4c6]/50">
                   {suggestions
                     .filter(sug => isAdmin || sug.suggestedBy === user?.fullName)
                     .map(sug => {
@@ -3778,8 +3778,8 @@ export default function TimetableManagement() {
                     })}
                 </div>
 
-                {/* Desktop Suggestions Table (>= 768px) */}
-                <div className="hidden md:block overflow-x-auto">
+                {/* Desktop Suggestions Table (>= 1024px) */}
+                <div className="hidden lg:block overflow-x-auto">
                   <table className="w-full text-left text-xs font-semibold text-[#1f2a2e] min-w-[800px]">
                     <thead>
                       <tr className="bg-[#f6f8f7]/60 text-[10px] uppercase tracking-wider font-bold text-[#6a7f84] border-b border-[#bac4c6]/50">

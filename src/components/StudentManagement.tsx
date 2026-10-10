@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { formatCurrency, cn, triggerPrint, exportToPDF } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
-import { studentsApi, promotionsApi, feesApi } from '../lib/api';
+import { studentsApi, promotionsApi, feesApi, settingsApi } from '../lib/api';
 import { getCurrentSchoolId } from '../lib/supabase';
 import { calculateFileHash, calculateContentFingerprint, checkIsFileDuplicate, recordImportedFile, filterDuplicateStudentRows, validateCsvFile } from '../lib/fileSecurity';
 import { checkRateLimit, useDebounce } from '../lib/rateLimit';
@@ -53,11 +53,20 @@ export default function StudentManagement() {
   const [promoApplyNewDefaults, setPromoApplyNewDefaults] = useState(true);
   const [promoRolloverYear, setPromoRolloverYear] = useState(false);
   const [promoNextYearVal, setPromoNextYearVal] = useState('');
+  const [isPromoting, setIsPromoting] = useState(false);
 
   // Promotion Tab and Audits States
   const [activeTab, setActiveTab] = useState<'registry' | 'promotions'>('registry');
   const [promoSearchTerm, setPromoSearchTerm] = useState('');
   const [promoYearFilter, setPromoYearFilter] = useState('');
+
+  // Initial pull of promotion records from Supabase into Dexie
+  React.useEffect(() => {
+    const targetSchoolId = activeSchool?.id || currentUser?.schoolId;
+    promotionsApi.getAll(targetSchoolId).catch(err => {
+      console.warn("Initial promotions pull notice:", err);
+    });
+  }, [activeSchool?.id, currentUser?.schoolId, activeTab]);
 
   // Debounced input search terms to rate-limit intensive rendering/re-filtering
   const debouncedSearchTerm = useDebounce(searchTerm, 200);
@@ -222,6 +231,7 @@ export default function StudentManagement() {
 
   const handlePromotionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isPromoting) return;
 
     // Input Rate Limit: Max 2 promotion operations per 5 seconds
     const limitCheck = checkRateLimit('promotion_submit', 2, 5000);
@@ -243,9 +253,12 @@ export default function StudentManagement() {
       return;
     }
 
+    setIsPromoting(true);
+
     try {
-      let count = 0;
       const targetSchoolId = activeSchool?.id || currentUser?.schoolId;
+      const promoBatch: any[] = [];
+      const studentUpdatesList: { id: number; data: Partial<Student> }[] = [];
 
       for (const studentId of promoSelectedStudentIds) {
         const student = allStudents?.find(s => s.id === studentId);
@@ -288,11 +301,10 @@ export default function StudentManagement() {
           updateData.totalFees = Object.values(initialBreakdown).reduce((a, b) => a + b, 0);
         }
 
-        // Record the promotion history in both Dexie & Supabase for audit and complete reversibility
-        await promotionsApi.recordPromotion({
-          studentId: studentId,
-          studentIdentifier: student.studentId,
-          studentName: `${student.firstName} ${student.lastName}`,
+        promoBatch.push({
+          studentId: student.id,
+          studentIdentifier: student.studentId || String(student.id),
+          studentName: getStudentFullName(student),
           sourceClass: student.class,
           destClass: promoDestClass,
           academicYear: academicConfig.academicYear || '2025/2026',
@@ -301,34 +313,58 @@ export default function StudentManagement() {
           previousFeesPaid: student.feesPaid || 0,
           previousTotalFees: student.totalFees || 0,
           previousFeeBreakdown: student.feeBreakdown,
-          previousFeePaidBreakdown: student.feePaidBreakdown
-        }, targetSchoolId);
+          previousFeePaidBreakdown: student.feePaidBreakdown,
+          feesPaid: updateData.feesPaid,
+          totalFees: updateData.totalFees,
+          feeBreakdown: updateData.feeBreakdown,
+          feePaidBreakdown: updateData.feePaidBreakdown
+        });
 
-        await studentsApi.update(studentId, updateData, targetSchoolId);
-        count++;
+        studentUpdatesList.push({
+          id: student.id!,
+          data: updateData
+        });
       }
 
+      // 1. Transactional batch promotion and student update to Supabase database
+      await promotionsApi.batchPromote({
+        promotions: promoBatch,
+        rolloverYear: promoRolloverYear,
+        nextYear: promoNextYearVal,
+        schoolId: targetSchoolId
+      });
+
+      // 2. Update local Dexie storage and push individual student updates
+      for (const item of studentUpdatesList) {
+        await studentsApi.update(item.id, item.data, targetSchoolId);
+      }
+
+      // 3. Roll over school settings in Supabase and Dexie if enabled
       if (promoRolloverYear && promoNextYearVal) {
         const config = settings.find(s => s.key === 'academicConfig')?.value || { academicYear: '2025/2026', currentTerm: 'Term 1' };
+        const updatedConfig = {
+          ...config,
+          academicYear: promoNextYearVal,
+          currentTerm: 'Term 1'
+        };
         await db.settings.put({
           key: 'academicConfig',
-          value: {
-            ...config,
-            academicYear: promoNextYearVal,
-            currentTerm: 'Term 1'
-          }
+          value: updatedConfig
         });
-        showToast(`School academic year rolled over to ${promoNextYearVal} (Term 1)`, "info");
+        await settingsApi.updateSetting('academicConfig', updatedConfig, targetSchoolId);
+        showToast(`School academic year rolled over to ${promoNextYearVal} (Term 1) in Supabase database!`, "info");
       }
 
-      showToast(`Successfully moved ${count} students to ${promoDestClass}! All previous class records and exam results are safely preserved.`, "success");
+      showToast(`Successfully promoted ${promoBatch.length} student${promoBatch.length === 1 ? '' : 's'} to ${promoDestClass} in Supabase database!`, "success");
       setIsPromotionModalOpen(false);
       setPromoSourceClass('');
       setPromoDestClass('');
       setPromoSelectedStudentIds([]);
-    } catch (err) {
-      showToast("Failed to promote students.", "error");
-      console.error(err);
+    } catch (err: any) {
+      showToast(err?.message || "Failed to promote students.", "error");
+      console.error("Promotion error:", err);
+    } finally {
+      setIsPromoting(false);
     }
   };
 
@@ -339,38 +375,53 @@ export default function StudentManagement() {
     const targetSchoolId = activeSchool?.id || currentUser?.schoolId;
     
     confirm({
-      title: "Revert Student Promotion",
-      message: `Are you sure you want to revert the promotion of ${record.studentName}? This will move them back to "${record.sourceClass}" and restore their previous fee status of ${formatCurrency(record.previousFeesPaid)} paid out of ${formatCurrency(record.previousTotalFees)}.`,
-      confirmLabel: "Revert Promotion",
+      title: "Revert Student Promotion in Supabase",
+      message: `Are you sure you want to revert the promotion of ${record.studentName}? This will move them back to "${record.sourceClass}" in the Supabase database and restore their previous fee status of ${formatCurrency(record.previousFeesPaid || 0)} paid out of ${formatCurrency(record.previousTotalFees || 0)}.`,
+      confirmLabel: "Revert in Supabase",
       onConfirm: async () => {
         try {
-          const student = await db.students.get(record.studentId);
-          if (!student) {
-            showToast("Student not found. They may have been deleted.", "error");
-            return;
+          let student: Student | undefined;
+          if (typeof record.studentId === 'number') {
+            student = await db.students.get(record.studentId);
+          }
+          if (!student && record.studentIdentifier) {
+            student = await db.students.where('studentId').equals(record.studentIdentifier).first();
+          }
+          if (!student && typeof record.studentId === 'string') {
+            student = await db.students.where('studentId').equals(record.studentId).first();
           }
 
-          // Remove the specific entry from classHistory
-          const updatedHistory = (student.classHistory || []).filter(
-            h => !(h.class === record.sourceClass && h.academicYear === record.academicYear)
-          );
+          if (student && student.id) {
+            // Remove the specific entry from classHistory
+            const updatedHistory = (student.classHistory || []).filter(
+              h => !(h.class === record.sourceClass && h.academicYear === record.academicYear)
+            );
 
-          // Fully restore the student parameters
-          await studentsApi.update(record.studentId, {
-            class: record.sourceClass,
-            feesPaid: record.previousFeesPaid,
-            totalFees: record.previousTotalFees,
-            feeBreakdown: record.previousFeeBreakdown,
-            feePaidBreakdown: record.previousFeePaidBreakdown,
-            classHistory: updatedHistory
-          }, targetSchoolId);
+            // Fully restore the student parameters in Supabase and Dexie
+            await studentsApi.update(student.id, {
+              class: record.sourceClass,
+              feesPaid: record.previousFeesPaid || 0,
+              totalFees: record.previousTotalFees || student.totalFees,
+              feeBreakdown: record.previousFeeBreakdown || student.feeBreakdown,
+              feePaidBreakdown: record.previousFeePaidBreakdown || student.feePaidBreakdown,
+              classHistory: updatedHistory
+            }, targetSchoolId);
+          }
 
-          // Delete the log entry from Dexie and Supabase
-          await promotionsApi.revertPromotion(record.id!, targetSchoolId);
-          showToast(`Successfully reverted promotion for ${record.studentName}!`, "success");
-        } catch (err) {
-          console.error(err);
-          showToast("Failed to revert promotion.", "error");
+          // Delete the log entry from Supabase and Dexie
+          await promotionsApi.revertPromotion(record.id!, targetSchoolId, {
+            studentIdentifier: student?.studentId || record.studentIdentifier || record.studentId,
+            sourceClass: record.sourceClass,
+            previousFeesPaid: record.previousFeesPaid || 0,
+            previousTotalFees: record.previousTotalFees || 0,
+            previousFeeBreakdown: record.previousFeeBreakdown,
+            previousFeePaidBreakdown: record.previousFeePaidBreakdown
+          });
+
+          showToast(`Successfully reverted promotion for ${record.studentName} in Supabase!`, "success");
+        } catch (err: any) {
+          console.error("Revert error:", err);
+          showToast(err?.message || "Failed to revert promotion.", "error");
         }
       }
     });
@@ -1123,9 +1174,10 @@ export default function StudentManagement() {
                 <button 
                   type="button"
                   onClick={() => setIsPromotionModalOpen(true)}
-                  className="col-span-2 sm:col-span-1 flex items-center justify-center h-10 px-4 bg-[#06d6a0] text-[#1f2a2e] rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-xs text-xs whitespace-nowrap cursor-pointer w-full sm:w-auto"
-                  title="Promote Class"
+                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 h-10 px-4 bg-[#06d6a0] hover:bg-[#05be8d] text-[#1f2a2e] rounded-xl font-bold active:scale-[0.98] transition-all shadow-xs text-xs whitespace-nowrap cursor-pointer w-full sm:w-auto"
+                  title="Promote Class to Supabase Database"
                 >
+                  <TrendingUp className="w-4 h-4 shrink-0 text-[#1f2a2e]" />
                   <span>Promote Class</span>
                 </button>
               )}
@@ -1568,13 +1620,19 @@ export default function StudentManagement() {
           {/* Header Description */}
           <div className="bg-white border border-[#bac4c6]/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3.5 sm:gap-4 text-[#1f2a2e]">
             <div className="space-y-1">
-              <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] flex items-center gap-2">
-                <History className="w-5 h-5 text-[#1c4a59] shrink-0" />
-                <span>Student Promotion Audit Trail</span>
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] flex items-center gap-2">
+                  <History className="w-5 h-5 text-[#1c4a59] shrink-0" />
+                  <span>Student Promotion Audit Trail</span>
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
+                  Supabase Live
+                </span>
+              </div>
               <p className="text-xs text-[#4e6166] font-medium max-w-2xl leading-relaxed">
-                Review historical student transitions across academic classes and years. 
-                Admins can revert any promotion record to return students to their source class and restore their exact previous fee payment snapshot.
+                Review historical student transitions across academic classes and years synced to Supabase database. 
+                Admins can revert any promotion record to return students to their source class and restore their previous fee snapshot in Supabase.
               </p>
             </div>
             {isAdmin && (
@@ -2553,8 +2611,14 @@ export default function StudentManagement() {
                     <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] leading-tight">Promote Students to Next Class</h3>
-                    <p className="text-[11px] sm:text-xs text-[#4e6166] font-medium truncate">Batch move students and configure new term fees</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base sm:text-lg font-bold text-[#1f2a2e] leading-tight">Promote Students to Next Class</h3>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
+                        Supabase Database
+                      </span>
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-[#4e6166] font-medium truncate">Batch move students, record audit log, and update Supabase in real time</p>
                   </div>
                 </div>
                 <button 
@@ -2798,11 +2862,20 @@ export default function StudentManagement() {
                   </button>
                   <button 
                     type="submit"
-                    disabled={!promoSourceClass || !promoDestClass || promoSelectedStudentIds.length === 0}
+                    disabled={!promoSourceClass || !promoDestClass || promoSelectedStudentIds.length === 0 || isPromoting}
                     className="flex-1 py-2.5 sm:py-3 bg-[#059669] hover:bg-[#047857] disabled:bg-[#ecf0ee] disabled:text-[#6a7f84] disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>Promote Selected</span>
+                    {isPromoting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Promoting to Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Promote Selected ({promoSelectedStudentIds.length})</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

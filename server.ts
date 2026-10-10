@@ -1259,6 +1259,21 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
             item = normalizeServerSubjectRecord(item);
           } else if (table === 'feeTransactions') {
             item = normalizeServerFeeTransactionRecord(item, targetSchoolId);
+          } else if (table === 'promotionHistory') {
+            item = {
+              id: item.id,
+              remoteId: item.id,
+              schoolId: item.school_id || item.schoolId || targetSchoolId || null,
+              school_id: item.school_id || item.schoolId || targetSchoolId || null,
+              studentId: item.student_id || item.studentId || '',
+              studentIdentifier: item.student_id || item.studentIdentifier || '',
+              studentName: item.student_name || item.studentName || '',
+              sourceClass: item.source_class || item.sourceClass || item.from_class || '',
+              destClass: item.dest_class || item.destClass || item.to_class || '',
+              academicYear: item.academic_year || item.academicYear || '2025/2026',
+              term: item.term || 'Term 3',
+              timestamp: Number(item.timestamp || Date.now())
+            };
           } else if (table === 'results') {
             const rawExScores = item.exerciseScores ?? item.exercise_scores;
             const rawExCols = item.exerciseColumns ?? item.exercise_columns;
@@ -1651,6 +1666,26 @@ async function pushData(data: any, targetSchoolId?: string | null) {
             try {
               await adminClient.from('sms_logs').insert(formattedLogs);
             } catch (e) {}
+          }
+        } else if (table === 'promotionHistory') {
+          const formattedPromos = records
+            .map((r: any) => ({
+              school_id: resolvedSchoolId,
+              student_id: String(r.studentIdentifier || r.studentId || r.student_id || '').trim(),
+              student_name: String(r.studentName || r.student_name || '').trim(),
+              source_class: String(r.sourceClass || r.source_class || r.fromClass || r.from_class || '').trim(),
+              dest_class: String(r.destClass || r.dest_class || r.toClass || r.to_class || '').trim(),
+              academic_year: String(r.academicYear || r.academic_year || '2025/2026').trim(),
+              term: String(r.term || 'Term 3').trim(),
+              timestamp: Number(r.timestamp || Date.now())
+            }))
+            .filter((r: any) => r.student_id && r.source_class && r.dest_class && r.school_id);
+          if (formattedPromos.length > 0) {
+            try {
+              await adminClient.from('promotion_history').insert(formattedPromos);
+            } catch (e) {
+              console.warn("promotion_history sync notice:", e);
+            }
           }
         } else if (table === 'settings') {
           // Persist Siren Console settings into public.school_settings.streams.siren_console as well
@@ -16814,6 +16849,227 @@ CREATE INDEX IF NOT EXISTS idx_boarding_medical_logs_school
         message: `Successfully deleted selected students from Supabase`,
         count: Math.max(deletedCount, listIds.length, listStudentIds.length)
       });
+    } catch (err: any) {
+      invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  // ==========================================
+  // PROMOTIONS & ACADEMIC TRANSITIONS API (SUPABASE)
+  // ==========================================
+  app.get("/api/promotions", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      const scope = resolveTenantAccessScope(req);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const schoolId = scope.schoolId || (req.query.school_id || req.query.schoolId || req.headers['x-school-id']) as string;
+      const adminClient = getSupabaseAdmin();
+      let query = adminClient.from('promotion_history').select('*');
+      if (schoolId) {
+        query = query.eq('school_id', schoolId);
+      }
+      const { data, error } = await query.order('timestamp', { ascending: false });
+      if (error) {
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      const mapped = (data || []).map((row: any) => ({
+        id: row.id,
+        remoteId: row.id,
+        schoolId: row.school_id,
+        school_id: row.school_id,
+        studentId: row.student_id,
+        studentIdentifier: row.student_id,
+        studentName: row.student_name,
+        sourceClass: row.source_class,
+        destClass: row.dest_class,
+        academicYear: row.academic_year,
+        term: row.term,
+        timestamp: Number(row.timestamp || Date.now())
+      }));
+      return res.json({ success: true, data: mapped });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/promotions", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const resolvedSchoolId = scope.schoolId || (req.body?.school_id || req.body?.schoolId || req.query.school_id || req.query.schoolId || req.headers['x-school-id']) as string;
+      if (!resolvedSchoolId) {
+        return res.status(400).json({ success: false, error: "School ID is required for promotion" });
+      }
+
+      const adminClient = getSupabaseAdmin();
+      const rawPromotions = Array.isArray(req.body?.promotions) 
+        ? req.body.promotions 
+        : (req.body?.promotion ? [req.body.promotion] : (req.body?.studentId || req.body?.student_id ? [req.body] : []));
+
+      if (rawPromotions.length === 0) {
+        return res.status(400).json({ success: false, error: "No promotion records provided" });
+      }
+
+      const formattedRows = rawPromotions.map((p: any) => ({
+        school_id: resolvedSchoolId,
+        student_id: String(p.studentIdentifier || p.studentId || p.student_id || '').trim(),
+        student_name: String(p.studentName || p.student_name || '').trim(),
+        source_class: String(p.sourceClass || p.source_class || p.fromClass || '').trim(),
+        dest_class: String(p.destClass || p.dest_class || p.toClass || '').trim(),
+        academic_year: String(p.academicYear || p.academic_year || '2025/2026').trim(),
+        term: String(p.term || 'Term 3').trim(),
+        timestamp: Number(p.timestamp || Date.now())
+      })).filter((p: any) => p.student_id && p.source_class && p.dest_class);
+
+      if (formattedRows.length === 0) {
+        return res.status(400).json({ success: false, error: "Valid student identifier, source class, and destination class are required" });
+      }
+
+      // 1. Insert into promotion_history in Supabase
+      const { data: inserted, error: insertErr } = await adminClient
+        .from('promotion_history')
+        .insert(formattedRows)
+        .select();
+
+      if (insertErr) {
+        console.error("Error inserting promotion_history into Supabase:", insertErr);
+        return res.status(500).json({ success: false, error: insertErr.message });
+      }
+
+      // 2. Batch update each promoted student's class and fees in Supabase students table
+      for (const promo of rawPromotions) {
+        const studentId = String(promo.studentIdentifier || promo.studentId || promo.student_id || '').trim();
+        const destClass = String(promo.destClass || promo.dest_class || '').trim();
+        if (!studentId || !destClass) continue;
+
+        const studentUpdates: any = { class: destClass };
+        if (promo.feesPaid !== undefined) studentUpdates.fees_paid = Number(promo.feesPaid);
+        if (promo.totalFees !== undefined) studentUpdates.total_fees = Number(promo.totalFees);
+        if (promo.feeBreakdown) studentUpdates.fee_breakdown = promo.feeBreakdown;
+        if (promo.feePaidBreakdown) studentUpdates.fee_paid_breakdown = promo.feePaidBreakdown;
+
+        try {
+          await adminClient
+            .from('students')
+            .update(studentUpdates)
+            .eq('school_id', resolvedSchoolId)
+            .eq('student_id', studentId);
+        } catch (e) {
+          console.warn(`Failed to update student ${studentId} in Supabase:`, e);
+        }
+      }
+
+      // 3. If Rollover Academic Year was requested, update academic year in school_settings & settings in Supabase
+      if (req.body?.rolloverYear && req.body?.nextYear) {
+        const nextYear = String(req.body.nextYear).trim();
+        try {
+          const { data: currentSettings } = await adminClient
+            .from('school_settings')
+            .select('*')
+            .eq('school_id', resolvedSchoolId)
+            .maybeSingle();
+
+          if (currentSettings) {
+            await adminClient
+              .from('school_settings')
+              .update({
+                academic_year: nextYear,
+                current_term: 'Term 1',
+                updated_at: Date.now()
+              })
+              .eq('school_id', resolvedSchoolId);
+          }
+
+          await adminClient
+            .from('settings')
+            .upsert([
+              {
+                school_id: resolvedSchoolId,
+                key: 'academicConfig',
+                value: { academicYear: nextYear, currentTerm: 'Term 1' }
+              }
+            ]);
+        } catch (e) {
+          console.warn("Notice rolling over school settings:", e);
+        }
+      }
+
+      invalidateDbCache();
+      return res.json({
+        success: true,
+        count: formattedRows.length,
+        data: inserted,
+        message: `Successfully promoted ${formattedRows.length} student(s) to Supabase database`
+      });
+    } catch (err: any) {
+      invalidateDbCache();
+      return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
+    }
+  });
+
+  app.delete("/api/promotions/:id", optionalAuthenticateToken, async (req: any, res) => {
+    try {
+      invalidateDbCache();
+      const scope = resolveTenantAccessScope(req);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, error: scope.error });
+      }
+      const schoolId = scope.schoolId || (req.query.school_id || req.headers['x-school-id']) as string;
+      const { id } = req.params;
+      const adminClient = getSupabaseAdmin();
+
+      // Find record first if reverting student
+      let recordToDelete: any = null;
+      try {
+        const { data: found } = await adminClient
+          .from('promotion_history')
+          .select('*')
+          .eq('id', Number(id))
+          .maybeSingle();
+        recordToDelete = found;
+      } catch (e) {}
+
+      // Delete from promotion_history
+      let delQuery = adminClient.from('promotion_history').delete().eq('id', Number(id));
+      if (schoolId) {
+        delQuery = delQuery.eq('school_id', schoolId);
+      }
+      const { error: delErr } = await delQuery;
+      if (delErr) {
+        return res.status(500).json({ success: false, error: delErr.message });
+      }
+
+      // Revert student in students table if requested or details available
+      const revertTarget = req.body || {};
+      const studentIdentifier = revertTarget.studentIdentifier || revertTarget.studentId || recordToDelete?.student_id;
+      const targetSourceClass = revertTarget.sourceClass || recordToDelete?.source_class;
+      const targetSchoolId = schoolId || recordToDelete?.school_id;
+
+      if (studentIdentifier && targetSourceClass && targetSchoolId) {
+        const revertUpdates: any = { class: targetSourceClass };
+        if (revertTarget.previousFeesPaid !== undefined) revertUpdates.fees_paid = Number(revertTarget.previousFeesPaid);
+        if (revertTarget.previousTotalFees !== undefined) revertUpdates.total_fees = Number(revertTarget.previousTotalFees);
+        if (revertTarget.previousFeeBreakdown) revertUpdates.fee_breakdown = revertTarget.previousFeeBreakdown;
+        if (revertTarget.previousFeePaidBreakdown) revertUpdates.fee_paid_breakdown = revertTarget.previousFeePaidBreakdown;
+
+        try {
+          await adminClient
+            .from('students')
+            .update(revertUpdates)
+            .eq('school_id', targetSchoolId)
+            .eq('student_id', studentIdentifier);
+        } catch (e) {
+          console.warn("Notice reverting student in Supabase:", e);
+        }
+      }
+
+      invalidateDbCache();
+      return res.json({ success: true, message: "Promotion record reverted successfully in Supabase" });
     } catch (err: any) {
       invalidateDbCache();
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });

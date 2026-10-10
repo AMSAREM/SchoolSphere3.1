@@ -135,8 +135,8 @@ export const ReportCard: React.FC<ReportCardProps> = ({
         </div>
 
         {/* Academic Table Section */}
-        <div className="w-full overflow-x-auto print:overflow-visible mb-3.5 print:mb-3">
-          <table className="w-full min-w-[520px] print:min-w-0 border-2 border-indigo-900 text-xs sm:text-[13px] print:text-[11.5px] no-print-reset border-collapse">
+        <div className="w-full overflow-x-auto print:overflow-visible mb-3.5 print:mb-3 table-responsive-container">
+          <table className="w-full min-w-0 sm:min-w-[480px] print:min-w-0 border-2 border-indigo-900 text-xs sm:text-[13px] print:text-[11.5px] no-print-reset border-collapse">
             <thead className="bg-indigo-900 text-white">
               <tr>
                 <th className="px-2.5 py-2 print:py-1.5 border border-indigo-800 text-left uppercase tracking-wider font-black text-[11px] sm:text-xs print:text-[10.5px]">

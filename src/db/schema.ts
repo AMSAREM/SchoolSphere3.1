@@ -287,8 +287,11 @@ export interface Vote {
 
 export interface PromotionRecord {
   id?: number;
-  studentId: number; // reference to student table primary key
-  studentIdentifier: string; // reference to student studentId (e.g. STU-001)
+  remoteId?: number | string;
+  schoolId?: string;
+  school_id?: string;
+  studentId: number | string; // reference to student table primary key
+  studentIdentifier?: string; // reference to student studentId (e.g. STU-001)
   studentName: string;
   sourceClass: string;
   destClass: string;

@@ -55,7 +55,7 @@ export function MobileSafeActionStack({
   return (
     <div
       className={cn(
-        "fixed inset-x-0 bottom-0 z-30 lg:hidden print:hidden pointer-events-none flex flex-col items-center justify-end gap-2.5 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] mobile-safe-dock",
+        "fixed inset-x-0 bottom-0 z-30 lg:hidden print:hidden pointer-events-none flex flex-col items-center justify-end gap-2.5 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] mobile-safe-dock max-w-full overflow-x-hidden",
         className
       )}
     >
@@ -90,7 +90,7 @@ export function MobileBottomNav({
       <MobileSafeActionStack actionSlot={actionSlot}>
         <nav
           aria-label="Mobile Bottom Navigation"
-          className="bg-white/95 backdrop-blur-md rounded-full shadow-[0_8px_28px_rgba(28,74,89,0.18)] border border-[#bac4c6]/90 py-2 px-3 sm:px-5 flex items-center justify-around gap-1 sm:gap-4 pointer-events-auto max-w-md w-full min-h-[60px] relative"
+          className="bg-white/95 backdrop-blur-md rounded-full shadow-[0_8px_28px_rgba(28,74,89,0.18)] border border-[#bac4c6]/90 py-2 px-3 sm:px-5 flex items-center justify-around gap-1 sm:gap-4 pointer-events-auto max-w-[calc(100vw-1.5rem)] sm:max-w-md w-full min-h-[60px] relative"
         >
           {primaryTabs ? (
             primaryTabs.map((item) => {

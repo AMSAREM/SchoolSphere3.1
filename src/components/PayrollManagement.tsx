@@ -1836,86 +1836,151 @@ export default function PayrollManagement() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
-                    <th className="py-3 px-4">Staff Member</th>
-                    <th className="py-3 px-3">SSNIT · GRA TIN</th>
-                    <th className="py-3 px-3">Payment Account</th>
-                    <th className="py-3 px-3 text-right">Basic Salary</th>
-                    <th className="py-3 px-3 text-right">Total Allowances</th>
-                    <th className="py-3 px-3 text-right">Est. Net Pay</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {profiles.map(prof => {
-                    const est = computePayslipFromProfile(
-                      prof,
-                      selectedMonth,
-                      formatMonthLabel(selectedMonth),
-                      advances
-                    );
-                    return (
-                      <tr key={prof.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-[#1f2a2e]">{prof.staffName}</div>
-                          <div className="text-[11px] text-[#6a7f84] font-mono">
-                            {prof.staffId} · {prof.designation}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 font-mono tabular-nums text-[11px]">
-                          <div>SSNIT: {prof.ssnitNumber}</div>
-                          <div className="text-[#6a7f84]">TIN: {prof.tinNumber}</div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-semibold text-[#1f2a2e]">
-                            {prof.paymentMethod} · {prof.bankOrNetwork}
-                          </div>
-                          <div className="text-[11px] font-mono tabular-nums text-[#6a7f84]">
-                            Acct/MoMo: {prof.accountNumber}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold">
-                          {formatCurrency(prof.basicSalary)}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums">
-                          {formatCurrency(
-                            prof.responsibilityAllowance +
-                              prof.transportAllowance +
-                              prof.otherAllowance
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-[#1c4a59]">
-                          {formatCurrency(est.netPay)}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openProfileModal(prof)}
-                              className="p-1.5 text-[#1c4a59] hover:bg-slate-100 rounded-lg cursor-pointer"
-                              title="Edit Salary Profile"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteProfile(prof)}
-                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                              title="Delete Salary Profile"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Mobile Staff Profile Cards (< 768px) */}
+              <div className="md:hidden divide-y divide-[#bac4c6]/40 p-3 space-y-3">
+                {profiles.map(prof => {
+                  const est = computePayslipFromProfile(
+                    prof,
+                    selectedMonth,
+                    formatMonthLabel(selectedMonth),
+                    advances
+                  );
+                  return (
+                    <div key={prof.id} className="bg-slate-50/70 rounded-xl p-3.5 border border-[#bac4c6]/70 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-[#1f2a2e] text-xs">{prof.staffName}</p>
+                          <p className="text-[10px] text-[#6a7f84] font-mono">{prof.staffId} · {prof.designation}</p>
+                        </div>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openProfileModal(prof)}
+                            className="p-1.5 text-[#1c4a59] hover:bg-slate-200/60 rounded-lg cursor-pointer"
+                            title="Edit Salary Profile"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProfile(prof)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                            title="Delete Salary Profile"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 p-2 bg-white rounded-lg border border-slate-200/70 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Basic Pay</span>
+                          <span className="font-mono font-bold text-slate-700">{formatCurrency(prof.basicSalary)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Allowances</span>
+                          <span className="font-mono font-bold text-slate-700">
+                            {formatCurrency(prof.responsibilityAllowance + prof.transportAllowance + prof.otherAllowance)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Est. Net Pay</span>
+                          <span className="font-mono font-black text-[#1c4a59]">{formatCurrency(est.netPay)}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-[#6a7f84] flex items-center justify-between border-t border-[#bac4c6]/30 pt-1.5">
+                        <span>{prof.paymentMethod} · {prof.bankOrNetwork}</span>
+                        <span className="font-mono">{prof.accountNumber}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop & Tablet Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
+                      <th className="py-3 px-4">Staff Member</th>
+                      <th className="py-3 px-3">SSNIT · GRA TIN</th>
+                      <th className="py-3 px-3">Payment Account</th>
+                      <th className="py-3 px-3 text-right">Basic Salary</th>
+                      <th className="py-3 px-3 text-right">Total Allowances</th>
+                      <th className="py-3 px-3 text-right">Est. Net Pay</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {profiles.map(prof => {
+                      const est = computePayslipFromProfile(
+                        prof,
+                        selectedMonth,
+                        formatMonthLabel(selectedMonth),
+                        advances
+                      );
+                      return (
+                        <tr key={prof.id} className="hover:bg-slate-50/80">
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-[#1f2a2e]">{prof.staffName}</div>
+                            <div className="text-[11px] text-[#6a7f84] font-mono">
+                              {prof.staffId} · {prof.designation}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 font-mono tabular-nums text-[11px]">
+                            <div>SSNIT: {prof.ssnitNumber}</div>
+                            <div className="text-[#6a7f84]">TIN: {prof.tinNumber}</div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-[#1f2a2e]">
+                              {prof.paymentMethod} · {prof.bankOrNetwork}
+                            </div>
+                            <div className="text-[11px] font-mono tabular-nums text-[#6a7f84]">
+                              Acct/MoMo: {prof.accountNumber}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold">
+                            {formatCurrency(prof.basicSalary)}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums">
+                            {formatCurrency(
+                              prof.responsibilityAllowance +
+                                prof.transportAllowance +
+                                prof.otherAllowance
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-[#1c4a59]">
+                            {formatCurrency(est.netPay)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openProfileModal(prof)}
+                                className="p-1.5 text-[#1c4a59] hover:bg-slate-100 rounded-lg cursor-pointer"
+                                title="Edit Salary Profile"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProfile(prof)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                title="Delete Salary Profile"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -1951,92 +2016,169 @@ export default function PayrollManagement() {
               No salary advances or staff loans recorded yet.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
-                    <th className="py-3 px-4">Staff Member</th>
-                    <th className="py-3 px-3">Type & Purpose</th>
-                    <th className="py-3 px-3 text-right">Principal</th>
-                    <th className="py-3 px-3 text-right">Monthly Installment</th>
-                    <th className="py-3 px-3 text-right">Remaining Balance</th>
-                    <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {advances.map(adv => (
-                    <tr key={adv.id} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-[#1f2a2e]">{adv.staffName}</div>
-                        <div className="text-[11px] font-mono text-[#6a7f84]">
-                          {adv.staffId} · {adv.designation}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-[#1c4a59]">{adv.type}</div>
-                        <div className="text-[11px] text-[#6a7f84]">{adv.reason}</div>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        {formatCurrency(adv.principalAmount)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums">
-                        {formatCurrency(adv.monthlyInstallment)}/mo
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
-                        {formatCurrency(adv.remainingBalance)}
-                      </td>
-                      <td className="py-3 px-3 font-bold uppercase text-[11px]">
-                        <span
-                          className={cn(
-                            adv.status === 'approved'
-                              ? 'text-emerald-700'
-                              : adv.status === 'pending'
-                              ? 'text-amber-700'
-                              : adv.status === 'completed'
-                              ? 'text-slate-600'
-                              : 'text-rose-700'
-                          )}
-                        >
-                          {adv.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="inline-flex items-center gap-1.5">
-                          {adv.status === 'pending' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateAdvanceStatus(adv.id, 'approved')}
-                                className="px-2.5 py-1 bg-emerald-700 text-white font-bold text-[11px] rounded-lg cursor-pointer"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateAdvanceStatus(adv.id, 'declined')}
-                                className="px-2.5 py-1 bg-rose-100 text-rose-800 font-bold text-[11px] rounded-lg cursor-pointer"
-                              >
-                                Decline
-                              </button>
-                            </>
-                          )}
-                          {adv.status === 'approved' && adv.remainingBalance > 0 && (
+            <>
+              {/* Mobile Salary Advances Cards (< 768px) */}
+              <div className="md:hidden divide-y divide-[#bac4c6]/40 p-3 space-y-3">
+                {advances.map(adv => (
+                  <div key={adv.id} className="bg-slate-50/70 rounded-xl p-3.5 border border-[#bac4c6]/70 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-[#1f2a2e] text-xs">{adv.staffName}</p>
+                        <p className="text-[10px] text-[#6a7f84] font-mono">{adv.staffId} · {adv.designation}</p>
+                      </div>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                        adv.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        adv.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                        adv.status === 'completed' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                        'bg-rose-50 text-rose-700 border border-rose-200'
+                      )}>
+                        {adv.status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-700">
+                      <span className="font-semibold text-[#1c4a59]">{adv.type}</span>: {adv.reason}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 p-2 bg-white rounded-lg border border-slate-200/70 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Principal</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(adv.principalAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Monthly</span>
+                        <span className="font-mono font-bold text-slate-700">{formatCurrency(adv.monthlyInstallment)}/mo</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Remaining</span>
+                        <span className="font-mono font-black text-[#1c4a59]">{formatCurrency(adv.remainingBalance)}</span>
+                      </div>
+                    </div>
+
+                    {(adv.status === 'pending' || (adv.status === 'approved' && adv.remainingBalance > 0)) && (
+                      <div className="pt-1 flex items-center justify-end gap-1.5 border-t border-[#bac4c6]/30">
+                        {adv.status === 'pending' && (
+                          <>
                             <button
                               type="button"
-                              onClick={() => handleUpdateAdvanceStatus(adv.id, 'completed')}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-[#1c4a59] font-bold text-[11px] rounded-lg cursor-pointer"
+                              onClick={() => handleUpdateAdvanceStatus(adv.id, 'approved')}
+                              className="px-2.5 py-1 bg-emerald-700 text-white font-bold text-[11px] rounded-lg cursor-pointer"
                             >
-                              Mark Settled
+                              Approve
                             </button>
-                          )}
-                        </div>
-                      </td>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateAdvanceStatus(adv.id, 'declined')}
+                              className="px-2.5 py-1 bg-rose-100 text-rose-800 font-bold text-[11px] rounded-lg cursor-pointer"
+                            >
+                              Decline
+                            </button>
+                          </>
+                        )}
+                        {adv.status === 'approved' && adv.remainingBalance > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateAdvanceStatus(adv.id, 'completed')}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-[#1c4a59] font-bold text-[11px] rounded-lg cursor-pointer"
+                          >
+                            Mark Settled
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop & Tablet Table (>= 768px) */}
+              <div className="hidden md:block print:block overflow-x-auto table-responsive-container">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#f6f8f7] border-b border-[#bac4c6] text-[#6a7f84] font-bold">
+                      <th className="py-3 px-4">Staff Member</th>
+                      <th className="py-3 px-3">Type & Purpose</th>
+                      <th className="py-3 px-3 text-right">Principal</th>
+                      <th className="py-3 px-3 text-right">Monthly Installment</th>
+                      <th className="py-3 px-3 text-right">Remaining Balance</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {advances.map(adv => (
+                      <tr key={adv.id} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-[#1f2a2e]">{adv.staffName}</div>
+                          <div className="text-[11px] font-mono text-[#6a7f84]">
+                            {adv.staffId} · {adv.designation}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-[#1c4a59]">{adv.type}</div>
+                          <div className="text-[11px] text-[#6a7f84]">{adv.reason}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                          {formatCurrency(adv.principalAmount)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                          {formatCurrency(adv.monthlyInstallment)}/mo
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-[#1c4a59]">
+                          {formatCurrency(adv.remainingBalance)}
+                        </td>
+                        <td className="py-3 px-3 font-bold uppercase text-[11px]">
+                          <span
+                            className={cn(
+                              adv.status === 'approved'
+                                ? 'text-emerald-700'
+                                : adv.status === 'pending'
+                                ? 'text-amber-700'
+                                : adv.status === 'completed'
+                                ? 'text-slate-600'
+                                : 'text-rose-700'
+                            )}
+                          >
+                            {adv.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            {adv.status === 'pending' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAdvanceStatus(adv.id, 'approved')}
+                                  className="px-2.5 py-1 bg-emerald-700 text-white font-bold text-[11px] rounded-lg cursor-pointer"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateAdvanceStatus(adv.id, 'declined')}
+                                  className="px-2.5 py-1 bg-rose-100 text-rose-800 font-bold text-[11px] rounded-lg cursor-pointer"
+                                >
+                                  Decline
+                                </button>
+                              </>
+                            )}
+                            {adv.status === 'approved' && adv.remainingBalance > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAdvanceStatus(adv.id, 'completed')}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-[#1c4a59] font-bold text-[11px] rounded-lg cursor-pointer"
+                              >
+                                Mark Settled
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

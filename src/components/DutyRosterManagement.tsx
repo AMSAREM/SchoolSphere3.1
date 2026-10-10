@@ -736,8 +736,8 @@ export default function DutyRosterManagement({ embedded = false }: { embedded?: 
 
             {/* Filters & Primary Admin Actions */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
-                <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 w-full sm:w-auto">
+                <div className="relative flex-1 min-w-0 w-full sm:max-w-xs">
                   <Search className="w-3.5 h-3.5 text-[#6a7f84] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
