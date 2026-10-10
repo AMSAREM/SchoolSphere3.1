@@ -108,9 +108,11 @@ export default function PitchProposalStudio({
   const { showToast } = useNotifications();
 
   // Studio Sub-Tabs
-  const [activeTab, setActiveTab] = useState<'pitch_deck' | 'architect' | 'document' | 'roi' | 'objections' | 'library'>('pitch_deck');
+  const [activeTab, setActiveTab] = useState<'pitch_deck' | 'architect' | 'document' | 'files' | 'roi' | 'objections' | 'library'>('pitch_deck');
 
   // Proposal Configuration State
+  const [activeProposalId, setActiveProposalId] = useState<string>('prop-sample-1');
+  const [activeProposalFiles, setActiveProposalFiles] = useState<ProposalFile[]>([]);
   const [schoolName, setSchoolName] = useState(initialSchoolName || 'Achimota Heritage Academy');
   const [contactPerson, setContactPerson] = useState(initialContactPerson || 'Dr. Peter Osei (Proprietor & Board Chair)');
   const [contactPhone, setContactPhone] = useState(initialPhone || '+233 55 423 4590');
@@ -125,6 +127,18 @@ export default function PitchProposalStudio({
   const [discountPercent, setDiscountPercent] = useState(10);
   const [proposalNotes, setProposalNotes] = useState('Includes dedicated onboarding and termly system updates. Valid for 30 days from presentation.');
   const [proposalRef, setProposalRef] = useState(() => `PROP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
+
+  // Database Connection & Sync Status
+  const [isDbLoading, setIsDbLoading] = useState(false);
+  const [isDbSaving, setIsDbSaving] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>('Just now');
+
+  // File Upload & Preview State
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [selectedFileCategory, setSelectedFileCategory] = useState<string>('proposal_doc');
+  const [fileNoteDescription, setFileNoteDescription] = useState<string>('');
+  const [previewFile, setPreviewFile] = useState<ProposalFile | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Adjustable Module Prices State
   const [modulePrices, setModulePrices] = useState<Record<string, number>>(() => {
@@ -188,7 +202,18 @@ export default function PitchProposalStudio({
         createdAt: new Date().toLocaleDateString(),
         totalPerTerm: 2850,
         totalAnnual: 7695,
-        notes: 'Requested live demo on Saturday PTA board meeting.'
+        notes: 'Requested live demo on Saturday PTA board meeting.',
+        files: [
+          {
+            id: 'file-demo-1',
+            name: 'Achimota_Heritage_Proposal_Executive_Brief.pdf',
+            size: 245000,
+            type: 'application/pdf',
+            uploadedAt: Date.now() - 86400000,
+            category: 'proposal_doc',
+            description: 'Official SchoolSphere multi-term digitalization quotation'
+          }
+        ]
       },
       {
         id: 'prop-sample-2',
@@ -208,10 +233,54 @@ export default function PitchProposalStudio({
         createdAt: new Date().toLocaleDateString(),
         totalPerTerm: 3900,
         totalAnnual: 9945,
-        notes: 'Heavy focus on stopping fee arrears with Mobile Money integration.'
+        notes: 'Heavy focus on stopping fee arrears with Mobile Money integration.',
+        files: [
+          {
+            id: 'file-demo-2',
+            name: 'Morning_Star_Fee_Collection_Case_Study.pdf',
+            size: 184000,
+            type: 'application/pdf',
+            uploadedAt: Date.now() - 43200000,
+            category: 'pitch_deck',
+            description: 'MoMo Zero-Arrears reconciliation presentation deck'
+          }
+        ]
       }
     ];
   });
+
+  // Load from database on mount
+  const loadProposalsFromDatabase = async () => {
+    setIsDbLoading(true);
+    try {
+      const data = await proposalsApi.getAll();
+      if (Array.isArray(data) && data.length > 0) {
+        setSavedProposals(data);
+        setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }
+    } catch (err) {
+      console.warn('Proposals database load warning:', err);
+    } finally {
+      setIsDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProposalsFromDatabase();
+  }, []);
+
+  // Sync active files with current proposal
+  const currentSavedProposal = useMemo(() => {
+    return savedProposals.find(p => p.id === activeProposalId || p.schoolName.toLowerCase() === schoolName.toLowerCase());
+  }, [savedProposals, activeProposalId, schoolName]);
+
+  const currentFiles = useMemo(() => {
+    return currentSavedProposal?.files || activeProposalFiles || [];
+  }, [currentSavedProposal, activeProposalFiles]);
+
+  const totalFilesCount = useMemo(() => {
+    return savedProposals.reduce((acc, p) => acc + (p.files?.length || 0), 0);
+  }, [savedProposals]);
 
   useEffect(() => {
     try {
@@ -864,19 +933,25 @@ export default function PitchProposalStudio({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, isFullscreen, currentSlideIndex]);
 
-  // Save current proposal
-  const handleSaveProposal = () => {
+  // Save current proposal to Database
+  const handleSaveProposal = async () => {
     if (!schoolName.trim()) {
       showToast('Please specify the prospective school name.', 'error');
       return;
     }
+    setIsDbSaving(true);
+    const existing = savedProposals.find(
+      p => p.id === activeProposalId || p.schoolName.toLowerCase() === schoolName.toLowerCase()
+    );
+    const resolvedId = existing ? existing.id : (activeProposalId.startsWith('prop-') ? activeProposalId : `prop-${Date.now()}`);
+
     const newProp: ProposalItem = {
-      id: `prop-${Date.now()}`,
-      schoolName,
-      contactPerson,
-      phone: contactPhone,
-      email: contactEmail,
-      location,
+      id: resolvedId,
+      schoolName: schoolName.trim(),
+      contactPerson: contactPerson.trim(),
+      phone: contactPhone.trim(),
+      email: contactEmail.trim(),
+      location: location.trim(),
       studentsCount,
       tier,
       currency,
@@ -886,17 +961,37 @@ export default function PitchProposalStudio({
       discountPercent,
       billingFrequency,
       status: 'Presented',
-      createdAt: new Date().toLocaleDateString(),
+      createdAt: existing ? existing.createdAt : new Date().toLocaleDateString(),
+      updatedAt: Date.now(),
       totalPerTerm: pricingCalculation.finalTermly,
       totalAnnual: pricingCalculation.finalAnnual,
-      notes: proposalNotes
+      notes: proposalNotes,
+      files: existing?.files || activeProposalFiles || []
     };
 
-    setSavedProposals(prev => [newProp, ...prev.filter(p => p.schoolName.toLowerCase() !== schoolName.toLowerCase())]);
-    showToast(`Commercial proposal for ${schoolName} saved to Studio Library!`, 'success');
+    setActiveProposalId(resolvedId);
+
+    try {
+      const saved = await proposalsApi.save(newProp);
+      setSavedProposals(prev => [
+        saved,
+        ...prev.filter(p => p.id !== saved.id && p.schoolName.toLowerCase() !== schoolName.toLowerCase())
+      ]);
+      setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      showToast(`Commercial proposal for ${schoolName} saved to Database!`, 'success');
+    } catch (err: any) {
+      setSavedProposals(prev => [
+        newProp,
+        ...prev.filter(p => p.id !== newProp.id && p.schoolName.toLowerCase() !== schoolName.toLowerCase())
+      ]);
+      showToast(`Saved proposal for ${schoolName} (local offline storage).`, 'info');
+    } finally {
+      setIsDbSaving(false);
+    }
   };
 
   const handleLoadProposal = (prop: ProposalItem) => {
+    setActiveProposalId(prop.id);
     setSchoolName(prop.schoolName);
     setContactPerson(prop.contactPerson);
     setContactPhone(prop.phone);
@@ -917,13 +1012,146 @@ export default function PitchProposalStudio({
     setDiscountPercent(prop.discountPercent || 0);
     setBillingFrequency(prop.billingFrequency || 'annual');
     setProposalNotes(prop.notes || '');
+    setActiveProposalFiles(prop.files || []);
     setActiveTab('document');
-    showToast(`Loaded ${prop.schoolName} proposal into viewer.`, 'info');
+    showToast(`Loaded ${prop.schoolName} proposal with ${prop.files?.length || 0} attached files from database.`, 'info');
   };
 
-  const handleDeleteProposal = (id: string) => {
-    setSavedProposals(prev => prev.filter(p => p.id !== id));
-    showToast('Proposal removed from library.', 'info');
+  const handleDeleteProposal = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this proposal and its saved files from the database?')) {
+      try {
+        await proposalsApi.delete(id);
+        setSavedProposals(prev => prev.filter(p => p.id !== id));
+        showToast('Proposal deleted from Database.', 'info');
+      } catch {
+        setSavedProposals(prev => prev.filter(p => p.id !== id));
+      }
+    }
+  };
+
+  // Upload and save file attached to active proposal
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      showToast('File size exceeds 25MB maximum limit.', 'error');
+      return;
+    }
+
+    setIsUploadingFile(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const fileData = reader.result as string;
+        const targetPropId = activeProposalId || `prop-${Date.now()}`;
+        try {
+          const result = await proposalsApi.uploadFile(targetPropId, {
+            fileName: file.name,
+            fileData,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            category: selectedFileCategory,
+            description: fileNoteDescription.trim() || undefined
+          });
+
+          setActiveProposalFiles(prev => [result.file, ...prev.filter(f => f.name !== result.file.name)]);
+          setSavedProposals(prev => prev.map(p => p.id === targetPropId ? result.proposal : p));
+          showToast(`File "${file.name}" saved to Database!`, 'success');
+          setFileNoteDescription('');
+        } catch (err: any) {
+          showToast(err?.message || 'Failed to save file to database', 'error');
+        } finally {
+          setIsUploadingFile(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setIsUploadingFile(false);
+      showToast('Failed to read file.', 'error');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Delete attached file
+  const handleDeleteFile = async (fileId: string, fileName: string) => {
+    if (window.confirm(`Delete file "${fileName}" from the database?`)) {
+      try {
+        await proposalsApi.deleteFile(activeProposalId, fileId);
+        setActiveProposalFiles(prev => prev.filter(f => f.id !== fileId));
+        setSavedProposals(prev => prev.map(p => {
+          if (p.id === activeProposalId) {
+            return { ...p, files: (p.files || []).filter(f => f.id !== fileId) };
+          }
+          return p;
+        }));
+        showToast(`File "${fileName}" deleted from Database.`, 'info');
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to delete file', 'error');
+      }
+    }
+  };
+
+  // Download saved file
+  const handleDownloadFile = (file: ProposalFile) => {
+    if (!file.dataUrl && !file.url) {
+      showToast('No downloadable data found for this file.', 'error');
+      return;
+    }
+    const downloadUri = file.dataUrl || file.url || '';
+    const a = document.createElement('a');
+    a.href = downloadUri;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast(`Downloading "${file.name}"...`, 'info');
+  };
+
+  // One-Click: Save formal proposal document as a snapshot file in Database
+  const handleSaveCurrentDocumentAsFile = async () => {
+    const docEl = document.getElementById('proposal-document-content');
+    if (!docEl) {
+      showToast('Proposal document element not found. Please switch to Document tab.', 'error');
+      return;
+    }
+    try {
+      setIsDbSaving(true);
+      showToast('Archiving proposal document into Database files...', 'info');
+      const htmlSnapshot = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Proposal - ${schoolName}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; background: #fff; line-height: 1.5; }
+    h1, h2, h3 { color: #0f172a; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
+    th { background: #f8fafc; font-weight: bold; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+  </style>
+</head>
+<body>
+  ${docEl.innerHTML}
+</body>
+</html>`.trim();
+
+      const result = await proposalsApi.saveDocumentAsFile(activeProposalId || `prop-${Date.now()}`, {
+        htmlContent: htmlSnapshot,
+        title: `${schoolName.replace(/[^a-zA-Z0-9]/g, '_')}_Official_Quotation`,
+        fileName: `${schoolName.replace(/[^a-zA-Z0-9]/g, '_')}_Proposal_${new Date().toISOString().split('T')[0]}.html`
+      });
+
+      if (result?.file) {
+        setActiveProposalFiles(prev => [result.file, ...prev.filter(f => f.id !== result.file.id)]);
+        setSavedProposals(prev => prev.map(p => p.id === activeProposalId ? result.proposal : p));
+        showToast(`Formal Proposal Document archived into Database files!`, 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to archive document into database', 'error');
+    } finally {
+      setIsDbSaving(false);
+    }
   };
 
   // Copy Plain Text Proposal
@@ -1034,6 +1262,23 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Live Database Status Indicator */}
+            <div className="flex items-center gap-2 bg-indigo-950/80 border border-indigo-700/60 rounded-xl px-3 py-1.5 text-xs text-indigo-200">
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-semibold">Database Connected</span>
+              <span className="text-[10px] text-indigo-400 hidden sm:inline">
+                • {savedProposals.length} Proposals • {totalFilesCount} Files
+              </span>
+              <button
+                onClick={loadProposalsFromDatabase}
+                disabled={isDbLoading}
+                className="p-1 hover:text-white transition cursor-pointer"
+                title="Sync Proposals & Files with Database"
+              >
+                <RefreshCw className={cn("w-3 h-3 text-indigo-300", isDbLoading && "animate-spin text-white")} />
+              </button>
+            </div>
+
             <button
               onClick={() => {
                 setActiveTab('pitch_deck');
@@ -1060,6 +1305,7 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
             { id: 'pitch_deck', label: 'Client Pitch Deck', icon: Presentation, badge: '25 Slides (All 17 Modules)' },
             { id: 'architect', label: 'Proposal Architect', icon: Calculator, badge: 'Quote Builder' },
             { id: 'document', label: 'Formal Proposal Document', icon: FileText, badge: 'PDF & Print' },
+            { id: 'files', label: 'Saved Files & Vault', icon: Paperclip, badge: `${totalFilesCount} Files` },
             { id: 'roi', label: 'Client ROI & Savings', icon: TrendingUp, badge: 'Calculations' },
             { id: 'objections', label: 'Objection Playbook', icon: Shield, badge: 'Battlecards' },
             { id: 'library', label: 'Proposals Library', icon: FolderOpen, badge: `${savedProposals.length} Saved` }
@@ -1873,10 +2119,19 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
 
                 <button
                   onClick={handleSaveProposal}
+                  disabled={isDbSaving}
                   className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700"
                 >
-                  <Save className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Save to Studio Library</span>
+                  <Save className={cn("w-3.5 h-3.5 text-emerald-400", isDbSaving && "animate-spin")} />
+                  <span>{isDbSaving ? 'Saving to Database...' : 'Save Proposal to Database'}</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('files')}
+                  className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 border border-indigo-200"
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Attached Files & Vault ({currentFiles.length})</span>
                 </button>
               </div>
             </div>
@@ -1913,6 +2168,30 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
 
             <div className="flex flex-wrap items-center gap-2">
               <button
+                onClick={handleSaveProposal}
+                disabled={isDbSaving}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Save className={cn("w-3.5 h-3.5 text-emerald-400", isDbSaving && "animate-spin")} />
+                <span>{isDbSaving ? 'Saving...' : 'Save to DB'}</span>
+              </button>
+              <button
+                onClick={handleSaveCurrentDocumentAsFile}
+                disabled={isDbSaving}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Archive complete formatted document snapshot into Database files"
+              >
+                <FileUp className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Save File to DB</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('files')}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Paperclip className="w-3.5 h-3.5 text-amber-600" />
+                <span>Files ({currentFiles.length})</span>
+              </button>
+              <button
                 onClick={handleCopyProposalText}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
@@ -1924,14 +2203,14 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                 className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Copy WhatsApp Pitch</span>
+                <span>WhatsApp Pitch</span>
               </button>
               <button
                 onClick={handleExportPDF}
                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-sm"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print / Download PDF</span>
+                <span>Print / PDF</span>
               </button>
             </div>
           </div>
@@ -2215,7 +2494,290 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                   </div>
                 </div>
               </div>
+
+              {/* Annexure: Attached Files & Documentation */}
+              {currentFiles.length > 0 && (
+                <div className="pt-6 border-t border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                      Official Annexures & Attached Files ({currentFiles.length})
+                    </h4>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Stored in Database Vault</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {currentFiles.map(file => (
+                      <div key={file.id} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                        <div className="flex items-center gap-2 truncate">
+                          <Paperclip className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="font-semibold text-slate-800 truncate text-[11px]">{file.name}</span>
+                        </div>
+                        <button
+                          onClick={() => handleDownloadFile(file)}
+                          className="px-2 py-0.5 bg-white border border-slate-200 hover:bg-slate-100 rounded text-[10px] font-bold text-slate-700 transition cursor-pointer shrink-0"
+                        >
+                          Download
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB: SAVED FILES & ASSETS REPOSITORY (DATABASE CONNECTED)
+      ========================================================================= */}
+      {activeTab === 'files' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                  <Paperclip className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    Client Proposals File Vault & Database Repository
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-widest">
+                      Database Connected
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Store, manage, and retrieve pitch decks, signed agreements, brochures, and exported quotation files directly from the database.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleSaveCurrentDocumentAsFile}
+                disabled={isDbSaving}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+              >
+                <FileUp className="w-3.5 h-3.5" />
+                <span>Save Document as File to DB</span>
+              </button>
+              <button
+                onClick={loadProposalsFromDatabase}
+                disabled={isDbLoading}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5", isDbLoading && "animate-spin")} />
+                <span>Sync with Database</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Context & Stats Banner */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">ACTIVE PROPOSAL CONTEXT</span>
+              <p className="text-sm font-black text-slate-900 mt-1 truncate">{schoolName || 'Select Proposal'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{contactPerson} • {studentsCount} Students</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">FILES IN DATABASE</span>
+              <p className="text-sm font-black text-indigo-600 mt-1">{currentFiles.length} Attached to Active Proposal</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{totalFilesCount} total files across all {savedProposals.length} saved proposals</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">DATABASE STATUS</span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-sm font-black text-slate-900">Connected & Synced</p>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Last synced: {lastSyncedTime}</p>
+            </div>
+          </div>
+
+          {/* Upload Dropzone Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                  Upload New File to Database
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Attach files to <strong>{schoolName}</strong> (Max 25MB • PDF, DOCX, XLSX, Images, PPTX).
+                </p>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                Encrypted DB Storage
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  File Category / Classification
+                </label>
+                <select
+                  value={selectedFileCategory}
+                  onChange={(e) => setSelectedFileCategory(e.target.value)}
+                  className="w-full text-xs font-semibold p-2.5 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition"
+                >
+                  <option value="proposal_doc">Formal Proposal / Quotation Document</option>
+                  <option value="pitch_deck">Executive Pitch Deck Presentation</option>
+                  <option value="contract">Signed Agreement / Service Level MoU</option>
+                  <option value="brochure">School Brochure / Syllabus Guide</option>
+                  <option value="specs">Requirement Specification / Data Form</option>
+                  <option value="logo">School Logo / Branding Asset</option>
+                  <option value="other">General Operational Attachment</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  File Description / Memo (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={fileNoteDescription}
+                  onChange={(e) => setFileNoteDescription(e.target.value)}
+                  placeholder="e.g. Approved fee schedule signed by the school board..."
+                  className="w-full text-xs font-medium p-2.5 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition"
+                />
+              </div>
+            </div>
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 hover:bg-indigo-50/80 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition space-y-2"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileUpload}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.svg,.webp,.txt"
+              />
+              <div className="w-12 h-12 rounded-2xl bg-white shadow-xs flex items-center justify-center text-indigo-600 border border-indigo-100">
+                <UploadCloud className={cn("w-6 h-6", isUploadingFile && "animate-bounce")} />
+              </div>
+              <div>
+                <p className="text-xs font-black text-slate-800">
+                  {isUploadingFile ? 'Encrypting & Saving File to Database...' : 'Click to Browse or Drag & Drop File Here'}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Saved files are directly associated with this proposal in the database.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Files List Table / Grid */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                  Attached Files for {schoolName} ({currentFiles.length})
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  All active documents, pitch decks, and exported quotation records.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('document')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>View Proposal Document</span>
+                </button>
+              </div>
+            </div>
+
+            {currentFiles.length === 0 ? (
+              <div className="p-8 text-center space-y-3 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="w-12 h-12 rounded-2xl bg-white mx-auto flex items-center justify-center text-slate-400 border border-slate-200 shadow-xs">
+                  <Paperclip className="w-5 h-5" />
+                </div>
+                <p className="text-xs font-bold text-slate-700">No files saved for this proposal yet</p>
+                <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                  Click the upload box above or click "Save Document as File to DB" to archive your first formal proposal document.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {currentFiles.map((file) => {
+                  const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type.includes('pdf');
+                  const isImage = file.type.includes('image') || /\.(png|jpe?g|svg|webp)$/i.test(file.name);
+                  const isSheet = /\.(xlsx?|csv)$/i.test(file.name);
+
+                  return (
+                    <div
+                      key={file.id}
+                      className="p-4 bg-slate-50 hover:bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition shadow-xs space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0">
+                            {isPdf && <FileText className="w-4 h-4 text-rose-500" />}
+                            {isImage && <FileSpreadsheet className="w-4 h-4 text-purple-500" />}
+                            {isSheet && <FileSpreadsheet className="w-4 h-4 text-emerald-500" />}
+                            {!isPdf && !isImage && !isSheet && <Paperclip className="w-4 h-4 text-indigo-500" />}
+                          </div>
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {file.category?.replace(/_/g, ' ') || 'Document'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 break-words leading-tight" title={file.name}>
+                            {file.name}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                            {file.size > 0 ? `${(file.size / 1024).toFixed(1)} KB` : 'Document'} • {new Date(file.uploadedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+
+                        {file.description && (
+                          <p className="text-[11px] text-slate-600 bg-white/80 p-2 rounded-lg border border-slate-100 italic">
+                            "{file.description}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleDownloadFile(file)}
+                            className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[11px] rounded-lg transition cursor-pointer flex items-center gap-1"
+                            title="Download file"
+                          >
+                            <Download className="w-3 h-3 text-indigo-600" />
+                            <span>Download</span>
+                          </button>
+                          {(isImage || file.type.includes('html')) && (
+                            <button
+                              onClick={() => setPreviewFile(file)}
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] rounded-lg transition cursor-pointer flex items-center gap-1"
+                              title="Preview file"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>View</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => handleDeleteFile(file.id, file.name)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Delete from database"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2560,9 +3122,27 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                   </p>
                 )}
 
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                  <span className="text-[10px] text-slate-400">Created {prop.createdAt}</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-2 border-t border-slate-100 text-xs gap-2">
                   <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">Created {prop.createdAt}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
+                      <Paperclip className="w-3 h-3" />
+                      {prop.files?.length || 0} Files
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        handleLoadProposal(prop);
+                        setActiveTab('files');
+                      }}
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                      title="Manage Attached Files"
+                    >
+                      <Paperclip className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Files ({prop.files?.length || 0})</span>
+                    </button>
                     <button
                       onClick={() => handleLoadProposal(prop)}
                       className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1"
@@ -2581,6 +3161,71 @@ Contact: amoakoemmanuel@hotmail.com | Tel: 0551187045 / 0554234590
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* File Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <Paperclip className="w-4 h-4 text-indigo-600 shrink-0" />
+                <h3 className="text-sm font-black text-slate-900 truncate">{previewFile.name}</h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase">
+                  {previewFile.category?.replace(/_/g, ' ') || 'Document'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadFile(previewFile)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </button>
+                <button
+                  onClick={() => setPreviewFile(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50 flex items-center justify-center min-h-[300px]">
+              {previewFile.type.includes('image') || /\.(png|jpe?g|svg|webp)$/i.test(previewFile.name) ? (
+                <img
+                  src={previewFile.dataUrl || previewFile.url}
+                  alt={previewFile.name}
+                  className="max-h-[60vh] max-w-full rounded-xl object-contain shadow-sm"
+                />
+              ) : previewFile.type.includes('html') ? (
+                <iframe
+                  src={previewFile.dataUrl || previewFile.url}
+                  title={previewFile.name}
+                  className="w-full h-[60vh] bg-white rounded-xl border border-slate-200 shadow-xs"
+                />
+              ) : (
+                <div className="text-center space-y-3 p-8 bg-white rounded-2xl border border-slate-200 max-w-md">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-black text-slate-900">{previewFile.name}</h4>
+                  <p className="text-xs text-slate-500">
+                    File size: {(previewFile.size / 1024).toFixed(1)} KB • Uploaded {new Date(previewFile.uploadedAt).toLocaleDateString()}
+                  </p>
+                  <button
+                    onClick={() => handleDownloadFile(previewFile)}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 mx-auto"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download to View File</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

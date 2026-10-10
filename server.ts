@@ -887,6 +887,8 @@ export function normalizeServerStudentRecord(s: any): any {
 
   const house = String(s.house || s.House || s['House'] || '').trim();
   const department = String(s.department || s.Department || s['Department'] || '').trim();
+  const photo = s.photo || null;
+  const status = s.status || 'active';
   const residentialStatusRaw = String(
     s.residentialStatus || s.residential_status || s['Residential Status'] || s['residential_status'] || s.boardingStatus || 'Day Student'
   ).trim();
@@ -951,6 +953,8 @@ export function normalizeServerStudentRecord(s: any): any {
     previous_classes: previousClasses,
     createdAt,
     created_at: createdAt,
+    remoteId: s.remoteId || s.remote_id || s.id || null,
+    remote_id: s.remote_id || s.remoteId || s.id || null,
     schoolId,
     school_id: schoolId
   };
@@ -1090,7 +1094,8 @@ export function normalizeServerSubjectRecord(s: any): any {
   return {
     ...s,
     id: s.id,
-    remoteId: s.remoteId || s.id,
+    remoteId: s.remoteId || s.remote_id || s.id,
+    remote_id: s.remote_id || s.remoteId || s.id,
     name,
     code,
     isCore,
@@ -1105,6 +1110,7 @@ export function normalizeServerSubjectRecord(s: any): any {
     credit_hours: creditHours,
     status,
     registrationStatus: status,
+    registration_status: status,
     schoolId,
     school_id: schoolId,
     createdAt,
@@ -1156,7 +1162,16 @@ export function normalizeServerFeeTransactionRecord(raw: any, fallbackSchoolId?:
   const recipientPhone = String(raw.recipientPhone || raw.recipient_phone || parsedNotes?.phone || '').trim() || undefined;
   const channelLabel = String(raw.channelLabel || parsedNotes?.channelLabel || raw.paymentMethod || raw.payment_method || paymentMethod).trim();
   const studentName = String(raw.studentName || raw.student_name || parsedNotes?.studentName || '').trim() || undefined;
+  const studentCode = String(raw.studentCode || raw.student_code || parsedNotes?.studentCode || (String(studentId).startsWith('STU-') ? studentId : '')).trim() || undefined;
   const className = String(raw.className || raw.class_name || parsedNotes?.className || '').trim() || undefined;
+  const invoiceId = raw.invoiceId || raw.invoice_id || parsedNotes?.invoiceId || parsedNotes?.invoice_id || undefined;
+  const guardianPhone = String(raw.guardianPhone || raw.guardian_phone || raw.recipientPhone || raw.recipient_phone || parsedNotes?.guardianPhone || parsedNotes?.phone || '').trim() || undefined;
+  const guardianName = String(raw.guardianName || raw.guardian_name || parsedNotes?.guardianName || '').trim() || undefined;
+  const academicYear = String(raw.academicYear || raw.academic_year || parsedNotes?.academicYear || '').trim() || undefined;
+  const term = String(raw.term || parsedNotes?.term || '').trim() || undefined;
+  const syncStatus = raw.syncStatus || raw.sync_status || 'synced';
+  const remoteId = raw.remoteId || raw.remote_id || (raw.id ? String(raw.id) : undefined);
+  const paymentChannelLabel = raw.paymentChannelLabel || raw.payment_channel_label || channelLabel;
   const allocationBreakdown = raw.allocationBreakdown || parsedNotes?.allocationBreakdown || undefined;
   const date = Number(raw.date ?? raw.createdAt ?? raw.created_at ?? Date.now()) || Date.now();
   const notesStr = typeof raw.notes === 'string'
@@ -1166,34 +1181,61 @@ export function normalizeServerFeeTransactionRecord(raw: any, fallbackSchoolId?:
         phone: recipientPhone,
         studentName,
         className,
-        allocationBreakdown
+        allocationBreakdown,
+        invoiceId,
+        academicYear,
+        term
       });
 
   return {
     ...raw,
     id: raw.id,
+    remoteId,
+    remote_id: remoteId,
     schoolId,
     school_id: schoolId,
+    invoiceId,
+    invoice_id: invoiceId,
     receiptNumber,
     receipt_number: receiptNumber,
     studentId,
     student_id: studentId,
+    studentCode,
+    student_code: studentCode,
     studentName,
+    student_name: studentName,
     className,
+    class_name: className,
     feeType,
     fee_type: feeType,
     amount,
     paymentMethod,
     payment_method: paymentMethod,
     channelLabel,
+    channel_label: channelLabel,
+    paymentChannelLabel,
+    payment_channel_label: paymentChannelLabel,
     transactionReference,
     transaction_reference: transactionReference,
     receivedBy,
     received_by: receivedBy,
     notes: notesStr,
     recipientPhone,
+    recipient_phone: recipientPhone,
+    guardianPhone,
+    guardian_phone: guardianPhone,
+    guardianName,
+    guardian_name: guardianName,
+    academicYear,
+    academic_year: academicYear,
+    term,
+    syncStatus,
+    sync_status: syncStatus,
     allocationBreakdown,
-    date
+    allocation_breakdown: allocationBreakdown,
+    date,
+    createdAt: date,
+    created_at: date
   };
 }
 
@@ -1212,7 +1254,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
         "promotionHistory", "inventory", "expenses", "licenses", "schools",
-        "lessonNotes", "feeTransactions"
+        "lessonNotes", "feeTransactions", "clientProposals", "assessments", "assessmentSubmissions", "questionBank"
       ];
       
       const tenantScopedTables = new Set([
@@ -1220,7 +1262,7 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         "classes", "teachers", "termReports", "settings",
         "examAnalysis", "promotionHistory", "inventory", "expenses",
         "users", "polls", "candidates", "votes", "lessonNotes",
-        "feeTransactions", "smsLogs"
+        "feeTransactions", "smsLogs", "assessments", "assessmentSubmissions", "questionBank"
       ]);
 
       const tableMap: Record<string, string> = {
@@ -1229,7 +1271,10 @@ async function pullData(forceFresh = false, targetSchoolId?: string | null) {
         smsLogs: 'sms_logs',
         promotionHistory: 'promotion_history',
         lessonNotes: 'lesson_notes',
-        feeTransactions: 'fee_transactions'
+        feeTransactions: 'fee_transactions',
+        clientProposals: 'client_proposals',
+        assessmentSubmissions: 'assessment_submissions',
+        questionBank: 'question_bank'
       };
 
       const data: any = {};
@@ -1525,14 +1570,14 @@ async function pushData(data: any, targetSchoolId?: string | null) {
         "classes", "teachers", "termReports", "settings", "users",
         "examAnalysis", "smsLogs", "polls", "candidates", "votes",
         "promotionHistory", "inventory", "expenses", "licenses", "schools",
-        "lessonNotes", "feeTransactions"
+        "lessonNotes", "feeTransactions", "clientProposals", "assessments", "assessmentSubmissions", "questionBank"
       ];
 
       const tenantScopedTables = new Set([
         "students", "attendance", "results", "subjects",
         "classes", "teachers", "termReports", "settings",
         "examAnalysis", "promotionHistory", "inventory", "expenses",
-        "lessonNotes", "feeTransactions", "smsLogs"
+        "lessonNotes", "feeTransactions", "smsLogs", "assessments", "assessmentSubmissions", "questionBank"
       ]);
 
       const tableMap: Record<string, string> = {
@@ -1541,7 +1586,10 @@ async function pushData(data: any, targetSchoolId?: string | null) {
         smsLogs: 'sms_logs',
         promotionHistory: 'promotion_history',
         lessonNotes: 'lesson_notes',
-        feeTransactions: 'fee_transactions'
+        feeTransactions: 'fee_transactions',
+        clientProposals: 'client_proposals',
+        assessmentSubmissions: 'assessment_submissions',
+        questionBank: 'question_bank'
       };
 
       for (const table of tableKeys) {
@@ -1578,7 +1626,8 @@ async function pushData(data: any, targetSchoolId?: string | null) {
               fee_paid_breakdown: r.feePaidBreakdown || r.fee_paid_breakdown || {},
               class_history: r.classHistory || r.class_history || [],
               previous_classes: r.previousClasses || r.previous_classes || [],
-              created_at: Number(r.createdAt ?? r.created_at) || Date.now()
+              created_at: Number(r.createdAt ?? r.created_at) || Date.now(),
+              remote_id: r.remote_id || r.remoteId || null
             };
           });
 
@@ -1616,7 +1665,10 @@ async function pushData(data: any, targetSchoolId?: string | null) {
             description: r.description || null,
             department: r.department || null,
             credit_hours: Number(r.creditHours ?? r.credit_hours ?? 3) || 3,
-            status: r.status || r.registrationStatus || 'Available'
+            status: r.status || r.registrationStatus || 'Available',
+            registration_status: r.registration_status || r.registrationStatus || r.status || 'Available',
+            remote_id: r.remote_id || r.remoteId || null,
+            updated_at: Number(r.updatedAt ?? r.updated_at ?? Date.now()) || Date.now()
           }));
           try {
             await adminClient.from('subjects').upsert(formattedSubjects, { onConflict: 'school_id,code' });
@@ -1688,7 +1740,22 @@ async function pushData(data: any, targetSchoolId?: string | null) {
                 transaction_reference: norm.transactionReference || norm.receiptNumber,
                 received_by: norm.receivedBy || 'Bursary Office',
                 notes: norm.notes || null,
-                date: norm.date
+                date: norm.date,
+                remote_id: norm.remote_id || norm.remoteId || (norm.id ? String(norm.id) : null),
+                invoice_id: norm.invoiceId || norm.invoice_id || null,
+                student_code: norm.studentCode || norm.student_code || norm.studentId || null,
+                student_name: norm.studentName || norm.student_name || null,
+                class_name: norm.className || norm.class_name || null,
+                channel_label: norm.channelLabel || norm.channel_label || norm.paymentMethod || null,
+                payment_channel_label: norm.paymentChannelLabel || norm.payment_channel_label || norm.channelLabel || norm.paymentMethod || null,
+                recipient_phone: norm.recipientPhone || norm.recipient_phone || null,
+                guardian_phone: norm.guardianPhone || norm.guardian_phone || null,
+                guardian_name: norm.guardianName || norm.guardian_name || null,
+                academic_year: norm.academicYear || norm.academic_year || null,
+                term: norm.term || null,
+                sync_status: norm.syncStatus || norm.sync_status || 'synced',
+                allocation_breakdown: norm.allocationBreakdown || norm.allocation_breakdown || {},
+                created_at: Number(norm.createdAt ?? norm.created_at ?? norm.date ?? Date.now()) || Date.now()
               };
             })
             .filter(Boolean);
@@ -1730,7 +1797,8 @@ async function pushData(data: any, targetSchoolId?: string | null) {
               previous_total_fees: Number(r.previousTotalFees ?? r.previous_total_fees ?? 0) || 0,
               previous_fee_breakdown: r.previousFeeBreakdown || r.previous_fee_breakdown || {},
               previous_fee_paid_breakdown: r.previousFeePaidBreakdown || r.previous_fee_paid_breakdown || {},
-              timestamp: Number(r.timestamp || Date.now())
+              timestamp: Number(r.timestamp || Date.now()),
+              remote_id: r.remote_id || r.remoteId || (r.id ? String(r.id) : null)
             }))
             .filter((r: any) => r.student_id && r.source_class && r.dest_class && r.school_id);
           if (formattedPromos.length > 0) {
@@ -11351,6 +11419,8 @@ async function doStartServer() {
     }
   ];
 
+  let inMemoryClientProposals: any[] = DEFAULT_INITIAL_PROPOSALS.map(normalizeProposalRecord);
+
   async function loadAllProposalsFromSupabase(): Promise<any[]> {
     const adminClient = getSupabaseAdmin();
     // 1. Check client_proposals dedicated table
@@ -11360,7 +11430,8 @@ async function doStartServer() {
         .select('*')
         .order('updated_at', { ascending: false });
       if (!error && Array.isArray(data) && data.length > 0) {
-        return data.map(normalizeProposalRecord);
+        inMemoryClientProposals = data.map(normalizeProposalRecord);
+        return inMemoryClientProposals;
       }
     } catch {}
 
@@ -11368,15 +11439,19 @@ async function doStartServer() {
     try {
       const fallback = await readSupabaseSettingList('platform_client_proposals');
       if (Array.isArray(fallback) && fallback.length > 0) {
-        return fallback.map(normalizeProposalRecord);
+        inMemoryClientProposals = fallback.map(normalizeProposalRecord);
+        return inMemoryClientProposals;
       }
     } catch {}
 
-    // 3. Return default initial list and persist to settings
+    return inMemoryClientProposals;
+  }
+
+  async function persistProposalsList(list: any[]): Promise<void> {
+    inMemoryClientProposals = list.map(normalizeProposalRecord);
     try {
-      await writeSupabaseSettingList('platform_client_proposals', DEFAULT_INITIAL_PROPOSALS);
+      await writeSupabaseSettingList('platform_client_proposals', inMemoryClientProposals);
     } catch {}
-    return DEFAULT_INITIAL_PROPOSALS.map(normalizeProposalRecord);
   }
 
   // GET /api/proposals - List all client pitch proposals from database
@@ -11431,7 +11506,7 @@ async function doStartServer() {
         normalized,
         ...currentList.filter((p: any) => String(p.id) !== String(normalized.id) && p.schoolName.toLowerCase() !== normalized.schoolName.toLowerCase())
       ];
-      await writeSupabaseSettingList('platform_client_proposals', updatedList);
+      await persistProposalsList(updatedList);
 
       return res.status(201).json({ success: true, proposal: normalized });
     } catch (err: any) {
@@ -11449,7 +11524,7 @@ async function doStartServer() {
       const merged = normalizeProposalRecord({ ...(existing || {}), ...raw, id, updatedAt: Date.now() });
 
       const updatedList = currentList.map((p: any) => String(p.id) === String(id) ? merged : p);
-      await writeSupabaseSettingList('platform_client_proposals', updatedList);
+      await persistProposalsList(updatedList);
 
       return res.json({ success: true, proposal: merged });
     } catch (err: any) {
@@ -11468,7 +11543,7 @@ async function doStartServer() {
 
       const currentList = await loadAllProposalsFromSupabase();
       const filtered = currentList.filter((p: any) => String(p.id) !== String(id));
-      await writeSupabaseSettingList('platform_client_proposals', filtered);
+      await persistProposalsList(filtered);
 
       return res.json({ success: true, id });
     } catch (err: any) {
@@ -11516,7 +11591,7 @@ async function doStartServer() {
         targetProposal.updatedAt = now;
       }
 
-      await writeSupabaseSettingList('platform_client_proposals', currentList);
+      await persistProposalsList(currentList);
 
       return res.status(201).json({
         success: true,
@@ -11538,7 +11613,7 @@ async function doStartServer() {
       if (target) {
         target.files = (target.files || []).filter((f: any) => String(f.id) !== String(fileId));
         target.updatedAt = Date.now();
-        await writeSupabaseSettingList('platform_client_proposals', currentList);
+        await persistProposalsList(currentList);
       }
 
       return res.json({ success: true, fileId, filesCount: target?.files?.length ?? 0, proposal: target });
@@ -11586,7 +11661,7 @@ async function doStartServer() {
         currentList.unshift(target);
       }
 
-      await writeSupabaseSettingList('platform_client_proposals', currentList);
+      await persistProposalsList(currentList);
 
       return res.status(201).json({
         success: true,
@@ -22442,7 +22517,20 @@ NOTIFY pgrst, 'reload schema';`;
               transaction_reference: String(body.transactionReference || body.transaction_reference || candidateReceipt).trim(),
               received_by: receivedBy,
               notes: notesPayload,
-              date: now
+              date: now,
+              student_name: studentFullName,
+              class_name: finalStudent.class,
+              student_code: canonicalStudentId,
+              channel_label: channelLabel,
+              payment_channel_label: channelLabel,
+              recipient_phone: recipientPhone || null,
+              guardian_phone: finalStudent.guardianPhone || finalStudent.guardian_phone || null,
+              guardian_name: finalStudent.guardianName || finalStudent.guardian_name || null,
+              academic_year: academicYear || null,
+              term: term || null,
+              allocation_breakdown: updatedPaidBreakdown || {},
+              sync_status: 'synced',
+              created_at: now
             };
             if (linkedInvoice?.id) {
               dbRow.invoice_id = linkedInvoice.id;
@@ -29098,8 +29186,38 @@ NOTIFY pgrst, 'reload schema';`;
       const subject = req.query.subject ? String(req.query.subject).trim() : undefined;
       const term = req.query.term ? String(req.query.term).trim() : undefined;
 
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          let q = adminClient.from('assessments').select('*');
+          if (schoolId && /^[0-9a-f-]{36}$/i.test(String(schoolId))) {
+            q = q.eq('school_id', schoolId);
+          }
+          const { data: dbAssessments, error } = await q;
+          if (!error && Array.isArray(dbAssessments)) {
+            for (const item of dbAssessments) {
+              inMemoryAssessmentsStore.set(item.id, {
+                ...item,
+                id: item.id,
+                schoolId: item.school_id,
+                dueDate: item.due_date,
+                maxScore: Number(item.max_score || 100),
+                weightPercentage: Number(item.weight_percentage || 10),
+                teacherId: item.teacher_id,
+                teacherName: item.teacher_name,
+                allowInstantSelfCheck: item.allow_instant_self_check,
+                shuffleQuestions: item.shuffle_questions,
+                sourceLessonNoteId: item.source_lesson_note_id,
+                createdAt: Number(item.created_at || Date.now()),
+                updatedAt: Number(item.updated_at || Date.now())
+              });
+            }
+          }
+        } catch {}
+      }
+
       const list = Array.from(inMemoryAssessmentsStore.values()).filter(a => {
-        if (a.schoolId && a.schoolId !== schoolId) return false;
+        if (a.schoolId && a.schoolId !== schoolId && /^[0-9a-f-]{36}$/i.test(String(schoolId)) && /^[0-9a-f-]{36}$/i.test(String(a.schoolId))) return false;
         if (category && a.category !== category) return false;
         if (className && a.class !== className && a.class !== 'All') return false;
         if (subject && a.subject !== subject) return false;
@@ -29134,6 +29252,42 @@ NOTIFY pgrst, 'reload schema';`;
       };
       inMemoryAssessmentsStore.set(id, assessment);
 
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const dbRow = {
+            id,
+            school_id: /^[0-9a-f-]{36}$/i.test(String(schoolId)) ? schoolId : null,
+            title: payload.title || 'Untitled Assessment',
+            category: payload.category || 'homework',
+            subject: payload.subject || 'General',
+            class: payload.class || 'All',
+            academic_year: payload.academicYear || payload.academic_year || '2026/2027',
+            term: payload.term || 'Term 1',
+            description: payload.description || '',
+            due_date: payload.dueDate || payload.due_date || '',
+            max_score: Number(payload.maxScore ?? payload.max_score ?? 100) || 100,
+            weight_percentage: Number(payload.weightPercentage ?? payload.weight_percentage ?? 10) || 10,
+            attachments: payload.attachments || [],
+            rubric: payload.rubric || [],
+            teacher_id: payload.teacherId || payload.teacher_id || null,
+            teacher_name: payload.teacherName || payload.teacher_name || '',
+            status: payload.status || 'draft',
+            questions: payload.questions || [],
+            instructions: payload.instructions || null,
+            duration_minutes: payload.durationMinutes ?? payload.duration_minutes ?? null,
+            allow_instant_self_check: Boolean(payload.allowInstantSelfCheck ?? payload.allow_instant_self_check),
+            shuffle_questions: Boolean(payload.shuffleQuestions ?? payload.shuffle_questions),
+            source_lesson_note_id: payload.sourceLessonNoteId || payload.source_lesson_note_id || null,
+            created_at: payload.createdAt || Date.now(),
+            updated_at: Date.now()
+          };
+          await adminClient.from('assessments').upsert([dbRow], { onConflict: 'id' });
+        } catch (e) {
+          console.warn("Notice saving assessment to Supabase:", e);
+        }
+      }
+
       return res.status(201).json({
         success: true,
         assessment,
@@ -29154,6 +29308,15 @@ NOTIFY pgrst, 'reload schema';`;
           inMemorySubmissionsStore.delete(subId);
         }
       }
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.from('assessments').delete().eq('id', id);
+          await adminClient.from('assessment_submissions').delete().eq('assessment_id', id);
+        } catch (e) {}
+      }
+
       return res.json({ success: true, message: "Assessment deleted successfully." });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -29165,6 +29328,34 @@ NOTIFY pgrst, 'reload schema';`;
     try {
       const { id } = req.params;
       const studentId = req.query.studentId ? String(req.query.studentId).trim() : undefined;
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const { data: dbSubs, error } = await adminClient
+            .from('assessment_submissions')
+            .select('*')
+            .eq('assessment_id', id);
+          if (!error && Array.isArray(dbSubs)) {
+            for (const s of dbSubs) {
+              inMemorySubmissionsStore.set(s.id, {
+                ...s,
+                id: s.id,
+                assessmentId: s.assessment_id,
+                studentId: s.student_id,
+                studentName: s.student_name,
+                submittedAt: Number(s.submitted_at || Date.now()),
+                rubricScores: s.rubric_scores,
+                totalScore: s.total_score !== null ? Number(s.total_score) : null,
+                gradedBy: s.graded_by,
+                gradedAt: s.graded_at ? Number(s.graded_at) : null,
+                syncedToSba: s.synced_to_sba
+              });
+            }
+          }
+        } catch {}
+      }
+
       const list = Array.from(inMemorySubmissionsStore.values()).filter(sub => {
         if (sub.assessmentId !== id) return false;
         if (studentId && sub.studentId !== studentId) return false;
@@ -29194,6 +29385,35 @@ NOTIFY pgrst, 'reload schema';`;
         updatedAt: Date.now()
       };
       inMemorySubmissionsStore.set(subId, submission);
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const dbRow = {
+            id: subId,
+            school_id: /^[0-9a-f-]{36}$/i.test(String(payload.schoolId || payload.school_id)) ? (payload.schoolId || payload.school_id) : null,
+            assessment_id: id,
+            student_id: payload.studentId || payload.student_id || '',
+            student_name: payload.studentName || payload.student_name || '',
+            class: payload.class || '',
+            status: payload.status || 'submitted',
+            submitted_at: payload.submittedAt || Date.now(),
+            content: payload.content || '',
+            attachments: payload.attachments || [],
+            answers: payload.answers || {},
+            rubric_scores: payload.rubricScores || payload.rubric_scores || {},
+            total_score: payload.totalScore !== undefined ? Number(payload.totalScore) : null,
+            grade: payload.grade || null,
+            feedback: payload.feedback || null,
+            graded_by: payload.gradedBy || payload.graded_by || null,
+            graded_at: payload.gradedAt || payload.graded_at || null,
+            synced_to_sba: Boolean(payload.syncedToSba ?? payload.synced_to_sba)
+          };
+          await adminClient.from('assessment_submissions').upsert([dbRow], { onConflict: 'assessment_id,student_id' });
+        } catch (e) {
+          console.warn("Notice saving submission to Supabase:", e);
+        }
+      }
 
       return res.status(201).json({
         success: true,
@@ -29233,6 +29453,27 @@ NOTIFY pgrst, 'reload schema';`;
       const difficulty = req.query.difficulty ? String(req.query.difficulty).trim() : undefined;
       const className = req.query.class ? String(req.query.class).trim() : undefined;
       const type = req.query.type ? String(req.query.type).trim() : undefined;
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const { data: qbRows, error } = await adminClient.from('question_bank').select('*');
+          if (!error && Array.isArray(qbRows)) {
+            for (const q of qbRows) {
+              inMemoryQuestionBankStore.set(q.id, {
+                ...q,
+                id: q.id,
+                className: q.class_name,
+                subStrand: q.sub_strand,
+                usageCount: q.usage_count,
+                createdBy: q.created_by,
+                createdAt: Number(q.created_at || Date.now()),
+                updatedAt: Number(q.updated_at || Date.now())
+              });
+            }
+          }
+        } catch {}
+      }
 
       let list = Array.from(inMemoryQuestionBankStore.values());
 
@@ -29274,6 +29515,31 @@ NOTIFY pgrst, 'reload schema';`;
       };
 
       inMemoryQuestionBankStore.set(id, item);
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          const dbRow = {
+            id,
+            school_id: /^[0-9a-f-]{36}$/i.test(String(payload.schoolId || payload.school_id)) ? (payload.schoolId || payload.school_id) : null,
+            subject: payload.subject || 'General',
+            topic: payload.topic || 'General',
+            class_name: payload.className || payload.class_name || 'All',
+            strand: payload.strand || null,
+            sub_strand: payload.subStrand || payload.sub_strand || null,
+            difficulty: payload.difficulty || 'medium',
+            question: payload.question || {},
+            tags: payload.tags || [],
+            usage_count: Number(payload.usageCount ?? payload.usage_count ?? 0) || 0,
+            created_by: payload.createdBy || payload.created_by || null,
+            source: payload.source || 'manual',
+            created_at: payload.createdAt || now,
+            updated_at: now
+          };
+          await adminClient.from('question_bank').upsert([dbRow], { onConflict: 'id' });
+        } catch (e) {}
+      }
+
       return res.status(201).json({ success: true, data: item });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
@@ -29290,6 +29556,7 @@ NOTIFY pgrst, 'reload schema';`;
 
       const now = Date.now();
       const savedItems: any[] = [];
+      const dbRows: any[] = [];
 
       for (const raw of items) {
         const id = raw.id || `qb-${now}-${Math.random().toString(36).substring(2, 7)}`;
@@ -29301,6 +29568,31 @@ NOTIFY pgrst, 'reload schema';`;
         };
         inMemoryQuestionBankStore.set(id, item);
         savedItems.push(item);
+
+        dbRows.push({
+          id,
+          school_id: /^[0-9a-f-]{36}$/i.test(String(raw.schoolId || raw.school_id)) ? (raw.schoolId || raw.school_id) : null,
+          subject: raw.subject || 'General',
+          topic: raw.topic || 'General',
+          class_name: raw.className || raw.class_name || 'All',
+          strand: raw.strand || null,
+          sub_strand: raw.subStrand || raw.sub_strand || null,
+          difficulty: raw.difficulty || 'medium',
+          question: raw.question || {},
+          tags: raw.tags || [],
+          usage_count: Number(raw.usageCount ?? raw.usage_count ?? 0) || 0,
+          created_by: raw.createdBy || raw.created_by || null,
+          source: raw.source || 'manual',
+          created_at: raw.createdAt || now,
+          updated_at: now
+        });
+      }
+
+      if (dbMode === "supabase" && dbRows.length > 0) {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.from('question_bank').upsert(dbRows, { onConflict: 'id' });
+        } catch (e) {}
       }
 
       return res.status(201).json({ success: true, count: savedItems.length, data: savedItems });
@@ -29314,6 +29606,14 @@ NOTIFY pgrst, 'reload schema';`;
     try {
       const { id } = req.params;
       const existed = inMemoryQuestionBankStore.delete(id);
+
+      if (dbMode === "supabase") {
+        try {
+          const adminClient = getSupabaseAdmin();
+          await adminClient.from('question_bank').delete().eq('id', id);
+        } catch (e) {}
+      }
+
       return res.json({ success: true, deleted: existed });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: sanitizeErrorMessage(err) });
